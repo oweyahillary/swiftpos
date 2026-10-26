@@ -4,16 +4,16 @@ import { supabase } from '../lib/supabase';
 import { getDayCutoff } from '../lib/dayCutoff';
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
-import { notifyAdmin, alertChannels } from '../lib/alertNotify';
+import { notifyRendered, alertChannels, alertLinks } from '../lib/alertNotify';   // A592: laid out by lib/alertFormat.ts
 import { recentErrors, digestCounters, recentSignInFailures, recentSyncAttempts, syncQueueReports, requestLoad } from '../lib/watchdogCounters';
 import { lapsedBusinessIds, billingDigestLines, billingStandingRows } from '../lib/cloudPlan';   // A581, A584, A589
 import { startLoopMonitor, takeLoopLag } from '../lib/serverLoad';                                // A589
 import { readAlertSettings, addAdminNotifications, readDigestDate, writeDigestDate } from '../lib/adminAlerts';   // A589
 import {
-  routeRun, digestEmail, billingSummaryEmail, problemFacts, digestDue, nairobiClock, type DigestRow, type BillingRow,
+  routeRun, digestEmail, digestTelegram, billingSummaryEmail, problemFacts, digestDue, nairobiClock, type DigestRow, type BillingRow,
 } from '../lib/adminAlertPolicy';                                                                 // A589
 import {
-  Alert, OpenAlertRow, WATCHDOG, planRun, digestText, DeviceRow, TradeEvidence,
+  Alert, OpenAlertRow, WATCHDOG, planRun, DeviceRow, TradeEvidence,
   tillsNotSyncing, quietCandidates, tillsWithParkedRecords, mpesaUnanswered, paymentExceptions, errorBurst, daysNotClosed, oldTills, etimsFailures,
   repeatedSignInFailures, tillSyncRefused, tillsSignedOut, serverOverload, databaseUnreachable, backupMissed,
 } from '../lib/watchdogRules';
@@ -344,21 +344,22 @@ export async function runWatchdog(now = new Date()): Promise<WatchdogRun> {
     ],
     reminders: reminders.map((r) => ({ alert: r.alert, firstSeenAt: r.row.first_seen_at })),
     resolved: resolved.filter((r) => r.last_notified_at).map((r) => ({ key: r.alert_key, title: r.title, first_seen_at: r.first_seen_at, business_id: r.business_id ?? null })),
-  }, settings, now);
+  }, settings, now, alertLinks());
 
   // Send: the system emergencies one each (email + Telegram); the client ones a super admin wants at once as ONE email;
-  // everything else ONE Telegram message; the bell for every problem told for the first time.
+  // everything else ONE Telegram message; the bell for every problem told for the first time. A592: each one laid out
+  // (Telegram HTML with URL buttons; the email's layout and its plain-text part).
   const emailed = new Set<string>();
   for (const m of routed.instantEach) {
-    const r = await notifyAdmin(m.subject, m.text);
+    const r = await notifyRendered(m);
     if (r.email || r.telegram) emailed.add(m.key);
   }
   if (routed.instantGroup) {
-    const r = await notifyAdmin(routed.instantGroup.subject, routed.instantGroup.text, { html: routed.instantGroup.html });
+    const r = await notifyRendered(routed.instantGroup);
     if (r.email || r.telegram) for (const k of routed.instantGroup.keys) emailed.add(k);
   }
   let telegram = false;
-  if (routed.telegramGroup) telegram = (await notifyAdmin(routed.telegramGroup.subject, routed.telegramGroup.text, { email: false })).telegram;
+  if (routed.telegramGroup) telegram = (await notifyRendered(routed.telegramGroup, { email: false })).telegram;
   await addAdminNotifications(routed.notifications, now);
 
   for (const a of plan.opened) {
@@ -420,25 +421,29 @@ export async function sendDigest(now = new Date()): Promise<{ emailed: boolean; 
   const open = await openAlerts();
   open.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
   const counters = digestCounters(true);
-  let text = digestText(open, counters, now);
+  const links = alertLinks();
+  // The rows as each rule words them now ("Day Fri 9 Oct still open (ended 16 days ago)"), else from the stored title.
+  let current = new Map<string, Alert>();
+  if (open.length) {
+    try { current = new Map((await collectAlerts(now, { load: false })).alerts.map((a) => [a.key, a])); } catch { /* the titles */ }
+  }
+  const rows: DigestRow[] = open.map((r) => ({
+    severity: r.severity,
+    ...problemFacts(current.get(r.alert_key) ?? { title: r.title, business_id: r.business_id ?? null, key: r.alert_key }, r.first_seen_at, now),
+  }));
   // A584: ZapTill's billing lines — every locked client each morning (the client hears nothing), the unpaid ones and when
   // they lock, and how many have no expiry set.
   const billing = await billingDigestLines(now.getTime()).catch(() => [] as string[]);
-  if (billing.length) text = [text, '', ...billing].join('\n');
-  // A392: the digest text goes to Telegram (and the admin portal's Alerts page).
-  await notifyAdmin(`ZapTill daily check — ${now.toISOString().slice(0, 10)}`, text, { email: false });
+  // A392: the digest goes to Telegram (and the admin portal's Alerts page). A592: one line per problem, grouped by
+  // severity, at most 15 and then "+N more in the admin portal", with a button.
+  const tg = digestTelegram(rows, counters, now, billing, links);
+  await notifyRendered(tg, { email: false });
 
-  // A589: the email — the rows as each rule words them (read now), else from the stored title.
+  // A589: the email — ONE table per severity.
   if (!settings.digestEmail || !open.length) return { emailed: false, rows: open.length };
-  let current = new Map<string, Alert>();
-  try { current = new Map((await collectAlerts(now, { load: false })).alerts.map((a) => [a.key, a])); } catch { /* the titles */ }
-  const rows: DigestRow[] = open.map((r) => ({
-    severity: r.severity,
-    ...problemFacts(current.get(r.alert_key) ?? { title: r.title, business_id: r.business_id ?? null }, r.first_seen_at, now),
-  }));
-  const mail = digestEmail(rows, counters, now);
+  const mail = digestEmail(rows, counters, now, links);
   if (!mail) return { emailed: false, rows: 0 };
-  const sent = await notifyAdmin(mail.subject, mail.text, { telegram: false, html: mail.html });
+  const sent = await notifyRendered({ ...tg, subject: mail.subject, html: mail.html, emailText: mail.text }, { telegram: false });
   return { emailed: sent.email, rows: rows.length };
 }
 
@@ -461,9 +466,9 @@ export async function sendBillingSummary(now = new Date()): Promise<{ emailed: b
       currency: String(d.currency ?? 'KES'), due: d.due ?? null, status: String(d.status ?? n.title) };
   });
   const standing = await billingStandingRows(now.getTime());
-  const mail = billingSummaryEmail(notices, standing, now);
+  const mail = billingSummaryEmail(notices, standing, now, alertLinks());
   if (!mail) return { emailed: false, rows: 0 };
-  const sent = await notifyAdmin(mail.subject, mail.text, { telegram: false, html: mail.html });
+  const sent = await notifyRendered({ subject: mail.subject, text: mail.text, tgHtml: '', buttons: [], html: mail.html, emailText: mail.text }, { telegram: false });
   if (sent.email && list.length) {
     const { error: uErr } = await supabase.from('admin_notifications').update({ digest_sent_at: now.toISOString() }).in('id', list.map((n) => n.id));
     if (uErr) console.warn('[watchdog] billing notices not marked as summarised:', uErr.message);

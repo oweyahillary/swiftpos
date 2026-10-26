@@ -64,6 +64,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ops/alert-format.sh   # A592: eat_stamp, human_minutes — the words of every admin alert
           API="${PROD_URL:-https://api.zaptill.co.ke}"; API="${API%/}"
           APP="${APP_URL:-https://app.zaptill.co.ke}"; APP="${APP%/}"
           LABEL=production-down
@@ -98,8 +99,12 @@ jobs:
             gh label create "$LABEL" --color B60205 --description "A589: production is not answering (uptime-check.yml)" --force >/dev/null 2>&1 || true
             gh issue create --label "$LABEL" --title "Production down — $EAT Nairobi" \
               --body "$(printf 'The uptime check failed twice, a minute apart, at %s (Nairobi):\n\n- %s\n\nRun: %s\n\nThis issue closes by itself when production answers again. Render: the production service → Events / Logs. Supabase: the project status.' "$EAT" "${DOWN//; /$'\n'- }" "$RUN_URL")" >/dev/null
-            bash scripts/ops/notify-admin.sh "ZapTill PRODUCTION DOWN — $EAT" \
-              "$(printf '🔴 ZapTill production is not answering (checked twice, a minute apart, %s Nairobi):\n%s\n\nPoints of sale keep selling offline and send their sales when it is back. Check Render (the production service → Events / Logs) and Supabase.\n\nGitHub: %s\nYou will be told once more when it recovers.' "$EAT" "$DOWN" "$RUN_URL")" || true
+            # A592: laid out like every admin alert (scripts/ops/notify-admin.sh: headline, facts, what to do, buttons).
+            bash scripts/ops/notify-admin.sh --tone critical --subject "🔴 Production down · $(eat_day)" \
+              --fact "Not answering|${DOWN//; / · }" --fact "Checked|twice, a minute apart, at $(eat_time)" \
+              --action "Points of sale keep selling offline and send their sales when it is back. Check Render (the production service › Events / Logs) and Supabase. You will be told once more when it recovers." \
+              --button "Open run|$RUN_URL" --button "Render|https://dashboard.render.com" \
+              "Production down — $(eat_stamp)" || true
             exit 1   # the run shows red; GitHub e-mails too
           fi
 
@@ -107,8 +112,10 @@ jobs:
             NUM=$(jq -r .number <<<"$OPEN"); SINCE=$(jq -r .createdAt <<<"$OPEN")
             MIN=$(( ( $(date -u +%s) - $(date -u -d "$SINCE" +%s) ) / 60 ))
             gh issue close "$NUM" --comment "Recovered at $EAT Nairobi — down about $MIN min. Run: $RUN_URL" >/dev/null
-            bash scripts/ops/notify-admin.sh "ZapTill production is back — down about $MIN min" \
-              "$(printf '✅ ZapTill production answers again (%s Nairobi). It was down about %s min (since the first failed check).\nGitHub: %s' "$EAT" "$MIN" "$RUN_URL")" || true
+            bash scripts/ops/notify-admin.sh --tone resolved --subject "✅ Production back · down about $(human_minutes "$MIN")" \
+              --fact "Back at|$(eat_stamp)" --fact "Down for|about $(human_minutes "$MIN") (since the first failed check)" \
+              --button "Open run|$RUN_URL" \
+              "Production back · resolved after about $(human_minutes "$MIN")" || true
             if [ -n "${OPS_INGEST_TOKEN:-}" ]; then
               EV=$(jq -cn --arg since "$SINCE" --argjson m "$MIN" --arg u "$RUN_URL" --arg t "$API/health, $APP" \
                 '{kind:"uptime",status:"warn",title:("Production was down about " + ($m|tostring) + " min"),details:{down_since:$since,minutes:$m,targets:$t,run_url:$u},source:"github"}')

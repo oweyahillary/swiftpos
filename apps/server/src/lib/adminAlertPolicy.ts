@@ -20,6 +20,12 @@
  * still come as ONE email per run with a table, never one per client. The digest time (default 07:00 Nairobi) and the two
  * daily emails can be changed there too. Stored in public.admin_settings (migration 174), key 'alert_settings'.
  */
+import {
+  type AdminMessage, type AlertLinks, type LinkButton, type Line, type MessageSection, type RenderedMessage, type Tone,
+  DEFAULT_LINKS, renderMessage, htmlTable, emailHeading, stampAgo, eatDay, eatStamp, minutesSince, durationLabel, shortDuration,
+  alertsUrl, systemUrl, clientUrl, guideUrl,
+} from './alertFormat';   // A592: how every admin message looks
+import { RULE_WORDS, type RuleId } from './watchdogRules';   // A592: each rule's short name and what to do
 
 export type AlertCategory =
   | 'server_errors' | 'overload' | 'database' | 'signin_attack' | 'backup' | 'deploy' | 'other_system'
@@ -143,15 +149,11 @@ export function nairobiClock(now: Date): { date: string; minutes: number } {
   return { date: d.toISOString().slice(0, 10), minutes: d.getUTCHours() * 60 + d.getUTCMinutes() };
 }
 
-/** "2 h 15 min" / "45 min" / "3 d 4 h". */
+/** "2 h 15 min" / "45 min" / "3 days 4 h". */
 export function sinceLabel(fromIso: string | null | undefined, now: Date): string {
   const t = fromIso ? Date.parse(fromIso) : NaN;
   if (!Number.isFinite(t)) return '—';
-  const m = Math.max(0, Math.round((now.getTime() - t) / 60_000));
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 48) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
-  return `${Math.floor(h / 24)} d ${h % 24} h`;
+  return durationLabel((now.getTime() - t) / 60_000);   // A592: "8 days 22 h", never "214 h"
 }
 
 /**
@@ -168,11 +170,34 @@ export function digestDue(now: Date, digestTime: string, lastSentDate: string | 
 
 // ── The rows of a table ──────────────────────────────────────────────────────────────────────────────────────────────
 
-export interface ProblemFacts { client: string; where: string; problem: string; since: string }
+/**
+ * One problem as a row. A592 (owner, 2026-10-26 — "a small, simple table, one row per client problem, with a
+ * recommendation column": Client | Problem | Since | What to do): `label` + `pos` make the Problem cell ("Day not closed
+ * (T1)"), `ago` the Since cell ("16 days"), `todo` the What to do cell. `problem` (the rule's full words), `where` and
+ * `since` (the Nairobi stamp) stay for the admin portal's bell.
+ */
+export interface ProblemFacts { client: string; where: string; problem: string; since: string; label: string; pos: string; ago: string; todo: string }
+
+/** A592: what to do when the rule's own words are not at hand (a stored row) — by category. */
+export const CATEGORY_TODO: Record<AlertCategory, string> = {
+  server_errors: RULE_WORDS.server_errors.todo, overload: RULE_WORDS.server_overload.todo, database: RULE_WORDS.database_unreachable.todo,
+  signin_attack: RULE_WORDS.signin_failures_ip.todo, backup: RULE_WORDS.backup_missed.todo, deploy: 'Open the run on GitHub and fix what it names',
+  other_system: 'Open the Alerts page in the admin portal', day_not_closed: RULE_WORDS.day_not_closed.todo, pos_not_syncing: RULE_WORDS.till_not_syncing.todo,
+  pos_signed_out: RULE_WORDS.till_signed_out.todo, pos_refused: RULE_WORDS.sync_refused.todo, mpesa: RULE_WORDS.payment_exception.todo,
+  etims: RULE_WORDS.etims_failed.todo, pos_updates: RULE_WORDS.old_tills.todo, billing: 'Record the payment when it comes in',
+};
+
+/** The rule's words from its key ("day_not_closed:…" → Day not closed / Close it at the POS …), when it has an entry. */
+function wordsOfKey(key: string | null | undefined): { label: string; todo: string } | null {
+  const p = String(key ?? '').split(':')[0] as RuleId;
+  return (RULE_WORDS as Record<string, { label: string; todo: string }>)[p] ?? null;
+}
 
 /** What an alert says, as a row: its own fields when the rule set them, else read from its title ("Client: problem"). */
-export function problemFacts(a: { title: string; client?: string | null; where?: string | null; problem?: string | null; businessId?: string | null; business_id?: string | null },
+export function problemFacts(a: { title: string; client?: string | null; where?: string | null; problem?: string | null; businessId?: string | null; business_id?: string | null;
+  key?: string | null; label?: string | null; todo?: string | null; sinceAt?: string | null },
   since: string | null | undefined, now: Date): ProblemFacts {
+  const began = a.sinceAt || since;   // a day not closed: since the day ended, not since the watchdog first saw it
   let client = a.client ?? null, problem = a.problem ?? null;
   if (!client || !problem) {
     const i = a.title.indexOf(': ');
@@ -180,35 +205,65 @@ export function problemFacts(a: { title: string; client?: string | null; where?:
     if (i > 0 && !system) { client = client ?? a.title.slice(0, i); problem = problem ?? a.title.slice(i + 2); }
     else { client = client ?? 'ZapTill cloud'; problem = problem ?? a.title; }
   }
-  return { client, where: a.where || '—', problem, since: since ? `${nairobiStamp(since)} (${sinceLabel(since, now)})` : '—' };
+  const where = a.where || '—';
+  const byKey = wordsOfKey(a.key);
+  const cat = categoryOf(a.key ?? '');
+  // The POS of "Main / T1" is T1; a list of points of sale ("T1, T2") is kept short.
+  const pos = where === '—' ? '' : (where.includes(' / ') ? where.split(' / ').pop()! : where);
+  return {
+    client, where, problem,
+    since: since ? stampAgo(since, now) : '—',   // "Sat 24 Oct 21:05 EAT (2 h 15 min ago)"
+    label: a.label || byKey?.label || (a.key ? CATEGORY_HEADLINE[cat] : problem),
+    pos: pos.length > 18 ? `${pos.slice(0, 17)}…` : pos,
+    ago: began ? shortDuration(minutesSince(began, now)) : '—',
+    todo: a.todo || byKey?.todo || (a.key ? CATEGORY_TODO[cat] : 'See the Alerts page in the admin portal'),
+  };
 }
 
-const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+export { htmlTable };
 
-/** One HTML table (inline styles: email clients ignore <style>). */
-export function htmlTable(headers: string[], rows: string[][]): string {
-  const th = 'text-align:left;padding:6px 10px;border-bottom:2px solid #ddd;font-size:13px;background:#f6f7f9';
-  const td = 'padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top';
-  return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:900px">`
-    + `<thead><tr>${headers.map((h) => `<th style="${th}">${esc(h)}</th>`).join('')}</tr></thead>`
-    + `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td style="${td}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+/** A592: the owner's four columns. */
+export const PROBLEM_HEADERS = ['Client', 'Problem', 'Since', 'What to do'];
+
+/** "Day not closed (T1)". */
+const problemCell = (f: ProblemFacts) => `${f.label}${f.pos ? ` (${f.pos})` : ''}`;
+const factsRow = (f: ProblemFacts) => [f.client, problemCell(f), f.ago, f.todo];
+/**
+ * A592: one problem on Telegram, two lines (a phone does not wrap them; Telegram has no tables):
+ *   • <b>Sample Shop</b> · T1 — Day not closed · 16 days
+ *       → Close it at the POS or by Remote Day Close
+ */
+const problemLine = (f: ProblemFacts): Line => ({ lead: f.client, rest: `${f.pos ? `· ${f.pos} ` : ''}— ${f.label} · ${f.ago}`, sub: f.todo });
+/** The same rows as a fixed-width <pre> table (alertFormat.ts preTable) — kept for comparison; Telegram uses the lines. */
+export const problemTableRow = (f: ProblemFacts) => [f.client, problemCell(f), f.ago, f.todo];
+/** A system alert's title without its "Cloud: " / "Backup: " prefix, as a headline. */
+const systemHeadline = (title: string) => { const t = title.replace(/^(Cloud|Backup)\s*:\s*/i, ''); return t ? t[0].toUpperCase() + t.slice(1) : title; };
+
+/** A592: the words of each category in a headline. */
+export const CATEGORY_HEADLINE: Record<AlertCategory, string> = {
+  server_errors: 'Server errors', overload: 'Server overloaded', database: 'Database unreachable', signin_attack: 'Failed sign-ins',
+  backup: 'Backup', deploy: 'Deploy check', other_system: 'Cloud alert', day_not_closed: 'Day not closed', pos_not_syncing: 'POS not syncing',
+  pos_signed_out: 'POS signed out', pos_refused: 'Sync refused', mpesa: 'M-Pesa', etims: 'eTIMS', pos_updates: 'POS update needed', billing: 'Billing',
+};
+
+/** The buttons of one alert: the client's page (a day not closed: "Close it remotely" — the POS & days tab), a guide, the Alerts page. */
+export function alertButtons(a: { key: string; businessId?: string | null }, links: AlertLinks = DEFAULT_LINKS): LinkButton[] {
+  const cat = categoryOf(a.key);
+  const out: LinkButton[] = [];
+  if (a.businessId) {
+    if (cat === 'day_not_closed') out.push({ text: 'Close it remotely', url: clientUrl(links, a.businessId, 'tills') });
+    else out.push({ text: 'Open client', url: clientUrl(links, a.businessId, ['pos_not_syncing', 'pos_signed_out', 'pos_refused', 'pos_updates'].includes(cat) ? 'tills' : undefined) });
+  }
+  if (cat === 'backup') out.push({ text: 'Guide', url: guideUrl(links, 'docs/BACKUPS.md') });
+  out.push({ text: 'Open in admin', url: cat === 'backup' || cat === 'deploy' ? systemUrl(links) : alertsUrl(links) });
+  return out;
 }
-
-const page = (title: string, body: string) =>
-  `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#111;font-size:14px;line-height:1.5">`
-  + `<h2 style="font-size:18px;margin:0 0 12px">${esc(title)}</h2>${body}`
-  + `<p style="font-size:12px;color:#666;margin-top:18px">Details and "mark as read": the admin portal › Alerts. `
-  + `Which alerts are emailed at once, and the digest time: Alerts › Email settings (super admin).</p></div>`;
-
-export const PROBLEM_HEADERS = ['Client', 'Branch / POS', 'Problem', 'Since'];
-
-const factsRow = (f: ProblemFacts) => [f.client, f.where, f.problem, f.since];
-const textRow = (f: ProblemFacts) => `• ${f.client} — ${f.where === '—' ? '' : `${f.where} — `}${f.problem} — since ${f.since}`;
 
 // ── One watchdog run → who hears what ───────────────────────────────────────────────────────────────────────────────
 
 export interface RunAlert { key: string; severity: 'critical' | 'warning'; businessId: string | null; title: string; detail?: string | null;
-  client?: string | null; where?: string | null; problem?: string | null }
+  client?: string | null; where?: string | null; problem?: string | null; action?: string | null;
+  label?: string | null; todo?: string | null; sinceAt?: string | null }
 
 export interface RunInput {
   /** Critical problems told for the first time (new, or a warning that became critical). */
@@ -224,26 +279,48 @@ export interface NotificationRow { category: AlertCategory; business_id: string 
 
 export interface RoutedRun {
   /** One email + Telegram each — the system emergencies (new and reminders), as before. */
-  instantEach: Array<{ subject: string; text: string; key: string }>;
+  instantEach: Array<RenderedMessage & { key: string }>;
   /** ONE email (a table) for the client categories a super admin chose to email at once — never one per client. */
-  instantGroup: { subject: string; text: string; html: string; keys: string[] } | null;
+  instantGroup: (RenderedMessage & { keys: string[] }) | null;
   /** ONE Telegram message: the new client problems (not emailed) and everything resolved. */
-  telegramGroup: { subject: string; text: string } | null;
+  telegramGroup: RenderedMessage | null;
   /** The admin portal's bell: one row per problem told for the first time. */
   notifications: NotificationRow[];
   /** Keys whose reminder was due but stays quiet (portal and digest only) — last_notified_at moves, nothing is sent. */
   quiet: string[];
 }
 
-function alertMessage(kind: 'new' | 'reminder', a: RunAlert, since: string, now: Date): string {
-  const head = kind === 'new' ? '🔴 ZapTill ALERT' : `🔴 STILL HAPPENING — for ${sinceLabel(since, now)}`;
-  return `${head}\n${a.title}\n${a.detail ?? ''}`.trim();
+/** The most lines of a list in one message; the rest are "+N more in the admin portal". */
+export const MAX_LINES = 15;
+const section = (title: string, lines: Line[], tone?: Tone): MessageSection =>
+  ({ title, tone, lines: lines.slice(0, MAX_LINES), more: Math.max(0, lines.length - MAX_LINES) || undefined });
+
+/**
+ * A592: one alert, new or a reminder — "🔴 Still open · 9 days · Database unreachable", "Since: Mon 26 Oct 13:07 EAT (2 h
+ * ago)", "👉 what to do". The buttons are added by routeRun.
+ */
+export function alertMessage(kind: 'new' | 'reminder', a: RunAlert, since: string, now: Date): AdminMessage {
+  const f = problemFacts(a, since, now);
+  const cat = categoryOf(a.key);
+  const client = Boolean(a.businessId);
+  const what = client ? `${CATEGORY_HEADLINE[cat]} · ${f.client}` : systemHeadline(a.title);
+  const age = shortDuration(minutesSince(since, now));
+  return {
+    tone: 'critical',
+    headline: kind === 'new' ? what : `Still open · ${age} · ${what}`,
+    subject: kind === 'new' ? `🔴 ${a.title}` : `🔴 Still open · ${age} · ${a.title}`,
+    summary: client ? `${f.where === '—' ? '' : `${f.where} — `}${f.problem}` : undefined,
+    facts: [['Since', stampAgo(since, now)]],
+    action: (a.action || a.detail || '').trim() || undefined,
+  };
 }
 
-export function routeRun(input: RunInput, s: AlertSettings, now: Date): RoutedRun {
+export function routeRun(input: RunInput, s: AlertSettings, now: Date, links: AlertLinks = DEFAULT_LINKS): RoutedRun {
   const out: RoutedRun = { instantEach: [], instantGroup: null, telegramGroup: null, notifications: [], quiet: [] };
   const groupInstant: Array<{ a: RunAlert; since: string; kind: 'new' | 'reminder' }> = [];
   const groupQuietNew: Array<{ a: RunAlert; since: string }> = [];
+  const one = (kind: 'new' | 'reminder', a: RunAlert, since: string) =>
+    ({ key: a.key, ...renderMessage({ ...alertMessage(kind, a, since, now), buttons: alertButtons(a, links) }, links) });
 
   for (const { alert: a, firstSeenAt } of input.opened) {
     out.notifications.push({
@@ -251,12 +328,12 @@ export function routeRun(input: RunInput, s: AlertSettings, now: Date): RoutedRu
       data: { severity: a.severity, ...problemFacts(a, firstSeenAt, now), first_seen_at: firstSeenAt },
     });
     if (!isInstant(a.key, s)) { groupQuietNew.push({ a, since: firstSeenAt }); continue; }
-    if (groupOf(a.key) === 'system') out.instantEach.push({ key: a.key, subject: `ZapTill alert: ${a.title}`, text: alertMessage('new', a, firstSeenAt, now) });
+    if (groupOf(a.key) === 'system') out.instantEach.push(one('new', a, firstSeenAt));
     else groupInstant.push({ a, since: firstSeenAt, kind: 'new' });
   }
   for (const { alert: a, firstSeenAt } of input.reminders) {
     if (!isInstant(a.key, s)) { out.quiet.push(a.key); continue; }
-    if (groupOf(a.key) === 'system') out.instantEach.push({ key: a.key, subject: `ZapTill still happening: ${a.title}`, text: alertMessage('reminder', a, firstSeenAt, now) });
+    if (groupOf(a.key) === 'system') out.instantEach.push(one('reminder', a, firstSeenAt));
     else groupInstant.push({ a, since: firstSeenAt, kind: 'reminder' });
   }
 
@@ -264,61 +341,140 @@ export function routeRun(input: RunInput, s: AlertSettings, now: Date): RoutedRu
     const rows = groupInstant.map((g) => problemFacts(g.a, g.since, now));
     const n = rows.length;
     const fresh = groupInstant.filter((g) => g.kind === 'new').length;
-    const title = `ZapTill: ${n} client problem${n === 1 ? '' : 's'}${fresh && fresh < n ? ` (${fresh} new)` : ''}`;
-    out.instantGroup = {
-      subject: title, keys: groupInstant.map((g) => g.a.key),
-      text: [`🔴 ${title}`, ...rows.map(textRow)].join('\n'),
-      html: page(title, htmlTable(PROBLEM_HEADERS, rows.map(factsRow))),
+    const title = `${n} client problem${n === 1 ? '' : 's'}${fresh && fresh < n ? ` (${fresh} new)` : ''}`;
+    const msg: AdminMessage = {
+      tone: 'critical', headline: title, subject: `🔴 ZapTill: ${title}`,
+      sections: [section('At clients', rows.map(problemLine))],
+      buttons: [{ text: 'Open alerts', url: alertsUrl(links) }],
     };
+    out.instantGroup = { keys: groupInstant.map((g) => g.a.key), ...renderMessage(msg, links, htmlTable(PROBLEM_HEADERS, rows.map(factsRow))) };
   }
 
-  const lines: string[] = [];
+  const sections: MessageSection[] = [];
+  let headline = '', tone: Tone = 'critical', summary: string | undefined;
   if (groupQuietNew.length) {
     const n = groupQuietNew.length;
-    lines.push(`🔴 ZapTill — ${n} new problem${n === 1 ? '' : 's'} at clients (admin portal › Alerts; not emailed):`,
-      ...groupQuietNew.map((g) => textRow(problemFacts(g.a, g.since, now))));
+    headline = `${n} new problem${n === 1 ? '' : 's'} at clients`;
+    sections.push(section('New', groupQuietNew.map((g) => problemLine(problemFacts(g.a, g.since, now)))));
   }
   if (input.resolved.length) {
-    if (lines.length) lines.push('');
-    lines.push(`✅ Resolved (${input.resolved.length}):`,
-      ...input.resolved.map((r) => `• ${r.title} (lasted ${sinceLabel(r.first_seen_at, now)})`));
+    const after = (r: { first_seen_at: string }) => durationLabel(minutesSince(r.first_seen_at, now));
+    if (!headline && input.resolved.length === 1) {
+      // "✅ Resolved after 2 h 10 min" — and what it was.
+      tone = 'resolved';
+      headline = `Resolved after ${after(input.resolved[0])}`;
+      summary = input.resolved[0].title;
+    } else {
+      if (!headline) { tone = 'resolved'; headline = `${input.resolved.length} problems resolved`; }
+      sections.push(section(`Resolved (${input.resolved.length})`, input.resolved.map((r) => `${r.title} — after ${after(r)}`), 'resolved'));
+    }
   }
-  if (lines.length) {
+  if (headline) {
     const parts = [groupQuietNew.length ? `${groupQuietNew.length} new` : '', input.resolved.length ? `${input.resolved.length} resolved` : ''].filter(Boolean);
-    out.telegramGroup = { subject: `ZapTill alerts: ${parts.join(', ')}`, text: lines.join('\n') };
+    out.telegramGroup = renderMessage({
+      tone, headline, summary, sections, subject: `ZapTill alerts: ${parts.join(', ')}`,
+      note: groupQuietNew.length ? 'On the admin portal bell and in the morning digest — not emailed.' : undefined,
+      buttons: [{ text: 'Open alerts', url: alertsUrl(links) }],
+    }, links);
   }
   return out;
 }
 
-// ── The morning digest email: ONE table of what is still open ───────────────────────────────────────────────────────
+// ── The morning digest: Telegram (one line per problem) and ONE email (a table) ─────────────────────────────────────
 
 export interface DigestRow extends ProblemFacts { severity: 'critical' | 'warning' }
+export interface DigestCountersLite { serverErrors: number; failedSignIns: number; writeGuard: number; since: string }
 
-/** null when nothing is open — no email that says nothing. */
-export function digestEmail(rows: DigestRow[], counters: { serverErrors: number; failedSignIns: number; writeGuard: number; since: string } | null, now: Date):
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const countersNote = (c: DigestCountersLite | null) => (c
+  ? `Since ${eatStamp(c.since)}: ${plural(c.serverErrors, 'server error')} · ${plural(c.failedSignIns, 'failed sign-in')} · `
+    + `${plural(c.writeGuard, 'POS write')} the cloud would block`
+  : undefined);
+
+/**
+ * A592: the morning digest on Telegram — grouped by severity, one line per problem, at most MAX_LINES lines of problems
+ * (critical first), then "+N more in the admin portal" and a button. The billing lines (lib/cloudPlan.ts
+ * billingDigestLines) follow. Sent every morning, "All clients look healthy" included.
+ */
+export function digestTelegram(rows: DigestRow[], counters: DigestCountersLite | null, now: Date, billing: string[] = [], links: AlertLinks = DEFAULT_LINKS): RenderedMessage {
+  const crit = rows.filter((r) => r.severity === 'critical');
+  const warn = rows.filter((r) => r.severity !== 'critical');
+  const sections: MessageSection[] = [];
+  let room = MAX_LINES;
+  const take = (list: DigestRow[], title: string, tone: Tone) => {
+    if (!list.length) return;
+    const shown = list.slice(0, Math.max(0, room));
+    room -= shown.length;
+    sections.push({ title: `${title} (${list.length})`, tone, lines: shown.map(problemLine), more: list.length - shown.length || undefined });
+  };
+  take(crit, 'Still open', 'critical');
+  take(warn, 'To look at', 'warning');
+  // The billing lines: "💳 Cloud locked (2):" headings, "• …" lines, and single "💳 …" sentences.
+  let current: MessageSection | null = null;
+  for (const raw of billing) {
+    const l = String(raw ?? '').trim();
+    if (!l) continue;
+    if (l.startsWith('• ')) {
+      if (!current) { current = { title: 'Billing', tone: 'billing', lines: [] }; sections.push(current); }
+      current.lines.push(l.slice(2));
+      continue;
+    }
+    const t = l.replace(/^💳\s*/u, '');
+    if (t.endsWith(':')) { current = { title: t.slice(0, -1), tone: 'billing', lines: [] }; sections.push(current); }
+    else { current = null; sections.push({ title: 'Billing', tone: 'billing', lines: [t] }); }
+  }
+  for (const sct of sections) if (sct.tone === 'billing' && sct.lines.length > 8) { sct.more = sct.lines.length - 8; sct.lines = sct.lines.slice(0, 8); }
+  const day = eatDay(now);
+  const summary = rows.length
+    ? [crit.length ? `${crit.length} still open` : '', warn.length ? `${warn.length} to look at` : ''].filter(Boolean).join(' · ')
+    : 'All clients look healthy.';
+  return renderMessage({
+    tone: 'digest', headline: `Daily check · ${day}`, subject: `🗓 Daily check · ${day}`, summary, sections,
+    note: countersNote(counters), buttons: [{ text: rows.length > MAX_LINES ? `Open all ${rows.length} in admin` : 'Open alerts', url: alertsUrl(links) }],
+  }, links);
+}
+
+/** The digest EMAIL — null when nothing is open (no email that says nothing). ONE table per severity, a pill on each. */
+export function digestEmail(rows: DigestRow[], counters: DigestCountersLite | null, now: Date, links: AlertLinks = DEFAULT_LINKS):
   { subject: string; html: string; text: string } | null {
   const crit = rows.filter((r) => r.severity === 'critical');
   const warn = rows.filter((r) => r.severity !== 'critical');
   if (!crit.length && !warn.length) return null;
-  const day = nairobiDate(now.toISOString());
-  const subject = `ZapTill daily check — ${day}: ${crit.length} open problem${crit.length === 1 ? '' : 's'}${warn.length ? `, ${warn.length} to look at` : ''}`;
+  const day = eatDay(now);
+  const subject = `🗓 Daily check · ${day} — ${plural(crit.length, 'open problem')}${warn.length ? `, ${warn.length} to look at` : ''}`;
   let body = '';
-  if (crit.length) body += `<h3 style="font-size:15px;margin:14px 0 6px;color:#b42318">Still open (${crit.length})</h3>${htmlTable(PROBLEM_HEADERS, crit.map(factsRow))}`;
-  if (warn.length) body += `<h3 style="font-size:15px;margin:18px 0 6px;color:#b54708">To look at (${warn.length})</h3>${htmlTable(PROBLEM_HEADERS, warn.map(factsRow))}`;
-  if (counters) {
-    body += `<p style="font-size:13px;color:#444;margin-top:14px">Since ${esc(nairobiStamp(counters.since))}: ${counters.serverErrors} server errors · `
-      + `${counters.failedSignIns} failed sign-ins · ${counters.writeGuard} POS writes the cloud would block.</p>`;
-  }
-  const text = [`☀️ ${subject}`, ...(crit.length ? ['', `🔴 Still open (${crit.length}):`, ...crit.map(textRow)] : []),
-    ...(warn.length ? ['', `🟡 To look at (${warn.length}):`, ...warn.map(textRow)] : [])].join('\n');
-  return { subject, html: page(`ZapTill daily check — ${day}`, body), text };
+  if (crit.length) body += emailHeading('Still open', { text: `Critical · ${crit.length}`, kind: 'critical' }) + htmlTable(PROBLEM_HEADERS, crit.map(factsRow));
+  if (warn.length) body += emailHeading('To look at', { text: `Warning · ${warn.length}`, kind: 'warning' }) + htmlTable(PROBLEM_HEADERS, warn.map(factsRow));
+  const msg: AdminMessage = {
+    tone: 'digest', headline: `Daily check · ${day}`, subject,
+    summary: [crit.length ? `${crit.length} still open` : '', warn.length ? `${warn.length} to look at` : ''].filter(Boolean).join(' · '),
+    // The text part lists every row (no "+N more" in an email).
+    sections: [{ title: 'Still open', tone: 'critical' as Tone, lines: crit.map(problemLine) }, { title: 'To look at', tone: 'warning' as Tone, lines: warn.map(problemLine) }]
+      .filter((x) => x.lines.length),
+    note: countersNote(counters), buttons: [{ text: 'Open alerts', url: alertsUrl(links) }],
+  };
+  const r = renderMessage(msg, links, body);
+  return { subject: r.subject, html: r.html, text: r.emailText };
 }
 
 // ── The daily billing summary email: ONE table ──────────────────────────────────────────────────────────────────────
 
 export interface BillingRow { client: string; invoice: string | null; amount: number | null; currency: string; due: string | null; status: string }
 
-export const BILLING_HEADERS = ['Client', 'Invoice', 'Amount', 'Due', 'Status'];
+/** A592: the owner's four columns, as for the client problems. */
+export const BILLING_HEADERS = PROBLEM_HEADERS;
+
+/** A592: what to do about a billing notice, by its status words (at most 60 characters). */
+export function billingTodo(status: string): string {
+  const s = String(status ?? '');
+  if (/NOT delivered/i.test(s)) return 'Send the invoice by hand — its email failed';
+  if (/^Invoice issued/i.test(s)) return 'Follow up the payment before the due date';
+  if (/^Unpaid/i.test(s)) return 'Call the client — the cloud locks soon';
+  if (/^Locked/i.test(s)) return 'Record the payment to unlock their cloud';
+  if (/trial ended/i.test(s)) return 'Offer a plan, or record a payment';
+  if (/Not interested/i.test(s)) return 'Nothing to do — the invoices are written off';
+  return 'Open the client\'s Plan & billing';
+}
 
 const money = (n: number | null, c: string) => (n === null || !Number.isFinite(n) ? '—' : `${c} ${Math.round(n).toLocaleString('en-US')}`);
 
@@ -335,18 +491,29 @@ export function billingStatus(milestone: string, f: { unpaidDays?: number | null
 }
 
 /** null when there is nothing to say. `notices` = since the last summary; `standing` = still unpaid / locked today. */
-export function billingSummaryEmail(notices: BillingRow[], standing: BillingRow[], now: Date): { subject: string; html: string; text: string } | null {
+export function billingSummaryEmail(notices: BillingRow[], standing: BillingRow[], now: Date, links: AlertLinks = DEFAULT_LINKS): { subject: string; html: string; text: string } | null {
   // A client with a notice today is one row (its notice); the others still unpaid or locked follow.
   const told = new Set(notices.map((r) => r.client));
   const rest = standing.filter((r) => !told.has(r.client));
   const rows = [...notices, ...rest];
   if (!rows.length) return null;
-  const day = nairobiDate(now.toISOString());
-  const subject = `ZapTill billing summary — ${day}: ${notices.length} notice${notices.length === 1 ? '' : 's'}${rest.length ? `, ${rest.length} still unpaid or locked` : ''}`;
-  const cells = (r: BillingRow) => [r.client, r.invoice ?? '—', money(r.amount, r.currency), r.due ? nairobiDate(r.due) : '—', r.status];
-  const html = page(`ZapTill billing summary — ${day}`, htmlTable(BILLING_HEADERS, rows.map(cells))
-    + '<p style="font-size:13px;color:#444;margin-top:12px">Record a payment: admin portal › client › Plan &amp; billing › Record payment. '
-    + 'The clients\' own invoice emails went out as usual.</p>');
-  const text = [`💳 ${subject}`, ...rows.map((r) => `• ${cells(r).join(' — ')}`)].join('\n');
-  return { subject, html, text };
+  const day = eatDay(now);
+  const subject = `💳 Billing summary · ${day} — ${plural(notices.length, 'notice')}${rest.length ? `, ${rest.length} still unpaid or locked` : ''}`;
+  // Client | Problem ("Unpaid 5 days — locks in 2 days · INV-0042 · KES 3,000") | Since (the due date) | What to do.
+  const problem = (r: BillingRow) => [r.status, r.invoice, r.amount === null ? null : money(r.amount, r.currency)].filter(Boolean).join(' · ');
+  const since = (r: BillingRow) => {
+    const m = minutesSince(r.due, now);
+    if (!Number.isFinite(m)) return '—';
+    return m < 0 ? `due ${eatDay(r.due)}` : `${shortDuration(m)} (due ${eatDay(r.due)})`;
+  };
+  const cells = (r: BillingRow) => [r.client, problem(r), since(r), billingTodo(r.status)];
+  const msg: AdminMessage = {
+    tone: 'billing', headline: `Billing summary · ${day}`, subject,
+    summary: `${plural(notices.length, 'notice')} since the last summary${rest.length ? ` · ${rest.length} still unpaid or locked` : ''}`,
+    action: 'Record a payment: admin portal › the client › Plan & billing › Record payment. The clients\' own invoice emails went out as usual.',
+    sections: [{ title: 'Clients', tone: 'billing', lines: rows.map((r) => ({ lead: r.client, rest: `— ${problem(r)} · ${since(r)}`, sub: billingTodo(r.status) })) }],
+    buttons: [{ text: 'Open alerts', url: alertsUrl(links) }],
+  };
+  const r = renderMessage(msg, links, htmlTable(BILLING_HEADERS, rows.map(cells)));
+  return { subject: r.subject, html: r.html, text: r.emailText };
 }

@@ -651,6 +651,16 @@ jobs:
       - name: Supabase egress and calls (A591)
         run: node --no-warnings tests/supabase-egress-a591.test.mjs
 
+      # A592 — "How can we make these messages look better": every admin Telegram message and email laid out the same —
+      # Telegram HTML (a client "A&B <Shop>" escaped, valid), URL buttons ("Close it remotely", "Open run", "Guide"), a 400
+      # "can't parse entities" sent again as plain text; "8 days 22 h" not "214 h", "Mon 26 Oct 13:07 EAT"; client problems
+      # as the owner's rows (Client | Problem | Since | What to do — every rule has a todo of 60 characters or less); the
+      # digest 15 rows then "+N more"; the emails Gmail-safe with a text part; notify-admin.sh and report.sh run against a
+      # local Telegram/Resend stand-in (escaping with sed, the JSON reply_markup, the 400 retry, the backup step in plain
+      # words). Needs the server build. In the loop too; named here so a failure says what broke.
+      - name: Admin alert messages (A592)
+        run: node --no-warnings tests/alert-format-a592.test.mjs
+
       - name: Run offline suites
         run: |
           set -e

@@ -115,7 +115,7 @@ ALTER ROLE zaptill_backup SET default_transaction_read_only = on;
 <p>GitHub › Actions › <strong>Nightly backup</strong> › Run workflow. When it is green: the R2 bucket has <code>daily/&lt;today&gt;/…dump.gpg</code>, and the admin portal › System shows the backup. Then restore it once (section 4) so you know it works.</p>
 <h2 id="when-something-goes-wrong">When something goes wrong</h2>
 <ul>
-<li><strong>A backup fails:</strong> the admin is emailed at once (&quot;ZapTill nightly backup FAILED&quot;, and Telegram), it shows red on the admin portal › System and on the bell, and the GitHub run is red. The older backups are untouched — the clean-up only runs after a good backup.</li>
+<li><strong>A backup fails:</strong> the admin is emailed at once (&quot;🔴 Backup failed · Mon 26 Oct&quot; — the step that failed in plain words, the last good backup, and buttons to the GitHub run and this guide; Telegram too), it shows red on the admin portal › System and on the bell, and the GitHub run is red. The older backups are untouched — the clean-up only runs after a good backup.</li>
 <li><strong>No backup for 8 days</strong> (it failed, or did not run at all — weekly, A591): the server&#39;s watchdog emails &quot;Backup: no good backup for …&quot;. GitHub switches a schedule off after 60 days without a commit to the repository; the Actions tab then says so — enable the workflow again there.</li>
 <li><strong>The passphrase is lost:</strong> the existing backups cannot be opened by anyone, including you. Set a new <code>BACKUP_PASSPHRASE</code>; the next backups use it.</li>
 </ul>
@@ -153,7 +153,7 @@ bash scripts/restore-backup.sh --object daily/2026-10-26/zaptill-2026-10-26T0003
 <ul>
 <li>it asks <code>https://api.zaptill.co.ke/health</code> (must answer 200) and <code>https://app.zaptill.co.ke</code> (the web dashboard);</li>
 <li>only <strong>two failed checks in a row, a minute apart</strong>, count as down — a slow start or one lost request is not an outage;</li>
-<li>when it goes down: one email and Telegram (&quot;ZapTill PRODUCTION DOWN&quot;), and a GitHub issue &quot;Production down&quot; is opened. While the issue is open you are not told again;</li>
+<li>when it goes down: one email and Telegram (&quot;🔴 Production down — Mon 26 Oct 13:07 EAT&quot;, what is not answering, a button to the run), and a GitHub issue &quot;Production down&quot; is opened. While the issue is open you are not told again;</li>
 <li>when it is back: the issue is closed, one email and Telegram (&quot;production is back — down about 25 min&quot;), and the outage is recorded on the admin portal › System.</li>
 </ul>
 <p>It uses the same secrets as the backup&#39;s alert (<code>ADMIN_ALERT_EMAIL</code>, <code>RESEND_API_KEY</code> or <code>SENDGRID_API_KEY</code>, <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>, <code>OPS_INGEST_TOKEN</code>) and, optionally, the variables <code>PROD_URL</code> and <code>APP_URL</code>.</p>

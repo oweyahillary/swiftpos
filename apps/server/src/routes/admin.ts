@@ -78,7 +78,8 @@ import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusin
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
-import { alertChannels, notifyAdmin } from '../lib/alertNotify';   // A383: the watchdog's channels
+import { alertChannels, notifyRendered, alertLinks } from '../lib/alertNotify';   // A383: the watchdog's channels
+import { renderMessage, alertsUrl, eatStamp } from '../lib/alertFormat';            // A592: the test alert laid out
 import { digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';   // A392
 import { syncRefusalHint } from '../lib/watchdogRules';   // A392
 import { readAlertSettings, saveAlertSettings } from '../lib/adminAlerts';   // A589
@@ -2485,7 +2486,13 @@ router.post('/notifications/read', requireAdmin, async (req: any, res) => {
 // A495: requireAdmin first — requireSuperAdmin alone read a role nothing had verified (no token, no role, refused only by luck).
 router.post('/watchdog/test', requireAdmin, requireSuperAdmin, async (req: any, res) => {
   const who = req.adminEmail ?? 'an admin';
-  const sent = await notifyAdmin('ZapTill test alert',
-    `🧪 ZapTill test alert\nSent by ${who} from the admin portal. If you can read this, the watchdog can reach you.`);
+  // A592: laid out like every alert — so the test shows what a real one looks like (HTML, the buttons, the email).
+  const links = alertLinks();
+  const sent = await notifyRendered(renderMessage({
+    tone: 'test', headline: 'Test alert', subject: '🧪 ZapTill test alert',
+    summary: 'If you can read this, the watchdog can reach you.',
+    facts: [['Sent by', String(who)], ['When', eatStamp(new Date())]],
+    buttons: [{ text: 'Open alerts', url: alertsUrl(links) }],
+  }, links));
   res.json({ channels: alertChannels(), sent });
 });

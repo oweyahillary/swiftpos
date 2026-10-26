@@ -45,7 +45,45 @@ export interface Alert {
   client?: string;
   where?: string;
   problem?: string;
+  /** A592: what to do, in one line (the message's "👉" line) — else the detail is shown. */
+  action?: string;
+  /** A592: the short name of the problem — the "Problem" column ("Day not closed"). From RULE_WORDS. */
+  label: string;
+  /** A592: what to do, plain and short (at most 60 characters) — the "What to do" column. From RULE_WORDS. */
+  todo: string;
+  /** A592: when the problem itself began (a day not closed: when the day ended) — the "Since" column; else first seen. */
+  sinceAt?: string;
 }
+
+/**
+ * A592 (owner, 2026-10-26: a small table, one row per client problem — Client | Problem | Since | What to do): every
+ * rule's short problem name and its recommendation, at most 60 characters. tests/alert-format-a592.test.mjs checks that
+ * every rule has one and that none is longer.
+ */
+export type RuleId =
+  | 'till_signed_out' | 'till_not_syncing' | 'till_quiet' | 'till_parked' | 'mpesa_unanswered' | 'payment_exception'
+  | 'server_errors' | 'server_overload' | 'database_unreachable' | 'backup_missed' | 'day_not_closed' | 'old_tills'
+  | 'etims_failed' | 'signin_failures' | 'signin_failures_ip' | 'sync_refused' | 'sync_rows_refused';
+export const RULE_WORDS: Record<RuleId, { label: string; todo: string }> = {
+  till_signed_out: { label: "POS can't sign in", todo: 'Rejoin the POS from its Tech page (enrolment code)' },
+  till_not_syncing: { label: 'POS not syncing', todo: 'Check its internet, then Sync now on its Tech page' },
+  till_quiet: { label: 'POS quiet, no sales sent', todo: 'Check it is trading; update it to the latest version' },
+  till_parked: { label: 'Records set aside', todo: "See why on the POS's Tech page › Sync" },
+  mpesa_unanswered: { label: 'M-Pesa not answered', todo: 'Check the M-Pesa callback address and keys' },
+  payment_exception: { label: 'M-Pesa to review', todo: 'Match or refund it in M-Pesa payments to review' },
+  server_errors: { label: 'Server errors', todo: 'Check the Render logs for the failing route' },
+  server_overload: { label: 'Server overloaded', todo: 'Check Render CPU and memory; restart if stuck' },
+  database_unreachable: { label: 'Database unreachable', todo: 'Check the Supabase project and its status page' },
+  backup_missed: { label: 'Backup missed', todo: 'Open the last backup run on GitHub; run it again' },
+  day_not_closed: { label: 'Day not closed', todo: 'Close it at the POS or by Remote Day Close' },
+  old_tills: { label: 'POS needs updating', todo: 'Update the POS to the latest version' },
+  etims_failed: { label: 'eTIMS failed', todo: 'Check the eTIMS settings (retried every 15 min)' },
+  signin_failures: { label: 'Failed sign-ins', todo: 'Ask the owner; reset the password if it was not them' },
+  signin_failures_ip: { label: 'Failed sign-ins', todo: 'Someone may be guessing passwords — watch it' },
+  sync_refused: { label: 'Sync refused', todo: 'Read why on the Alerts page and fix the setting' },
+  sync_rows_refused: { label: 'Records refused', todo: 'Fix the records named — they are not sent again' },
+};
+const ruleWords = (id: RuleId) => RULE_WORDS[id];
 
 export const WATCHDOG = {
   SIGNIN_WINDOW_MIN: 15,
@@ -77,12 +115,45 @@ const MIN = 60_000;
 const ms = (t: string | null | undefined) => (t ? Date.parse(t) : NaN);
 const ago = (now: Date, t: string | null | undefined) => (now.getTime() - ms(t)) / MIN;
 
-/** "2 h 15 min" / "45 min". */
+/**
+ * "45 min" / "2 h 15 min" / "8 days 22 h". A592 (owner, 2026-10-26, on "STILL HAPPENING — for 214 h 40 min": "How can we
+ * make these messages look better"): from 48 hours on, in days and hours — never "214 h".
+ */
 export function durationLabel(minutes: number): string {
   const m = Math.max(0, Math.round(minutes));
   if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60), r = m % 60;
-  return r ? `${h} h ${r} min` : `${h} h`;
+  if (h < 48) return r ? `${h} h ${r} min` : `${h} h`;
+  const d = Math.floor(h / 24), rh = h % 24;
+  return rh ? `${d} days ${rh} h` : `${d} days`;
+}
+
+/**
+ * A592: the short form, for a headline or "ended … ago": "just now" / "45 min" / "3 h 15 min" / "1 day" / "16 days".
+ * scripts/ops/alert-format.sh human_minutes says the same for the GitHub workflows.
+ */
+export function shortDuration(minutes: number): string {
+  if (!Number.isFinite(minutes)) return 'just now';
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  if (h < 24) return r ? `${h} h ${r} min` : `${h} h`;
+  if (h < 48) return '1 day';
+  return `${Math.floor(h / 24)} days`;
+}
+
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** A592: a business date 'YYYY-MM-DD' as people say it — "Fri 9 Oct" (with the year only when it is not `now`'s year). */
+export function dayLabel(ymd: string | null | undefined, now?: Date): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd ?? ''));
+  if (!m) return String(ymd ?? '—');
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (!Number.isFinite(d.getTime())) return String(ymd);
+  const thisYear = now ? new Date(now.getTime() + 3 * 3600_000).getUTCFullYear() : d.getUTCFullYear();
+  return `${WEEKDAY[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH[d.getUTCMonth()]}${d.getUTCFullYear() !== thisYear ? ` ${d.getUTCFullYear()}` : ''}`;
 }
 
 /** -1 / 0 / 1 for "a.b.c" versions; anything not a version sorts first (treated as old). */
@@ -129,6 +200,7 @@ export function tillsSignedOut(devices: DeviceRow[], now: Date, names: Record<st
     if (!live(d) || !d.session_lost_at) continue;
     out.push({
       key: `till_signed_out:${d.id}`,
+      ...ruleWords('till_signed_out'),
       severity: 'critical',
       businessId: d.business_id,
       title: `${names[d.business_id] ?? 'A client'}: ${tillName(d)} is signed out and could not sign back in`,
@@ -209,6 +281,7 @@ export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<s
         ? ` ${q.pending} sale${q.pending === 1 ? '' : 's'} and records waiting on the POS when it last reported.` : '';
       out.push({
         key, severity: 'critical', businessId: d.business_id,
+        ...ruleWords('till_not_syncing'),
         title: `${who} is on but not syncing`,
         client: names[d.business_id] ?? 'A client', where: tillName(d),
         problem: `On but not syncing — last sync ${d.last_sync_at ? `${durationLabel(stale)} ago` : 'never'}`,
@@ -225,6 +298,7 @@ export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<s
     if (ev.openShift && (ev.otherSales ?? 0) > 0) {
       out.push({
         key, severity: 'critical', businessId: d.business_id,
+        ...ruleWords('till_not_syncing'),
         title: `${who} is on but not syncing`,
         client: names[d.business_id] ?? 'A client', where: tillName(d),
         problem: `On but not syncing — the branch is selling, nothing from this POS since ${d.last_sync_at ? `${durationLabel(stale)} ago` : 'ever'}`,
@@ -235,6 +309,7 @@ export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<s
     }
     out.push({
       key, severity: 'warning', businessId: d.business_id,
+      ...ruleWords('till_quiet'),
       title: d.last_sync_at ? `${who} quiet for ${durationLabel(stale)} — no sales sent` : `${who} is on but has never sent anything`,
       client: names[d.business_id] ?? 'A client', where: tillName(d),
       problem: d.last_sync_at ? `Quiet for ${durationLabel(stale)} — no sales sent (most likely no trade)` : 'On but has never sent anything',
@@ -254,6 +329,7 @@ export function tillsWithParkedRecords(devices: DeviceRow[], now: Date, names: R
     if (!live(d) || !q || !(q.failed > 0) || (now.getTime() - q.at) / MIN > 60) continue;
     out.push({
       key: `till_parked:${d.id}`, severity: 'warning', businessId: d.business_id,
+      ...ruleWords('till_parked'),
       title: `${names[d.business_id] ?? 'A client'}: ${tillName(d)} has ${q.failed} record${q.failed === 1 ? '' : 's'} the cloud refused`,
       client: names[d.business_id] ?? 'A client', where: tillName(d), problem: `${q.failed} record${q.failed === 1 ? '' : 's'} refused by the cloud, set aside`,
       detail: 'They are set aside on the POS and will not be sent again by themselves — see the POS\'s Tech page (Sync) for why.',
@@ -280,6 +356,7 @@ export function mpesaUnanswered(rows: MpesaRow[], now: Date, names: Record<strin
     const critical = list.length >= WATCHDOG.MPESA_CRITICAL_COUNT;
     return {
       key: `mpesa_unanswered:${biz}`,
+      ...ruleWords('mpesa_unanswered'),
       severity: critical ? 'critical' : 'warning',
       businessId: biz,
       title: `${names[biz] ?? 'A client'}: ${list.length} M-Pesa payment${list.length === 1 ? '' : 's'} with no answer from Safaricom`,
@@ -298,6 +375,7 @@ export function paymentExceptions(rows: ExceptionRow[], names: Record<string, st
   for (const r of rows) if (!r.resolved_at) per.set(r.business_id, [...(per.get(r.business_id) ?? []), r]);
   return [...per].map(([biz, list]) => ({
     key: `payment_exception:${biz}`,
+    ...ruleWords('payment_exception'),
     severity: 'critical' as Severity,
     businessId: biz,
     title: `${names[biz] ?? 'A client'}: ${list.length} M-Pesa payment${list.length === 1 ? '' : 's'} to review`,
@@ -314,6 +392,7 @@ export function errorBurst(errorTimes: number[], now: Date, paths: string[] = []
   const top = [...new Set(paths)].slice(0, 3).join(', ');
   return [{
     key: 'server_errors',
+    ...ruleWords('server_errors'),
     severity: 'critical',
     businessId: null,
     title: `Cloud: ${n} server errors in ${WATCHDOG.ERROR_WINDOW_MIN} min`,
@@ -349,6 +428,7 @@ export function serverOverload(s: LoadSample): Alert[] {
   if (!why.length) return [];
   return [{
     key: 'server_overload', severity: 'critical', businessId: null,
+    ...ruleWords('server_overload'),
     title: 'Cloud overloaded: ' + why[0].split(' — ')[0],
     client: 'ZapTill cloud', where: '—', problem: `Overloaded: ${why.join('; ')}`,
     detail: `${why.join('; ')}. Points of sale keep selling offline and catch up when it settles. Check Render (CPU, memory, `
@@ -361,6 +441,7 @@ export function databaseUnreachable(ping: { ok: boolean; error?: string | null; 
   if (ping.ok) return [];
   return [{
     key: 'database_unreachable', severity: 'critical', businessId: null,
+    ...ruleWords('database_unreachable'),
     title: 'Cloud: the database is unreachable',
     client: 'ZapTill cloud', where: '—', problem: 'Database unreachable',
     detail: `The server's check of the database failed${ping.error ? ` (${String(ping.error).slice(0, 200)})` : ''}. Points of sale keep `
@@ -379,10 +460,12 @@ export function backupMissed(lastOkAt: string | null, anyRecorded: boolean, now:
   if (age <= WATCHDOG.BACKUP_MAX_AGE_H) return [];
   return [{
     key: 'backup_missed', severity: 'critical', businessId: null,
+    ...ruleWords('backup_missed'),
     title: lastOkAt ? `Backup: no good backup for ${durationLabel(age * 60)}` : 'Backup: no backup has succeeded yet',
     client: 'ZapTill cloud', where: '—', problem: 'Weekly backup missed or failing',
     detail: 'GitHub › Actions › Nightly backup: look at the last run (a failure says why; no run at all — the schedule may be '
       + 'off: enable the workflow, then "Run workflow"). docs/BACKUPS.md.',
+    action: 'Open the last backup run on GitHub (a failure says why). No run at all: the schedule is off — enable the workflow, then Run workflow.',
   }];
 }
 
@@ -399,15 +482,19 @@ export function daysNotClosed(days: OpenDayRow[], now: Date, names: Record<strin
     if (!(over >= WATCHDOG.DAY_GRACE_MIN)) continue;
     out.push({
       key: `day_not_closed:${d.id}`,
+      ...ruleWords('day_not_closed'),
       severity: 'critical',
       businessId: d.business_id,
-      title: `${names[d.business_id] ?? 'A client'}: day ${d.business_date} not closed${d.terminal_code ? ` on ${d.terminal_code}` : ''}`,
+      title: `${names[d.business_id] ?? 'A client'}: day ${dayLabel(d.business_date, now)} not closed${d.terminal_code ? ` on ${d.terminal_code}` : ''}`,
       client: names[d.business_id] ?? 'A client',
       where: [d.branch_name, d.terminal_code].filter(Boolean).join(' / ') || '—',
-      problem: `Day ${d.business_date} not closed (ended ${durationLabel(over)} ago)`,
+      // A592: "Day Fri 9 Oct still open (ended 16 days ago)" — not "Day 2026-10-09 not closed (ended 397 h 50 min ago)".
+      problem: `Day ${dayLabel(d.business_date, now)} still open (ended ${shortDuration(over)} ago)`,
       // A522: a till that is off closes nothing — say where it can be closed without it.
       detail: `The business day ended ${durationLabel(over)} ago. A manager needs to count the cash and close it — `
         + 'from the POS, or from Remote Day Close on the web (a POS switched off for a day can be closed there as abandoned).',
+      action: 'A manager counts the cash and closes the day on the POS — or close it remotely (a POS that stays off closes as abandoned).',
+      sinceAt: d.ends_at,
     });
   }
   return out;
@@ -426,6 +513,7 @@ export function oldTills(devices: DeviceRow[], latest: Record<string, string | n
   }
   return [...per].map(([biz, list]) => ({
     key: `old_tills:${biz}`,
+    ...ruleWords('old_tills'),
     severity: 'warning' as Severity,
     businessId: biz,
     title: `${names[biz] ?? 'A client'}: ${list.length} ${list.length === 1 ? 'POS needs' : 'points of sale need'} updating`,
@@ -442,6 +530,7 @@ export function etimsFailures(rows: EtimsRow[], names: Record<string, string> = 
   for (const r of rows) if (r.status === 'failed') per.set(r.business_id, (per.get(r.business_id) ?? 0) + 1);
   return [...per].map(([biz, n]) => ({
     key: `etims_failed:${biz}`,
+    ...ruleWords('etims_failed'),
     severity: 'warning' as Severity,
     businessId: biz,
     title: `${names[biz] ?? 'A client'}: ${n} eTIMS invoice${n === 1 ? '' : 's'} failed`,
@@ -473,6 +562,7 @@ export function repeatedSignInFailures(rows: SignInFailureRow[], now: Date): Ale
     const ips = [...new Set(list.map((r) => r.ip).filter(Boolean))];
     out.push({
       key: `signin_failures:${key}`,
+      ...ruleWords('signin_failures'),
       severity: 'critical',
       businessId: null,
       title: `${list.length} failed sign-ins for ${list[0].account} on ${WHERE_LABEL[list[list.length - 1].where]}`,
@@ -487,6 +577,7 @@ export function repeatedSignInFailures(rows: SignInFailureRow[], now: Date): Ale
     const accounts = new Set(list.map((r) => r.account).filter(Boolean)).size;
     out.push({
       key: `signin_failures_ip:${ip}`,
+      ...ruleWords('signin_failures_ip'),
       severity: 'critical',
       businessId: null,
       title: `${list.length} failed sign-ins from ${ip}`,
@@ -532,6 +623,7 @@ export function tillSyncRefused(attempts: SyncAttemptRow[][], now: Date, names: 
     if (last && !last.ok && fails.length >= WATCHDOG.SYNC_FAILS && !recent.some((a) => a.ok)) {
       out.push({
         key: `sync_refused:${dev}`,
+        ...ruleWords('sync_refused'),
         severity: 'critical',
         businessId: biz,
         title: `${who} — the cloud refuses its sync`,
@@ -547,6 +639,7 @@ export function tillSyncRefused(attempts: SyncAttemptRow[][], now: Date, names: 
       const r = rows[rows.length - 1];
       out.push({
         key: `sync_rows_refused:${dev}`,
+        ...ruleWords('sync_rows_refused'),
         severity: 'critical',
         businessId: biz,
         title: `${who} — ${n} record${n === 1 ? '' : 's'} refused by the cloud`,
@@ -597,31 +690,7 @@ export function planRun(current: Alert[], open: OpenAlertRow[], now: Date): RunP
   return plan;
 }
 
-/** The text of one message (Telegram and email alike; plain text, one problem). */
-export function alertText(kind: 'new' | 'reminder' | 'resolved', a: { title: string; detail?: string | null }, since?: string | null, now?: Date): string {
-  if (kind === 'resolved') {
-    const dur = since && now ? ` (lasted ${durationLabel(ago(now, since))})` : '';
-    return `✅ RESOLVED — ${a.title}${dur}`;
-  }
-  const head = kind === 'new' ? '🔴 ZapTill ALERT' : '🔴 STILL HAPPENING';
-  const dur = kind === 'reminder' && since && now ? ` — for ${durationLabel(ago(now, since))}` : '';
-  return `${head}${dur}\n${a.title}\n${a.detail ?? ''}`.trim();
-}
+// A592: alertText and digestText (plain text) are gone — every admin message is laid out by lib/alertFormat.ts and worded
+// by lib/adminAlertPolicy.ts (routeRun, digestTelegram, digestEmail).
 
 export interface DigestCounters { writeGuard: number; failedSignIns: number; serverErrors: number; since: string }
-
-/** The morning digest: every open problem (critical first), then the counters since the last digest. */
-export function digestText(open: { severity: Severity; title: string; detail?: string | null; first_seen_at?: string }[],
-  counters: DigestCounters, now: Date): string {
-  const lines: string[] = [`☀️ ZapTill daily check — ${now.toISOString().slice(0, 10)}`];
-  const crit = open.filter((a) => a.severity === 'critical');
-  const warn = open.filter((a) => a.severity === 'warning');
-  if (!crit.length && !warn.length) lines.push('', 'All clients look healthy.');
-  if (crit.length) lines.push('', `🔴 Still open (${crit.length}):`, ...crit.map((a) => `• ${a.title}`));
-  if (warn.length) lines.push('', `🟡 To look at (${warn.length}):`, ...warn.map((a) => `• ${a.title}${a.detail ? ` — ${a.detail}` : ''}`));
-  lines.push('', `Since ${counters.since.slice(0, 16).replace('T', ' ')} UTC:`,
-    `• Server errors: ${counters.serverErrors}`,
-    `• Failed sign-ins: ${counters.failedSignIns}`,
-    `• POS writes the cloud would block (A159): ${counters.writeGuard}`);
-  return lines.join('\n');
-}

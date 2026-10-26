@@ -79,7 +79,7 @@ GitHub › Actions › **Nightly backup** › Run workflow. When it is green: th
 
 ## When something goes wrong
 
-- **A backup fails:** the admin is emailed at once ("ZapTill nightly backup FAILED", and Telegram), it shows red on the admin portal › System and on the bell, and the GitHub run is red. The older backups are untouched — the clean-up only runs after a good backup.
+- **A backup fails:** the admin is emailed at once ("🔴 Backup failed · Mon 26 Oct" — the step that failed in plain words, the last good backup, and buttons to the GitHub run and this guide; Telegram too), it shows red on the admin portal › System and on the bell, and the GitHub run is red. The older backups are untouched — the clean-up only runs after a good backup.
 - **No backup for 8 days** (it failed, or did not run at all — weekly, A591): the server's watchdog emails "Backup: no good backup for …". GitHub switches a schedule off after 60 days without a commit to the repository; the Actions tab then says so — enable the workflow again there.
 - **The passphrase is lost:** the existing backups cannot be opened by anyone, including you. Set a new `BACKUP_PASSPHRASE`; the next backups use it.
 
@@ -124,7 +124,7 @@ A server that is down cannot send its own alert. GitHub checks production from t
 
 - it asks `https://api.zaptill.co.ke/health` (must answer 200) and `https://app.zaptill.co.ke` (the web dashboard);
 - only **two failed checks in a row, a minute apart**, count as down — a slow start or one lost request is not an outage;
-- when it goes down: one email and Telegram ("ZapTill PRODUCTION DOWN"), and a GitHub issue "Production down" is opened. While the issue is open you are not told again;
+- when it goes down: one email and Telegram ("🔴 Production down — Mon 26 Oct 13:07 EAT", what is not answering, a button to the run), and a GitHub issue "Production down" is opened. While the issue is open you are not told again;
 - when it is back: the issue is closed, one email and Telegram ("production is back — down about 25 min"), and the outage is recorded on the admin portal › System.
 
 It uses the same secrets as the backup's alert (`ADMIN_ALERT_EMAIL`, `RESEND_API_KEY` or `SENDGRID_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `OPS_INGEST_TOKEN`) and, optionally, the variables `PROD_URL` and `APP_URL`.

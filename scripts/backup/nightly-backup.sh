@@ -38,9 +38,13 @@ KEEP_MONTHLY="${BACKUP_KEEP_MONTHLY:-12}"
 SCHEMAS="${BACKUP_SCHEMAS:-public auth storage}"
 WORK=$(mktemp -d "${RUNNER_TEMP:-/tmp}/zaptill-backup.XXXXXX")
 WARN=""
+# The traps act in the main shell only: with -E a subshell (a pipe, $( ) or < <( )) inherits the ERR trap, and a
+# grep that found nothing there used to run fail() -> cleanup() and delete $WORK under the running backup.
+MAIN_PID=$BASHPID
 
 cleanup() {
   # The plain dump never outlives the run (the runner is thrown away too; this is for a local run).
+  [ "$BASHPID" = "$MAIN_PID" ] || return 0
   if [ -d "$WORK" ]; then
     find "$WORK" -type f -exec sh -c 'command -v shred >/dev/null 2>&1 && shred -u "$1" 2>/dev/null || rm -f "$1"' _ {} \; 2>/dev/null || true
     rm -rf "$WORK"
@@ -48,9 +52,10 @@ cleanup() {
 }
 fail() {
   local code=$?
+  [ "$BASHPID" = "$MAIN_PID" ] || return "$code"   # a subshell's failure is the main shell's to report
   echo "::error::The backup FAILED while ${STEP} (exit ${code})."
   jq -cn --arg step "$STEP" --argjson code "$code" --argjson s "$(( $(date -u +%s) - STARTED ))" \
-    '{status:"fail",error:("failed while " + $step + " (exit " + ($code|tostring) + ")"),seconds:$s}' > "$RESULT" || true
+    '{status:"fail",error:("failed while " + $step + " (exit " + ($code|tostring) + ")"),step:$step,exit:$code,seconds:$s}' > "$RESULT" || true   # A592: step and exit apart, for the alert's words
   cleanup
   exit "$code"
 }
@@ -163,7 +168,8 @@ echo "Uploaded $OBJECT ($ENC_BYTES bytes, sha256 $ENC_SHA)."
 # ── 5. retention: 30 daily, 12 monthly ────────────────────────────────────────────────────────────────────────────────
 prune() {
   local prefix="$1" keep="$2" pattern="$3" f
-  mapfile -t all < <(list_folders "$prefix" | grep -E "$pattern" | sort -r)
+  # No folder yet (the first run has no monthly/) is not an error: grep finding nothing must not fail the pipe.
+  mapfile -t all < <(list_folders "$prefix" | { grep -E "$pattern" || true; } | sort -r)
   if [ "${#all[@]}" -le "$keep" ]; then return 0; fi
   for f in "${all[@]:$keep}"; do echo "Pruning $prefix/$f"; delete_folder "$prefix/$f"; done
 }

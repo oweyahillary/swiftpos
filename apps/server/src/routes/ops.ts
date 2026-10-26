@@ -18,7 +18,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { ingestAuth, IngestSchema, failAlertText } from '../lib/opsEvents';
-import { notifyAdmin } from '../lib/alertNotify';
+import { notifyRendered, alertLinks } from '../lib/alertNotify';   // A592
 import { readAlertSettings, addAdminNotifications } from '../lib/adminAlerts';   // A589
 import { isInstant } from '../lib/adminAlertPolicy';
 
@@ -61,12 +61,13 @@ router.post('/events', ingestLimiter, async (req, res) => {
   console.log(`[ops] ${ev.kind} ${ev.status} from ${ev.source}: ${ev.title}`);
   if (ev.status === 'fail') {
     // Best effort: the row is stored whatever Telegram or the mail say; never awaited by the answer.
-    const { subject, text } = failAlertText(ev);
+    // A592: laid out — "🔴 Backup failed — Mon 26 Oct 13:07 EAT", the step in plain words, buttons (run, guide, System).
+    const msg = failAlertText(ev, new Date(), alertLinks());
     void (async () => {
       const key = ev.kind === 'backup' ? 'backup_failed' : ev.kind;
       const instant = isInstant(key, await readAlertSettings());
-      await addAdminNotifications([{ category: ev.kind === 'backup' ? 'backup' : 'deploy', business_id: null, alert_key: key, title: ev.title, detail: text, data: { kind: ev.kind } }]);
-      await notifyAdmin(subject, text, { email: instant });
+      await addAdminNotifications([{ category: ev.kind === 'backup' ? 'backup' : 'deploy', business_id: null, alert_key: key, title: ev.title, detail: msg.text, data: { kind: ev.kind } }]);
+      await notifyRendered(msg, { email: instant });
     })().catch((err: any) => console.warn('[ops] alert not sent:', err?.message ?? err));
   }
   res.status(201).json({ id: (data as { id: string }).id });

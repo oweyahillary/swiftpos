@@ -756,8 +756,8 @@ function ClientsPage({ req, onSelectClient }) {
 }
 
 // ─── CLIENT DETAIL ────────────────────────────────────────────────────────────
-function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false }) {
-  const [tab, setTab]     = useState("overview");
+function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, initialTab = "overview" }) {
+  const [tab, setTab]     = useState(initialTab);   // A592: an alert's button can open a tab (POS & days)
   const [detail, setDetail] = useState(null);
   const [features, setFeatures] = useState([]);
   const [subs, setSubs]   = useState([]);
@@ -2783,6 +2783,21 @@ function NewClientPage({ req, onCreated }) {
 }
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
+/** A592: the pages and client tabs an alert's button may open (lib/alertFormat.ts alertsUrl / systemUrl / clientUrl). */
+const DEEP_PAGES = ["alerts", "system", "billing", "clients", "tech"];
+const DEEP_TABS = ["overview", "branches", "billing", "features", "tills", "updates", "account", "notes"];
+function readDeepLink() {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const open = q.get("open"), client = q.get("client"), tab = q.get("tab");
+    if (!open && !client) return null;
+    // Off the address bar, so a reload does not open it again.
+    window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    if (client && /^[0-9a-f-]{36}$/i.test(client)) return { client, tab: DEEP_TABS.includes(tab) ? tab : null };
+    return DEEP_PAGES.includes(open) ? { open } : null;
+  } catch { return null; }
+}
+
 export default function AdminPortal() {
   const { req, token, setToken, apiUrl, setApiUrl } = useAdminApi();
   const [admin, setAdmin]     = useState(() => {
@@ -2808,6 +2823,19 @@ export default function AdminPortal() {
       });
     }).catch(() => { /* a 401 already signs out in req */ });
   }, [token]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // A592: an alert's button opens a page directly — ?open=alerts|system|billing, ?client=<id>&tab=tills ("Close it
+  // remotely" → the client's POS & days). Read once (before sign-in too), applied once signed in.
+  const [deepLink, setDeepLink] = useState(readDeepLink);
+  const [clientTab, setClientTab] = useState(null);
+  useEffect(() => {
+    if (!token || !admin || !deepLink) return;
+    setDeepLink(null);
+    if (deepLink.client) {
+      req("GET", `/clients/${deepLink.client}`, undefined)
+        .then(c => { if (c?.id) { setClientTab(deepLink.tab); setSelectedClient(c); setPage("client_detail"); } })
+        .catch(() => { /* not found or no access: stay where we are */ });
+    } else if (deepLink.open) setPage(deepLink.open);
+  }, [token, admin, deepLink]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleLogin(tok, adminData) {
     setToken(tok);
@@ -2824,6 +2852,7 @@ export default function AdminPortal() {
   }
 
   function handleSelectClient(client) {
+    setClientTab(null);
     setSelectedClient(client);
     setPage("client_detail");
   }
@@ -2834,7 +2863,7 @@ export default function AdminPortal() {
 
   const pageEl = (() => {
     if (page === "client_detail" && selectedClient)
-      return <ClientDetailPage client={selectedClient} req={req} apiUrl={apiUrl} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} />;
+      return <ClientDetailPage key={`${selectedClient.id}:${clientTab ?? ""}`} client={selectedClient} req={req} apiUrl={apiUrl} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} initialTab={clientTab ?? "overview"} />;
     if (page === "new_client") return <NewClientPage req={req} onCreated={(biz) => { setSelectedClient(biz); setPage("client_detail"); }} />;
     if (page === "clients")   return <ClientsPage req={req} onSelectClient={handleSelectClient} />;
     if (page === "billing")   return <BillingPage req={req} />;
