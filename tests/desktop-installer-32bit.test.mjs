@@ -34,7 +34,7 @@ ok('its name is fixed and carries no arch: ZapTill-<version>.exe', () => {
 });
 ok('the release run builds both and checks for that exact file', () => {
   const wf = read('.github/workflows/release.yml');
-  assert.match(wf, /npx electron-builder --win nsis --x64 --ia32 --config electron-builder\.config\.js --publish always/);
+  assert.match(wf, /npx electron-builder --win nsis --x64 --ia32 --config electron-builder\.config\.js --publish never/);   // A590: uploads after the gate
   assert.match(wf, /for f in latest\.yml "ZapTill-\$V\.exe"; do/);   // 0.6.36 (A386): ZapTill-<version>.exe
   assert.ok(!/SwiftPOS-\$V-x64\.exe/.test(wf), 'the release check still expects the 64-bit-only name');
 });

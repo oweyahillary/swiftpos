@@ -2,39 +2,41 @@
 import Base from '../layouts/Base.astro';
 import credits from '../data/photo-credits.json';
 import brandData from '../assets/demo-brands/brands.json';
-import { WA_MESSAGES } from '../lib/site';
+import { WA_MESSAGES, SITE, telLink, waLink } from '../lib/site';
 
-// Photo credits (every product photo, even where the licence asks for none) and the FICTIONAL demo businesses the site's
-// screens, receipts, labels and videos are made with (2026-10-23).
+// Photo credits (every product photo, even where the licence asks for none) and the demo businesses the site's screens,
+// receipts, labels and videos are made with (2026-10-23). Owner, 2026-10-25: reachable by URL only (no header or footer
+// link), still in the sitemap; the only page that carries the short note about the demo businesses.
 const photos = credits.photos;
 const brands = brandData.brands;
 ---
 <Base
   title="Photo credits and demo businesses | ZapTill"
-  description="Where the product photos on the ZapTill website come from, and the fictional demo businesses used in its screens, receipts and videos."
+  description="Where the product photos and fonts on the ZapTill website come from, and the demo businesses used in its screens, receipts and videos."
   waMessage={WA_MESSAGES.general}
 >
   <section class="page-head cr-head">
     <div class="wrap">
       <h1>Photo credits and demo businesses</h1>
       <p class="lede">
-        The screens, receipts, labels and videos on this site are the real ZapTill, running on made-up businesses with
-        made-up numbers. The product photos come from Unsplash, under its free licence.
+        Where the product photos and fonts on this site come from, and the demo businesses used in its screens,
+        receipts, labels and videos.
       </p>
     </div>
   </section>
 
   <section class="band" aria-labelledby="demo-h">
     <div class="wrap">
-      <h2 id="demo-h">The demo businesses are fictional</h2>
+      <h2 id="demo-h">The demo businesses</h2>
       <p class="cr-note">
-        These businesses do not exist. We made up their names, logos, colours, branches and prices to show ZapTill the
-        way a client would see it, with its own branding. Any likeness to a real business is not intended.
+        The businesses shown in our demos are made up for illustration. If you believe something on this site concerns
+        you or your business, contact us on <a href={waLink(WA_MESSAGES.general)} rel="noopener">WhatsApp</a> or{' '}
+        <a href={telLink}>{SITE.phoneDisplay}</a> and we will review it and remove it if needed.
       </p>
       <ul class="cr-brands">
         {brands.map((b) => (
           <li>
-            <img src={`/demo-brands/${b.id}.png`} width="680" height="200" alt={`The ${b.name} logo (a fictional demo business)`} loading="lazy" decoding="async" />
+            <img src={`/demo-brands/${b.id}.png`} width="680" height="200" alt={`The ${b.name} logo`} loading="lazy" decoding="async" />
             <p><b>{b.name}</b>: a {b.trade === 'petrol' ? 'petrol station' : b.trade === 'cafe' ? 'café' : b.trade}, {b.branches.join(', ')}. {b.tagline}.</p>
             <p class="cr-pal" aria-label="Its colours">
               {Object.values(b.palette).map((c) => <span style={`background:${c}`} title={c}></span>)}

@@ -111,6 +111,13 @@ Wire this into CI later so releases are not hand-built from a working folder
 (that is A1). A minimal GitHub Actions job: checkout, `npm ci` in `apps/desktop`,
 `electron-builder --win --publish always` with the signing + token secrets.
 
+**A590 (2026-10-26) — how the release workflow does it now:** never `--publish always`. `.github/workflows/release.yml`
+builds the 32-bit SQLite driver (`node scripts/native-driver.mjs ensure ia32`), builds the installer with
+`--publish never`, runs the native gate (`node scripts/native-gate.mjs dir release/win-unpacked x64`,
+`... dir release/win-ia32-unpacked ia32`, `... installer release/ZapTill-<v>.exe`: each arch's own ZapTill.exe must load
+better-sqlite3 and open `:memory:`), and only then uploads `ZapTill-<v>.exe`, its `.blockmap` and `latest.yml` (last)
+with `gh release upload --clobber`. The 32-bit app of every combined installer up to 1.0.20 had no SQLite driver.
+
 ## 6. Prove it end to end
 
 1. Build and install **v0.5.29** on a Windows test machine from the published

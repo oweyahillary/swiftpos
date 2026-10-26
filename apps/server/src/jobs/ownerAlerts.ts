@@ -19,6 +19,9 @@
  * One business failing (a read, a provider refusing a message) never stops the others; a failed send is not stamped,
  * so it is tried again on the next run.
  */
+import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
+import { writeGen, memoEnabled } from '../lib/writeActivity';   // A591
+import { traffic } from '../lib/trafficStats';   // A591
 import cron from 'node-cron';
 // A478: formatInTimeZone CONVERTS to EAT; date-fns-tz's format(…, { timeZone }) only labels the machine's local time — on
 // Render (UTC) the 21:00 / 09:00 / Monday 08:00 / 1st-07:00 sends ran three hours late. A Nairobi-time PC hid it.
@@ -55,9 +58,9 @@ type Biz = { id: string; name: string; owner_id: string; currency: string | null
 
 export function startOwnerAlertsJob(): void {
   const schedule = process.env.OWNER_ALERTS_CRON ?? '*/15 * * * *';
-  cron.schedule(schedule, async () => {
+  cron.schedule(schedule, meterJob('ownerAlerts', async () => {
     try { await runOwnerAlertsTick(new Date()); } catch (err: any) { console.error('[ownerAlerts] Job failed:', err?.message); }
-  }, { timezone: 'UTC' });
+  }, { quietWrites: true }), { timezone: 'UTC' });   // A591: its writes are its own stamps (business_settings) and emails
   console.log(`[ownerAlerts] Scheduled: ${schedule} (branch tills, alerts, weekly summary)`);
 }
 
@@ -165,18 +168,42 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
   const owner = async () => (ownerTo ??= await ownerAndExtras(biz, schedule));
   const branches = await branchNames(biz.id);
   let sent = 0;
+  // A591: the big-void and variance checks read 48 h of voids, refunds and confirmed drawers every 15 minutes. While
+  // nothing was written for the business (lib/writeActivity.ts) since a read that left nothing to tell, the same read
+  // finds the same nothing: skipped. Read again at least every 6 h. The not-syncing check (time decides it) always runs.
+  const gen = writeGen(biz.id);
+  const q = ownerQuiet.get(biz.id);
+  const unchanged = memoEnabled() && !seeding && !!q && q.gen === gen;
+  const skipVoids = unchanged && q!.voidsAt > 0 && now.getTime() - q!.voidsAt < OWNER_QUIET_MAX_MS;
+  const skipVariance = unchanged && q!.varianceAt > 0 && now.getTime() - q!.varianceAt < OWNER_QUIET_MAX_MS;
+  let voidsAt = skipVoids ? q!.voidsAt : 0;
+  let devicesSeen: OwnerQuiet['devices'] = null;
+  let varianceAt = skipVariance ? q!.varianceAt : 0;
 
   if (s.alert_not_syncing) {
-    const devices = await loadDevices(biz.id);
-    const { data: open, error } = await supabase.from('shifts').select('branch_id')
-      .eq('business_id', biz.id).eq('status', 'open').limit(500);
-    if (error) throw new Error(error.message);
-    const trading = new Set(((open ?? []) as any[]).map((r) => r.branch_id).filter(Boolean) as string[]);
+    // A591: the tills' rows and the open drawers change only by a write (a till's sync or heartbeat comes through this
+    // server); the decision is the clock's. While nothing was written since they were read (at most 6 h), the same rows
+    // are decided again at this run's time — no read. A till left on sends its heartbeat every 15 minutes, so a trading
+    // business is read every run, as before; a closed shop overnight is not.
+    const seen = unchanged && q!.devices && now.getTime() - q!.devices.at < OWNER_QUIET_MAX_MS ? q!.devices : null;
+    let devices: Awaited<ReturnType<typeof loadDevices>>;
+    let openBranches: string[];
+    if (seen) { devices = seen.rows; openBranches = seen.open; traffic.count('owner_alerts.devices_from_memory'); }
+    else {
+      devices = await loadDevices(biz.id);
+      const { data: open, error } = await supabase.from('shifts').select('branch_id')
+        .eq('business_id', biz.id).eq('status', 'open').limit(500);
+      if (error) throw new Error(error.message);
+      openBranches = ((open ?? []) as any[]).map((r) => r.branch_id).filter(Boolean) as string[];
+    }
+    const trading = new Set(openBranches);
     let managers: Awaited<ReturnType<typeof branchManagerEmails>> | null = null;
     const next: Record<string, string> = {};
     // A581: the cloud plan lapsed past its grace — the cloud refuses the tills' sync on purpose; the owner hears it from the
     // plan's reminders, never as "till not syncing".
+    // (not remembered: a grace period runs out by the clock, with no write)
     const planLapsed = (await standingFor(biz.id).catch(() => null))?.syncRefused === true;
+    devicesSeen = seen ?? { rows: devices, open: openBranches, at: now.getTime() };
     for (const d of devices) {
       // A477: the till's sign-in used from another computer — to the owner, once per incident.
       const sec = decideSecurityAlert(d, state.sent, now);
@@ -223,7 +250,8 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
     state.not_syncing = next;
   }
 
-  if (s.alert_big_void) {
+  if (s.alert_big_void && skipVoids) traffic.count('owner_alerts.voids_skipped');
+  if (s.alert_big_void && !skipVoids) {
     const [v, r] = await Promise.all([
       supabase.from('orders').select('id, order_number, total, void_reason, cashier_id, voided_by, authorized_by, branch_id, voided_at, created_at')
         .eq('business_id', biz.id).eq('status', 'voided').gte('voided_at', since).gte('total', s.big_void_amount)
@@ -258,10 +286,12 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
         } else delivered = true;   // nobody to tell: do not pile them up
       }
       if (delivered) for (const x of fresh) state.sent[`${x.kind}:${x.id}`] = nowIso;
-    }
+      if (delivered) voidsAt = now.getTime();
+    } else voidsAt = now.getTime();
   }
 
-  if (s.alert_variance) {
+  if (s.alert_variance && skipVariance) traffic.count('owner_alerts.variance_skipped');
+  if (s.alert_variance && !skipVariance) {
     const { data, error } = await supabase.from('shifts')
       .select('id, branch_id, cashier_id, device_id, terminal_code, expected_methods, confirmed_methods, cash_variance, confirm_reasons, confirmed_at, confirmed_by')
       .eq('business_id', biz.id).gte('confirmed_at', since).order('confirmed_at', { ascending: true }).limit(500);
@@ -284,14 +314,23 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
         } else delivered = true;
       }
       if (delivered) for (const x of fresh) state.sent[`shift:${x.id}`] = nowIso;
-    }
+      if (delivered) varianceAt = now.getTime();
+    } else varianceAt = now.getTime();
   }
 
   state.sent = pruneSent(state.sent, now);
   state.seeded = true;
   if (JSON.stringify(state) !== before) await writeSetting(biz.id, ALERT_STATE_KEY, state);
+  ownerQuiet.set(biz.id, { gen, voidsAt, varianceAt, devices: devicesSeen });
   return sent;
 }
+
+/** A591: per business, the write generation and when the void and variance checks last read and left nothing to tell. */
+interface OwnerQuiet { gen: string; voidsAt: number; varianceAt: number; devices: { rows: any[]; open: string[]; at: number } | null }
+const ownerQuiet = new Map<string, OwnerQuiet>();
+export const OWNER_QUIET_MAX_MS = 6 * 3_600_000;
+/** Test seam. */
+export function _resetOwnerQuiet(): void { ownerQuiet.clear(); }
 
 // ── 3. the weekly summary ────────────────────────────────────────────────────
 

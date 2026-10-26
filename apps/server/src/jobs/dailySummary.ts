@@ -1,3 +1,4 @@
+import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
 import cron from 'node-cron';
 import { receivesBranchReports } from './ownerAlertsData';   // A490
 import { supabase } from '../lib/supabase';
@@ -44,13 +45,13 @@ export function startDailySummaryJob(): void {
   // are caught). Unset it, or set a frequent schedule.
   const schedule = process.env.DAILY_SUMMARY_CRON ?? '*/15 * * * *';
 
-  cron.schedule(schedule, async () => {
+  cron.schedule(schedule, meterJob('dailySummary', async () => {
     try {
       await runDailySummary();
     } catch (err: any) {
       console.error('[dailySummary] Job failed:', err.message);
     }
-  }, { timezone: 'UTC' });
+  }), { timezone: 'UTC' });
 
   console.log(`[dailySummary] Scheduled: ${schedule} (per-business send_time honoured)`);
 }
@@ -85,6 +86,9 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
       // A54: the report goes out only if this business enabled it, only at/after
       // its own send_time, and only once per EAT day.
       const schedule = await readReportSchedule(biz.id);
+      // A591: a business with the report off is decided without its last-sent stamp (decideDailySend refuses a schedule
+      // that is off first) — one Supabase call per business every 15 minutes instead of two.
+      if (!schedule?.enabled) continue;
       const lastSent = await readLastSent(biz.id);
       if (!decideDailySend(schedule, nowEatDate, nowEatHHMM, lastSent)) continue;
 

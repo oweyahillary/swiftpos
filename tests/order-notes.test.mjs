@@ -73,7 +73,8 @@ ok('the owner\'s list is readable by the settings page', () => {
 });
 ok('the kitchen display and the till\'s web-sales download read the notes', () => {
   assert.match(read('apps/server/src/routes/kitchen.ts'), /order_number, order_type, notes,/);
-  const shifts = read('apps/server/src/routes/shifts.ts');
+  // A591: the web-sales read's columns moved to lib/shiftOrdersMemo.ts (FULL_COLS — the same list)
+  const shifts = read('apps/server/src/lib/shiftOrdersMemo.ts');
   assert.match(shifts, /refund_reason, delivery_person, notes,/);
   assert.match(shifts, /course, fire_status, notes \),/);
 });

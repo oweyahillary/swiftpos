@@ -522,6 +522,27 @@ export async function billingDigestLines(now: number = Date.now()): Promise<stri
   } catch { return []; }
 }
 
+/**
+ * A589: the same clients as billingDigestLines — locked and unpaid — as rows of the daily billing summary's table
+ * (lib/adminAlertPolicy.ts billingSummaryEmail): client | invoice | amount | due | status. A failed read: none.
+ */
+export async function billingStandingRows(now: number = Date.now()): Promise<Array<{ client: string; invoice: string | null; amount: number | null; currency: string; due: string | null; status: string }>> {
+  try {
+    const facts = await readCloudFacts(await cloudBusinessIds());
+    const rows: Array<{ client: string; invoice: string | null; amount: number | null; currency: string; due: string | null; status: string }> = [];
+    for (const [, f] of facts) {
+      if (f.suspended) continue;
+      const s = cloudStanding(f, now);
+      if (s.state === 'not_interested' || s.state === 'off') continue;
+      const base = { client: f.name ?? 'a client', invoice: null, amount: f.plan?.amount != null ? Number(f.plan.amount) : null, currency: f.plan?.currency ?? 'KES', due: s.dueAt };
+      const d = (n: number | null | undefined) => `${n ?? 0} day${n === 1 ? '' : 's'}`;
+      if (s.syncRefused) rows.push({ ...base, status: s.state === 'ended' ? 'Trial ended' : `${s.trial ? 'Trial ended, l' : 'L'}ocked ${d(s.lockedDays)}` });
+      else if (s.state === 'unpaid') rows.push({ ...base, status: `Unpaid ${d(s.unpaidDays)} — locks in ${d(s.lockInDays)}` });
+    }
+    return rows;
+  } catch { return []; }
+}
+
 /** The next INV-YYYY-NNNN (the same series as the admin's invoices). */
 export async function nextInvoiceNumber(): Promise<string> {
   const year = new Date().getFullYear();

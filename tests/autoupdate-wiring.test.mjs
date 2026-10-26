@@ -64,7 +64,7 @@ ok('an update error is swallowed (till keeps trading)',
 const wf = fs.existsSync(path.join(ROOT, '.github/workflows/release.yml'))
   ? r('.github/workflows/release.yml') : '';
 ok('a tag-triggered release workflow exists (closes A1)',
-   /tags:/.test(wf) && /--publish always/.test(wf));
+   /tags:/.test(wf) && /--publish never/.test(wf) && /gh release upload "\$TAG"/.test(wf));   // A590: built, gated, then uploaded
 ok('release workflow builds the PROD flavour',
    /SWIFTPOS_ENV: prod/.test(wf));
 

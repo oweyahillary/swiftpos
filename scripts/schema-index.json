@@ -22,6 +22,25 @@
     "pinned": "\"boolean\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "admin_notifications": {
+    "id": "\"uuid\" NOT NULL",
+    "category": "\"text\" NOT NULL",
+    "business_id": "\"uuid\"",
+    "alert_key": "\"text\"",
+    "title": "\"text\" NOT NULL",
+    "detail": "\"text\"",
+    "data": "\"jsonb\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "read_at": "\"timestamp with time zone\"",
+    "read_by": "\"text\"",
+    "digest_sent_at": "\"timestamp with time zone\""
+  },
+  "admin_settings": {
+    "key": "\"text\" NOT NULL",
+    "value": "\"jsonb\" NOT NULL",
+    "updated_by": "\"text\"",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "admin_users": {
     "id": "\"uuid\" NOT NULL",
     "email": "\"text\" NOT NULL",

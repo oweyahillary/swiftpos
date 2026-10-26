@@ -6,6 +6,7 @@ import { requirePermission, can } from '../middleware/rbac';
 import { idsOfBusiness } from '../lib/branchGuard';   // A494
 import { supabase } from '../lib/supabase';
 import { buildChoiceImport, importKey } from '../lib/productImport';
+import { tillChoiceGroups } from '../lib/choiceGroups';   // A591
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -152,6 +153,18 @@ router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
 router.get('/groups', async (req, res) => {
   const { product_id } = req.query;
   if (!product_id) { res.status(400).json({ error: 'product_id required' }); return; }
+
+  // A591: a till's whole-menu pull asks this for every product — answered from one read of the business's groups
+  // (lib/choiceGroups.ts); the dashboard's ask (one product) reads as before.
+  if (req.isTill || req.surface === 'desktop') {
+    try {
+      const m = await tillChoiceGroups('variant', req.businessId, String(product_id));
+      if (m) {
+        if (!m.found) { res.status(404).json({ error: 'Product not found' }); return; }
+        res.json(m.groups); return;
+      }
+    } catch (e) { sendError(res, e as Error); return; }
+  }
 
   // Verify product belongs to this business
   const { data: product } = await supabase

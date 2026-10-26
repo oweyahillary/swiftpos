@@ -2,19 +2,25 @@
  * ops.ts — A525: the GitHub workflows post what they found.
  *
  *   POST /api/ops/events   Authorization: Bearer <OPS_INGEST_TOKEN>
- *     { kind: 'deploy_check' | 'vuln_scan', status: 'ok' | 'warn' | 'fail', commit?, title, details?, source? }  → 201 { id }
+ *     { kind: 'deploy_check' | 'vuln_scan' | 'backup' | 'uptime', status: 'ok' | 'warn' | 'fail', commit?, title, details?, source? }
+ *     → 201 { id }
  *
  * .github/workflows/verify-prod-deploy.yml (did the newest server change reach production?) and security-scan.yml (npm
  * audit on every app). Not a user session: the token is the repository secret, the same value as the server's
  * OPS_INGEST_TOKEN (at least 32 characters; unset = 503 OPS_INGEST_DISABLED). The global API limiter applies, and this
  * route's own: 60 per address per 10 minutes. A 'fail' also tells the ZapTill admin (Telegram and e-mail,
  * lib/alertNotify.ts) — best effort, never the answer. The admin portal's System page reads them (routes/opsAdmin.ts).
+ * A589: a failed nightly backup ('backup', .github/workflows/nightly-backup.yml) is the "backup FAILED" emergency —
+ * emailed at once (category 'backup' in Alerts › Email settings; a failed deploy check or scan: 'deploy'), and on the
+ * admin portal's bell. A category a super admin set to digest-only reaches Telegram and the bell, not the email.
  */
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { ingestAuth, IngestSchema, failAlertText } from '../lib/opsEvents';
 import { notifyAdmin } from '../lib/alertNotify';
+import { readAlertSettings, addAdminNotifications } from '../lib/adminAlerts';   // A589
+import { isInstant } from '../lib/adminAlertPolicy';
 
 const router = safeRouter();
 
@@ -56,7 +62,12 @@ router.post('/events', ingestLimiter, async (req, res) => {
   if (ev.status === 'fail') {
     // Best effort: the row is stored whatever Telegram or the mail say; never awaited by the answer.
     const { subject, text } = failAlertText(ev);
-    void notifyAdmin(subject, text, { email: true }).catch((err: any) => console.warn('[ops] alert not sent:', err?.message ?? err));
+    void (async () => {
+      const key = ev.kind === 'backup' ? 'backup_failed' : ev.kind;
+      const instant = isInstant(key, await readAlertSettings());
+      await addAdminNotifications([{ category: ev.kind === 'backup' ? 'backup' : 'deploy', business_id: null, alert_key: key, title: ev.title, detail: text, data: { kind: ev.kind } }]);
+      await notifyAdmin(subject, text, { email: instant });
+    })().catch((err: any) => console.warn('[ops] alert not sent:', err?.message ?? err));
   }
   res.status(201).json({ id: (data as { id: string }).id });
 });

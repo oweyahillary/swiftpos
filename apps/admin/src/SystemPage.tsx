@@ -11,6 +11,7 @@
  * a row opens to its details (for a scan: each vulnerable package, its fix and its advisories).
  * A528: a fourth card, Traffic since start — requests per route family, and how often the tills' polled answers came from
  * memory (Render suspended production over bandwidth, 2026-10-19).
+ * A591: a fifth, Supabase pulled (24 h) — what the server read from Supabase per route and job, and how many calls.
  * Super admins only (the menu hides it from agents; the cloud refuses them). Cloud: routes/opsAdmin.ts.
  */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -21,7 +22,7 @@ import { ago } from "./AlertsPage";
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 
-type Kind = "boot" | "deploy_check" | "vuln_scan";
+type Kind = "boot" | "deploy_check" | "vuln_scan" | "backup" | "uptime";   // A589: backup, uptime
 type Status = "ok" | "warn" | "fail";
 interface OpsEvent {
   id: string; kind: Kind; status: Status; commit: string | null; title: string;
@@ -35,10 +36,19 @@ interface Traffic {
   branch_staff: { full: number; unchanged_from_memory: number; unchanged_after_read: number };
   auth_cache: { hits: number; misses: number; hit_rate: number | null };
   db_queries_polled: number;
+  supabase?: SupabaseMeter;   // A591
+}
+/** A591: what the server pulled from Supabase in the last 24 h, by route and job (lib/supabaseMeter.ts). */
+interface SupabaseMeter {
+  started_at: string; window_hours: number; covered_hours: number; enabled: boolean;
+  totals: { calls: number; bytes: number; wire: number };
+  per_day: { calls: number; bytes: number; wire: number };
+  rows: Array<{ label: string; calls: number; bytes: number; wire: number; api: number }>;
 }
 interface Summary {
   live: { commit: string | null; started_at: string };
   boot: OpsEvent | null; deploy_check: OpsEvent | null; vuln_scan: OpsEvent | null;
+  backup?: OpsEvent | null; uptime?: OpsEvent | null;   // A589
   traffic?: Traffic;
 }
 interface Fix { name: string; version: string; isSemVerMajor: boolean }
@@ -48,7 +58,8 @@ interface Pkg {
 }
 interface AppScan { error?: string; counts?: Record<string, number>; total?: number; packages?: Pkg[]; truncated?: boolean }
 
-const KIND_LABEL: Record<Kind, string> = { boot: "Server start", deploy_check: "Deploy check", vuln_scan: "Dependency scan" };
+const KIND_LABEL: Record<Kind, string> = { boot: "Server start", deploy_check: "Deploy check", vuln_scan: "Dependency scan", backup: "Nightly backup", uptime: "Outage" };
+const mb = (b: unknown) => (typeof b === "number" && Number.isFinite(b) ? `${(b / 1048576).toFixed(1)} MB` : "—");
 const STATUS_COLOUR: Record<Status, string> = { ok: C.green, warn: "#f59e0b", fail: C.danger };
 const SEV_COLOUR: Record<string, string> = { critical: C.danger, high: "#ff8a5c", moderate: "#f59e0b", low: C.muted, info: C.muted };
 const SEVS = ["critical", "high", "moderate", "low"];
@@ -175,10 +186,63 @@ function TrafficCard({ t }: { t?: Traffic }) {
   );
 }
 
+/** A591 (owner, 2026-10-26: Supabase's Free plan 5 GB egress went over; projects restricted from 20 Nov): what this server
+ *  pulled from Supabase in the last 24 h — by route (ids folded) and by job — so the biggest share is seen without the
+ *  database. Calls are what fill Supabase's log quota; "a day" is the window scaled to 24 h (an estimate after a restart). */
+function SupabaseCard({ m }: { m?: SupabaseMeter }) {
+  const [all, setAll] = useState(false);
+  return (
+    <div style={{ ...S.card, marginBottom: 0 }} data-testid="card-supabase">
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Supabase pulled (24 h)</div>
+      {!m ? <div style={{ fontSize: 12, color: C.muted }}>Not reported by this server yet.</div> : !m.enabled ? (
+        <div style={{ fontSize: 12, color: C.muted }}>Counting is off on this server (SUPABASE_METER=off).</div>
+      ) : (
+        <>
+          <Line k="Covers" v={`the last ${m.covered_hours} h · since ${ago(m.started_at)}`} />
+          <Line k="So far" v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{kb(m.totals.bytes)} · {m.totals.calls.toLocaleString()} calls</span>} />
+          <Line k="A day at this rate" v={<span style={{ fontVariantNumeric: "tabular-nums" }} data-testid="supabase-per-day">{kb(m.per_day.bytes)} ({kb(m.per_day.wire)} sent compressed) · {m.per_day.calls.toLocaleString()} calls</span>} />
+          {(all ? m.rows : m.rows.slice(0, 8)).map((r) => (
+            <Line key={r.label} k={r.label} v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{kb(r.bytes)} · {r.calls.toLocaleString()} calls · {r.api.toLocaleString()} {r.label.startsWith("job:") ? "runs" : "asked"}</span>} />
+          ))}
+          {m.rows.length > 8 && (
+            <button onClick={() => setAll(!all)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, padding: "5px 10px", marginTop: 6 }}>
+              {all ? "Fewer" : `All ${m.rows.length}`}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A589: what the nightly backup recorded — size, how long, where it is, the check it passed. */
+function BackupDetails({ ev }: { ev: OpsEvent }) {
+  const d = ev.details ?? {};
+  return (
+    <div>
+      {d.size_bytes != null && <Line k="Size" v={`${mb(d.size_bytes)} (encrypted)`} />}
+      {d.seconds != null && <Line k="Took" v={`${d.seconds} s`} />}
+      {d.object && <Line k="Stored as" v={<span style={mono}>{String(d.object)}</span>} />}
+      {d.tables != null && <Line k="Checked" v={`${d.tables} tables readable (pg_restore --list)`} />}
+      {d.error && <Line k="Error" v={<span style={{ color: C.danger }}>{String(d.error)}</span>} />}
+      {d.run_url && <Line k="GitHub run" v={<a href={String(d.run_url)} target="_blank" rel="noreferrer" style={{ color: C.accent }}>open</a>} />}
+    </div>
+  );
+}
+
 function Details({ ev }: { ev: OpsEvent }) {
   if (ev.kind === "deploy_check") return <DeployDetails ev={ev} />;
   if (ev.kind === "vuln_scan") return <ScanDetails ev={ev} />;
+  if (ev.kind === "backup") return <BackupDetails ev={ev} />;
   const d = ev.details ?? {};
+  if (ev.kind === "uptime") return (
+    <div>
+      {d.down_since && <Line k="Down since" v={when(d.down_since)} />}
+      {d.minutes != null && <Line k="Lasted" v={`about ${d.minutes} min`} />}
+      {d.targets && <Line k="Checked" v={String(d.targets)} />}
+      {d.run_url && <Line k="GitHub run" v={<a href={String(d.run_url)} target="_blank" rel="noreferrer" style={{ color: C.accent }}>open</a>} />}
+    </div>
+  );
   return (
     <div>
       <Line k="Commit" v={<span style={mono}>{ev.commit ?? "unknown"}</span>} />
@@ -281,14 +345,27 @@ export default function SystemPage({ req }: { req: Req }) {
           )}
         </div>
 
+        <div style={{ ...S.card, marginBottom: 0 }} data-testid="card-backup">
+          {cardTitle("Last nightly backup", summary?.backup?.status)}
+          {!summary?.backup ? <div style={{ fontSize: 12, color: C.muted }}>None recorded yet — GitHub backs the database up every night at 00:00 Nairobi (docs/BACKUPS.md: the secrets, then OPS_INGEST_TOKEN to record it here).</div> : (
+            <>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>{summary.backup.title}</div>
+              <Line k="When" v={`${when(summary.backup.created_at)} · ${ago(summary.backup.created_at)}`} />
+              <BackupDetails ev={summary.backup} />
+            </>
+          )}
+          {summary?.uptime && <Line k="Last outage" v={`${summary.uptime.title} · ${ago(summary.uptime.created_at)}`} />}
+        </div>
+
         <TrafficCard t={summary?.traffic} />
+        <SupabaseCard m={summary?.traffic?.supabase} />
       </div>
 
       <div style={S.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>History</div>
           <div className="sp-tab-bar" style={{ marginBottom: 0 }}>
-            {([["", "All"], ["deploy_check", "Deploy checks"], ["vuln_scan", "Dependency scans"], ["boot", "Server starts"]] as const).map(([k, l]) => (
+            {([["", "All"], ["deploy_check", "Deploy checks"], ["vuln_scan", "Dependency scans"], ["backup", "Backups"], ["uptime", "Outages"], ["boot", "Server starts"]] as const).map(([k, l]) => (
               <button key={k || "all"} data-testid={`ops-filter-${k || "all"}`} onClick={() => { setKind(k); setPage(1); }}
                 style={{ ...S.tab, ...(kind === k ? S.tabActive : {}) }}>{l}</button>
             ))}

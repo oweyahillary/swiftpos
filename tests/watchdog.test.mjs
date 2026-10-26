@@ -147,10 +147,13 @@ await ok('wiring: the job starts with the server; 5xx and sign-in failures are c
   const auth = read('apps/server/src/middleware/auth.ts');
   assert.match(auth, /terminalWriteDenied\(req\.surface[^\n]*return false;\n\s*recordWriteGuard\(\);/);
 });
-await ok('the job: every 10 min, digest 07:45 Nairobi, stores what it said, never overlaps, can be turned off', () => {
+// A589: the digest at the admin settings' time (default 07:00 Nairobi, lib/adminAlertPolicy.ts digestDue), checked every
+// 5 minutes; WATCHDOG_DIGEST_CRON, when set, still fixes it (Nairobi).
+await ok('the job: every 10 min, the digest at the settings\' time (or WATCHDOG_DIGEST_CRON), stores what it said, never overlaps, can be turned off', () => {
   const j = read('apps/server/src/jobs/watchdog.ts');
   assert.match(j, /WATCHDOG_CRON \?\? '\*\/10 \* \* \* \*'/);
-  assert.match(j, /WATCHDOG_DIGEST_CRON \?\? '45 7 \* \* \*'/);
+  assert.match(j, /const fixed = process\.env\.WATCHDOG_DIGEST_CRON;/);
+  assert.match(j, /cron\.schedule\('\*\/5 \* \* \* \*', meterJob\('watchdogDigest', async \(\) => \{[\s\S]*?if \(await claimDigest\(\)\) await sendMorning\(\);/);   // A591: metered
   assert.match(j, /timezone: 'Africa\/Nairobi'/);
   assert.match(j, /from\('watchdog_alerts'\)\.insert/);
   assert.match(j, /if \(running\) return;/);

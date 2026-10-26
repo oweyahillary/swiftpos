@@ -20,7 +20,7 @@ on:
   workflow_dispatch:        # allow a manual run from the Actions tab
 
 permissions:
-  contents: write           # electron-builder needs this to create the GitHub Release
+  contents: write           # gh creates the GitHub Release and uploads its files (A590: after the native gate)
 
 jobs:
   release:
@@ -93,21 +93,63 @@ jobs:
               --notes "Desktop ${TAG#v}. Held for every client until approved in the admin portal (Desktop updates)."
           fi
 
-      # Build the NSIS installer AND publish it (installer + .blockmap + latest.yml)
-      # to the GitHub Release for this tag. GITHUB_TOKEN is provided by Actions.
-      # SWIFTPOS_ENV=prod so the publish target in electron-builder.config.js is active
-      # (dev flavour publishes nowhere).
-      - name: Build + publish to GitHub Releases
+      # A590 (P0): the 32-bit app of every combined installer up to 1.0.20 had no SQLite driver for its arch
+      # (better-sqlite3 13 ships no win32-ia32 prebuild and its binding.gyp built nothing on an x64 host). Compile it
+      # here, in its own step, so a compiler failure is plain in the log (electron-builder's beforePack would also build
+      # it; this makes it explicit). x64 uses the prebuild better-sqlite3 ships — checked, not built.
+      - name: Build the 32-bit SQLite driver; check the 64-bit one (A590)
+        working-directory: apps/desktop
+        shell: bash   # bash -e: either line failing fails the step (pwsh would only see the last exit code)
+        run: |
+          node scripts/native-driver.mjs ensure ia32
+          node scripts/native-driver.mjs ensure x64
+
+      # Build the NSIS installer (installer + .blockmap + latest.yml) WITHOUT uploading anything (A590): nothing reaches
+      # GitHub until the gate below has seen both arches load their SQLite driver. SWIFTPOS_ENV=prod so the publish
+      # config in electron-builder.config.js is active — it is what writes latest.yml (dev flavour publishes nowhere).
+      - name: Build the installer (no upload yet)
         working-directory: apps/desktop
         env:
           SWIFTPOS_ENV: prod
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # A350: upload into the release created above even on a re-run more than 2 hours later (electron-builder
-          # otherwise refuses an existing release published over 2 hours ago).
-          EP_GH_IGNORE_TIME: 'true'
           # CSC_LINK / CSC_KEY_PASSWORD: add as repo secrets to sign (optional today).
-        # 0.6.32: --x64 --ia32 → ONE installer for 64-bit and 32-bit Windows (SwiftPOS-<version>.exe).
-        run: npx electron-builder --win nsis --x64 --ia32 --config electron-builder.config.js --publish always
+        # 0.6.32: --x64 --ia32 → ONE installer for 64-bit and 32-bit Windows (ZapTill-<version>.exe).
+        run: npx electron-builder --win nsis --x64 --ia32 --config electron-builder.config.js --publish never
+
+      # A590 HARD GATE: each arch's own packaged ZapTill.exe (ELECTRON_RUN_AS_NODE=1 — the 32-bit exe runs on this 64-bit
+      # runner) must require better-sqlite3 from its app.asar and open ':memory:' — the unpacked apps AND the payloads
+      # inside the installer that is about to be uploaded. Any failure stops the job here: nothing is published.
+      - name: Gate - the SQLite driver loads on 64-bit and 32-bit (A590)
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          node scripts/native-gate.mjs dir release/win-unpacked x64
+          node scripts/native-gate.mjs dir release/win-ia32-unpacked ia32
+          node scripts/native-gate.mjs installer "release/ZapTill-$V.exe"
+
+      # Publish ONLY after the gate: the exact files electron-builder used to upload, under the same names — the
+      # installer, its .blockmap, then latest.yml LAST (the cloud's update feed, lib/desktopReleases.ts, treats a release
+      # as complete once latest.yml + the .exe are there, so latest.yml never lands before the installer it names).
+      # --clobber replaces them on a re-run. A manual run (no tag) publishes to v<version>, as electron-builder did.
+      - name: Publish to GitHub Releases (after the gate)
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then TAG="$GITHUB_REF_NAME"; else TAG="v$V"; fi
+          for f in "release/ZapTill-$V.exe" "release/ZapTill-$V.exe.blockmap" release/latest.yml; do
+            [ -f "$f" ] || { echo "::error::$f was not built"; exit 1; }
+          done
+          grep -qxF "path: ZapTill-$V.exe" release/latest.yml || { echo "::error::release/latest.yml does not name ZapTill-$V.exe"; exit 1; }
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --title "$V" \
+              --notes "Desktop $V. Held for every client until approved in the admin portal (Desktop updates)."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "release/ZapTill-$V.exe" "release/ZapTill-$V.exe.blockmap"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release/latest.yml
+          echo "Published ZapTill-$V.exe, its .blockmap and latest.yml to $TAG."
 
       # A350: fail loudly unless the tag has exactly ONE release carrying latest.yml and the installer — a split or a
       # missing file is caught here, on the release run, not by an owner opening GitHub or a till that cannot update.

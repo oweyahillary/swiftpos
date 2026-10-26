@@ -625,6 +625,32 @@ jobs:
       - name: Web POS petrol - shop items and nozzles (A588)
         run: node --no-warnings tests/petrol-pos-web-a588.test.mjs
 
+      # A589 — "till not closed should not come as an email for each client; let it be a notification on the admin portal
+      # … or a table … also invoices": seven clients with a day not closed → 0 emails, 7 bell notifications, ONE Telegram,
+      # the morning digest ONE email with ONE table of 7 rows; invoices and billing notices → the bell and ONE daily billing
+      # summary (a table), the client's invoice unchanged; system emergencies (5xx burst, overloaded, database unreachable
+      # once, backup failed / missed) emailed at once; the super admin's settings respected. Migration 174 replayed into
+      # PGlite. Then the nightly backup (00:00 Nairobi): the workflows pinned (no artifact, no secret echoed, the report
+      # always), the backup script run with stand-in PostgreSQL tools and real gpg (encrypt before upload, decrypts, 30
+      # daily + 12 monthly, a failure uploads and prunes nothing), the report and the alert when the server cannot take it,
+      # the restore's production guard, the notifier. Need the server build. Run in the loop too; named here so a failure
+      # says what broke.
+      - name: Admin alerts grouped, nightly backup and the down check (A589) and migration 174
+        run: |
+          node --no-warnings tests/admin-alerts-a589.test.mjs
+          node --no-warnings tests/nightly-backup-a589.test.mjs
+          node --no-warnings scripts/test-migration-174.mjs
+
+      # A591 — Supabase over the Free plan's 5 GB egress (projects restricted from 20 Nov 2026), log ingestion 0.8 of 1 GB:
+      # the meter (every Supabase answer counted by the route or job that asked — the System page's Supabase card, over
+      # the real supabase-js client), the write generation, a drawer's web sales read only when changed and only the sales
+      # the answer holds (the same answer as the old full read), the 5 s change-log read once a minute when nothing is
+      # written, the catalogue version and /init kept while nothing changes, a till's whole-menu pull from one read of the
+      # business's choices, the hourly loss run skipped when nothing changed. Needs the server build. In the loop too;
+      # named here so a failure says what broke.
+      - name: Supabase egress and calls (A591)
+        run: node --no-warnings tests/supabase-egress-a591.test.mjs
+
       - name: Run offline suites
         run: |
           set -e
@@ -1542,6 +1568,14 @@ jobs:
       - name: Desktop petrol POS - shop items, pumps and gauges (A588)
         working-directory: apps/desktop
         run: node --no-warnings test/petrol-pos-a588.test.mjs
+
+      # A590 (P0) — every arch in the installer loads its SQLite driver: the 32-bit app of every combined installer up to
+      # 1.0.20 had none (better-sqlite3 13 ships no win32-ia32 prebuild; its binding.gyp built nothing on the x64 host).
+      # Pins: npmRebuild off, beforePack builds the ia32 driver, afterPack gates each arch; release.yml builds with
+      # --publish never, gates x64 AND ia32 (unpacked + the installer's payloads), then uploads.
+      - name: Desktop native driver for x64 and ia32 (A590)
+        working-directory: apps/desktop
+        run: node --no-warnings test/native-arch-a590.test.mjs
 
       # A541 — tills and branch servers stuck on an old version since the A513 autostart install their update: a start at
       # Windows sign-in installs an approved, newer, downloaded update before serving (the updater task, else the

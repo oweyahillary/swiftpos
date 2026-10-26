@@ -12,7 +12,8 @@ import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
 import { webTillName } from '../lib/terminalLabel';
-import { foreignCash, foreignOrders, ownReversals, type CloudOrder } from '../lib/foreignCash';
+import { foreignCash, foreignOrders, ownReversals } from '../lib/foreignCash';
+import { readShift, shiftOrdersFor } from '../lib/shiftOrdersMemo';   // A591
 import { recorderId } from '../lib/expenseRecorder';
 import { cleanExpenseMethod, nonCashExpenses } from '../lib/expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from '../lib/confirmReasons';
@@ -413,9 +414,9 @@ router.post('/:id/foreign-cash', async (req, res) => {
 // ──────────────────────────────────────────────────────────
 router.post('/:id/foreign-orders', async (req, res) => {
   const { id } = req.params;
-  const { data: shift } = await supabase
-    .from('shifts').select('id, device_id, terminal_code, branch_id, opened_by, cashier_id')
-    .eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  // A591: the drawer and its sales from lib/shiftOrdersMemo.ts — only what changed is read, only the sales the answer can
+  // hold are read in full, nothing at all while nothing was written (the till asks every ~20 s).
+  const shift = await readShift(req.businessId, id);
   if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
   if (notThisBranch(req, res, shift)) return;   // A494
 
@@ -431,23 +432,7 @@ router.post('/:id/foreign-orders', async (req, res) => {
   const ownIds = Array.isArray(req.body?.own_ids)
     ? req.body.own_ids.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20_000) : [];
   try {
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        id, order_number, order_type, status, subtotal, vat_amount, discount_amount, total, tip_amount,
-        ctl_amount, covers, customer_id, customer_name, customer_phone, idempotency_key, cashier_id,
-        shift_id, branch_id, created_at, void_reason, voided_at, voided_by, refunded_at,
-        refunded_amount, refund_reason, delivery_person, notes, delivery_fee, delivery_free,
-        order_items ( id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status, notes ),
-        payments ( id, method, amount, amount_tendered, change_given, reference, status, created_at )
-      `)
-      .eq('shift_id', id)
-      .eq('business_id', req.businessId)
-      .in('status', ['completed', 'voided'])
-      .order('created_at', { ascending: true })
-      .limit(2000);
-    if (error) throw error;
-    const rows = (data ?? []) as unknown as CloudOrder[];
+    const rows = await shiftOrdersFor(req.businessId, id, shift, ownIds);
     // 0.6.26 (A336 follow-up): also which of the till's OWN sales were voided or refunded here (on the web). An older till
     // ignores the field.
     res.json({ orders: foreignOrders(rows, ownIds), own_reversals: ownReversals(rows, ownIds) });

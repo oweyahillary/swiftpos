@@ -18,38 +18,65 @@
 //
 // paper: 80 (48 characters a line, the usual) or 58 (32 a line, a narrow printer); the slip scales its type to fit.
 // lines: show only part of the slip, as [first, last) line numbers (an excerpt keeps the torn edge).
+// print: the slip sits under a small thermal printer and feeds out of its mouth, a line at a time, when it scrolls into
+//   view (owner, 2026-10-25). The paper is in the layout from the start (only transformed), so nothing shifts; with no
+//   script, or with reduced motion, the finished receipt shows. printDelay (ms) staggers two slips side by side.
 import slips from '../../lib/slips.generated.json';
 
 type Kind = 'sale' | 'kitchen' | 'dispatch' | 'close' | 'shop' | 'extras' | 'fuel' | 'cafe';
 interface Line { t: string; s?: string; b?: number; logo?: string; w?: number; h?: number }
 interface Slip { cols: number; lines: Line[] }
-interface Props { kind?: Kind; paper?: 80 | 58; lines?: [number, number]; class?: string; label?: string }
+interface Props { kind?: Kind; paper?: 80 | 58; lines?: [number, number]; class?: string; label?: string; print?: boolean; printDelay?: number }
 
-const { kind = 'close', paper = 80, lines: range, class: extra, label } = Astro.props;
+const { kind = 'close', paper = 80, lines: range, class: extra, label, print = false, printDelay = 0 } = Astro.props;
 const slip = (slips as unknown as Record<string, Slip>)[`${kind}${paper}`];
 const shown = range ? slip.lines.slice(range[0], range[1]) : slip.lines;
 
 const labels: Record<Kind, string> = {
-  sale: 'A customer receipt from Mama Lishe Grill (a fictional demo restaurant), with its logo, Table 4: Nyama Choma, Chips Masala - Spicy, Chicken Burger - Spicy, Kachumbari and two Passion Juice. KES 3,350, paid KES 2,000 by M-Pesa and KES 1,350 cash, with the Buy Goods number printed large.',
+  sale: 'A customer receipt from Mama Lishe Grill, with its logo, Table 4: Nyama Choma, Chips Masala - Spicy, Chicken Burger - Spicy, Kachumbari and two Passion Juice. KES 3,350, paid KES 2,000 by M-Pesa and KES 1,350 cash, with the Buy Goods number printed large.',
   kitchen: 'A kitchen ticket for Table 4 from a demo restaurant: 1 Nyama Choma 1kg, 2 Chips Masala - Spicy, 1 Chicken Burger - Spicy, 1 Kachumbari. 4 items to cook.',
   dispatch: 'A dispatch ticket for Table 4 from a demo restaurant: the four dishes and two Passion Juice. 5 bags.',
   extras: 'A kitchen ticket for Table 6 from a demo restaurant: 1 Chicken Burger with + Extra Cheese and the note No onions, and 1 Chips Masala with the note Well done. 2 items to cook.',
-  shop: 'A customer receipt from Kijani Basket (a fictional demo minimart), with its logo: two Fresh Milk 500ml, White Bread, Maize Flour 2kg, a tray of eggs and Beef 0.640 kg at 650 a kilo. KES 1,246 paid by M-Pesa, with the Buy Goods number printed large.',
-  fuel: 'A customer receipt from Kifaru Fuel & Mart (a fictional demo petrol station), with its logo: Diesel, 11.655 litres at 171.60, KES 2,000, with Engine Oil 1L and Water 1L. KES 2,920 paid by M-Pesa.',
-  cafe: 'A customer receipt from Mvua Café (a fictional demo café), with its logo: two Cafe Latte, a Masala Tea and Samosa (2), KES 970, paid by M-Pesa.',
+  shop: 'A customer receipt from Kijani Basket, with its logo: two Fresh Milk 500ml, White Bread, Maize Flour 2kg, a tray of eggs and Beef 0.640 kg at 650 a kilo. KES 1,246 paid by M-Pesa, with the Buy Goods number printed large.',
+  fuel: 'A customer receipt from Kifaru Fuel & Mart, with its logo: Diesel, 11.655 litres at 171.60, KES 2,000, with Engine Oil 1L and Water 1L. KES 2,920 paid by M-Pesa.',
+  cafe: 'A customer receipt from Mvua Café, with its logo: two Cafe Latte, a Masala Tea and Samosa (2), KES 970, paid by M-Pesa.',
   close: "A shift-close slip (Z-report) from a demo restaurant: Wanjiru's shift, KES 41,250 in sales, cash expected KES 14,550, counted KES 14,200, variance KES 350 short.",
 };
 ---
-<div class:list={['slip-wrap', extra]} style={`--cols:${slip.cols}`}>
-  <div class:list={['slip', `slip--${kind}`]} role="img" aria-label={label ?? labels[kind]}>
-    {shown.map((l) => l.logo ? (
-      <img class="ln-logo" src={`/demo-brands/${l.logo}-receipt.png`} width={l.w} height={l.h} alt="" aria-hidden="true" loading="lazy" decoding="async"
-        style={`width:${((l.w ?? 384) / (slip.cols === 48 ? 576 : 384)) * 100}%`} />
-    ) : (
-      <span class:list={['ln', l.s && `ln--${l.s}`, { 'ln--b': l.b, 'ln--rule': /^-+$/.test(l.t), 'ln--short': /short\)/.test(l.t) }]}>{l.t || ' '}</span>
-    ))}
+<div class:list={['slip-wrap', extra, print && 'slip-wrap--print']} data-print={print ? '' : undefined}
+  style={`--cols:${slip.cols}` + (print ? `;--lines:${shown.length};--print-delay:${printDelay}ms` : '')}>
+  {print && (
+    <div class="printer" aria-hidden="true"><span class="printer__led"></span><span class="printer__mouth"></span></div>
+  )}
+  <div class:list={[print && 'slip-feed']}>
+    <div class:list={['slip', `slip--${kind}`]} role="img" aria-label={label ?? labels[kind]}>
+      {shown.map((l) => l.logo ? (
+        <img class="ln-logo" src={`/demo-brands/${l.logo}-receipt.png`} width={l.w} height={l.h} alt="" aria-hidden="true" loading="lazy" decoding="async"
+          style={`width:${((l.w ?? 384) / (slip.cols === 48 ? 576 : 384)) * 100}%`} />
+      ) : (
+        <span class:list={['ln', l.s && `ln--${l.s}`, { 'ln--b': l.b, 'ln--rule': /^-+$/.test(l.t), 'ln--short': /short\)/.test(l.t) }]}>{l.t || ' '}</span>
+      ))}
+    </div>
   </div>
 </div>
+
+<script>
+  // Feed each printing slip out of its printer once it is a third in view. Without IntersectionObserver, or with
+  // reduced motion, nothing is armed and the receipt simply shows, finished.
+  const slips = document.querySelectorAll<HTMLElement>('[data-print]:not(.is-armed)');
+  if (slips.length && 'IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        io.unobserve(e.target);
+        const el = e.target as HTMLElement;
+        el.querySelector('.slip')?.addEventListener('animationend', () => el.classList.add('is-done'), { once: true });
+        el.classList.add('is-printing');
+      }
+    }, { threshold: 0.35 });
+    slips.forEach((el) => { el.classList.add('is-armed'); io.observe(el); });
+  }
+</script>
 
 <style>
   .slip-wrap {
@@ -87,4 +114,67 @@ const labels: Record<Kind, string> = {
   .ln--large { font-size: 2em; transform: none; margin-bottom: 0; line-height: 1.38; }
   .ln--wide { font-size: 2em; transform: scaleY(0.5); transform-origin: 0 0; margin-bottom: -0.69em; }
   .ln--short { color: var(--short); }
+
+  /* A printing slip keeps room inside its own box for the printer's lip and the paper's shadow, so a full-width slip on a
+     phone never pushes the page sideways. */
+  .slip-wrap--print { box-sizing: border-box; padding-inline: 14px; max-width: calc(var(--cols) * 0.6em + 2.2rem + 28px); }
+
+  /* The printer: a dark thermal printer's front lip, a little wider than its paper, with the mouth the slip comes out of. */
+  .printer {
+    position: relative;
+    z-index: 2;
+    height: 2.15rem;
+    margin: 0 -0.7rem;
+    border-radius: 14px 14px 7px 7px;
+    background: linear-gradient(180deg, #34484b 0%, #1a2a2c 55%, #0f1b1c 100%);
+    box-shadow: 0 10px 18px -12px rgba(6, 26, 29, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+  .printer__mouth {
+    position: absolute;
+    left: 0.55rem; right: 0.55rem; bottom: 0.38rem;
+    height: 5px;
+    border-radius: 3px;
+    background: #030809;
+    box-shadow: inset 0 1px 2px #000, 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+  .printer__led {
+    position: absolute;
+    top: 0.62rem; right: 0.95rem;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #3fbfae;
+    box-shadow: 0 0 6px rgba(63, 191, 174, 0.7);
+  }
+  /* The paper comes out of the mouth: above the feed's top edge it is inside the printer, so it is clipped. The padding
+     (and the matching negative margin) keeps room for the paper's shadow at the sides and the bottom. */
+  .slip-feed {
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+    margin: calc(-0.38rem - 3px) -14px 0;
+    padding: 0 14px 24px;
+  }
+  /* The shade where the paper leaves the mouth, so it reads as curling out from under the lip. */
+  .slip-feed::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    left: 14px; right: 14px; top: 0;
+    height: 12px;
+    background: linear-gradient(rgba(6, 26, 29, 0.3), rgba(6, 26, 29, 0));
+    pointer-events: none;
+  }
+  /* Armed (script on, motion allowed): the paper waits inside the printer, then feeds out in line-sized steps. Only a
+     transform moves, so the page never shifts and the text stays real, crisp and readable. */
+  .slip-wrap--print.is-armed .slip { transform: translateY(-101%); }
+  .slip-wrap--print.is-printing .slip {
+    animation: slip-feed calc(var(--lines) * 55ms + 250ms) steps(var(--lines), jump-start) var(--print-delay, 0ms) both;
+  }
+  .slip-wrap--print.is-printing:not(.is-done) .printer__led { animation: printer-led 0.24s steps(2, jump-none) infinite; }
+  @keyframes slip-feed { from { transform: translateY(-101%); } to { transform: translateY(0); } }
+  @keyframes printer-led { from { opacity: 1; } to { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) {
+    .slip-wrap--print.is-armed .slip,
+    .slip-wrap--print.is-printing .slip { transform: none; animation: none; }
+  }
 </style>

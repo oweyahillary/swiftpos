@@ -103,8 +103,31 @@ export function syncQueueReports(): Record<string, SyncQueueReport> {
   return Object.fromEntries([...queueReports].map(([k, v]) => [k, { ...v }]));
 }
 
+// ── A589: how long the answers take — the overload signal (p95 over the window since the last watchdog run) ─────────
+// A ring of the last MAX_DURATIONS answers (time, ms), in memory. Cheap: one number per request, no database.
+const MAX_DURATIONS = 5000;
+const DURATION_KEEP_MS = 15 * 60_000;
+const durations: Array<{ at: number; ms: number }> = [];
+
+/** A request was answered after `ms` (streams and downloads are left out by the caller). */
+export function recordRequestDuration(ms: number, at = Date.now()): void {
+  if (!Number.isFinite(ms) || ms < 0) return;
+  durations.push({ at, ms });
+  const cut = at - DURATION_KEEP_MS;
+  while (durations.length && (durations[0].at < cut || durations.length > MAX_DURATIONS)) durations.shift();
+}
+
+/** The answers in the last `windowMin` minutes: how many, and the 95th-percentile time (null with none). */
+export function requestLoad(windowMin = 10, now = Date.now()): { requests: number; p95Ms: number | null } {
+  const since = now - windowMin * 60_000;
+  const list = durations.filter((d) => d.at >= since && d.at <= now).map((d) => d.ms).sort((a, b) => a - b);
+  if (!list.length) return { requests: 0, p95Ms: null };
+  return { requests: list.length, p95Ms: list[Math.min(list.length - 1, Math.ceil(list.length * 0.95) - 1)] };
+}
+
 /** For tests: start again. */
 export function resetCounters(): void {
+  durations.length = 0;
   queueReports.clear();
   signInFailures.length = 0; syncAttempts.clear(); errorTimes.length = 0; errorPaths.length = 0;
   serverErrors = 0; failedSignIns = 0; writeGuard = 0;

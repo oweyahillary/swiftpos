@@ -50,11 +50,11 @@ export async function sendTelegram(text: string): Promise<string | null> {
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** The email: the same text, kept as lines. null = sent; else the error. */
-export async function sendAlertEmail(subject: string, text: string): Promise<string | null> {
+/** The email: the same text, kept as lines (or A589: a ready HTML body — a table). null = sent; else the error. */
+export async function sendAlertEmail(subject: string, text: string, htmlBody?: string): Promise<string | null> {
   const to = list(process.env.ADMIN_ALERT_EMAIL);
   if (!to.length) return 'ADMIN_ALERT_EMAIL is not set';
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${esc(text)}</div>`;
+  const html = htmlBody ?? `<div style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${esc(text)}</div>`;
   try {
     const r = await sendEmailChecked({ to: to.join(', '), subject, html });
     return r.ok ? null : (r.error ?? 'not sent');
@@ -63,13 +63,16 @@ export async function sendAlertEmail(subject: string, text: string): Promise<str
   }
 }
 
-/** Both channels (or Telegram only: email false). Resolves which ones worked; logs the ones that did not. */
-export async function notifyAdmin(subject: string, text: string, opts: { email?: boolean } = {}): Promise<{ telegram: boolean; email: boolean }> {
+/**
+ * Both channels (or Telegram only: email false; or A589: email only — telegram false). `html` is the email's body when
+ * given (a table); Telegram always gets the plain text. Resolves which ones worked; logs the ones that did not.
+ */
+export async function notifyAdmin(subject: string, text: string, opts: { email?: boolean; telegram?: boolean; html?: string } = {}): Promise<{ telegram: boolean; email: boolean }> {
   const all = alertChannels();
-  const ch = { telegram: all.telegram, email: all.email && opts.email !== false };
+  const ch = { telegram: all.telegram && opts.telegram !== false, email: all.email && opts.email !== false };
   const [tg, em] = await Promise.all([
     ch.telegram ? sendTelegram(text) : Promise.resolve('off'),
-    ch.email ? sendAlertEmail(subject, text) : Promise.resolve('off'),
+    ch.email ? sendAlertEmail(subject, text, opts.html) : Promise.resolve('off'),
   ]);
   if (ch.telegram && tg) console.warn('[watchdog] Telegram not sent:', tg);
   if (ch.email && em) console.warn('[watchdog] alert email not sent:', em);

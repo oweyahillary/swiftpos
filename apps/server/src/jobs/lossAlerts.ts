@@ -15,6 +15,9 @@
  * at confirm), voided orders and their payments, refunded orders, completed orders with a discount, closed business days,
  * order_price_variances, kitchen_voids, voided parking sessions (car parks only), the users and the partners list.
  */
+import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
+import { writeGen, memoEnabled } from '../lib/writeActivity';   // A591
+import { traffic } from '../lib/trafficStats';   // A591
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
 import { chunkIn, pageAll } from '../lib/pgQuery';
@@ -41,9 +44,10 @@ type Biz = { id: string; name: string; owner_id: string | null; currency: string
 
 export function startLossAlertsJob(): void {
   const schedule = process.env.LOSS_ALERTS_CRON ?? '20 * * * *';
-  cron.schedule(schedule, async () => {
+  // A591: quietWrites — this job writes only its own loss_alerts and notifications, which no remembered answer holds.
+  cron.schedule(schedule, meterJob('lossAlerts', async () => {
     try { await runLossAlertsTick(new Date()); } catch (err: any) { console.error('[lossAlerts] Job failed:', err?.message); }
-  }, { timezone: 'UTC' });
+  }, { quietWrites: true }), { timezone: 'UTC' });
   console.log(`[lossAlerts] Scheduled: ${schedule} (loss-prevention alerts, the watch list)`);
 }
 
@@ -66,10 +70,28 @@ export async function runLossAlertsTick(now: Date = new Date()): Promise<void> {
   try { businesses = await chunkIn<Biz>('businesses', 'id', premium, (q) => q.select('id, name, owner_id, currency, type')); }
   catch (e: any) { console.error('[lossAlerts] businesses:', e?.message); return; }
   for (const biz of businesses) {
-    try { await runLossAlertsForBusiness(biz, now); }
-    catch (e: any) { console.error(`[lossAlerts] failed for ${biz.name} (${biz.id}):`, e?.message); }
+    try {
+      // A591: nothing written for the business since the last hour's run, the same business day, and nothing was left to
+      // tell — the run would read the same 7 days and find the same alerts: skipped (no read). At most 6 h in a row.
+      const gen = writeGen(biz.id);
+      const q = lossQuiet.get(biz.id);
+      if (memoEnabled() && q && q.gen === gen && now.getTime() - q.at < LOSS_QUIET_MAX_MS && businessDateEAT(now, q.cutoff) === q.today) {
+        traffic.count('loss.skipped_unchanged');
+        continue;
+      }
+      const r = await runLossAlertsForBusiness(biz, now);
+      if (r.pending === 0 && r.today) lossQuiet.set(biz.id, { gen, today: r.today, cutoff: r.cutoff ?? 0, at: now.getTime() });
+      else lossQuiet.delete(biz.id);
+    }
+    catch (e: any) { lossQuiet.delete(biz.id); console.error(`[lossAlerts] failed for ${biz.name} (${biz.id}):`, e?.message); }
   }
 }
+
+/** A591: per business, the write generation and business day of the last hourly run that left nothing to tell. */
+const lossQuiet = new Map<string, { gen: string; today: string; cutoff: number; at: number }>();
+export const LOSS_QUIET_MAX_MS = 6 * 3_600_000;
+/** Test seam. */
+export function _resetLossQuiet(): void { lossQuiet.clear(); }
 
 const n = (v: unknown): number => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 
@@ -189,7 +211,7 @@ const missingTable = (msg: string) => /loss_alerts/.test(msg) && /does not exist
  * One business: detect, store (idempotent), notify the new ones once. Returns what was stored and what was told — the
  * tests read both. Nothing at all when the owner switched the alerts off.
  */
-export async function runLossAlertsForBusiness(biz: Biz, now: Date = new Date()): Promise<{ stored: LossAlert[]; notified: LossAlert[] }> {
+export async function runLossAlertsForBusiness(biz: Biz, now: Date = new Date()): Promise<{ stored: LossAlert[]; notified: LossAlert[]; pending?: number; today?: string; cutoff?: number }> {
   // A580: premium only (the Analytics switch) — a business without it gets nothing stored and nobody told.
   if (!(await analyticsEnabled(biz.id))) return { stored: [], notified: [] };
   const settings = await readLossSettingsFor(biz.id);
@@ -225,6 +247,7 @@ export async function runLossAlertsForBusiness(biz: Biz, now: Date = new Date())
   }
   const stored = ((storedRows ?? []) as any[]).map((r) => ({ ...r, business_date: String(r.business_date).slice(0, 10) })) as Array<StoredAlert & { id: string }>;
   const fresh = toNotify(alerts, stored, input.today);
+  const pending = fresh.length;   // A591: something to tell this run — the next run is not skipped
   const told: LossAlert[] = [];
   const ownerIds = [...new Set([biz.owner_id, ...ownerRoleIds].filter(Boolean) as string[])];
   for (const a of fresh) {
@@ -248,7 +271,7 @@ export async function runLossAlertsForBusiness(biz: Biz, now: Date = new Date())
     told.push(a);
   }
   if (alerts.length || told.length) console.log(`[lossAlerts] ${biz.name}: ${alerts.length} alert(s), ${told.length} told`);
-  return { stored: alerts, notified: told };
+  return { stored: alerts, notified: told, pending, today: input.today, cutoff: await getDayCutoff(biz.id) };
 }
 
 /**

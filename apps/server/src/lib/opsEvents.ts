@@ -10,7 +10,8 @@
  *   recordBoot()      one 'boot' row after the server listens; never throws, never blocks the start
  *   ingestAuth()      POST /api/ops/events: the GitHub workflows' token (OPS_INGEST_TOKEN, at least 32 characters),
  *                     compared in constant time; not a user session
- *   IngestSchema      what a workflow may post: deploy_check or vuln_scan (boot comes only from the server itself)
+ *   IngestSchema      what a workflow may post: deploy_check, vuln_scan, A589 backup or uptime (boot comes only from the
+ *                     server itself)
  *
  * The table is public.ops_events (migration 149) — the service role only.
  */
@@ -21,7 +22,8 @@ import { supabase } from './supabase';
 /** When this process started — fixed at import, which is the start of the server. */
 const STARTED_AT = new Date().toISOString();
 
-export const OPS_KINDS = ['boot', 'deploy_check', 'vuln_scan'] as const;
+// A589: 'backup' (.github/workflows/nightly-backup.yml) and 'uptime' (.github/workflows/uptime-check.yml) — migration 174.
+export const OPS_KINDS = ['boot', 'deploy_check', 'vuln_scan', 'backup', 'uptime'] as const;
 export const OPS_STATUSES = ['ok', 'warn', 'fail'] as const;
 export const MIN_TOKEN_LENGTH = 32;
 export const MAX_DETAILS_BYTES = 64 * 1024;
@@ -85,7 +87,7 @@ export function ingestAuth(authorization: string | undefined, env: Record<string
 
 export const IngestSchema = z.object({
   // 'boot' only ever comes from the server itself (recordBoot) — a workflow cannot say the server started.
-  kind: z.enum(['deploy_check', 'vuln_scan']),
+  kind: z.enum(['deploy_check', 'vuln_scan', 'backup', 'uptime']),
   status: z.enum(OPS_STATUSES),
   commit: z.string().trim().max(64).nullable().optional(),
   title: z.string().trim().min(1).max(200),
@@ -95,12 +97,14 @@ export const IngestSchema = z.object({
 });
 export type IngestEvent = z.infer<typeof IngestSchema>;
 
+const KIND_WORDS: Record<string, string> = { deploy_check: 'deploy check', vuln_scan: 'dependency scan', backup: 'nightly backup', uptime: 'uptime check' };
+
 /** The alert text for a failed check — what failed, which commit, where to look, what to do. */
 export function failAlertText(ev: IngestEvent): { subject: string; text: string } {
   const d = (ev.details ?? {}) as Record<string, unknown>;
   const lines = [
     `ZapTill ops: ${ev.title}`,
-    `Kind: ${ev.kind === 'deploy_check' ? 'deploy check' : 'dependency scan'} · from ${ev.source}`,
+    `Kind: ${KIND_WORDS[ev.kind] ?? ev.kind} · from ${ev.source}`,
     ev.commit ? `Commit: ${ev.commit}` : null,
     typeof d.expected === 'string' ? `Expected: ${d.expected}` : null,
     typeof d.running === 'string' || d.running === null ? `Running: ${d.running ?? 'unknown (no commit on /health)'}` : null,
