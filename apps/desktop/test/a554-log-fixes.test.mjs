@@ -274,7 +274,7 @@ try {
 
   // ── 5 ── the categories panel ──────────────────────────────────────────────────────────────────────────────────
   console.log('\n5. The categories panel starts collapsed\n');
-  const M = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'menuFilter.ts')).href);
+  const M = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'menuFilter.ts')).href);
   const stored = M.panelPrefsText({ pinned: true, menu: 'drinks' });
   ok('A554: a pin is never stored (only the menu) and a stored one (an older build) is not honoured',
     !/pinned/.test(stored) && M.parsePanelPrefs(stored).menu === 'drinks' && M.parsePanelPrefs('{"pinned":true,"menu":"tea"}').pinned === false, stored);

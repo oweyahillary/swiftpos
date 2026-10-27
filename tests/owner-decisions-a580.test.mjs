@@ -2,7 +2,7 @@
  * owner-decisions-a580.test.mjs — A580: the owner's decisions of 2026-10-23 on the 1.0.20 batch (web, cloud, shared).
  *
  *   L  Menu hours (A578): "let it remain as built, but add a 'Later' button to the menu list to show closed menus in
- *      greyed-out form" — shared/menuHours.ts `later` / laterPeek (closed menus greyed on the bar with when they open,
+ *      greyed-out form" — packages/core/src/menuHours.ts `later` / laterPeek (closed menus greyed on the bar with when they open,
  *      their items shown greyed only in their own menu, nothing sold — A578's refusal word for word; Show all wins); the web
  *      MenuBar and LaterButton rendered; CashierScreen / MinimartPOS wiring (anyone, session only, only while a menu is closed).
  *   P  Loss alerts (A576): "Yes let them be premium" — every /api/loss-alerts route, the job, the bell and the daily-email
@@ -66,9 +66,9 @@ const h = React.createElement;
 try {
   // ── L. Later ───────────────────────────────────────────────────────────────
   log('\nL. menu hours: "Later" (the closed menus greyed, view only)\n');
-  const H = await import(pathToFileURL(path.join(ROOT, 'shared/menuHours.ts')).href);
-  const MF = await import(pathToFileURL(path.join(ROOT, 'shared/menuFilter.ts')).href);
-  const T = await import(pathToFileURL(path.join(ROOT, 'shared/businessTerms.ts')).href);
+  const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/menuHours.ts')).href);
+  const MF = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/menuFilter.ts')).href);
+  const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/businessTerms.ts')).href);
   const at = (s) => new Date(s);
   // A shop: Groceries always; Alcohol Mon–Sat 17:00–23:00 (licensed hours). Friday 10:00.
   const ALC = { days: [1, 2, 3, 4, 5, 6], windows: [{ start: '17:00', end: '23:00' }] };
@@ -127,9 +127,9 @@ try {
       [{ id: 'c', menu_id: 'bf' }], at('2026-10-23T13:00:00'), { later: true });
     assert.equal(daily.hints.bf, 'from 06:00');
   });
-  await ok('the four copies are the shared file, verbatim', () => {
-    const s = read('shared/menuHours.ts');
-    for (const c of ['apps/desktop/src/shared/menuHours.ts', 'apps/dashboard/src/lib/menuHours.ts', 'apps/server/src/lib/menuHours.ts']) assert.equal(read(c), s, c);
+  await ok('one file: packages/core/src/menuHours.ts, no copies left', () => {
+    assert.ok(read('packages/core/src/menuHours.ts').length > 0);
+    for (const c of ['shared/menuHours.ts', 'apps/desktop/src/shared/menuHours.ts', 'apps/dashboard/src/lib/menuHours.ts', 'apps/server/src/lib/menuHours.ts']) assert.ok(!fs.existsSync(path.join(ROOT, c)), c);
   });
 
   const CP = await bundle('src/pages/pos/cashier/CategoryPanel.tsx', 'panel.mjs');
@@ -179,7 +179,7 @@ try {
   const AC = require(path.join(DIST, 'lib/authCache.js'));
   const J = require(path.join(DIST, 'jobs/lossAlerts.js'));
   const R = require(path.join(DIST, 'lib/lossAlertRules.js'));
-  const { businessDateEAT } = require(path.join(DIST, 'lib/businessDay.js'));
+  const { businessDateEAT } = require('@zaptill/core/businessDay');
   const warn = console.warn, logErr = console.error; console.warn = () => {}; console.error = () => {};
   const B = '11111111-1111-4111-8111-111111111111', B2 = '44444444-1111-4111-8111-111111111111';
   const W = '22222222-2222-4222-8222-222222222222';

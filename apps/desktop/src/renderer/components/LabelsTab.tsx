@@ -25,7 +25,7 @@ import {
   type BarcodeNumbering, type NumberingFormat,
 } from '../../shared/barcode';
 import { cleanLabelSettings, labelSvg, layoutLabel, LABEL_SIZE_PRESETS, type LabelSettings } from '../../shared/labels';
-import { businessTerms } from '../../shared/businessTerms';   // A574: every business type in its own words
+import { businessTerms } from '@zaptill/core/businessTerms';   // A574: every business type in its own words
 import { labelsIntro } from '../lib/labelsWords';
 
 const FORMAT_LABEL: Record<NumberingFormat, string> = {

@@ -6,7 +6,7 @@
  * The fetcher is the page's own client (the back office's `api`, the web POS's `posApi`), so each signs in as itself.
  */
 import { useEffect, useState } from 'react';
-import { detailFromCloud, type OrderDetail } from '../lib/orderDetail';
+import { detailFromCloud, type OrderDetail } from '@zaptill/core/orderDetail';
 import { money } from '../lib/format';
 
 interface Props {

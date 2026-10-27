@@ -21,7 +21,7 @@ import { api } from '../lib/api';
 import { localDateStr } from '../lib/localDate';
 import { useBusiness } from '../context/BusinessContext';
 import Pager, { usePageSize } from '../components/Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { printDocument } from '../lib/printDocument';
 import { shiftDocSpec, shiftListDocSpec } from '../lib/documentSpecs';
 import {

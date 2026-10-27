@@ -39,7 +39,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
-import { analyticsWords, type AnalyticsWords } from '../../lib/analyticsTerms';
+import { analyticsWords, type AnalyticsWords } from '@zaptill/core/analyticsTerms';
 import { useBranch } from '../../context/BranchContext';
 import { useTheme } from '../../context/ThemeContext';
 import { localDateStr } from '../../lib/localDate';

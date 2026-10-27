@@ -75,9 +75,9 @@ import { ownerSetsFeature } from './controls';        // A490
 import { checkApprovableVersion } from '../lib/desktopVersionApproval';   // A493: the admin approves till updates
 import { startTrialIfEligible, readTrial, trialPhase, planLabel, planLabelsFor } from '../lib/cloudTrial';   // A569
 import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds, standingView, type CloudStanding } from '../lib/cloudPlan';   // A581, A584
-import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
+import { cleanSubdomain, subdomainProblem } from '@zaptill/core/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
-import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
+import { cleanPhone } from '@zaptill/core/support';   // 0.6.35 (A384): a tech's number
 import { alertChannels, notifyAdmin } from '../lib/alertNotify';   // A383: the watchdog's channels
 import { digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';   // A392
 import { syncRefusalHint } from '../lib/watchdogRules';   // A392

@@ -62,11 +62,11 @@ await ok('kept: M-Pesa\'s Till number, identifiers, comments, developer logs, SQ
     "db.prepare(`SELECT * FROM tills WHERE device_role = 'till'`);",
   ].join('\n')).length, 0);
   // the whole M-Pesa helper (every copy) is M-Pesa's own words
-  assert.equal(G.scanSource('apps/desktop/src/shared/mpesaReceive.ts', read('shared/mpesaReceive.ts')).length, 0);
+  assert.equal(G.scanSource('packages/core/src/mpesaReceive.ts', read('packages/core/src/mpesaReceive.ts')).length, 0);
 });
 
 console.log('\nP. the frozen catalogue, read through posWording\n');
-const T = await import(pathToFileURL(path.join(ROOT, 'shared/businessTerms.ts')).href);
+const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/businessTerms.ts')).href);
 const PM = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
 const stripMpesa = (s) => s.replace(/buy[\s-]*goods(?:\s*till)?(?:\s*(?:no\.?|numbers?))?/gi, '');
 await ok('posWording: labels, sentences, plurals, the desktop POS beside the web POS, M-Pesa kept', () => {

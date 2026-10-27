@@ -4,7 +4,7 @@ import { useBranch } from '../../context/BranchContext';
 import { useBusiness } from '../../context/BusinessContext';   // A573
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { expandKeys, isBackOffice, OPEN_BEFORE_A490 } from '../../lib/permissions';   // A490
 import PermissionPicker, { usePermissionCatalogue, keyDifferences, type CatalogueKey, type CatalogueGroup } from '../../components/PermissionPicker';
 import { approvalPinOn } from '../../lib/posFeatures';   // A562

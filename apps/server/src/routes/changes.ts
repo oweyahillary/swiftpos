@@ -13,7 +13,7 @@ import { requireAuth } from '../middleware/auth';
 import { can, branchFilter, rowInBranches, type BranchFilter } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
-import { cleanChange, describeChange } from '../lib/tillChanges';
+import { cleanChange, describeChange } from '@zaptill/core/tillChanges';
 import { applyChange, decideChange, type ChangeResult } from '../lib/changeApply';
 import { isNodeRole } from '../lib/deviceRegistry';   // A522
 

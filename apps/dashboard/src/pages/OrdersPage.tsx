@@ -17,7 +17,7 @@ import { usePermissions } from '../context/PermissionsContext';
 import { isRefunded } from './orderRefund';
 import { reprintOrderReceipt } from '../lib/reprintReceipt';
 import OrderItems from '../components/OrderItems';   // A444
-import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../lib/reversalRules';
+import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '@zaptill/core/reversalRules';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { money, dayTime } from '../lib/format';
 

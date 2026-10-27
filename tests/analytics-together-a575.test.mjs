@@ -3,7 +3,7 @@
  *
  *   cd apps/server && npm run build && cd ../.. && TZ=UTC node tests/analytics-together-a575.test.mjs
  *
- * R. The rules (apps/server/src/lib/analyticsRules.ts, compiled) and the words (shared/analyticsTerms.ts and businessTerms.ts):
+ * R. The rules (apps/server/src/lib/analyticsRules.ts, compiled) and the words (packages/core/src/analyticsTerms.ts and businessTerms.ts):
  *    - too few orders with two or more items (under 30): nothing, a friendly note;
  *    - a pair is turned so the item with fewer orders comes first ("People who buy X usually / often / sometimes add Y
  *      (n of m orders with X)"); a pair in under 5 orders, or not 1.2× as often as chance, is left out;
@@ -50,14 +50,14 @@ process.env.ADMIN_JWT_SECRET ??= randomBytes(24).toString('hex');
 process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const R = require(path.join(DIST, 'lib/analyticsRules.js'));
-// shared/analyticsTerms.ts imports './businessTerms' (no extension, as the apps build it): bundled once with esbuild
+// packages/core/src/analyticsTerms.ts imports './businessTerms' (no extension, as the apps build it): bundled once with esbuild
 const BT = await (async () => {
   const os = await import('node:os');
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'a575-')), 'terms.mjs');
-  await createRequire(path.join(DASH, 'package.json'))('esbuild').build({ entryPoints: [path.join(ROOT, 'shared/analyticsTerms.ts')], bundle: true,
+  await createRequire(path.join(DASH, 'package.json'))('esbuild').build({ entryPoints: [path.join(ROOT, 'packages/core/src/analyticsTerms.ts')], bundle: true,
     format: 'esm', platform: 'node', outfile: out, logLevel: 'silent' });
   const A = await import(pathToFileURL(out).href);
-  const T = await import(pathToFileURL(path.join(ROOT, 'shared/businessTerms.ts')).href);
+  const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/businessTerms.ts')).href);
   return { ...T, ...A };
 })();
 const TYPES = ['restaurant', 'cafe', 'retail', 'minimart', 'parking', 'petrol_station', 'other'];
@@ -193,15 +193,15 @@ await ok('Analytics words: Product performance, items you sell, cost of sales fo
   const src = read('apps/server/src/lib/analyticsRules.ts');
   assert.match(src, /title: `Your \$\{cos\} rose from/);
   assert.match(src, /a shorter list frees shelf space/);
-  for (const c of ['apps/dashboard/src/lib/businessTerms.ts', 'apps/desktop/src/shared/businessTerms.ts', 'apps/server/src/lib/businessTerms.ts']) assert.equal(read(c), read('shared/businessTerms.ts'), c);
-  for (const c of ['apps/dashboard/src/lib/analyticsTerms.ts', 'apps/server/src/lib/analyticsTerms.ts']) assert.equal(read(c), read('shared/analyticsTerms.ts'), c);
+  // shared-components step 2: both files live in packages/core (imported as @zaptill/core/<name>), no copies left.
+  for (const c of ['shared/businessTerms.ts', 'apps/dashboard/src/lib/businessTerms.ts', 'apps/desktop/src/shared/businessTerms.ts', 'apps/server/src/lib/businessTerms.ts',
+    'shared/analyticsTerms.ts', 'apps/dashboard/src/lib/analyticsTerms.ts', 'apps/server/src/lib/analyticsTerms.ts']) assert.ok(!fs.existsSync(path.join(ROOT, c)), c);
   assert.ok(!fs.existsSync(path.join(ROOT, 'apps/desktop/src/shared/analyticsTerms.ts')), 'the till has no Analytics: not in its first screen');
-  assert.doesNotMatch(read('shared/businessTerms.ts'), /analyticsWords|togetherAdvice/);
-  assert.match(read('scripts/check-shared-sync.mjs'), /'apps\/server\/src\/lib\/businessTerms\.ts'/);
-  assert.match(read('scripts/check-shared-sync.mjs'), /name: 'analyticsTerms\.ts'/);
+  assert.doesNotMatch(read('packages/core/src/businessTerms.ts'), /analyticsWords|togetherAdvice/);
+  assert.match(read('apps/server/src/lib/analyticsRules.ts'), /from '@zaptill\/core\/analyticsTerms'/);
 });
 await ok('Help: a shop never reads the kitchen-ticket step; a restaurant (or a type not known yet) does', async () => {
-  const H = await import(pathToFileURL(path.join(ROOT, 'shared/helpTopics.ts')).href);
+  const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/helpTopics.ts')).href);
   const printer = (food) => H.helpTopicsFor(food).find((t) => t.id === 'printer');
   assert.ok(printer(true).steps.some((s) => /kitchen ticket/i.test(s)));
   assert.ok(!printer(false).steps.some((s) => /kitchen/i.test(s)));
@@ -443,7 +443,7 @@ try {
   });
   await ok('page: the Costs area and the tiles in a shop\'s words (rendered); the page\'s wiring', async () => {
     const AR = await bundle('src/pages/analytics/areas.tsx', 'areas.mjs');
-    const BTD = await bundle('src/lib/analyticsTerms.ts', 'bt.mjs');
+    const BTD = await bundle('../../packages/core/src/analyticsTerms.ts', 'bt.mjs');
     const costs = { days: 30, foodCost: { now: 0.4, prev: 0.3, change: 0.1, costedShare: 0.9, movers: [{ name: 'Sugar 2kg', now: 0.5, prev: 0.3 }] },
       thin: [], thinTotal: 0, rises: [], risesTotal: 0, historyNote: '',
       noCost: { items: [{ productId: 'x', name: 'Bread', category: null, qty: 5, revenue: 300 }], total: 1, revenue: 300, share: 0.1, unsold: 2, unsoldNames: [] } };

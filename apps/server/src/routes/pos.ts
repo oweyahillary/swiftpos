@@ -1,12 +1,12 @@
-import { mpesaFromSettings, mpesaLabel, mpesaReceiptNumber } from '../lib/mpesaReceive';   // A492
+import { mpesaFromSettings, mpesaLabel, mpesaReceiptNumber } from '@zaptill/core/mpesaReceive';   // A492
 import { Router } from 'express';
 import { effectiveKeysForRow, clientPermissionMap } from '../lib/effectivePermissions';   // A490
 import { offersForBranch } from './offers';   // A445
 import { promotionOffersFor } from '../lib/promotionOffers';   // A518
-import { enabledFromSetting } from '../lib/paymentCatalogue';   // A429
+import { enabledFromSetting } from '@zaptill/core/paymentCatalogue';   // A429
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
-import { parseReversalRules, REVERSAL_SETTING_KEYS } from '../lib/reversalRules';
+import { parseReversalRules, REVERSAL_SETTING_KEYS } from '@zaptill/core/reversalRules';
 import { parsePosFeatures, POS_FEATURE_KEYS } from '../lib/posFeatures';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -21,8 +21,8 @@ import { worksAtBranch } from '../lib/branchAccess';   // A426
 import { isConfirmedBranchServer } from '../lib/deviceRole';   // A427
 import { mayIssueJoinCode } from '../lib/tillJoin';   // A427
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';   // A427
-import { cleanCutoff } from '../lib/businessDay';   // 0.6.34
-import { cleanHistoryMethods } from '../lib/cashierHistory';
+import { cleanCutoff } from '@zaptill/core/businessDay';   // 0.6.34
+import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';
 import { cleanSeesSales, historyTotalsOn } from '../lib/cashierShiftSales';   // A416 / A418   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { frozenAtBranch, may as mayStock } from '../lib/stockTakeAccess';   // A394 (A535: may)

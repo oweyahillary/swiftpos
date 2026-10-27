@@ -56,10 +56,10 @@ import { cartSubtotal, extractTaxes } from '../../lib/cart';
 import { useBusiness } from '../../context/BusinessContext';
 import type { Product, Category, Menu } from '../../types';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar } from './cashier/CategoryPanel';   // A537; A566
-import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
-import { exactFirst } from '../../lib/paginate';   // A472
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
+import { exactFirst } from '@zaptill/core/paginate';   // A472
 import { parseScaleBarcode, findScaleProduct, scaleLine, weighedLine, isSoldByWeight, weightUnitOf, formatWeight, scaleSettingsOrDefault, type ScaleSettings, type WeighedLine } from '../../lib/scaleBarcode';   // A577
-import { businessTerms } from '../../lib/businessTerms';   // A573
+import { businessTerms } from '@zaptill/core/businessTerms';   // A573
 
 /** A573: this screen is the minimart's (CashierScreen opens it for a minimart only) — Departments, not Menus. */
 const WORDS = businessTerms('minimart');

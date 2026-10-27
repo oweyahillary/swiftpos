@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
-const T = await import(pathToFileURL(path.join(ROOT, 'shared/tillChanges.ts')).href);
+const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/tillChanges.ts')).href);
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n       ${e.message}`); } };
 const holdsAll = (held, keys) => keys.every((k) => P.hasPermission(held, k));
@@ -59,7 +59,7 @@ ok('the cloud and the till use this one rule, and the cloud never expands it', (
   assert.match(ca, /makerMay\(ctx\.businessId, c\.made_by, needed\)/);
   assert.doesNotMatch(ca, /expandKeys\(/);
   const cq = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/changeQueue.ts'), 'utf8');
-  assert.match(cq, /import \{[^}]*changeKeys[^}]*\} from '\.\/tillChanges'/);
+  assert.match(cq, /import \{[^}]*changeKeys[^}]*\} from '@zaptill\/core\/tillChanges'/);
   assert.match(cq, /changeKeys\(entity, op, data\)\.every\(/);
 });
 

@@ -17,8 +17,8 @@ import { getDeviceConfig, canSell, getPosFeatures, getCashierHistoryMethods, get
 import { checkStaleDay, ensureDayOpen, businessDateNow } from './dayService';
 import { v4 as uuid } from 'uuid';
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
-import { nonCashExpenses, expenseLabel, cleanExpenseMethod } from './expenseMethod';
-import { reasonsNeeded, cleanReasons, missingReasons } from './confirmReasons';
+import { nonCashExpenses, expenseLabel, cleanExpenseMethod } from '@zaptill/core/expenseMethod';
+import { reasonsNeeded, cleanReasons, missingReasons } from '@zaptill/core/confirmReasons';
 import { kitchenVoidsForShift, type KitchenVoidLine } from './kitchenService';
 import { noteActivity } from './activityTracker';   // A508
 import type { KitchenVoidSummary } from './kitchenLines';

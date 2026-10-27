@@ -7,7 +7,7 @@ import RestaurantSettingsPage from './RestaurantSettingsPage';
 import MinimartSettingsPage from './MinimartSettingsPage';
 import ParkingSettingsPage from './ParkingSettingsPage';
 import PetrolSettingsPage from './PetrolSettingsPage';
-import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
+import { businessTerms, foodAreas } from '@zaptill/core/businessTerms';   // A573
 
 // Settings › Business (register A133).
 // One vertical-neutral home for company-level settings. The vertical-specific

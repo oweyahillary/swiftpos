@@ -9,7 +9,7 @@ import { normaliseDeviceRole, isNodeRole } from '../lib/deviceRegistry';
 import { confirmServingRole } from '../lib/deviceRole';
 
 import { REQUIRED_DESKTOP_SCHEMA, HARD_MIN_DESKTOP_SCHEMA } from '../lib/desktopSchema';
-import { cleanExpenseMethod } from '../lib/expenseMethod';
+import { cleanExpenseMethod } from '@zaptill/core/expenseMethod';
 import { closesFirst } from '../lib/dayOrder';
 import { chunkIn } from '../lib/pgQuery';
 import { isDataError } from '../lib/orderErrors';

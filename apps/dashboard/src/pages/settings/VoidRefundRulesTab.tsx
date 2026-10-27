@@ -4,7 +4,7 @@ import type { PosApi } from '../../context/POSAuthContext';   // A502
 import {
   parseReversalRules, defaultReversalRules, windowLabel, type ReversalRules,
   MIN_VOID_WINDOW_MINUTES, MAX_VOID_WINDOW_MINUTES, MAX_FREE_DELIVERY_OVER,
-} from '../../lib/reversalRules';
+} from '@zaptill/core/reversalRules';
 
 // Settings › Business › Voids & refunds — 0.6.30 (A336 stage 3). The owner's rules (lib/reversalRules.ts):
 //   • the void window — how long after a sale a manager may still void it (default 30 minutes; the owner always may);

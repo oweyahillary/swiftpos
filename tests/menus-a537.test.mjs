@@ -21,7 +21,7 @@
 //   I  /api/pos/init carries the business's menus (on, not deleted, never another business's) and each category's menu_id.
 //   C  /api/pos/changes: a renamed menu is ONE row (the menu as init sends it); switched off or deleted → a delete marker;
 //      another business's menu named in an entry → a delete marker (nothing leaks).
-//   W  the web POS: CashierScreen and MinimartPOS use the shared helper (lib/menuFilter.ts = shared/menuFilter.ts), the
+//   W  the web POS: CashierScreen and MinimartPOS use the shared helper (@zaptill/core/menuFilter = packages/core/src/menuFilter.ts), the
 //      panel starts collapsed and remembers the pin in try/catch; the back office has Menu › Menus and a Menu select.
 //
 // MUTATIONS TO CONFIRM BITE (checked by hand, 2026-10-20):
@@ -259,10 +259,10 @@ try {
   const cashier = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   const mini = read('apps/dashboard/src/pages/pos/MinimartPOS.tsx');
   const panel = read('apps/dashboard/src/pages/pos/cashier/CategoryPanel.tsx');
-  await ok('the web POS uses the shared helper (an identical copy of shared/menuFilter.ts) in CashierScreen and MinimartPOS', async () => {
-    assert.equal(read('apps/dashboard/src/lib/menuFilter.ts'), read('shared/menuFilter.ts'));
+  await ok('the web POS uses the shared helper (packages/core/src/menuFilter.ts) in CashierScreen and MinimartPOS', async () => {
+    assert.ok(!fs.existsSync(path.join(ROOT, 'apps/dashboard/src/lib/menuFilter.ts')), 'no copy in lib/');
     for (const [n, s] of [['CashierScreen', cashier], ['MinimartPOS', mini]]) {
-      assert.match(s, /from '\.\.\/\.\.\/lib\/menuFilter'/, n);
+      assert.match(s, /from '@zaptill\/core\/menuFilter'/, n);
       // A578: CashierScreen scopes by the menus open now (categoriesNow / menusNow — useMenuHours)
       assert.match(s, /const menuFilterScope = useMemo\(\(\) => menuScope\(categories(?:Now)?, menus(?:Now)?, activeMenu\)/, n);
       // A566: the menu does not narrow a search (gridMenuScope); the panel is told when the menus are across the top.
@@ -280,7 +280,7 @@ try {
     assert.match(panel, /try \{ window\.localStorage\.setItem\(PANEL_PREFS_KEY, panelPrefsText\(p\)\); \} catch/);
     assert.match(panel, /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/);
     assert.match(panel, /minHeight: 44/);   // touch-sized rows
-    const M = await import(new URL('../shared/menuFilter.ts', import.meta.url).href);
+    const M = await import(new URL('../packages/core/src/menuFilter.ts', import.meta.url).href);
     assert.equal(M.panelStartsOpen(), false);
     assert.equal(M.parsePanelPrefs(M.panelPrefsText({ pinned: true, menu: 'tea' })).pinned, false);   // A554: never the pin
   });

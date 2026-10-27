@@ -15,6 +15,9 @@
   "references": [
     {
       "path": "../../shared/printing"
+    },
+    {
+      "path": "../../packages/core"
     }
   ]
 }

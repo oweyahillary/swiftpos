@@ -30,21 +30,21 @@ import NoteModal from './NoteModal';
 import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton } from './cashier/CategoryPanel';   // A537; A566; A580
-import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
 import { maySignedInConfirm } from '../../lib/shiftConfirm';
 import { mayRecordMoneyMovement } from '../../lib/posFeatures';   // A453
-import { onGrid } from '../../lib/productDays';
-import { exactFirst } from '../../lib/paginate';   // A472
+import { onGrid } from '@zaptill/core/productDays';
+import { exactFirst } from '@zaptill/core/paginate';   // A472
 import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreeze';   // A394
 import { useStockView } from '../../lib/useStockView';   // A563
-import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '../../lib/stockGate';   // A563
+import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '@zaptill/core/stockGate';   // A563
 import { useToast } from '../../hooks/useToast';
-import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
-import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '../../lib/menuHours';   // A578: menus by time of day; A580: Later
+import { businessTerms, foodAreas } from '@zaptill/core/businessTerms';   // A573
+import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '@zaptill/core/menuHours';   // A578: menus by time of day; A580: Later
 import { useMenuHours } from '../../lib/useMenuHours';   // A578
 import { getWebDayCutoff } from '../../lib/webDayCutoff';   // A578: hours past midnight belong to the night before
 import Toast from '../../components/Toast';

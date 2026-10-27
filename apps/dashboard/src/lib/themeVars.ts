@@ -8,7 +8,7 @@
  *    (400) in dark mode, textLight (700) in light mode. An unknown or unchosen theme id resolves to the default.
  *  computeDashboardThemeVars is PURE; applyDashboardThemeVars is the only DOM write.
  */
-import { resolveTheme, themeTokens, resolveBrandLayer, type Hex } from './themes';
+import { resolveTheme, themeTokens, resolveBrandLayer, type Hex } from '@zaptill/core/themes';
 
 export interface BrandingForTheme { theme_id?: string | null; themes_enabled?: boolean }
 export const DASHBOARD_THEME_VARS = ['action-t-500', 'action-t-600', 'action-d-400', 'action-l-400'] as const;

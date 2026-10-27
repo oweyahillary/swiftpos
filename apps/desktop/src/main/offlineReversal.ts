@@ -22,7 +22,7 @@ import { getLocalDb } from './localDb';
 import { mirrorTillRefund, reverseRiderPayout } from './webSales';
 import {
   voidWindowOpen, minutesBetween, offlineRefundBlockedMethods, offlineScopeAllows, windowLabel, type ReversalRules,
-} from './reversalRules';
+} from '@zaptill/core/reversalRules';
 import { isOwnerRole, personCan } from './personAccess';   // A490
 
 export interface LocalPerson {

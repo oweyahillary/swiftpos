@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { posApi, type MpesaReceiveLite } from '../lib/posApi';
-import { MPESA_KINDS, cleanMpesaReceive, mpesaDescribe, type MpesaKind } from '../../shared/mpesaReceive';
+import { MPESA_KINDS, cleanMpesaReceive, mpesaDescribe, type MpesaKind } from '@zaptill/core/mpesaReceive';
 
 // A492 — Manager → Settings → M-Pesa: the number this branch's customers pay to, printed on every receipt.
 // Owner, 2026-10-15: "each branch has a till number or paybill number … that should be set on the desktop app not web,

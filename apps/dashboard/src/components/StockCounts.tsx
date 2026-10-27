@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { printDocument } from '../lib/printDocument';
 import { money, dateTime } from '../lib/format';
 import Pager, { usePageSize } from './Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 /**
  * StockCounts — A394: stock take. One screen for the owner (Stock › Stock counts) and the manager (Manager › Stock

@@ -12,7 +12,7 @@
 import { supabase } from './supabase';
 import { businessPosFeatures } from './posFeatureFlags';
 import { pageAll, chunkPaged } from './pgQuery';
-import { outOfStockMode, stockRefusals, refusalText, type OutOfStockMode, type StockView, type GateLine } from './stockGate';
+import { outOfStockMode, stockRefusals, refusalText, type OutOfStockMode, type StockView, type GateLine } from '@zaptill/core/stockGate';
 
 export async function businessOutOfStockMode(businessId: string | null | undefined): Promise<OutOfStockMode> {
   return outOfStockMode((await businessPosFeatures(businessId)) as unknown as Record<string, unknown>);

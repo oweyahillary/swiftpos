@@ -22,7 +22,7 @@
 import { useState } from 'react';
 import { posApi } from '../lib/posApi';
 import { ageMinutes, VOID_WINDOW_MIN, reverseErrorMessage, isWindowClosed, type ReverseRights } from '../lib/voidRefund';
-import { windowLabel } from '../../shared/reversalRules';
+import { windowLabel } from '@zaptill/core/reversalRules';
 
 interface Order {
   id: string;

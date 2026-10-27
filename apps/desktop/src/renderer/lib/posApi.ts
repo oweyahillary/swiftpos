@@ -1,6 +1,6 @@
 import type { PosFeatures } from '../../shared/posFeatures';
-import type { StockCountFreeze } from '../../shared/stockCountFreeze';
-import type { StockView, OutOfStockMode } from '../../shared/stockGate';   // A563
+import type { StockCountFreeze } from '@zaptill/core/stockCountFreeze';
+import type { StockView, OutOfStockMode } from '@zaptill/core/stockGate';   // A563
 import type { LabelSettings } from '../../shared/labels';   // A571
 import type { BarcodeNumbering } from '../../shared/barcode';   // A574
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
@@ -592,7 +592,7 @@ declare global {
         create: (payload: any) => Promise<{ orderId: string; orderNumber?: string | null; printFailed?: string[] }>;
         void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; offline?: boolean; approvedBy?: string | null }>;
         /** A444: an order's items, sizes, extras, notes and payments; `canReprint` = this person may reprint it. */
-        detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('../../shared/orderDetail').OrderDetail; canReprint?: boolean }>;
+        detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('@zaptill/core/orderDetail').OrderDetail; canReprint?: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
         /** A552: On account — offered on this till?, may the person signed in approve it themselves (no PIN)?, the customers. */
         creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; chosenApprovers?: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;

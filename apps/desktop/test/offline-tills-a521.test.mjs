@@ -292,7 +292,7 @@ console.log('\n#7 a stock-count freeze lifts by itself after 12 h unheard; a man
   ok('#7 a cashier\'s PIN does not release it', bad.ok === false, JSON.stringify(bad));
   const good = await H['pos:approveFrozenSale'](null, { pin: '4321', product_id: 'p-coke' });
   ok('#7 a manager\'s PIN does', good.ok === true && good.approvedBy === 'Mary', JSON.stringify(good));
-  const F = require(path.join(dist, 'stockCountFreeze.js'));
+  const F = require('@zaptill/core/stockCountFreeze');
   ok('#7 the refusal says "or ask a manager"; the sale screen offers the PIN under it (no new banner)',
     /or ask a manager\.$/.test(F.frozenMessage('ST-0009', 'Coke')) && /data-testid="frozen-approve"/.test(read('src/renderer/pages/POSPage.tsx')) && /approveFrozenSale\(/.test(read('src/renderer/pages/POSPage.tsx')));
   signIn('u-mary', 'Mary', 'Manager', MANAGER);

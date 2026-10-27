@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import type { OrderDetail } from '../../shared/orderDetail';
+import type { OrderDetail } from '@zaptill/core/orderDetail';
 import { reverseActionFor, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';   // A490
 import VoidModal from './VoidModal';
 import MethodDot from './MethodDot';

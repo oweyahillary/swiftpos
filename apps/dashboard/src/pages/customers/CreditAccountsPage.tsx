@@ -12,7 +12,7 @@ import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { money, dateShort } from '../../lib/format';
 import { useBusiness } from '../../context/BusinessContext';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import CreditSalesToConfirm, { ledgerNote } from '../../components/CreditSalesToConfirm';   // A545
 import { usePermissions } from '../../context/PermissionsContext';   // A545
 import GiveCreditPicker from '../../components/GiveCreditPicker';   // A567

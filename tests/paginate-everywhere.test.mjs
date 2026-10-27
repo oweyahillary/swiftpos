@@ -151,7 +151,7 @@ for (const L of LISTS) {
   const set = `set${cap(L.page)}`;
   ok(`${L.name}: imports the Pager and the shared page maths (${L.file})`, () => {
     if (!/import Pager, \{ usePageSize \} from ['"][./]+(?:components\/)?Pager['"];/.test(whole)) throw new Error('Pager import');
-    if (!/import \{ paginate \} from ['"][./]+lib\/paginate['"];/.test(whole)) throw new Error('paginate import');
+    if (!/import \{ paginate \} from ['"]@zaptill\/core\/paginate['"];/.test(whole)) throw new Error('paginate import');
   });
   ok(`${L.name}: rows are one page of every filtered row; the pager under them; size kept as swiftpos.pageSize.${L.key}`, () => {
     has(src, `const ${L.paged} = paginate(${L.full}, ${L.page}, `);
@@ -216,13 +216,13 @@ ok('the Menu Matrix quadrant is its own component (it keeps its page between ren
 const admin = read('apps/admin/src/AdminPortal.tsx');
 const adminPager = read('apps/admin/src/AdminPager.tsx');
 ok('admin: the pager is the admin\'s own (inline styles), on the same shared page maths', () => {
-  has(adminPager, 'from "./lib/paginate"');
+  has(adminPager, 'from "@zaptill/core/paginate"');
   has(adminPager, 'export function usePageSize(key: string)');
   has(adminPager, 'rangeLabel(paged)'); has(adminPager, 'pageWindow(page, pages)');
   hasNot(adminPager, 'className=', 'the admin portal has no Tailwind');
-  has(read('scripts/check-shared-sync.mjs'), "'apps/admin/src/lib/paginate.ts',");
-  if (read('apps/admin/src/lib/paginate.ts') !== read('shared/paginate.ts')) throw new Error('the admin copy differs from shared/paginate.ts');
-  has(admin, 'import AdminPager, { usePageSize } from "./AdminPager";'); has(admin, 'import { paginate } from "./lib/paginate";');
+  if (!read('packages/core/src/paginate.ts')) throw new Error('packages/core/src/paginate.ts missing');
+  if (fs.existsSync(path.join(ROOT, 'apps/admin/src/lib/paginate.ts'))) throw new Error('the admin copy came back — paginate lives in packages/core');
+  has(admin, 'import AdminPager, { usePageSize } from "./AdminPager";'); has(admin, 'import { paginate } from "@zaptill/core/paginate";');
 });
 for (const [scope, name, key, full, old, keep] of [
   ['function BillingPage(', 'admin › Billing', 'billing', 'invoices', '{invoices.map(inv => (', 'const total       = invoices.reduce('],

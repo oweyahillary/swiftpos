@@ -19,7 +19,7 @@ import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
 import { chunkIn, pageAll } from '../lib/pgQuery';
 import { getDayCutoff } from '../lib/dayCutoff';
-import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { keysForRow } from '../lib/effectiveKeys';
 import { hasPermission } from '../lib/permissions';
 import { isOwnerRoleName } from '../lib/ownerRole';

@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { C, S } from "./theme";
 import AdminPager, { usePageSize } from "./AdminPager";
-import { pageCount, type Paged } from "./lib/paginate";
+import { pageCount, type Paged } from "@zaptill/core/paginate";
 import { ago } from "./AlertsPage";
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;

@@ -28,7 +28,7 @@ Module._resolveFilename = function (req, parent, ...rest) { return req === 'elec
 
 const L = require(path.join(dist, 'localDb.js'));
 const B = require(path.join(dist, 'referenceBundle.js'));
-const D = require(path.join(dist, 'productDays.js'));
+const D = require('@zaptill/core/productDays');
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 

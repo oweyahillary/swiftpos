@@ -6,7 +6,7 @@
  *
  *   node tests/history-by-cashier.test.mjs
  *
- * RUNS the rules (shared/historyView.ts: the cashier filter, the choices, historyByCashier), then pins the till's History
+ * RUNS the rules (packages/core/src/historyView.ts: the cashier filter, the choices, historyByCashier), then pins the till's History
  * (React is not run here) and that each sale is stamped with the person signed in, not the shift's owner.
  *
  * MUTATIONS TO CONFIRM BITE: historyView ignoring the cashier → "only B's sales" fails; historyByCashier not splitting a
@@ -31,7 +31,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g,
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const H = await import(pathToFileURL(path.join(ROOT, 'shared/historyView.ts')).href);
+const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/historyView.ts')).href);
 
 // One shift (A's), two people selling on it.
 const at = (h) => `2026-10-10T${String(h).padStart(2, '0')}:00:00Z`;
@@ -107,10 +107,9 @@ ok('the list and the total use the cashier filter (never for a cashier)', () => 
 ok('the report follows the payment and type filters', () => {
   assert.ok(pos.includes('historyByCashier(historyView(recentOrders, { method: historyMethod, type: historyType }))'));
 });
-ok('every copy of the rules is the same file', () => {
-  const s = read('shared/historyView.ts');
-  assert.equal(read('apps/desktop/src/shared/historyView.ts'), s);
-  assert.equal(read('apps/dashboard/src/lib/historyView.ts'), s);
+ok('one file for the rules: packages/core (no copies left)', () => {
+  assert.ok(read('packages/core/src/historyView.ts').length > 0);
+  for (const p of ['shared/historyView.ts', 'apps/desktop/src/shared/historyView.ts', 'apps/dashboard/src/lib/historyView.ts']) assert.ok(!fs.existsSync(path.join(ROOT, p)), p);
 });
 
 console.log('\nWho a sale belongs to');

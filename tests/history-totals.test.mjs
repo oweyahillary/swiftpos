@@ -5,7 +5,7 @@
  *
  *   node tests/history-totals.test.mjs
  *
- * RUNS the till's rule (shared/historyView.ts historyTotal, with historyView) and checks the cloud's copy
+ * RUNS the till's rule (packages/core/src/historyView.ts historyTotal, with historyView) and checks the cloud's copy
  * (server/src/lib/cashierShiftSales.ts historyTotal) gives the same answers; then pins who sees it.
  *
  * MUTATIONS TO CONFIRM BITE: a voided sale counted in sales → "voided: an order, not a sale" fails; a refund not taken off
@@ -29,7 +29,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g,
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const H = await import(pathToFileURL(path.join(ROOT, 'shared/historyView.ts')).href);
+const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/historyView.ts')).href);
 // The cloud's copy, run as written (its file imports the supabase client, so the function is lifted out).
 const srv = read('apps/server/src/lib/cashierShiftSales.ts');
 const fnSrc = srv.slice(srv.indexOf('export function historyTotal('), srv.indexOf('\n}\n', srv.indexOf('export function historyTotal(')) + 2)

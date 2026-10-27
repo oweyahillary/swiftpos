@@ -20,8 +20,8 @@ import { useTerm } from '../../lib/terminology';
 import type { Menu } from '../../types';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import MenuHoursEditor from './MenuHoursEditor';   // A578: a menu's hours
-import { availabilityLabel, readAvailability, type MenuAvailability } from '../../lib/menuHours';   // A578
-import { isFoodService } from '../../lib/businessTerms';   // A578: the hours' examples follow the type
+import { availabilityLabel, readAvailability, type MenuAvailability } from '@zaptill/core/menuHours';   // A578
+import { isFoodService } from '@zaptill/core/businessTerms';   // A578: the hours' examples follow the type
 
 export default function MenusPage() {
   const { business } = useBusiness();

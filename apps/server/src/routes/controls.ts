@@ -25,9 +25,9 @@ import { requirePermission, can } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
-import { PAYMENT_METHODS_ENABLED_KEY, enabledFromSetting } from '../lib/paymentCatalogue';
+import { PAYMENT_METHODS_ENABLED_KEY, enabledFromSetting } from '@zaptill/core/paymentCatalogue';
 import { STOCK_ZERO_KEYS } from '../lib/posFeatures';   // A563
-import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '../lib/stockGate';   // A563
+import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '@zaptill/core/stockGate';   // A563
 
 /** The POS options the owner sets (settings.pos). */
 export const OWNER_POS_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes'] as const;

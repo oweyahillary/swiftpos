@@ -17,7 +17,7 @@
 
 import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
-import { methodLabel } from '../../shared/paymentCatalogue';   // A452
+import { methodLabel } from '@zaptill/core/paymentCatalogue';   // A452
 import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import TransfersTab from '../components/TransfersTab';   // A197
 import BranchStockTab from '../components/BranchStockTab';   // A564
@@ -33,7 +33,7 @@ import { buildManagerNav, relabelCatalogue, groupOf, openGroup, firstTab, type T
 import PrintersScreen from '../screens/PrintersScreen';
 import TillWastage from '../components/TillWastage';   // A414
 import Pager, { usePageSize } from '../components/Pager';   // A475
-import { paginate } from '../../shared/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
 // A PRINTER is a machine and belongs to ONE terminal — which is why the
@@ -63,7 +63,7 @@ import BranchCloseTab from './BranchCloseTab';
 import DayCloseTab from './DayCloseTab';
 import MenuWorkbench from './MenuWorkbench';
 import MethodDot from '../components/MethodDot';
-import { methodColour } from '../../shared/paymentColours';
+import { methodColour } from '@zaptill/core/paymentColours';
 import ReportRangeBar from '../components/ReportRangeBar';
 import type { ReportRangeArg, ShiftSummary, ExpenseRow, BranchDay, BranchShiftState, BranchShiftRow, BranchShiftListRow } from '../lib/posApi';
 import ConfirmShiftModal from '../components/ConfirmShiftModal';   // A433
@@ -77,7 +77,7 @@ import OffersScreen from '../screens/OffersScreen';   // A445
 import RecordExpenseForm from '../components/RecordExpenseForm';   // A447
 import TillChangesNotice from '../components/TillChangesNotice';   // A448
 import { VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
-import { businessTerms } from '../../shared/businessTerms';   // A573: Menu (a restaurant) / Products (a shop)
+import { businessTerms } from '@zaptill/core/businessTerms';   // A573: Menu (a restaurant) / Products (a shop)
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
 function Icon({ d, size = 18, cls = '' }: { d: string; size?: number; cls?: string }) {

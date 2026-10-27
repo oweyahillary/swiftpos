@@ -7,7 +7,7 @@ import { sendEmail } from '../lib/mailer';
 // machine's own time — UTC on Render), so the 21:00 send decision ran at 00:00 Nairobi and reported "No sales recorded today".
 import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import { decideDailySend } from './reportScheduleDecision';
-import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';   // 0.6.34
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';   // 0.6.34
 import { getDayCutoff } from '../lib/dayCutoff';
 import { readAlerts } from './ownerAlertsDecision';     // A476: what the owner chose the email includes
 import { dailyExtrasHtml } from './ownerAlertsData';    // A476: open tills, cash differences, voids, tills, expenses

@@ -17,7 +17,7 @@
  */
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { methodLabel } from '../../shared/paymentCatalogue';
+import { methodLabel } from '@zaptill/core/paymentCatalogue';
 
 const input = 'w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gray-500';
 

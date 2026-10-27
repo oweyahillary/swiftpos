@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill on one VPS — migration plan (off Supabase, Render and Vercel)</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+a{color:var(--teal)}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+figure{margin:18px 0;text-align:center}
+figure img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+figcaption{color:var(--quiet);font-size:.85rem;margin-top:6px}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+li input[type=checkbox]{margin-right:8px;transform:scale(1.15)}
+li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
+.toc{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;margin:20px 0}
+.toc ol{margin:6px 0 0}
+@media print{.toc{break-after:page} h2{break-before:page;border-top:none} figure{break-inside:avoid} table{break-inside:auto} a{color:inherit;text-decoration:none}}
+</style></head><body><div class="wrap">
+<h1 id="zaptill-on-one-vps-migration-plan-off-supabase-render-and-vercel">ZapTill on one VPS — migration plan (off Supabase, Render and Vercel)</h1>
+<p>Plan only, 2026-10-26, branch <code>shared-components</code>. No application code is changed by this document. Companion documents: <code>docs/OWN-AUTH-PLAN.md</code> (ZapTill&#39;s own sign-in, replacing Supabase Auth) and <code>docs/PLATFORM-MOVE-OVERVIEW.md</code> (the two-page version for the owner).</p>
+<p>This plan moves the cloud API, the database, the web dashboard (with the web POS) and the admin portal onto one virtual server that ZapTill rents, in two steps that can be undone: first the dev environment (which is also where the shared-components branch gets tested), then production on a quiet night. The public website stays on Cloudflare Pages. Every hostname the tills, M-Pesa and the clients use today stays the same.</p>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#1-why-goals-and-non-goals">1. Why, goals and non-goals</a></li><li><a href="#2-provider-shortlist-and-recommendation">2. Provider shortlist and recommendation</a></li><li><a href="#3-target-architecture-on-one-server">3. Target architecture on one server</a></li><li><a href="#4-two-options-self-hosted-supabase-or-plain-postgres-with-zaptill-s-own-sign-in">4. Two options: self-hosted Supabase, or plain Postgres with ZapTill's own sign-in</a></li><li><a href="#5-row-level-security">5. Row-level security</a></li><li><a href="#6-data-migration">6. Data migration</a></li><li><a href="#7-cut-over">7. Cut-over</a></li><li><a href="#8-backups-on-the-vps">8. Backups on the VPS</a></li><li><a href="#9-costs-and-what-the-owner-takes-on">9. Costs, and what the owner takes on</a></li><li><a href="#10-timeline-checkpoints-and-risks">10. Timeline, checkpoints and risks</a></li><li><a href="#11-decisions-needed-from-the-owner">11. Decisions needed from the owner</a></li></ol></nav>
+<h2 id="1-why-goals-and-non-goals">1. Why, goals and non-goals</h2>
+<p><strong>The owner&#39;s words (2026-10-26):</strong> &quot;25 USD per month is expensive, I&#39;d rather get a VPS worth KES 2,500 or less and host everything there.&quot; &quot;While we are doing the shared components work think of implementing auth on our own, it&#39;s a project also, we can do the two in one go; I can buy a VPS; we test this shared component from there for now; I don&#39;t like this pressure that Supabase is giving us.&quot;</p>
+<p><strong>The numbers behind it:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Plan allowance</th>
+<th>Used</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Supabase egress (Free plan)</td>
+<td>5 GB a month</td>
+<td>over 5 GB last cycle</td>
+<td>Supabase warned of restriction from <strong>20 Nov 2026</strong></td>
+</tr>
+<tr>
+<td>Supabase log ingestion</td>
+<td>1 GB a month</td>
+<td>near 1 GB</td>
+<td>one log line per PostgREST request (A528)</td>
+</tr>
+<tr>
+<td>Render included bandwidth (Hobby workspace)</td>
+<td>5 GB a month</td>
+<td>production was suspended on 2026-10-19 at 6.29 GB (A528)</td>
+<td>5 GB of it was the server&#39;s own requests to Supabase</td>
+</tr>
+<tr>
+<td>Supabase Pro (to lift the limits)</td>
+<td>USD 25 a month + compute above Micro</td>
+<td>—</td>
+<td>the cost the owner does not want</td>
+</tr>
+</tbody></table>
+<p>Most of that traffic is the API talking to its own database across the internet. On one server the API and Postgres talk over a local network, which costs nothing and is not metered.</p>
+<p><strong>Goals</strong></p>
+<ol>
+<li>One server at <strong>≤ KES 2,500 a month</strong>, everything included, sized for production and the dev environment side by side.</li>
+<li>No metered egress between the API and the database; no log-ingestion quota.</li>
+<li>ZapTill&#39;s own sign-in (see <code>docs/OWN-AUTH-PLAN.md</code>) so no third party holds the owners&#39; accounts.</li>
+<li><strong>No change for the people using ZapTill:</strong> the same addresses (<code>api.</code>, <code>app.</code>, <code>admin.</code>, every client address <code>*.zaptill.co.ke</code>), the same passwords, no till update, no new M-Pesa registration.</li>
+<li>Better backups than today: nightly (not weekly), encrypted, in the owner&#39;s own Cloudflare R2 bucket, plus the provider&#39;s server backups.</li>
+<li>The shared-components branch is tested on the new dev environment first (the owner: &quot;we test this shared component from there for now&quot;).</li>
+</ol>
+<p><strong>Non-goals</strong></p>
+<ul>
+<li>No feature changes and no behaviour changes in the apps while moving (same rule as the shared-components branch).</li>
+<li>No rewrite of the API&#39;s ~1,600 database queries before the move (section 5 explains why PostgREST is kept).</li>
+<li>The website (<code>zaptill.co.ke</code>, <code>www.</code>) stays on Cloudflare Pages. Product photos stay on Cloudinary.</li>
+<li>No Kubernetes, no second server, no managed database. High availability (two servers) is out of scope; section 9 states what one server means for recovery time.</li>
+<li>No Android or desktop release is needed for the move.</li>
+</ul>
+<h2 id="2-provider-shortlist-and-recommendation">2. Provider shortlist and recommendation</h2>
+<p>Prices checked on 2026-10-26 on the providers&#39; own pages where they could be read (Hetzner, Contabo), otherwise from price trackers (marked). Conversion at about <strong>KES 150 per euro</strong> and <strong>KES 129 per US dollar</strong>; check on the day of ordering. The budget of KES 2,500 is about EUR 16.7 or USD 19.4.</p>
+<table>
+<thead>
+<tr>
+<th>Provider and plan</th>
+<th>vCPU / RAM / disk</th>
+<th>Traffic</th>
+<th>Price a month</th>
+<th>Region and latency to Nairobi</th>
+<th>Backups / snapshots</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Hetzner Cloud CX33</strong> (cost-optimised, x86)</td>
+<td>4 / 8 GB / 80 GB NVMe</td>
+<td>20 TB, then EUR 1 per TB</td>
+<td><strong>EUR 8.99</strong> incl. IPv4 (≈ KES 1,350)</td>
+<td>Nuremberg, Falkenstein or Helsinki; about 150–190 ms round trip</td>
+<td>daily server backups, 7 kept: +20% (≈ EUR 1.80); snapshots EUR 0.0143 per GB</td>
+<td>Shown &quot;currently unavailable&quot; on 2026-10-26 (stock comes and goes). Best tooling (firewall, API, console, rescue), good support, clear billing.</td>
+</tr>
+<tr>
+<td>Hetzner Cloud CAX21 (Arm)</td>
+<td>4 / 8 GB / 80 GB</td>
+<td>20 TB</td>
+<td>EUR 10.99 (≈ KES 1,650)</td>
+<td>Nuremberg / Falkenstein / Helsinki</td>
+<td>as above</td>
+<td>Same as CX33 on Arm. Every image this plan uses exists for Arm (postgres, postgrest, caddy, node 24); <code>bcrypt</code> builds on Arm. Also shown unavailable that day.</td>
+</tr>
+<tr>
+<td>Hetzner Cloud CPX32 (regular performance)</td>
+<td>4 / 8 GB / 160 GB</td>
+<td>20 TB</td>
+<td>EUR 35.99</td>
+<td>Nuremberg / Helsinki</td>
+<td>as above</td>
+<td>Over budget. Listed for comparison only.</td>
+</tr>
+<tr>
+<td><strong>Contabo Cloud VPS 6</strong></td>
+<td>6 / 12 GB / 100 GB NVMe</td>
+<td>&quot;unlimited&quot; (fair use), 300 Mbit/s port</td>
+<td>EUR 7.50 monthly, EUR 6.00 on a 24-month term (≈ KES 900–1,125)</td>
+<td>EU (Germany), UK; similar latency</td>
+<td>2 snapshots included; Auto Backup is a paid add-on</td>
+<td>Most RAM for the money. Shared CPUs are known to be oversold; slower support; the monthly term may carry a setup fee.</td>
+</tr>
+<tr>
+<td>Contabo Cloud VPS 4</td>
+<td>4 / 8 GB / 100 GB SSD</td>
+<td>fair use, 200 Mbit/s</td>
+<td>EUR 5.50 (EUR 4.40 on 24 months)</td>
+<td>as above</td>
+<td>1 snapshot</td>
+<td>Cheapest 4 / 8 GB found.</td>
+</tr>
+<tr>
+<td>OVHcloud VPS-2 (2026 range, tracker)</td>
+<td>6 / 12 GB / 100 GB</td>
+<td>unmetered</td>
+<td>about EUR 10–12 after the 2026 price rise</td>
+<td>France, Germany, UK</td>
+<td>paid daily backup option</td>
+<td>Reliable, but prices rose 40–67% in 2026 and the plan names changed; check on the day.</td>
+</tr>
+<tr>
+<td>Truehost Kenya, Cloud Business (Truehost&#39;s own 2026 article)</td>
+<td>4 / 8 GB / 200 GB</td>
+<td>not stated</td>
+<td><strong>KES 4,480</strong> on a 3-year term</td>
+<td>Nairobi data centre: 5–20 ms</td>
+<td>not stated</td>
+<td>Over budget for 4 / 8 GB. Kenya-hosted plans start at KES 1,400 for 1 vCPU / 1 GB.</td>
+</tr>
+<tr>
+<td>HostAfrica (took over Sasahost, Dec 2023), Kenya C4 (tracker)</td>
+<td>2 / 4 GB</td>
+<td>fair use</td>
+<td>about KES 3,200</td>
+<td>Kenya</td>
+<td>not stated</td>
+<td>Over budget and half the minimum spec. Sasahost&#39;s own VPS plans are discontinued.</td>
+</tr>
+<tr>
+<td>Lineserve, Nairobi (tracker)</td>
+<td>4 / 8 GB</td>
+<td>—</td>
+<td>about KES 8,330</td>
+<td>Nairobi</td>
+<td>—</td>
+<td>Far over budget.</td>
+</tr>
+</tbody></table>
+<p><strong>Latency in practice.</strong> ZapTill&#39;s tills sell offline and sync in the background, and the dashboards load once and then call the API. 150–190 ms to Europe is what the cloud has today if Render and Supabase run in a European region (check: Render › service › Settings › Region; Supabase › Project Settings › General › Region). Being in the same data centre as the database matters far more than the distance to Nairobi: today every API request makes several round trips to Supabase across the internet; on the VPS those take under a millisecond. Kenyan hosts would cut 150 ms off each request but cost two to three times the budget for half the machine, with weaker snapshot and firewall tooling.</p>
+<p><strong>Recommendation: Hetzner Cloud CX33 in Nuremberg or Falkenstein, with Hetzner backups turned on</strong> — about EUR 10.79 a month (≈ KES 1,620), and up to 16% more (≈ KES 1,880) if VAT on imported digital services is charged. If CX33 is out of stock on the day, take <strong>CAX21</strong> (Arm, EUR 10.99 + backups ≈ KES 1,980) or try Helsinki. Second choice if Hetzner refuses the account (it sometimes asks for ID for a new customer): <strong>Contabo Cloud VPS 6</strong> on a 12-month term.</p>
+<p><strong>Minimum spec and why: 4 vCPU, 8 GB RAM, 80 GB NVMe, one IPv4.</strong> The memory budget on one server for production and dev together:</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th align="right">RAM (planned limit)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Postgres, production (<code>shared_buffers</code> 1.5 GB)</td>
+<td align="right">2.5 GB</td>
+</tr>
+<tr>
+<td>Postgres, dev</td>
+<td align="right">0.75 GB</td>
+</tr>
+<tr>
+<td>ZapTill API, production (Node 24, one process — the push channel needs one instance, <code>WEB_CONCURRENCY=1</code>)</td>
+<td align="right">0.6 GB</td>
+</tr>
+<tr>
+<td>ZapTill API, dev</td>
+<td align="right">0.4 GB</td>
+</tr>
+<tr>
+<td>PostgREST × 2</td>
+<td align="right">0.15 GB</td>
+</tr>
+<tr>
+<td>Caddy (HTTPS, static files)</td>
+<td align="right">0.1 GB</td>
+</tr>
+<tr>
+<td>Ubuntu, Docker, the backup run (pg_dump + gpg)</td>
+<td align="right">0.8 GB</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td align="right"><strong>≈ 5.3 GB of 8 GB</strong></td>
+</tr>
+</tbody></table>
+<p>The rest is headroom for growth and for the page cache. 4 vCPUs let a backup, a report export and the morning rush run together. Builds run on GitHub Actions, never on the server. The database is small (the backup guide&#39;s example: 48 MB compressed), so 80 GB of disk holds the databases, 14 days of local dumps, logs and Docker images with room to spare.</p>
+<h2 id="3-target-architecture-on-one-server">3. Target architecture on one server</h2>
+<p>Ubuntu 24.04 LTS, Docker Engine with the Compose plugin. Everything runs as containers from one <code>docker-compose.yml</code> kept in the repository (<code>deploy/vps/</code>, to be written in week 0), with secrets outside the repository.</p>
+<table>
+<thead>
+<tr>
+<th>Container</th>
+<th>Image</th>
+<th>Listens on</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>caddy</code></td>
+<td><code>caddy:2</code> built with the <code>caddy-dns/cloudflare</code> module (a two-line Dockerfile, <code>xcaddy build --with github.com/caddy-dns/cloudflare</code>)</td>
+<td><strong>80, 443 — the only published ports</strong></td>
+<td>HTTPS for every hostname (Let&#39;s Encrypt), wildcard certificates by DNS-01 through Cloudflare, the static dashboard and admin portal, reverse proxy to the APIs, maintenance page</td>
+</tr>
+<tr>
+<td><code>pg-prod</code></td>
+<td><code>postgres:17</code> (see below)</td>
+<td>internal network only</td>
+<td>production database (own volume)</td>
+</tr>
+<tr>
+<td><code>pg-dev</code></td>
+<td><code>postgres:17</code></td>
+<td>internal network only</td>
+<td>dev database (own volume; a dev mistake cannot touch production)</td>
+</tr>
+<tr>
+<td><code>rest-prod</code>, <code>rest-dev</code></td>
+<td><code>postgrest/postgrest</code> pinned to the major Supabase runs (check Supabase › Settings › API; v12 or v13)</td>
+<td>internal only</td>
+<td>the same REST layer the API uses today (section 5)</td>
+</tr>
+<tr>
+<td><code>api-prod</code>, <code>api-dev</code></td>
+<td><code>ghcr.io/&lt;owner&gt;/zaptill-api:&lt;git sha&gt;</code> built by GitHub Actions from the repository root</td>
+<td>internal only (port 4000)</td>
+<td><code>apps/server</code>, unchanged</td>
+</tr>
+<tr>
+<td>(fallback only) <code>gotrue-prod</code></td>
+<td><code>supabase/auth</code>, pinned</td>
+<td>internal only</td>
+<td>only if own auth is not ready by the cut-over (section 10)</td>
+</tr>
+</tbody></table>
+<p><strong>Postgres version.</strong> The repository does not pin Supabase&#39;s version: <code>00_baseline.sql</code> was checked against a local PostgreSQL 16, and the A589 backup workflow says &quot;Supabase: PostgreSQL 15 or 17&quot; and installs the 17 client. Supabase › Project Settings › Infrastructure shows the real one. Use <strong>Postgres 17</strong> on the VPS either way: a dump from 15 or 17 restores into 17. If production is on 15, the move is also the upgrade, rehearsed on dev first.</p>
+<p><strong>Hostnames</strong> (Cloudflare DNS, records &quot;DNS only&quot; — grey cloud — at first; see the M-Pesa note in section 8):</p>
+<table>
+<thead>
+<tr>
+<th>Hostname</th>
+<th>Today</th>
+<th>On the VPS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>api.zaptill.co.ke</code></td>
+<td>Render (production API)</td>
+<td>Caddy → <code>api-prod</code></td>
+</tr>
+<tr>
+<td><code>app.zaptill.co.ke</code></td>
+<td>Vercel (dashboard + web POS)</td>
+<td>Caddy, static files of <code>apps/dashboard</code> (SPA fallback to <code>index.html</code>)</td>
+</tr>
+<tr>
+<td><code>admin.zaptill.co.ke</code></td>
+<td>Vercel (admin portal)</td>
+<td>Caddy, static files of <code>apps/admin</code></td>
+</tr>
+<tr>
+<td><code>*.zaptill.co.ke</code> (client addresses, A378)</td>
+<td>Vercel</td>
+<td>Caddy, the dashboard&#39;s files (one wildcard certificate)</td>
+</tr>
+<tr>
+<td><code>zaptill.co.ke</code>, <code>www.</code></td>
+<td>Cloudflare Pages (website)</td>
+<td>unchanged — explicit records win over the wildcard</td>
+</tr>
+<tr>
+<td><code>dev-api.zaptill.co.ke</code></td>
+<td>— (dev API is <code>swiftpos-20c2.onrender.com</code>)</td>
+<td>Caddy → <code>api-dev</code></td>
+</tr>
+<tr>
+<td><code>app.dev.zaptill.co.ke</code>, <code>admin.dev.zaptill.co.ke</code>, <code>*.dev.zaptill.co.ke</code></td>
+<td>Vercel dev projects</td>
+<td>Caddy, dev builds; second wildcard certificate; dev <code>TENANT_ROOT_DOMAIN=dev.zaptill.co.ke</code></td>
+</tr>
+</tbody></table>
+<p>The dev names follow the end-to-end guard&#39;s rule (<code>docs/E2E-NIGHTLY.md</code>: a host is allowed when the label next to the domain is <code>dev</code>), and <code>dev</code> is already a reserved client address in <code>shared/tenantHost.ts</code>, so no client can take it.</p>
+<p>The static sites get the same headers as <code>vercel.json</code> today (<code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: SAMEORIGIN</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code>, one-year immutable cache on <code>/assets/*</code>).</p>
+<p><strong>This also settles the shared-components hosting change.</strong> <code>docs/SHARED-COMPONENTS-PLAN.md</code> section 4 needs Render&#39;s root directory changed because Render cannot see <code>packages/core</code> from <code>apps/server</code>. The VPS image is built from the repository root, so <code>packages/core</code> is simply there; on the VPS that blocker disappears.</p>
+<p><strong>File storage (replacing Supabase Storage).</strong> Only one bucket is used: <code>business-assets</code>, for the logo uploaded on the legacy onboarding page (<code>apps/dashboard/src/pages/OnboardingPage.tsx</code>; the receipt and branding logos are already in the database, product photos on Cloudinary). Plan: copy the bucket&#39;s files to the server&#39;s disk (<code>/srv/zaptill/files/business-assets/</code>), serve them read-only through Caddy at <code>https://api.zaptill.co.ke/files/business-assets/…</code>, rewrite the stored URLs with one <code>UPDATE</code> (the Supabase public-URL prefix <code>/storage/v1/object/public/business-assets/</code> to the new prefix), and include the folder in the nightly backup to R2. New uploads go through the API (see <code>docs/OWN-AUTH-PLAN.md</code> § dashboard changes). R2-only storage is the alternative if files ever grow large; today they do not.</p>
+<p><strong>Scheduled jobs.</strong> The API&#39;s own jobs (<code>node-cron</code>: daily summary, low stock, watchdog, owner alerts, cloud-plan reminders, monthly pack, eTIMS retry) run inside <code>api-prod</code> exactly as on Render. Host jobs are systemd timers: the nightly backup, the restore check, the health check, certificate and disk checks (section 7).</p>
+<p><strong>Logs.</strong> Docker&#39;s <code>json-file</code> driver with <code>max-size: 10m</code>, <code>max-file: 5</code> per container (≈ 50 MB cap each); journald capped at 500 MB (<code>SystemMaxUse=500M</code>). PostgREST at <code>log-level: warn</code>. No log-ingestion quota exists any more. The admin portal keeps reading the API&#39;s own ops events and log requests as today.</p>
+<p><strong>Monitoring.</strong></p>
+<ul>
+<li>The A589 outside check (<code>uptime-check.yml</code>, every 10 minutes, <code>PROD_URL</code> and <code>APP_URL</code>) keeps working unchanged because the hostnames do not change.</li>
+<li>The API&#39;s watchdog (A383) keeps telling the admin about tills not syncing, M-Pesa without an answer, error bursts.</li>
+<li>New: <code>zaptill-health</code> (systemd timer, every 5 minutes) checks disk use above 80%, memory, every container healthy, the newest backup younger than 26 hours, certificates more than 14 days from expiry, and sends problems through the same alert script the backups use (<code>scripts/ops/notify-admin.sh</code> on dev: email and Telegram).</li>
+<li>Hetzner&#39;s console graphs (CPU, disk, network) for the weekly look. A metrics stack (node exporter, Prometheus, Grafana) is not worth its memory at this size; reconsider when there is a second server.</li>
+</ul>
+<p><strong>Hardening.</strong></p>
+<ul>
+<li>SSH: keys only (<code>PasswordAuthentication no</code>), <code>PermitRootLogin no</code>, one sudo user for the owner and one for ZapTill&#39;s technician; a separate <code>deploy</code> user whose key may run only the deploy command (a forced command in <code>authorized_keys</code>).</li>
+<li>Firewall twice: the Hetzner Cloud Firewall (free, in front of the server) and <code>ufw</code> on the server, both allowing only 22, 80 and 443. <strong>Docker bypasses <code>ufw</code> for published ports</strong>, so no container except Caddy publishes a port; Postgres and PostgREST are reachable only on the internal Docker network.</li>
+<li><code>fail2ban</code> for SSH; <code>unattended-upgrades</code> for security updates, with any needed reboot at 04:30 on Sunday (the quietest hour).</li>
+<li>Time sync (<code>systemd-timesyncd</code>), 2 GB swap file, <code>vm.swappiness=10</code>.</li>
+<li>Postgres: no port on the host, <code>scram-sha-256</code> passwords, a separate login role per service.</li>
+</ul>
+<p><strong>Secrets.</strong> One file per environment, <code>/etc/zaptill/prod.env</code> and <code>/etc/zaptill/dev.env</code>, owned by root, mode 600, read by Compose (<code>env_file</code>). Never in git, never in an image, never printed by a script. A copy lives in the owner&#39;s password manager. The values that <strong>must be carried over unchanged</strong> from Render, or every till and browser has to sign in again or encrypted settings stop opening: <code>JWT_SECRET</code>, <code>ADMIN_JWT_SECRET</code>, <code>TECH_SIGNING_PRIVATE_KEY</code>, <code>TECH_SIGNING_PUBLIC_KEY</code>, <code>APP_ENCRYPTION_KEY</code>, <code>OTP_PEPPER</code> (if set; it falls back to <code>JWT_SECRET</code>), <code>OPS_INGEST_TOKEN</code>, the M-Pesa, mail (<code>RESEND_API_KEY</code>, <code>NOTIFY_FROM_EMAIL</code>), Telegram, GitHub-releases and eTIMS values. Changed: <code>SUPABASE_URL</code> (now the internal REST gateway), <code>SUPABASE_SERVICE_ROLE_KEY</code> (a token we sign for PostgREST&#39;s <code>service_role</code>), <code>SUPABASE_ANON_KEY</code> and <code>SUPABASE_JWT_SECRET</code> (gone after own auth). New: <code>RENDER_GIT_COMMIT</code> is set from the image&#39;s build so <code>/health</code> and <code>verify-prod-deploy.yml</code> keep reporting the commit with no code change (renaming it is a later tidy-up).</p>
+<p><strong>Deploys.</strong> A new workflow builds the API image (repository root as the build context) and the two static sites, pushes the image to GitHub&#39;s container registry and the static files over SSH, then runs the deploy command on the server (<code>docker compose pull &amp;&amp; up -d</code>, a health wait, and automatic return to the previous image if <code>/health</code> fails). Pushes to <code>dev</code> (and, during the test period, to <code>shared-components</code>) deploy the dev environment; <code>main</code> deploys production behind the existing <code>production</code> environment&#39;s required reviewer. Images carry no secrets (the repository is public).</p>
+<p><strong>Migrations.</strong> <code>db-migrate-prod.yml</code> keeps its reviewer gate, but instead of connecting to the Supabase pooler from GitHub (which would need Postgres open to the internet), it runs <code>scripts/migrate.mjs --plan</code>, <code>migrate.mjs</code> and <code>verify-db-schema.mjs</code> <strong>on the server</strong> over the deploy SSH key. Postgres stays closed to the internet.</p>
+<p><strong>Other workflows.</strong> <code>supabase-keepalive.yml</code> is retired after the cut-over. <code>nightly-backup.yml</code> (GitHub) is replaced by the server&#39;s own nightly timer and kept for manual runs. <code>nightly-e2e.yml</code> points <code>E2E_API_URL</code> at <code>https://dev-api.zaptill.co.ke</code>. <code>uptime-check.yml</code>, <code>release.yml</code>, <code>security-scan.yml</code> and <code>ci.yml</code> are unchanged.</p>
+<h2 id="4-two-options-self-hosted-supabase-or-plain-postgres-with-zaptill-s-own-sign-in">4. Two options: self-hosted Supabase, or plain Postgres with ZapTill&#39;s own sign-in</h2>
+<p><strong>(A) Self-host the Supabase stack</strong> (Supabase&#39;s <code>docker-compose</code>: Postgres, Kong, GoTrue, PostgREST, Realtime, Storage, imgproxy, postgres-meta, Studio, Logflare analytics, Vector).</p>
+<ul>
+<li>Fewest code changes: the server and the dashboard keep using <code>supabase-js</code> against a new URL, and Realtime and Storage keep working.</li>
+<li>Memory: Supabase documents the self-hosted stack at 4 GB minimum and 8 GB recommended — for <strong>one</strong> environment. Production and dev would need about 12–16 GB. Analytics alone (Logflare + Vector) wants about 1 GB.</li>
+<li>About 12 containers per environment to patch, each a moving part with its own upgrade notes, and Kong and Studio exposed or carefully firewalled.</li>
+<li>The owners&#39; accounts stay in GoTrue, which the owner wants to move away from.</li>
+</ul>
+<p><strong>(B) Plain Postgres + PostgREST + ZapTill&#39;s own sign-in</strong> (the owner&#39;s preference).</p>
+<ul>
+<li>Four small services per environment (Postgres, PostgREST, the API; Caddy shared): about 5.3 GB for both environments.</li>
+<li>What B removes: GoTrue (Supabase Auth), Kong, Realtime, Storage, Studio, analytics, <code>supabase-keepalive.yml</code>, the anon key in the dashboard, and the dashboard&#39;s direct connection to the database (today the browser holds an anon key and a Supabase session that can query PostgREST directly; on B, PostgREST is not reachable from the internet at all).</li>
+<li>What B keeps: PostgREST, internally, so the server&#39;s queries do not change (section 5).</li>
+</ul>
+<p><strong>Recommendation: B.</strong> It fits the budget with room to spare, it is what the owner asked for, and it is also the smaller attack surface. The cost is the own-auth project (<code>docs/OWN-AUTH-PLAN.md</code>), which is mostly a credential store: ZapTill already issues its own tokens.</p>
+<h3 id="the-code-inventory-counted-in-the-worktree-on-2026-10-26">The code inventory (counted in the worktree on 2026-10-26)</h3>
+<p><strong>Server (<code>apps/server/src</code>, 60,915 lines):</strong></p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th align="right">Count</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>.from(&#39;&lt;table&gt;&#39;)</code> — PostgREST table calls</td>
+<td align="right"><strong>1,614</strong></td>
+<td>140 files</td>
+</tr>
+<tr>
+<td><code>.rpc(...)</code> — Postgres functions</td>
+<td align="right"><strong>47</strong> calls to <strong>17</strong> functions</td>
+<td><code>adjust_product_stock</code> (9), <code>adjust_ingredient_stock</code> (9), <code>apply_credit_transaction</code> (6), <code>increment_customer_spend</code> (3), the sync functions (<code>sync_changes_since</code>, <code>sync_changes_heads</code>, <code>sync_changes_heads_by_branch</code>, <code>prune_sync_changes</code>, <code>sync_stock_ready</code>), <code>create_order_atomic</code>, and others</td>
+</tr>
+<tr>
+<td>Operations</td>
+<td align="right">select 1,326 · insert 223 · update 288 · upsert 34 · delete 126</td>
+<td></td>
+</tr>
+<tr>
+<td>Selects that embed related tables (PostgREST resource embedding, e.g. <code>roles ( id, name, role_permissions ( permissions ( key ) ) )</code>)</td>
+<td align="right"><strong>≈ 92</strong></td>
+<td>sign-in, staff, reports, sync</td>
+</tr>
+<tr>
+<td><code>count: &#39;exact&#39;</code></td>
+<td align="right">43</td>
+<td>lists and pagers</td>
+</tr>
+<tr>
+<td>Filters</td>
+<td align="right"><code>.eq</code> 2,135 · <code>.in</code> 208 · <code>.order</code> 197 · <code>.limit</code> 148 · <code>.gte</code> 91 · <code>.is</code> 75 · <code>.lte</code> 64 · <code>.not</code> 28 · <code>.ilike</code> 24 · <code>.neq</code> 19 · <code>.range</code> 18 · <code>.or</code> 17 (PostgREST filter strings) · <code>.gt</code> 12 · <code>.lt</code> 9; <code>.maybeSingle</code> 360, <code>.single</code> 282</td>
+<td></td>
+</tr>
+<tr>
+<td>Supabase Auth calls</td>
+<td align="right"><strong>23</strong> real call sites in 11 files: <code>auth.admin.getUserById</code> 12, <code>auth.admin.updateUserById</code> 4, <code>auth.admin.createUser</code> 2, <code>auth.signInWithPassword</code> 2, <code>auth.admin.generateLink</code> 1, <code>auth.admin.inviteUserByEmail</code> 1, <code>auth.getUser</code> 1</td>
+<td><code>routes/auth.ts</code>, <code>lib/passwordReset.ts</code>, <code>routes/staff.ts</code>, <code>routes/admin.ts</code>, <code>routes/onboarding.ts</code>, <code>lib/ownerBusiness.ts</code>, five jobs</td>
+</tr>
+<tr>
+<td>Storage / Realtime</td>
+<td align="right">0 / 0 (the client is created with a <code>ws</code> transport, never used)</td>
+<td></td>
+</tr>
+</tbody></table>
+<p><strong>Web dashboard and web POS (<code>apps/dashboard/src</code>):</strong> 7 files import Supabase — Auth: <code>getSession</code> 2, <code>signInWithPassword</code> 2, <code>signOut</code> 2, <code>onAuthStateChange</code> 1, <code>signUp</code> 1; Storage: 1 upload + 1 public URL (<code>business-assets</code>); Realtime: 1 channel (<code>OverviewPage.tsx</code>, new completed orders for the live counters; a 60-second polling fallback already exists). No table queries.</p>
+<p><strong>Admin portal (<code>apps/admin/src</code>):</strong> none (two mentions are in a comment). <strong>Desktop POS (<code>apps/desktop/src</code>):</strong> none — the tills talk only to the ZapTill API.</p>
+<h3 id="the-data-layer-keep-postgrest-in-phases">The data layer: keep PostgREST, in phases</h3>
+<p>Replacing PostgREST means re-implementing, for 1,614 calls, the filters, the 92 embedded selects (which need foreign-key-aware JSON sub-queries), the 17 <code>.or()</code> filter strings, <code>upsert</code> with <code>onConflict</code>, <code>count: &#39;exact&#39;</code>, the <code>{ data, error }</code> shape, and the error codes the code checks for (<code>PGRST116</code> for &quot;no row&quot;, <code>23505</code>, <code>23503</code>). Two ways:</p>
+<ul>
+<li>A compatible query builder over <code>node-postgres</code> (<code>pg</code>) with the same method names: about 2–3 weeks to write and prove, plus a slow review of every embedded select. Any difference in behaviour shows up as a wrong number on a till.</li>
+<li>Rewriting the calls as SQL: months of work across the whole server, touching every route the shared-components branch also touches.</li>
+</ul>
+<p>PostgREST itself costs about 50–80 MB of memory, is stable, and on the VPS runs next to Postgres, so the &quot;egress&quot; it caused is gone. Therefore:</p>
+<ol>
+<li><strong>Phase 1 — Postgres + PostgREST on the VPS, minimal code change.</strong> The server keeps <code>supabase-js</code> for data: <code>SUPABASE_URL</code> points at the internal gateway (<code>http://rest-prod-gw/</code> — a Caddy route that strips <code>/rest/v1</code> and forwards to <code>rest-prod:3000</code>), and <code>SUPABASE_SERVICE_ROLE_KEY</code> is a long-lived token we sign with PostgREST&#39;s secret for the <code>service_role</code> role. PostgREST settings matched to Supabase&#39;s: <code>db-schemas=public</code>, <code>db-anon-role=anon</code>, <code>db-max-rows=1000</code> (the server&#39;s <code>pgQuery.ts</code> pages around Supabase&#39;s row cap; keep it the same), <code>db-pool=15</code>. The URL-length chunking in <code>pgQuery.ts</code> stays (it is right for any proxy).</li>
+<li><strong>Phase 2 — ZapTill&#39;s own sign-in</strong> (<code>docs/OWN-AUTH-PLAN.md</code>): the 23 server Auth calls and the dashboard&#39;s Supabase usage are replaced. After this no part of ZapTill talks to Supabase.</li>
+<li><strong>Phase 3 (optional, later) — replace PostgREST</strong> only where it pays: hot paths that need a real transaction across tables (most already are <code>rpc</code> functions). There is no deadline for phase 3, and possibly no need for it.</li>
+</ol>
+<h2 id="5-row-level-security">5. Row-level security</h2>
+<p><strong>What exists.</strong> 149 <code>CREATE POLICY</code> statements in 20 migration files (94 in <code>00_baseline.sql</code>, more created in loops by <code>29_enable_rls_all_tables.sql</code>); RLS is enabled on every table (162 <code>ENABLE ROW LEVEL SECURITY</code> statements). <strong>Every tenant policy uses <code>auth.uid()</code></strong> — 165 references in 19 files — and all have one shape: <code>business_id IN (SELECT id FROM businesses WHERE owner_id = auth.uid())</code> (or the parent-table version, or <code>owner_id = auth.uid()</code> on <code>businesses</code>). There are <strong>no</strong> <code>auth.jwt()</code> or <code>auth.role()</code> uses. Grants: 22 to <code>authenticated</code>, 38 to <code>service_role</code>. Platform tables (sessions, tokens, admin, secrets) have RLS on and no policy at all: only the service role reaches them.</p>
+<p><strong>What they protect today.</strong> The API uses the service role, which bypasses RLS, so tenant isolation for every till, cashier, manager, partner and owner request is enforced <strong>in the API</strong> (<code>requireAuth</code>, <code>rbac.ts</code>, <code>branchScope</code>, <code>businessId</code> on every query, checked by <code>scripts/check-insert-business-id.mjs</code>, <code>check-own-rows.mjs</code>, <code>check-rls-coverage.mjs</code>). RLS matters only for the browser&#39;s direct Supabase session: the owner&#39;s live counters (Realtime) and the onboarding logo upload. A partner&#39;s Supabase session matches no policy (they are not <code>owner_id</code>), so the live counters already never worked for partners — an argument for moving them to the API anyway.</p>
+<p><strong>On the VPS.</strong></p>
+<ul>
+<li>Before the restore, the database gets the pieces the policies reference: the roles <code>anon</code>, <code>authenticated</code> (both <code>NOLOGIN</code>), <code>service_role</code> (<code>NOLOGIN BYPASSRLS</code>), <code>authenticator</code> (<code>LOGIN NOINHERIT</code>, granted the three — PostgREST connects as it); schema <code>auth</code> with a compatible <code>auth.uid()</code>: <code>coalesce(nullif(current_setting(&#39;request.jwt.claim.sub&#39;, true), &#39;&#39;), (nullif(current_setting(&#39;request.jwt.claims&#39;, true), &#39;&#39;)::jsonb -&gt;&gt; &#39;sub&#39;))::uuid</code> — the same definition Supabase uses, which reads the claims PostgREST sets from a verified token. With that, all 149 policies restore and behave as today.</li>
+<li>With own auth (phase 2), browsers no longer touch the database and PostgREST is not reachable from the internet. RLS stays switched on as <strong>defence in depth</strong>: if a future change ever lets a request reach PostgREST without the service key, it sees nothing of other businesses.</li>
+<li>Optional phase 4 (not part of this move): let the API query with a non-bypass role and per-request claims (<code>business_id</code>, <code>branch_ids</code>), with a helper <code>auth.business_id()</code> and policies rewritten from &quot;owner of the business&quot; to &quot;the token&#39;s business&quot;. That turns RLS into a second, independent tenant check for staff and tills as well. It touches every policy and every server query&#39;s key, so it is its own project, started with the most sensitive tables (payments, customers, credit).</li>
+</ul>
+<h2 id="6-data-migration">6. Data migration</h2>
+<p>All dumps are made <strong>by the owner</strong> (or a technician he names) from his own machine or the VPS; nobody else connects to Supabase. The scripts are written in week 0 and tried on dev first.</p>
+<p><strong>What moves, and how</strong></p>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>How</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>public</code> schema (every table, function, trigger, policy, sequence)</td>
+<td><code>pg_dump --format=custom --schema=public --no-owner --no-privileges</code> with the Postgres 17 client, then <code>pg_restore</code> into the prepared database</td>
+<td>Sequences restore with their current values (<code>setval</code> is part of the dump). Grants are re-applied by a script (the 60 known grants), not copied from Supabase&#39;s role set.</td>
+</tr>
+<tr>
+<td>Extensions</td>
+<td>created before the restore: schema <code>extensions</code> with <code>uuid-ossp</code> (63 schema references to <code>extensions.uuid_generate_v4</code>, 15 more to <code>uuid_generate_v4</code>) and <code>pgcrypto</code> (Supabase&#39;s default). <code>gen_random_uuid()</code> (70 uses) is built in.</td>
+<td>No <code>pg_cron</code> (one comment only), no <code>pg_net</code>, no Vault, no <code>pg_trgm</code>/<code>citext</code> in the migrations. Supabase&#39;s own extensions (<code>pg_graphql</code>, <code>pg_stat_statements</code>, <code>supabase_vault</code>) are not copied.</td>
+</tr>
+<tr>
+<td>Realtime publication</td>
+<td>not needed</td>
+<td><code>95_kitchen_tickets_realtime.sql</code> already checks <code>IF EXISTS … supabase_realtime</code>, so re-running migrations is safe.</td>
+</tr>
+<tr>
+<td>Sign-in accounts (<code>auth.users</code>)</td>
+<td>a separate export of only the needed columns: <code>id, email, encrypted_password, email_confirmed_at, created_at, updated_at, last_sign_in_at, banned_until, deleted_at, raw_app_meta_data</code> → loaded into ZapTill&#39;s own <code>accounts</code> table (ids kept)</td>
+<td>Details and the password-hash check: <code>docs/OWN-AUTH-PLAN.md</code> § 4. The file holds password hashes: treat it as a secret, copy it only over SSH, delete it after loading.</td>
+</tr>
+<tr>
+<td>References to <code>auth.users</code></td>
+<td>three foreign keys in the baseline (<code>businesses.owner_id</code>, <code>orders.voided_by</code> — repointed to <code>users</code> by migration 96 — and <code>stock_movements.created_by</code>)</td>
+<td>Restore order: a stub <code>auth.users (id uuid primary key)</code> filled with the exported ids first, so the dump&#39;s foreign keys restore; then a VPS-only migration repoints them to <code>accounts(id)</code> and drops the stub.</td>
+</tr>
+<tr>
+<td><code>auth.sessions</code>, <code>auth.refresh_tokens</code>, <code>auth.identities</code>, MFA tables</td>
+<td>not moved</td>
+<td>ZapTill&#39;s own sessions are in <code>public.refresh_tokens</code> (migration 13) and move with <code>public</code>; ZapTill&#39;s second step (A391) is its own (<code>login_otp…</code> tables). A browser&#39;s Supabase session ends at the cut-over and is not needed any more.</td>
+</tr>
+<tr>
+<td>Storage objects (<code>business-assets</code>)</td>
+<td>download with the Supabase CLI or the S3-compatible endpoint, copy to <code>/srv/zaptill/files/</code>, rewrite URLs</td>
+<td>First count them: <code>select count(*) from storage.objects where bucket_id = &#39;business-assets&#39;;</code></td>
+</tr>
+<tr>
+<td><code>schema_migrations</code> / <code>schema_migration_runs</code></td>
+<td>in <code>public</code>, they move</td>
+<td><code>scripts/migrate.mjs</code> sees the VPS database as up to date.</td>
+</tr>
+</tbody></table>
+<p><strong>Checks after every restore (dev rehearsal and production):</strong> <code>node scripts/verify-db-schema.mjs</code> against the VPS database; row counts of every table compared with the source (a script prints both sides); the newest <code>orders.created_at</code>, <code>sync_changes</code> head and the highest sequence values compared; one test sign-in, one till sync, one report.</p>
+<p><strong>Egress note.</strong> Each full dump reads the whole database out of Supabase once. The dev dump, the production rehearsal and the final production dump are three dumps: well inside even a nearly used egress budget for a database of this size, but check the size first (<code>select pg_size_pretty(pg_database_size(current_database()));</code>).</p>
+<h2 id="7-cut-over">7. Cut-over</h2>
+<p><strong>Stage 1 — dev on the VPS (weeks 0–2).</strong></p>
+<ol>
+<li>Build the server: hardening, Docker, Caddy with both wildcard certificates, <code>pg-dev</code>, <code>rest-dev</code>, <code>api-dev</code>.</li>
+<li>Restore the <strong>dev</strong> Supabase database into <code>pg-dev</code>; load the dev accounts.</li>
+<li>Deploy <code>api-dev</code> from the <code>shared-components</code> branch; the dev dashboard and admin portal to <code>app.dev.</code> / <code>admin.dev.</code>. Dev runs <strong>with Supabase Auth still in use for passwords</strong> (<code>AUTH_PROVIDER=supabase</code>, the dev project&#39;s Auth over the internet — tiny traffic) until own auth is built, then switches to <code>AUTH_PROVIDER=zaptill</code> (<code>docs/OWN-AUTH-PLAN.md</code> § 7).</li>
+<li>Point the test till (T1) at <code>https://dev-api.zaptill.co.ke</code> (Tech page › server address) and the dev M-Pesa sandbox callback at the new dev address.</li>
+<li>Run CI&#39;s full step set and the nightly end-to-end run against the VPS dev (<code>E2E_API_URL</code>).</li>
+<li>A week of real use (week 2) by the owner and the technician: sales on T1, the web POS, the dashboard, a partner sign-in, a password reset, a day close, a backup and a restore drill.</li>
+</ol>
+<p><strong>Stage 2 — production rehearsal (week 2, Tuesday).</strong> Dump production, restore it into a scratch database on the VPS, time every step, run the checks in section 6, and throw the copy away. The time measured sets the freeze window (expected well under 30 minutes for a database of this size).</p>
+<p><strong>Stage 3 — production cut-over (one quiet night, 02:00–03:00 EAT, Sunday into Monday).</strong></p>
+<ol>
+<li><strong>The day before:</strong> lower the TTL of <code>api.</code>, <code>app.</code>, <code>admin.</code> and <code>*.</code> to 60 seconds in Cloudflare; announce a 30-minute maintenance window to clients that trade at night (restaurants, petrol stations); confirm no till is configured with an old Render address (see below); production secrets placed in <code>/etc/zaptill/prod.env</code>.</li>
+<li><strong>Freeze writes.</strong> Render&#39;s production service is switched to answer <code>503</code> with <code>Retry-After</code> for everything except <code>/health</code> (an environment switch or a one-line maintenance service; decided in week 0). Tills keep selling offline: every till write is an idempotent upsert by id and the till retries any 5xx (<code>routes/sync.ts</code>; A581 chose 503 for exactly this — &quot;so every till version keeps the record queued&quot;). <strong>The web POS cannot sell during the window</strong> (it needs the cloud), and <strong>M-Pesa callbacks that arrive during the window are not processed</strong> — so the window is short, at night, and the watchdog&#39;s &quot;M-Pesa with no answer&quot; list is checked afterwards.</li>
+<li>Final dump of production, restore into <code>pg-prod</code>, load accounts, run the checks.</li>
+<li>Start <code>api-prod</code> with the carried-over secrets; test it directly on the VPS (Caddy route by IP with the right Host header): <code>/health</code>, an owner sign-in, a till token renewal, a till push.</li>
+<li><strong>Switch DNS:</strong> <code>api.</code>, <code>app.</code>, <code>admin.</code> and <code>*.</code> to the VPS IPv4 (and IPv6). With a 60-second TTL most clients move within minutes.</li>
+<li>Verify: the A589 outside check is green, a till on each live client syncs its queued sales (watch <code>sync_changes</code> and the watchdog), an STK push completes on a real phone, an owner and a partner sign in, the admin portal opens, a report exports, an email arrives.</li>
+<li>Leave Render&#39;s production service in maintenance mode (answering 503) for 72 hours, so a stale DNS cache can only queue, never write to the old database.</li>
+</ol>
+<p><strong>M-Pesa.</strong> The callback address is built from <code>MPESA_CALLBACK_BASE_URL</code> (<code>https://api.zaptill.co.ke</code>); the hostname does not change, so nothing is re-registered with Safaricom. Callbacks are inbound: Safaricom calls our address, so our new IP does not need whitelisting with them. Our own allowlist of Safaricom&#39;s callback addresses (<code>MPESA_ALLOWED_IPS</code>, default list in <code>routes/mpesa.ts</code>) depends on seeing the caller&#39;s real IP: Express trusts one proxy hop in production (<code>app.set(&#39;trust proxy&#39;, 1)</code>), and Caddy is exactly one hop, so <code>api.zaptill.co.ke</code> must stay <strong>&quot;DNS only&quot; in Cloudflare</strong> (not proxied — a proxied record adds a second hop and every callback would look like Cloudflare). Before the cut-over, check whether any client&#39;s C2B registration or any Daraja product uses an <code>onrender.com</code> address or an IP whitelist (B2C); those need updating with Safaricom.</p>
+<p><strong>The desktop POS needs no update</strong> as long as it uses <code>https://api.zaptill.co.ke</code>. Its cloud address is saved at install time (the installer suggests <code>https://api.zaptill.co.ke</code>, <code>apps/desktop/src/renderer/pages/InstallPage.tsx</code>); there is no certificate pinning for the cloud — the pinning in <code>apps/desktop/src/main/lanTls.ts</code> (A489) and the branch-server hardening (A496) are for the shop network only, so a new Let&#39;s Encrypt certificate is accepted like any other. <strong>Check before the cut-over:</strong> any till installed before A385 (2026-10-03) may still have <code>swiftpos-server.onrender.com</code> saved. Those must be re-pointed on their Tech page before Render is switched off (or the Render service kept as a forwarding proxy until they are). The same check for the web dashboard builds: Vercel&#39;s <code>VITE_API_URL</code> today, the VPS build&#39;s value tomorrow.</p>
+<p><strong>Rollback.</strong></p>
+<ul>
+<li><strong>Before step 5 (DNS):</strong> nothing has changed for anyone — take Render out of maintenance mode. Supabase is untouched.</li>
+<li><strong>After the switch, within 72 hours:</strong> the VPS is now the source of truth, and Supabase is missing what was written since. Rollback = freeze the VPS (503), dump <code>public</code> from the VPS, restore it into Supabase over the old schema (<code>pg_restore --clean --schema=public</code>; writing into Supabase is ingress, not egress), switch DNS back, take Render out of maintenance mode. Rehearsed once on dev in week 2. Accounts created on the VPS in between are added back to Supabase Auth by a script, or reset by email code.</li>
+<li><strong>After 72 hours:</strong> no rollback to Supabase; problems are fixed forward. Supabase and Render stay paid-off-but-intact for 30 days (a Free project only pauses), then are deleted.</li>
+</ul>
+<h2 id="8-backups-on-the-vps">8. Backups on the VPS</h2>
+<p>The A589 design stays (dump, check with <code>pg_restore --list</code>, encrypt with the owner&#39;s passphrase, decrypt-and-compare, upload to his R2 bucket, 30 daily and 12 monthly copies, a status file and an ops event for the admin portal, an alert on failure). What changes:</p>
+<ul>
+<li><strong>Nightly at 00:00 EAT, from the server itself</strong> (systemd timer running <code>scripts/backup/nightly-backup.sh</code> with the dump taken from <code>pg-prod</code> over the internal network). A dump inside the server costs nothing; upload to R2 is free; R2 includes 10 GB a month of storage free and charges nothing to download. The A591 reason for weekly backups (Supabase egress) no longer exists.</li>
+<li>The files folder (<code>/srv/zaptill/files</code>) is backed up with it.</li>
+<li><strong>Hetzner backups</strong> of the whole server: daily, 7 kept (+20% of the server price). A second, independent copy, good for &quot;the server is broken&quot;, not a replacement for the encrypted dumps (they live in the same Hetzner account).</li>
+<li>A <strong>weekly snapshot</strong> before any upgrade of Docker images or Postgres (EUR 0.0143 per GB a month; deleted after a week).</li>
+<li><strong>Restore drill, monthly:</strong> the newest R2 dump restored into a scratch database on <code>pg-dev</code>, <code>verify-db-schema.mjs</code> and row counts, result recorded on the admin portal&#39;s System page.</li>
+<li>Later, if wanted: continuous WAL archiving to R2 with WAL-G, which brings the recovery point from 24 hours to about 5 minutes for ~50 MB of extra memory.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>RPO</strong> (data that can be lost)</td>
+<td>up to 24 hours from the cloud backup alone (the newest Hetzner backup is also at most 24 hours old). Sales made on tills since then are still on the tills, but a till does not resend what the cloud already acknowledged — so 24 hours is the honest figure until WAL archiving is added (then ~5 minutes).</td>
+</tr>
+<tr>
+<td><strong>RTO</strong> (time to be back)</td>
+<td>about 30 minutes from a Hetzner backup onto a new server; about 2–3 hours from an R2 dump onto a brand-new server with the runbook (<code>deploy/vps/RUNBOOK</code>, written in week 1). During that time tills keep selling offline and queue.</td>
+</tr>
+</tbody></table>
+<h2 id="9-costs-and-what-the-owner-takes-on">9. Costs, and what the owner takes on</h2>
+<p><strong>Monthly cost, before and after</strong> (USD 1 ≈ KES 129; check the current Render plan and the dev service&#39;s plan in the Render dashboard).</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Today</th>
+<th>To stay where we are (needed now)</th>
+<th>On the VPS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>API hosting</td>
+<td>Render Starter, production: USD 7; dev service: USD 0–7</td>
+<td>the same, plus bandwidth overage at USD 0.15 per GB above 5 GB</td>
+<td>included</td>
+</tr>
+<tr>
+<td>Database + sign-in</td>
+<td>Supabase Free: USD 0 (restricted from 20 Nov)</td>
+<td>Supabase Pro USD 25 + compute above Micro (USD 0–35)</td>
+<td>included</td>
+</tr>
+<tr>
+<td>Dashboard + admin portal</td>
+<td>Vercel Hobby: USD 0 (Hobby is for non-commercial use; a commercial product should be on Pro, USD 20 per member)</td>
+<td>Vercel Pro USD 20</td>
+<td>included</td>
+</tr>
+<tr>
+<td>Server</td>
+<td>—</td>
+<td>—</td>
+<td>Hetzner CX33 EUR 8.99 + backups EUR 1.80 ≈ <strong>KES 1,620</strong> (≈ KES 1,880 with 16% VAT)</td>
+</tr>
+<tr>
+<td>Backups</td>
+<td>R2 (free tier)</td>
+<td>R2 (free tier)</td>
+<td>R2 (free tier, nightly)</td>
+</tr>
+<tr>
+<td>DNS, website</td>
+<td>Cloudflare free, Pages free</td>
+<td>the same</td>
+<td>the same</td>
+</tr>
+<tr>
+<td>Domain <code>zaptill.co.ke</code></td>
+<td>yearly, unchanged</td>
+<td>unchanged</td>
+<td>unchanged</td>
+</tr>
+<tr>
+<td><strong>Total a month</strong></td>
+<td><strong>≈ KES 900–1,800</strong> (but production was suspended once and Supabase is about to restrict)</td>
+<td><strong>≈ KES 6,700–12,100</strong></td>
+<td><strong>≈ KES 1,620–1,880</strong></td>
+</tr>
+</tbody></table>
+<p><strong>What the owner (or a technician he names) takes on.</strong> Render, Vercel and Supabase did these for us; on a VPS somebody does them:</p>
+<ul>
+<li>Security updates (automatic, with the Sunday 04:30 reboot) and checking that they ran.</li>
+<li>Docker image updates once a month (Postgres minor releases, PostgREST, Caddy, Node), after a snapshot.</li>
+<li>Disk, memory and backup alerts (sent automatically; somebody must read them).</li>
+<li>Renewing nothing by hand: Caddy renews certificates; the Cloudflare token must stay valid.</li>
+<li>A yearly Postgres major upgrade (rehearsed on dev).</li>
+</ul>
+<p><strong>Weekly 15-minute checklist (Monday morning)</strong></p>
+<ul>
+<li><input disabled="" type="checkbox"> Admin portal › System: last backup OK and less than a day old; no open &quot;Production down&quot; issue on GitHub.</li>
+<li><input disabled="" type="checkbox"> Hetzner console: CPU and disk graphs normal; Hetzner backups listed for the last 7 days.</li>
+<li><input disabled="" type="checkbox"> On the server: <code>zaptill status</code> (to be written: containers healthy, disk %, memory, certificate expiry dates, pending security updates, last reboot).</li>
+<li><input disabled="" type="checkbox"> Any alert email or Telegram message from the week has an answer.</li>
+<li><input disabled="" type="checkbox"> First Monday of the month: the restore drill result is green; pull and roll out image updates on dev, then production a day later.</li>
+</ul>
+<h2 id="10-timeline-checkpoints-and-risks">10. Timeline, checkpoints and risks</h2>
+<p>Combined with the shared-components branch: the branch&#39;s step 2 (pure logic into <code>packages/core</code>) continues in parallel and is deployed to the VPS dev environment, which becomes its test bed (the Render root-directory change in <code>docs/SHARED-COMPONENTS-PLAN.md</code> § 4 is then only needed if the branch reaches Render&#39;s dev before the move).</p>
+<p><strong>The date that matters: Supabase threatens restriction from 20 November 2026 — 25 days from today.</strong> The plan reaches production on the night of <strong>Sunday 15 → Monday 16 November</strong>, five days ahead of it, with two fallbacks. That is tight: the dev period of use is about one week instead of two, which is why the GoTrue fallback below exists.</p>
+<table>
+<thead>
+<tr>
+<th>Week</th>
+<th>Work</th>
+<th>Checkpoint (go / no-go)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0 (Mon 26 Oct – Sun 1 Nov)</td>
+<td>Owner: orders the server, makes the Cloudflare API token, answers the decisions in section 11. Hardening, Docker, Caddy with both wildcards; <code>deploy/vps/</code> compose and scripts. Own auth: tables and import script (<code>docs/OWN-AUTH-PLAN.md</code> § 7, steps 1–2).</td>
+<td>Server reachable by SSH key only; an outside port scan shows only 22, 80, 443.</td>
+</tr>
+<tr>
+<td>1 (2 – 8 Nov)</td>
+<td>Dev database restored; <code>api-dev</code> from <code>shared-components</code>; dev dashboards on <code>app.dev.</code>/<code>admin.dev.</code>; T1 on dev. Own auth server side behind the flag, dashboard without <code>supabase-js</code>, partner links, admin flows, tests; <code>AUTH_PROVIDER=zaptill</code> on dev by Friday. Backups, health timer, deploy workflow, migrations over SSH. GoTrue fallback tried on dev once.</td>
+<td>CI full step set green against VPS dev; restore checks equal; every auth test green; a password reset, a partner invite and a forced change done by hand; a backup restored.</td>
+</tr>
+<tr>
+<td>2 (9 – 15 Nov)</td>
+<td>Use of dev on the VPS by the owner and the technician all week. Production rehearsal (dump → scratch restore, timed) on Tuesday; rollback rehearsal on dev on Wednesday; till address check across clients; go / no-go on Friday 13; <strong>production cut-over Sunday 15 → Monday 16 Nov, 02:00 EAT</strong>.</td>
+<td>Rehearsal checks equal; freeze window measured; no open defect from the week of use; owner&#39;s go.</td>
+</tr>
+<tr>
+<td>3 (16 – 22 Nov)</td>
+<td>72-hour watch; Render in maintenance mode; Supabase kept intact.</td>
+<td>No rollback needed after 72 hours.</td>
+</tr>
+<tr>
+<td>4–8</td>
+<td>Shared-components step 2 batches on the VPS dev; WAL archiving (optional); cancel Render, Vercel, Supabase after 30 days.</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<p><strong>Fallbacks if the deadline is close:</strong> (1) cut over on the planned night <strong>with the GoTrue container</strong> instead of own auth (zero code change: <code>SUPABASE_URL</code> also routes <code>/auth/v1</code> to it, with the restored <code>auth</code> schema) and switch to own auth on the VPS a week later; (2) if the move itself slips past 20 November, upgrade Supabase to Pro for one month (USD 25) rather than rush the cut-over.</p>
+<p><strong>Risk register</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Risk</th>
+<th>Likelihood / impact</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>R1</td>
+<td>Hetzner CX33 out of stock or account verification delays the order</td>
+<td>medium / medium</td>
+<td>CAX21, Helsinki, or Contabo VPS 6; order this week</td>
+</tr>
+<tr>
+<td>R2</td>
+<td>One server is a single point of failure (hardware, provider outage)</td>
+<td>low / high</td>
+<td>tills sell offline; Hetzner backups (RTO ~30 min); R2 dumps + runbook (RTO 2–3 h); WAL archiving later</td>
+</tr>
+<tr>
+<td>R3</td>
+<td>A behaviour difference between Supabase&#39;s PostgREST and the self-hosted one (version, max rows, URL limits, error codes)</td>
+<td>medium / high</td>
+<td>pin the same major; <code>db-max-rows=1000</code>; full CI and the HTTP tests against VPS dev; a week of use on T1</td>
+</tr>
+<tr>
+<td>R4</td>
+<td>Password hashes not carried over cleanly (format, missing hashes)</td>
+<td>low / high</td>
+<td>hash-format check on dev first (<code>docs/OWN-AUTH-PLAN.md</code> § 4); reset-by-code fallback; GoTrue fallback</td>
+</tr>
+<tr>
+<td>R5</td>
+<td>A till still configured with an <code>onrender.com</code> address</td>
+<td>medium / medium</td>
+<td>address check per till before the cut-over; keep Render answering until re-pointed</td>
+</tr>
+<tr>
+<td>R6</td>
+<td>M-Pesa callbacks lost in the freeze window, or refused because of a proxy hop</td>
+<td>low / medium</td>
+<td>short night window; <code>api.</code> DNS only; watchdog&#39;s unanswered list checked after; STK test on a real phone</td>
+</tr>
+<tr>
+<td>R7</td>
+<td>Docker-published ports bypass <code>ufw</code>, exposing Postgres</td>
+<td>low / critical</td>
+<td>no published ports except Caddy; Hetzner Cloud Firewall as a second layer; an outside port scan in week 0</td>
+</tr>
+<tr>
+<td>R8</td>
+<td>Disk fills (logs, dumps, images)</td>
+<td>medium / high</td>
+<td>log caps, 14-day local dump retention, <code>docker image prune</code> monthly, 80% alert</td>
+</tr>
+<tr>
+<td>R9</td>
+<td>Secrets lost with the server</td>
+<td>low / critical</td>
+<td><code>/etc/zaptill/*.env</code> copied to the owner&#39;s password manager; R2 passphrase kept there too</td>
+</tr>
+<tr>
+<td>R10</td>
+<td>Owner&#39;s operational load (patching, alerts) is not done</td>
+<td>medium / medium</td>
+<td>automatic updates, alerts to email and Telegram, the 15-minute weekly checklist, a named technician</td>
+</tr>
+<tr>
+<td>R11</td>
+<td>Rollback after the switch loses data written in between</td>
+<td>low / high</td>
+<td>rollback = reverse dump/restore, rehearsed on dev; 72-hour window only</td>
+</tr>
+<tr>
+<td>R12</td>
+<td>The shared-components branch and the move are tested together, so a fault is harder to place</td>
+<td>medium / medium</td>
+<td>production moves from <code>dev</code>&#39;s code, not the branch; the branch is only on the VPS dev environment until it merges by its own rules</td>
+</tr>
+<tr>
+<td>R13</td>
+<td>Kenya Data Protection Act: client data hosted abroad</td>
+<td>low / low</td>
+<td>unchanged from today (Supabase and Render are abroad too); Hetzner provides a GDPR data-processing agreement; note it in the client terms</td>
+</tr>
+</tbody></table>
+<h2 id="11-decisions-needed-from-the-owner">11. Decisions needed from the owner</h2>
+<ol>
+<li><strong>Provider:</strong> Hetzner CX33 (recommended), CAX21 if out of stock, or Contabo VPS 6.</li>
+<li><strong>Cut-over night:</strong> Sun 15 → Mon 16 Nov (recommended, before the 20 Nov restriction); and whether the GoTrue fallback is acceptable on that night if own auth is not ready.</li>
+<li><strong>Dashboards on the VPS or on Cloudflare Pages.</strong> The plan puts them on the VPS (&quot;host everything there&quot;). Cloudflare Pages is free, allows commercial use and would keep the dashboards up when the server is down (though they cannot do much without the API). Recommendation: VPS, for one place to look after.</li>
+<li><strong>Backup schedule:</strong> nightly at 00:00 EAT (now free), and whether to add WAL archiving (5-minute recovery point) in month 2.</li>
+<li><strong>Who looks after the server</strong> week to week, and who else gets SSH access.</li>
+<li><strong>Supabase Pro for one month</strong> as the safety net if the move slips past 20 November.</li>
+</ol>
+
+</div></body></html>

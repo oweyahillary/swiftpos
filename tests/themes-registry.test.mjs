@@ -1,7 +1,7 @@
 /**
  * themes-registry.test.mjs — A324 (Phase 2 slice 1): every curated action theme passes every check, and the checker
- * itself rejects what the proposal rejected. Runs shared/themes.ts directly (the canonical copy; check-shared-sync
- * keeps the till's and the web's copies byte-identical).
+ * itself rejects what the proposal rejected. Runs packages/core/src/themes.ts directly (the one file the till, the web and
+ * the cloud import as @zaptill/core/themes).
  *
  *   node tests/themes-registry.test.mjs
  *
@@ -25,7 +25,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A324_TS) {
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const T = await import(pathToFileURL(path.join(ROOT, 'shared', 'themes.ts')).href);
+const T = await import(pathToFileURL(path.join(ROOT, 'packages', 'core', 'src', 'themes.ts')).href);
 let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log(`PASS  ${l}`); } else { fail++; console.log(`FAIL  ${l}  ${d}`); } };
 

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { resolveBranding, pickButtonText } from '../../lib/contrast';
-import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, type Theme } from '../../lib/themes';
+import { resolveBranding, pickButtonText } from '@zaptill/core/contrast';
+import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, type Theme } from '@zaptill/core/themes';
 import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
-import { accentWriteError, footerWriteError, normaliseHex, resolveBranchBranding, FOOTER_LINE_MAX, FOOTER_LINE_NARROW } from '../../lib/branchBranding';   // A544
+import { accentWriteError, footerWriteError, normaliseHex, resolveBranchBranding, FOOTER_LINE_MAX, FOOTER_LINE_NARROW } from '@zaptill/core/branchBranding';   // A544
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, RECEIPT_LOGO_PRINT_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
 import { money } from '../../lib/format';

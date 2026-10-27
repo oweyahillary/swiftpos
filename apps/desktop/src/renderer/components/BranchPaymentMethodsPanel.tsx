@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import MethodDot from './MethodDot';
-import { PAYMENT_CATALOGUE, enabledFromSetting } from '../../shared/paymentCatalogue';
+import { PAYMENT_CATALOGUE, enabledFromSetting } from '@zaptill/core/paymentCatalogue';
 
 // A429 — Manager → Settings → Payment methods (shared/paymentCatalogue.ts).
 // Owner, 2026-10-10: "add them but as toggles — by default the current payment methods are on but the manager can turn

@@ -7,8 +7,8 @@
 //
 // SIMULATES a till that loses the cloud: the REAL till (dist/main — ipcHandlers' manager handlers, changeQueue,
 // localChanges, syncEngine, the print worker, real SQLite, electron shimmed) and a stand-in cloud whose POST /api/changes
-// judges each change with the SAME rules file the real cloud runs (dist/main/tillChanges.js — copied byte for byte from
-// shared/; the real cloud route is run in tests/till-changes-cloud.test.mjs).
+// judges each change with the SAME rules file the real cloud runs (@zaptill/core/tillChanges — the one file in
+// packages/core; the real cloud route is run in tests/till-changes-cloud.test.mjs).
 //
 //   cd apps/desktop && npx tsc -p tsconfig.main.json && node test/till-first.test.mjs
 //
@@ -48,7 +48,7 @@ const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } el
 const listen = (handler) => new Promise((resolve) => { const s = http.createServer(handler); s.listen(0, '127.0.0.1', () => resolve(s)); });
 const body = (req) => new Promise((r) => { const c = []; req.on('data', (x) => c.push(x)); req.on('end', () => { try { r(JSON.parse(Buffer.concat(c).toString() || '{}')); } catch { r({}); } }); });
 const send = (res, status, obj) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
-const T = require(path.join(dist, 'tillChanges.js'));   // the rules the cloud runs
+const T = require('@zaptill/core/tillChanges');   // the rules the cloud runs
 const bcrypt = require('bcryptjs');
 const BR = '22222222-2222-4222-8222-222222222222';
 const AMY = '44444444-4444-4444-8444-444444444444', MARY = '55555555-5555-4555-8555-555555555555';

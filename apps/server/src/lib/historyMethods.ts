@@ -5,7 +5,7 @@
  * every method. Cached a minute per business/branch; the settings routes call invalidateHistoryMethods on a change.
  */
 import { supabase } from './supabase';
-import { CASHIER_HISTORY_METHODS_KEY, cleanHistoryMethods } from './cashierHistory';
+import { CASHIER_HISTORY_METHODS_KEY, cleanHistoryMethods } from '@zaptill/core/cashierHistory';
 
 const TTL_MS = 60_000;
 const cache = new Map<string, { at: number; methods: string[] }>();

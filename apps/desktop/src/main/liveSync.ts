@@ -59,7 +59,7 @@ import { applyChangeEntries, liveCloudGet, liveSocketTarget, liveWholePull, refr
   refreshAccessToken } from './syncEngine';
 import { readBranchStaffForServe } from './branchStaff';
 import { refreshStaffRosterNow, setRosterLive } from './staffRoster';
-import { isCriticalTopic, NON_CRITICAL_WAIT_MS, SYNC_TOPICS, DRAWERS_TOPIC, type ChangeEntry, type ChangesAnswer } from './syncTopics';
+import { isCriticalTopic, NON_CRITICAL_WAIT_MS, SYNC_TOPICS, DRAWERS_TOPIC, type ChangeEntry, type ChangesAnswer } from '@zaptill/core/syncTopics';
 
 export const SOCKET_DOWN_POLL_MS = 5 * 60_000;
 export const BUSY_POLL_MS = 20_000;

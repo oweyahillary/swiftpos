@@ -41,7 +41,7 @@ function requireFrom(pkgDirs, name) {
 const esbuild = requireFrom(['apps/server', 'apps/dashboard'], 'esbuild');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a472-'));
 const outFile = path.join(tmp, 'paginate.mjs');
-esbuild.buildSync({ entryPoints: [path.join(DASH, 'src/lib/paginate.ts')], bundle: true, format: 'esm', platform: 'neutral', outfile: outFile, logLevel: 'silent' });
+esbuild.buildSync({ entryPoints: [path.join(ROOT, 'packages/core/src/paginate.ts')], bundle: true, format: 'esm', platform: 'neutral', outfile: outFile, logLevel: 'silent' });
 const P = await import(pathToFileURL(outFile).href);
 
 const list = (n) => Array.from({ length: n }, (_, i) => i + 1);
@@ -210,10 +210,10 @@ await ok('minimart POS: the same incremental grid', () => {
   assert(/\{grid\.more && <div ref=\{grid\.sentinelRef\} data-testid="grid-more"/.test(mini), 'sentinel');
 });
 
-// ── the shared copy ──
-await ok('lib/paginate.ts is the shared file, registered in check-shared-sync', () => {
-  eq(read('src/lib/paginate.ts'), fs.readFileSync(path.join(ROOT, 'shared/paginate.ts'), 'utf8'));
-  assert(/'apps\/dashboard\/src\/lib\/paginate\.ts'/.test(fs.readFileSync(path.join(ROOT, 'scripts/check-shared-sync.mjs'), 'utf8')), 'registered');
+// ── the one file ──
+await ok('paginate lives in packages/core (imported as @zaptill/core/paginate), no copies left', () => {
+  assert(fs.existsSync(path.join(ROOT, 'packages/core/src/paginate.ts')), 'packages/core/src/paginate.ts');
+  for (const p of ['shared/paginate.ts', 'apps/dashboard/src/lib/paginate.ts', 'apps/desktop/src/shared/paginate.ts', 'apps/admin/src/lib/paginate.ts']) assert(!fs.existsSync(path.join(ROOT, p)), p);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

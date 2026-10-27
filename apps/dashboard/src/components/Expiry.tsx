@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { money, qty, dateShort } from '../lib/format';
 import Pager, { usePageSize } from './Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 /**
  * Expiry — A413: stock batches and expiry dates. One screen for the owner (Stock › Expiry) and the manager (Manager ›

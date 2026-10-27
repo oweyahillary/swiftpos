@@ -12,14 +12,14 @@ import { api, downloadFile } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
 import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
-import { methodColour } from '../lib/paymentColours';   // A439
+import { methodColour } from '@zaptill/core/paymentColours';   // A439
 import MonthlyPackTab from './reports/MonthlyPackTab';   // A455
 import DownloadExcelButton from '../components/DownloadExcelButton';   // A467
 import { localStamp, type ReportColumn, type ReportSheet } from '../lib/reportDownload';   // A467
 import { reportPresets } from '../lib/reportPeriods';   // A467
 import * as fmt from '../lib/format';   // A471: one money/number/date format ('money' here is the Excel column shorthand)
 import Pager, { usePageSize } from '../components/Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

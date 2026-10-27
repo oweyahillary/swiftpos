@@ -5,7 +5,7 @@ import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';
 import { money, dateShort } from '../lib/format';
 import Pager, { usePageSize } from '../components/Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 interface Discount {
   id: string;

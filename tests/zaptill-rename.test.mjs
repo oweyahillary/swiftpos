@@ -20,7 +20,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const T = await import(pathToFileURL(path.join(ROOT, 'shared/tenantHost.ts')).href);
+const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/tenantHost.ts')).href);
 
 await ok('the Windows app is ZapTill; it keeps its app id (updates in place) and carries its data folder across', () => {
   const pkg = JSON.parse(read('apps/desktop/package.json'));
@@ -54,7 +54,7 @@ await ok('renamed: the web, the admin portal and the cloud\'s emails and message
   assert.match(read('apps/admin/index.html'), /<title>ZapTill Admin<\/title>/);
   assert.match(read('apps/server/src/lib/mailer.ts'), /'ZapTill <noreply@zaptill\.co\.ke>'/);
   assert.match(read('apps/server/src/jobs/dailySummary.ts'), /Sent by ZapTill/);
-  assert.match(read('shared/support.ts'), /DEFAULT_SUPPORT_NAME = 'ZapTill support'/);
+  assert.match(read('packages/core/src/support.ts'), /DEFAULT_SUPPORT_NAME = 'ZapTill support'/);
 });
 await ok('no "SwiftPOS" left in what a person reads on the web sign-in, POS sign-in, receipts or emails', () => {
   for (const f of ['apps/dashboard/src/pages/LoginPage.tsx', 'apps/dashboard/src/pages/pos/POSLoginScreen.tsx',

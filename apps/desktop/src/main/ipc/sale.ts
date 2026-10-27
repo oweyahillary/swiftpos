@@ -12,7 +12,7 @@ import { signedIn as sessionPerson, signedInCan, personCan } from '../tillAccess
 import { historyScope } from '../shiftService';
 import { markKitchenPaid } from '../kitchenService';
 import { sellRefusal, isOpenBill } from '../sellGate';
-import { receiptPayloadFromDetail } from '../orderDetail';
+import { receiptPayloadFromDetail } from '@zaptill/core/orderDetail';
 import { openBills, type IpcShared } from './shared';
 import { prepareCreditSale, pullCreditCustomers } from '../creditSale';   // A552
 import { saleStockRefusal } from '../stockGateLocal';   // A563

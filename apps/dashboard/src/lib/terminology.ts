@@ -1,5 +1,5 @@
 import { useBusiness } from '../context/BusinessContext';
-import { businessTerms, type BusinessTerms } from './businessTerms';
+import { businessTerms, type BusinessTerms } from '@zaptill/core/businessTerms';
 
 // Vertical-aware wording so the UI speaks the right dialect per business type:
 // a restaurant/café sees "Menu Items / Menu Sections / Set Meals", while a

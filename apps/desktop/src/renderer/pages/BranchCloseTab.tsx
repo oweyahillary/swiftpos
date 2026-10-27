@@ -24,7 +24,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { posApi, type BranchPeerShift, type ShiftMoneyView } from '../lib/posApi';
-import { methodLabel } from '../../shared/paymentCatalogue';   // A465
+import { methodLabel } from '@zaptill/core/paymentCatalogue';   // A465
 import { methodName, cashLines, type MethodOption } from '../../shared/shiftConfirm';
 import MethodDot from '../components/MethodDot';
 import { CreditAwaitingNotice } from '../components/CreditSalesTab';   // A545

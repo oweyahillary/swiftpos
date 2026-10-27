@@ -24,7 +24,7 @@ import { DESK } from '../../components/RowMore';
 import { ORDER_TYPE_LABEL, type ChartPalette, type OrderTypeKey } from './chartPalette';
 import { capRows, changeCell, daysLeftWords, nextArea, type AreaHook, type AreaKey } from './chartMath';
 import { ChartCard, Legend, OrderMixBars, AvgBillLine, type MixBucket } from './charts';
-import { analyticsWords, type AnalyticsWords } from '../../lib/analyticsTerms';
+import { analyticsWords, type AnalyticsWords } from '@zaptill/core/analyticsTerms';
 
 const TOP = 10;
 const pc = (x: number | null | undefined) => (x === null || x === undefined ? '—' : `${Math.round(x * 100)}%`);

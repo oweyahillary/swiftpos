@@ -3,7 +3,7 @@
 import { getLocalDb, effectiveReceiptFooter } from '../localDb';
 import { getDeviceConfig, getPosFeatures, getStockCountFreeze, getScaleSettings } from '../deviceConfig';
 import { parseNotePicks } from '../orderNotes';
-import { cleanShowDays } from '../productDays';
+import { cleanShowDays } from '@zaptill/core/productDays';
 import { tillStockView } from '../stockGateLocal';   // A563
 import { forecourtSales, forecourtTanks } from '../forecourt';   // A588
 import { type IpcShared } from './shared';

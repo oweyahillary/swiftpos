@@ -37,9 +37,10 @@ const ok = async (n, f) => { try { await f(); pass++; console.log(`  ok   ${n}`)
 
 const F = await lib('posFeatures.ts');
 const D = await lib('delivery.ts');
-const X = await lib('expenseMethod.ts');
-const Q = await lib('confirmReasons.ts');
-const H = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/historyView.ts')).href);
+const X = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/expenseMethod.ts')).href);   // shared-components step 2: in packages/core
+// shared-components step 1: confirmReasons lives in packages/core (imported as @zaptill/core/confirmReasons), not copied.
+const Q = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/confirmReasons.ts')).href);
+const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/historyView.ts')).href);
 
 console.log('0.6.27 — the prospect\'s requests (cloud + web)\n');
 

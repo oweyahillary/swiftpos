@@ -6,7 +6,7 @@
  * inventory or if they do they cannot be sold".
  *
  * RUNS the COMPILED controls, pos and orders routers behind the REAL auth middleware over HTTP; the database in memory
- * (tests/lib-memdb.mjs), create_order_atomic emulated. The shared rules (shared/stockGate.ts) run directly.
+ * (tests/lib-memdb.mjs), create_order_atomic emulated. The shared rules (packages/core/src/stockGate.ts) run directly.
  *
  *   cd apps/server && npm run build && cd ../.. && TZ=UTC node --no-warnings tests/stock-zero-a563.test.mjs
  *
@@ -58,7 +58,7 @@ const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const mem = installMemDb(supabase);
 supabase.auth.admin.getUserById = async () => ({ data: null, error: { message: 'no user' } });
 const log = console.log; const quiet = () => {}; console.info = quiet; console.warn = quiet; console.error = quiet;
-const G = await import(pathToFileURL(path.join(ROOT, 'shared/stockGate.ts')).href);
+const G = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/stockGate.ts')).href);
 
 const B = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222', BR2 = '33333333-2222-4222-8222-222222222222';
 const OWNER = '44444444-4444-4444-8444-444444444444', TOM = 'cccccccc-0000-4000-8000-000000000001';
@@ -126,7 +126,7 @@ const tillPush = (items, headers = { 'X-Device-Id': 'dev-T1' }) => req('POST', '
 const mode = (m) => Object.fromEntries(Object.entries(G.outOfStockFlags(m)));
 
 try {
-  log('\nS — the rules (shared/stockGate.ts)\n');
+  log('\nS — the rules (packages/core/src/stockGate.ts)\n');
   await ok('the choice from the switches: none → sell; sold out; hide (hide wins over sold out)', () => {
     assert.equal(G.outOfStockMode(null), 'sell'); assert.equal(G.outOfStockMode({ stock_zero_sold_out: true }), 'sold_out');
     assert.equal(G.outOfStockMode({ stock_zero_hide: true, stock_zero_sold_out: true }), 'hide');

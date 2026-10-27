@@ -21,7 +21,7 @@ import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '../../lib/shiftConfirm';
 import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
-import { reasonsNeeded, missingReasons, REASON_MAX } from '../../lib/confirmReasons';
+import { reasonsNeeded, missingReasons, REASON_MAX } from '@zaptill/core/confirmReasons';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

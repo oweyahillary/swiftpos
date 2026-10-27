@@ -4,17 +4,17 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission, can, assertBranchAccess } from '../middleware/rbac';
 import { accentWriteError, themeOverrideError, footerWriteError, cleanFooter, normaliseHex,
-  FOOTER_LINE_MAX, FOOTER_LINE_NARROW, FOOTER_MAX_LINES, FOOTER_MAX_CHARS } from '../lib/branchBranding';   // A544
+  FOOTER_LINE_MAX, FOOTER_LINE_NARROW, FOOTER_MAX_LINES, FOOTER_MAX_CHARS } from '@zaptill/core/branchBranding';   // A544
 import { BRANCH_BRANDING_COLUMNS, type BranchBrandingRow, servedBranchBranding } from '../lib/branchBrandingStore';   // A544, A547
 import { effectiveThemeId } from '../lib/themeRules';   // A547
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 import { themesEnabled, themeWriteError } from '../lib/themeAccess';
-import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules';
-import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
+import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
+import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '@zaptill/core/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
-import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
-import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/paymentCatalogue';   // A429
+import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
+import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';   // A429
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394

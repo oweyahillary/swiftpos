@@ -28,7 +28,7 @@ import { supabase } from '../lib/supabase';
 import { sendEmail } from '../lib/mailer';
 import { standingFor } from '../lib/cloudPlan';   // A581
 import { getDayCutoff } from '../lib/dayCutoff';
-import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { readReportSchedule, gatherRecipients } from './dailySummary';
 import {
   readAlerts, decideBranchSlot, selectOpenTills, decideNotSyncing, tillTrading, bigReversals, bigVariances,

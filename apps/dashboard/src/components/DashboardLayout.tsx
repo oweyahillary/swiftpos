@@ -10,7 +10,7 @@ import { useBranch } from '../context/BranchContext';
 import { usePermissions } from '../context/PermissionsContext';   // A550
 import { relative } from '../lib/format';
 import CloudTrialNotice from './CloudTrialNotice';   // A569: the owner's notice in the trial's last 7 days
-import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '../lib/businessTerms';   // A573
+import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '@zaptill/core/businessTerms';   // A573
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
 // One curated stroke path per nav concept, in place of the mixed emoji the web

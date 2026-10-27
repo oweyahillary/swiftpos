@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '../../lib/businessDay';   // 0.6.34
-import { cleanHistoryMethods } from '../../lib/cashierHistory';   // 0.6.37 (A387)
+import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '@zaptill/core/businessDay';   // 0.6.34
+import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import HistoryMethodsPicker from './HistoryMethodsPicker';
 import BranchPaymentMethods from './BranchPaymentMethods';   // A429
-import { mpesaDescribe, type MpesaReceive } from '../../lib/mpesaReceive';   // A492
+import { mpesaDescribe, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
 
 /** A492: what this branch's customers pay to by M-Pesa — read-only on the web; set on the branch's till by its manager. */
 function BranchMpesaLine({ branchId }: { branchId: string }) {

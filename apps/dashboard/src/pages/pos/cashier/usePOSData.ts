@@ -12,10 +12,10 @@ import { cleanOffer, type Offer } from '../../../lib/offers';   // A445
 import { parseNotePicks } from '../../../lib/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
 import { scaleSettingsOrDefault, type ScaleSettings } from '../../../lib/scaleBarcode';   // A577
-import { rulesFromWire } from '../../../lib/reversalRules';
+import { rulesFromWire } from '@zaptill/core/reversalRules';
 import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
-import { resolveBranchBranding, branchBrandingFromWire } from '../../../lib/branchBranding';   // A544
+import { resolveBranchBranding, branchBrandingFromWire } from '@zaptill/core/branchBranding';   // A544
 import { setPosBranchTheme, applyDashboardThemeVars, computeDashboardThemeVars, posBrandStrip } from '../../../lib/themeVars';   // A544, A547
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';

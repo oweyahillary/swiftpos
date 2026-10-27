@@ -9,7 +9,7 @@
  * The till has the same hook (apps/desktop/src/renderer/lib/useMenuHours.ts) — the two differ only in their import path.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { menuHoursView, menuTimerDelay, type HoursCategoryLike, type HoursMenuLike, type MenuHoursView } from './menuHours';
+import { menuHoursView, menuTimerDelay, type HoursCategoryLike, type HoursMenuLike, type MenuHoursView } from '@zaptill/core/menuHours';
 
 export function useMenuHours<M extends HoursMenuLike, C extends HoursCategoryLike>(
   menus: readonly M[], categories: readonly C[], opts: { cutoff?: number; showAll?: boolean; later?: boolean } = {},

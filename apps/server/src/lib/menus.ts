@@ -8,7 +8,7 @@
  * under is this business's own (another business's menu id is refused as not found — nothing says it exists).
  */
 import { supabase } from './supabase';
-import { checkAvailability, readAvailability, type MenuAvailability } from './menuHours';   // A578
+import { checkAvailability, readAvailability, type MenuAvailability } from '@zaptill/core/menuHours';   // A578
 
 export const MENU_NAME_MAX = 60;
 const HEX = /^#[0-9a-fA-F]{6}$/;

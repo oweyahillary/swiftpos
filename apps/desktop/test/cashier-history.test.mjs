@@ -34,7 +34,7 @@ const R = require(path.join(dist, 'referenceBundle.js'));
 const E = require(path.join(dist, 'syncEngine.js'));
 const S = require(path.join(dist, 'shiftService.js'));
 const M = require(path.join(dist, 'managerReports.js'));
-const H = require(path.join(dist, 'cashierHistory.js'));
+const H = require('@zaptill/core/cashierHistory');
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 

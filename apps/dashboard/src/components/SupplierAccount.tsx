@@ -3,7 +3,7 @@ import { api } from '../lib/api';
 import { printDocument } from '../lib/printDocument';
 import { money, dateShort } from '../lib/format';
 import Pager, { usePageSize } from './Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 /**
  * SupplierAccount — A395: one supplier's account (Stock › Suppliers › a supplier). What is owed, the bills, payments and

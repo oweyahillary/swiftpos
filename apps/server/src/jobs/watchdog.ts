@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
 import { getDayCutoff } from '../lib/dayCutoff';
-import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 import { notifyAdmin, alertChannels } from '../lib/alertNotify';
 import { recentErrors, digestCounters, recentSignInFailures, recentSyncAttempts, syncQueueReports } from '../lib/watchdogCounters';

@@ -9,7 +9,7 @@
 import { monoRasterFromString } from './escposRenderer';
 import { renderReceiptEscPos } from './escposRenderer';
 import { buildReceiptBusinessConfig } from './buildReceiptOrder';
-import { resolveBranchBranding, branchBrandingFromWire } from './branchBranding';   // A547
+import { resolveBranchBranding, branchBrandingFromWire } from '@zaptill/core/branchBranding';   // A547
 import { getQZStatus, printBytesToServer } from './localPrintServer';
 import { api } from './api';
 import type { BranchPrinter } from './printKOT';

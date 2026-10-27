@@ -40,12 +40,12 @@
  * that is not mistaken for a quiet month.
  */
 
-import { detailFromLocal, type OrderDetail } from './orderDetail';   // A444
+import { detailFromLocal, type OrderDetail } from '@zaptill/core/orderDetail';   // A444
 import { isNodeRole } from './deviceConfig';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, getBusinessDayCutoff } from './deviceConfig';   // 0.6.34 + the day's end
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
-import { businessDateLocal, businessDayEndLocal } from './businessDay';   // 0.6.34
+import { businessDateLocal, businessDayEndLocal } from '@zaptill/core/businessDay';   // 0.6.34
 
 export type RangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom';
 

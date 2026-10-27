@@ -6,7 +6,7 @@
  * The format rule is shared/tenantHost.ts (copied to lib/tenantHost.ts).
  */
 import { supabase } from './supabase';
-import { cleanRootDomain, subdomainProblem } from './tenantHost';
+import { cleanRootDomain, subdomainProblem } from '@zaptill/core/tenantHost';
 
 /** The root domain the client addresses sit under (TENANT_ROOT_DOMAIN, e.g. "zaptill.co.ke"); '' = feature off. */
 export function tenantRootDomain(): string {

@@ -11,7 +11,7 @@ import { printDocument } from '../../lib/printDocument';
 import { grnDocSpec, transferDocSpec } from '../../lib/documentSpecs';
 import { dateShort } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 interface GRNRow {
   id: string; grn_number: string; created_at: string; notes: string | null;

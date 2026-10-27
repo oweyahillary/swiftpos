@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { supportWire, type SupportWire } from './support';
+import { supportWire, type SupportWire } from '@zaptill/core/support';
 
 /**
  * supportContact.ts — 0.6.35 (A384): the tech allocated to a client (admin portal), as the till and the web receive it.

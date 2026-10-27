@@ -45,7 +45,7 @@ import { useToast } from '../hooks/useToast';
 import { money, dateTime } from '../lib/format';
 import { useBusiness } from '../context/BusinessContext';
 import Pager, { usePageSize } from '../components/Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { agoLabel, syncRecent, tillBehindLine } from '../lib/tillSync';   // A522
 
 interface OpenShift {

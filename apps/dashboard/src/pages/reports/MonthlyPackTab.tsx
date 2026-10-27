@@ -9,7 +9,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { api, downloadFile } from '../../lib/api';
-import { methodLabel } from '../../lib/paymentCatalogue';
+import { methodLabel } from '@zaptill/core/paymentCatalogue';
 import { num } from '../../lib/format';
 
 type Kind = 'opening' | 'other_income' | 'drawing' | 'bank_deposit' | 'charges';

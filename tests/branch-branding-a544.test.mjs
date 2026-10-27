@@ -8,7 +8,7 @@
 //
 // RUNS the COMPILED server (routes/index.js behind the real requireAuth and requireAnyPermission) over HTTP; the database
 // in memory (tests/lib-memdb.mjs) — migration 156's SQL (table, FK, RLS, triggers) runs for real in
-// scripts/test-migration-156.mjs. The shared rule (shared/branchBranding.ts) is run directly.
+// scripts/test-migration-156.mjs. The shared rule (packages/core/src/branchBranding.ts) is run directly.
 //
 //   S  the rule: per field branch → business → default; themes off (no business theme) → the override ignored; the
 //      write checks (a curated theme, a colour seen on the dark till, a plain-text footer whose lines fit the paper).
@@ -69,9 +69,9 @@ const SV = require(path.join(DIST, 'lib/syncVersions.js'));
 const AC = require(path.join(DIST, 'lib/authCache.js'));
 const PI = require(path.join(DIST, 'lib/posInit.js'));
 const SC = require(path.join(DIST, 'lib/syncChanges.js'));
-// The shared rule as the cloud compiled it (lib/branchBranding.ts — byte-identical to shared/, the till's and the web's
-// copies: scripts/check-shared-sync.mjs).
-const S = require(path.join(DIST, 'lib/branchBranding.js'));
+// The shared rule as the cloud compiled it (@zaptill/core/branchBranding — packages/core/dist, the one file the till,
+// the web and the cloud import).
+const S = require('@zaptill/core/branchBranding');
 const warn = console.warn; console.warn = () => {};
 const err = console.error; console.error = () => {};
 
@@ -342,8 +342,8 @@ try {
     assert.match(pos, /setBranchThemeId\(look\.fromBranch\.theme \? look\.themeId : null\);/);
     assert.match(layer, /computeDashboardThemeVars\(withBranchTheme\(b, posBranchTheme\(\)\)\)/);
     assert.match(tv, /if \(!branchThemeId \|\| b\.themes_enabled !== true\) return b;/);
-    // …and the web POS's resolver, run: the dashboard's copy is byte-identical to the cloud's compiled one.
-    assert.equal(read('apps/dashboard/src/lib/branchBranding.ts'), read('shared/branchBranding.ts'));
+    // …and the web POS's resolver, run: the dashboard imports the same file as the cloud (no copy of its own).
+    assert.ok(!fs.existsSync(path.join(ROOT, 'apps/dashboard/src/lib/branchBranding.ts')));
     const W = S;
     const look = W.resolveBranchBranding({ themeId: 'ocean', receiptFooter: 'Asante' }, W.branchBrandingFromWire({ branchId: BR, themeId: 'violet', receiptFooter: 'Karibu' }));
     assert.deepEqual([look.themeId, look.receiptFooter], ['violet', 'Karibu']);

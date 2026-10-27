@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PERMISSIONS, PERMISSION_GROUPS } from '../lib/permissions';
-import { permissionWords, permissionGroupWords } from '../lib/businessTerms';   // A573
+import { permissionWords, permissionGroupWords } from '@zaptill/core/businessTerms';   // A573
 
 export interface CatalogueKey { key: string; label: string; description: string; group: string; surface: 'web' | 'till' | 'both' }
 export interface CatalogueGroup { id: string; label: string; description: string }

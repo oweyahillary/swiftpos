@@ -34,7 +34,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   let pass = 0, fail = 0;
   const ok = (l, c, d = '') => { if (c) { pass++; console.log(`PASS  ${l}`); } else { fail++; console.log(`FAIL  ${l}  ${d}`); } };
 
-  const T = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/themes.ts')).href);
+  const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/themes.ts')).href);
   const vars = D('src/lib/themeVars.ts');
 
   // ── The shade per job, as the dashboard maps it (read from themeVars.ts, then proven for every theme) ──

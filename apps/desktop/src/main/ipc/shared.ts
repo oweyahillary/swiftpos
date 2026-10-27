@@ -23,7 +23,7 @@ import { type RangePreset } from '../managerReports';
 import { createOpenBills } from '../sellGate';
 import { normaliseCode } from '../terminalCodes';
 import { localOrderDetail } from '../managerReports';   // A444
-import { detailFromCloud, type OrderDetail } from '../orderDetail';
+import { detailFromCloud, type OrderDetail } from '@zaptill/core/orderDetail';
 import { verifyPinAtNodeClient } from '../nodeClient';
 import { isUnreachableStatus, ForeignPageError } from '../authTransport';   // A529: ForeignPageError
 import { heldOfflinePin, upgradeOfflineSession, OFFLINE_SESSION_MESSAGE, NO_CONNECTION_MESSAGE, type ManageOfflineReason } from '../offlineSession';

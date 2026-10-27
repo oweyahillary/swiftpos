@@ -68,7 +68,7 @@ if (!fs.existsSync(path.join(DIST, 'lib/barcode.js'))) { console.log('\nBuild th
 
 const BC = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/barcode.ts')).href);
 const LB = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/labels.ts')).href);
-const PG = await import(pathToFileURL(path.join(ROOT, 'shared/paginate.ts')).href);
+const PG = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/paginate.ts')).href);
 
 // ── independent references (published tables, not the module's own) ──
 const L_CODES = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];

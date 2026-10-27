@@ -36,73 +36,6 @@ const SHARED = [
     ],
   },
   {
-    // A344: one fixed colour per payment method — the till's and the web's payment buttons and method labels.
-    name: 'paymentColours.ts',
-    copies: [
-      'shared/paymentColours.ts',
-      'apps/desktop/src/shared/paymentColours.ts',
-      'apps/dashboard/src/lib/paymentColours.ts',
-    ],
-  },
-  {
-    // A448: a manager's change made on a till — which fields, how cleaned, apply / identical / owner's approval.
-    name: 'tillChanges.ts',
-    copies: [
-      'shared/tillChanges.ts',
-      'apps/server/src/lib/tillChanges.ts',     // the cloud applies a till's change, or holds it for the owner
-      'apps/desktop/src/main/tillChanges.ts',   // the till records and applies its own change at once
-      'apps/desktop/src/shared/tillChanges.ts', // the till's screens show what waits
-    ],
-  },
-  {
-    // A531: what a change is about (menu / staff / money / look / setup), which topics a till applies at once, and the
-    // settings' classification (migration 151's sync_setting_topic is its SQL mirror).
-    name: 'syncTopics.ts',
-    copies: [
-      'shared/syncTopics.ts',
-      'apps/server/src/lib/syncTopics.ts',      // GET /api/pos/changes builds each logical table's row
-      'apps/desktop/src/main/syncTopics.ts',    // the till applies critical topics at once, the rest when idle
-    ],
-  },
-  {
-    // A519: what a till's log may not carry when it is sent to support — the till redacts, and the cloud again.
-    name: 'logRedact.ts',
-    copies: [
-      'shared/logRedact.ts',
-      'apps/desktop/src/main/logRedact.ts',
-      'apps/server/src/lib/logRedact.ts',
-    ],
-  },
-  {
-    // A537: the POS's category side panel — menus as tabs, which categories and products a menu shows, the pin.
-    name: 'menuFilter.ts',
-    copies: [
-      'shared/menuFilter.ts',
-      'apps/desktop/src/shared/menuFilter.ts',  // the till's sale screen
-      'apps/dashboard/src/lib/menuFilter.ts',   // the web POS (CashierScreen, MinimartPOS)
-    ],
-  },
-  {
-    // A578: menus by time of day — which menus are open now, the next change, the refusal words, the schedule's check.
-    name: 'menuHours.ts',
-    copies: [
-      'shared/menuHours.ts',
-      'apps/desktop/src/shared/menuHours.ts',   // the till's sale screen (the bar, the grid, a scan refused)
-      'apps/dashboard/src/lib/menuHours.ts',    // the web POS (CashierScreen, MinimartPOS) and the Menus page's editor
-      'apps/server/src/lib/menuHours.ts',       // the cloud checks a menu's hours before storing them
-    ],
-  },
-  {
-    // A573: what each business type calls things (Menus / Departments / Groups …) and which food-service areas it sees.
-    name: 'businessTerms.ts',
-    copies: [
-      'shared/businessTerms.ts',
-      'apps/dashboard/src/lib/businessTerms.ts',   // the sidebar, Menus page, web POS, manager portal, roles screen
-      'apps/desktop/src/shared/businessTerms.ts',  // the till's Manager screen and sale screen
-      'apps/server/src/lib/businessTerms.ts',      // A575: analyticsTerms.ts builds on it in the cloud
-    ],
-  },
-  {
     // A588: the petrol POS's forecourt — grade colours, the fuel keypad (amount / litres), the gauges (tank or today's
     // litres), a pump's state. Pure, no imports.
     name: 'forecourt.ts',
@@ -110,16 +43,6 @@ const SHARED = [
       'shared/forecourt.ts',
       'apps/desktop/src/shared/forecourt.ts',   // the till's pumps screen (PumpsView, lazy)
       'apps/dashboard/src/lib/forecourt.ts',    // the web POS's pumps and fuel keypad
-    ],
-  },
-  {
-    // A575: Analytics in each business type's words, and what to do about two products bought together. Imports
-    // businessTerms.ts (beside each copy); not on the till (it has no Analytics).
-    name: 'analyticsTerms.ts',
-    copies: [
-      'shared/analyticsTerms.ts',
-      'apps/dashboard/src/lib/analyticsTerms.ts',   // the Analytics page
-      'apps/server/src/lib/analyticsTerms.ts',      // the cards (/api/analytics/together, /recommendations)
     ],
   },
   {
@@ -167,26 +90,6 @@ const SHARED = [
     ],
   },
   {
-    // A444: an order's items, payments and money in one shape (till records or the cloud), and the reprint payload.
-    name: 'orderDetail.ts',
-    copies: [
-      'shared/orderDetail.ts',
-      'apps/desktop/src/shared/orderDetail.ts',    // the order panel on the till's History and Manager › Orders
-      'apps/desktop/src/main/orderDetail.ts',      // the main process reads the till's rows and rebuilds a reprint
-      'apps/dashboard/src/lib/orderDetail.ts',     // the web Orders page and the web POS order history
-    ],
-  },
-  {
-    // A429: Kenya's payment methods and delivery apps, each a switch per branch — the till, the web POS, the cloud.
-    name: 'paymentCatalogue.ts',
-    copies: [
-      'shared/paymentCatalogue.ts',
-      'apps/server/src/lib/paymentCatalogue.ts',      // the cloud checks the setting and sends it to the tills
-      'apps/desktop/src/shared/paymentCatalogue.ts',  // the till's payment screen and Manager › Settings
-      'apps/dashboard/src/lib/paymentCatalogue.ts',   // the web POS and the branch settings
-    ],
-  },
-  {
     // 0.6.23: the mouse wheel never changes a number field (the till and the web).
     name: 'numberInputs.ts',
     copies: [
@@ -206,17 +109,9 @@ const SHARED = [
       'apps/server/src/lib/orderNotes.ts',     // the cloud cleans what it stores
     ],
   },
-  {
-    // 0.6.27: the manager's reason where their count differs from the cashier's ('confirm_shows_cashier_figures').
-    name: 'confirmReasons.ts',
-    copies: [
-      'shared/confirmReasons.ts',
-      'apps/desktop/src/shared/confirmReasons.ts',
-      'apps/desktop/src/main/confirmReasons.ts',
-      'apps/dashboard/src/lib/confirmReasons.ts',
-      'apps/server/src/lib/confirmReasons.ts',
-    ],
-  },
+  // confirmReasons.ts (0.6.27) moved to packages/core in shared-components step 1 — imported as
+  // '@zaptill/core/confirmReasons', no copies (docs/SHARED-COMPONENTS-PLAN.md). The CORE check below keeps it that way.
+  // Step 2 (batches A and B) moved 26 more the same way — every file in packages/core/src (the plan's "Step 2 progress").
   {
     // 0.6.28: the release number every surface shows ("v0.6.28 · <commit>") — moves with apps/desktop's version.
     name: 'release.ts',
@@ -236,120 +131,6 @@ const SHARED = [
       'apps/desktop/src/main/kitchenLines.ts',
       'apps/dashboard/src/lib/kitchenLines.ts',
       'apps/server/src/lib/kitchenLines.ts',
-    ],
-  },
-  {
-    // 0.6.34: when the business day ends (the owner's cut-off, 00:00–06:00) — the till's day gate, the cloud's reports.
-    name: 'businessDay.ts',
-    copies: [
-      'shared/businessDay.ts',
-      'apps/server/src/lib/businessDay.ts',      // the cloud validates the setting and dates its reports and daily email
-      'apps/desktop/src/main/businessDay.ts',    // the till's day gate and its business date (rootDir is src/main)
-      'apps/dashboard/src/lib/businessDay.ts',   // the settings screen checks the time before saving
-    ],
-  },
-  {
-    // 0.6.37 (A387): which payment methods a cashier's History shows (the manager's choice); cashiers never reprint.
-    name: 'cashierHistory.ts',
-    copies: [
-      'shared/cashierHistory.ts',
-      'apps/server/src/lib/cashierHistory.ts',   // the cloud narrows GET /api/orders (the web POS) and checks the setting
-      'apps/desktop/src/main/cashierHistory.ts', // the till narrows its History (rootDir is src/main)
-      'apps/desktop/src/shared/cashierHistory.ts', // the till's manager screen
-      'apps/dashboard/src/lib/cashierHistory.ts', // the settings screen
-    ],
-  },
-  {
-    // A394: the items a stock count freezes — the till caches the cloud's list and its sale screen refuses them.
-    name: 'stockCountFreeze.ts',
-    copies: [
-      'shared/stockCountFreeze.ts',
-      'apps/desktop/src/main/stockCountFreeze.ts',   // the till caches it (rootDir is src/main)
-      'apps/desktop/src/shared/stockCountFreeze.ts', // the till's sale screen
-    ],
-  },
-  {
-    // A563: when an item's stock reaches zero — sell as normal, show as sold out, or hide (the owner's choice).
-    name: 'stockGate.ts',
-    copies: [
-      'shared/stockGate.ts',
-      'apps/server/src/lib/stockGate.ts',         // the cloud refuses a web sale of a sold-out item
-      'apps/desktop/src/main/stockGate.ts',       // the till's order:create refuses it (rootDir is src/main)
-      'apps/desktop/src/shared/stockGate.ts',     // the till's sale screen greys or hides it
-      'apps/dashboard/src/lib/stockGate.ts',      // the web POS and the products list
-    ],
-  },
-  {
-    // 0.6.35 (A384): who a shop calls — its own tech (allocated in the admin portal) or SwiftPOS support's numbers.
-    name: 'support.ts',
-    copies: [
-      'shared/support.ts',
-      'apps/server/src/lib/support.ts',          // the cloud checks a tech's number and sends the shop's tech
-      'apps/desktop/src/main/support.ts',        // the till stores the pulled tech (rootDir is src/main)
-      'apps/desktop/src/shared/support.ts',      // the till's Help screen
-      'apps/dashboard/src/lib/support.ts',       // the web's Help page and sign-in page
-      'apps/admin/src/lib/support.ts',           // the admin portal checks the number before saving
-    ],
-  },
-  {
-    // 0.6.35 (A384): "What to do when" — the owner-approved help text, the same on the till, the A4 card and the web.
-    name: 'helpTopics.ts',
-    copies: [
-      'shared/helpTopics.ts',
-      'apps/desktop/src/shared/helpTopics.ts',
-      'apps/dashboard/src/lib/helpTopics.ts',
-    ],
-  },
-  {
-    // A378: a client's own sign-in address (africanfries.<root>) — the subdomain rule, the host reader, the CORS check.
-    name: 'tenantHost.ts',
-    copies: [
-      'shared/tenantHost.ts',
-      'apps/server/src/lib/tenantHost.ts',       // the cloud validates what the admin sets, locks sign-in, allows the origin
-      'apps/dashboard/src/lib/tenantHost.ts',    // the sign-in pages read the address they are on
-      'apps/admin/src/lib/tenantHost.ts',        // the admin portal checks a subdomain before saving
-    ],
-  },
-  {
-    // 0.6.31: a product shown on the POS grid / QR menu only on chosen days (still found by search and sold any day).
-    name: 'productDays.ts',
-    copies: [
-      'shared/productDays.ts',
-      'apps/desktop/src/shared/productDays.ts',
-      'apps/desktop/src/main/productDays.ts',    // the main process cleans what the pull stores (rootDir is src/main)
-      'apps/dashboard/src/lib/productDays.ts',
-      'apps/server/src/lib/productDays.ts',      // the cloud validates show_days on write and filters the QR menu
-    ],
-  },
-  {
-    // 0.6.30 (A336 stage 3): the owner's void window and the offline void/refund rules (methods, web sales).
-    name: 'reversalRules.ts',
-    copies: [
-      'shared/reversalRules.ts',
-      'apps/desktop/src/shared/reversalRules.ts',
-      'apps/desktop/src/main/reversalRules.ts',  // the main process applies them offline (rootDir is src/main)
-      'apps/dashboard/src/lib/reversalRules.ts',
-      'apps/server/src/lib/reversalRules.ts',    // the cloud's void window and the till's replay
-    ],
-  },
-  {
-    // 0.6.27: how an expense was paid (only cash leaves the drawer) and its Z-report line (the type first).
-    name: 'expenseMethod.ts',
-    copies: [
-      'shared/expenseMethod.ts',
-      'apps/desktop/src/shared/expenseMethod.ts',
-      'apps/desktop/src/main/expenseMethod.ts',  // the Z-report and expected per method (rootDir is src/main)
-      'apps/dashboard/src/lib/expenseMethod.ts',
-      'apps/server/src/lib/expenseMethod.ts',    // the cloud's expected cash / per method
-    ],
-  },
-  {
-    // 0.6.27: History filtered and ordered by payment method or order type.
-    name: 'historyView.ts',
-    copies: [
-      'shared/historyView.ts',
-      'apps/desktop/src/shared/historyView.ts',
-      'apps/dashboard/src/lib/historyView.ts',
     ],
   },
   {
@@ -376,18 +157,6 @@ const SHARED = [
     ],
   },
   {
-    // A492: a branch's M-Pesa number (Buy Goods till number, or Paybill + account) — set on the till, validated on the
-    // cloud, printed on every receipt, shown on the web.
-    name: 'mpesaReceive.ts',
-    copies: [
-      'shared/mpesaReceive.ts',
-      'apps/server/src/lib/mpesaReceive.ts',
-      'apps/dashboard/src/lib/mpesaReceive.ts',
-      'apps/desktop/src/main/mpesaReceive.ts',
-      'apps/desktop/src/shared/mpesaReceive.ts',
-    ],
-  },
-  {
     // A490: the ONE permission catalogue — every fine key, the broad keys it replaces, expansion and the ceiling.
     name: 'permissions.ts',
     copies: [
@@ -406,55 +175,6 @@ const SHARED = [
       'shared/shiftConfirm.ts',
       'apps/desktop/src/shared/shiftConfirm.ts',
       'apps/dashboard/src/lib/shiftConfirm.ts',
-    ],
-  },
-  {
-    // A324 (client branding Phase 2, slice 1): the curated action themes + the brand-colour rule. One registry
-    // for the till, the web and the cloud (which validates theme ids on write — A325).
-    name: 'themes.ts',
-    copies: [
-      'shared/themes.ts',
-      'apps/desktop/src/shared/themes.ts',
-      'apps/dashboard/src/lib/themes.ts',
-      'apps/server/src/lib/themes.ts',     // A325: the cloud validates theme ids on write
-      'apps/desktop/src/main/themes.ts',   // A544: the till's main process resolves its branch's look (branchBranding.ts)
-    ],
-  },
-  {
-    // A544: a branch's override of the business branding — the write rules (theme, brand colour, footer width) and the
-    // resolution branch → business → ZapTill default. Each copy sits beside a themes.ts copy (it imports ./themes).
-    name: 'branchBranding.ts',
-    copies: [
-      'shared/branchBranding.ts',
-      'apps/server/src/lib/branchBranding.ts',      // the cloud validates a write; /pos/init and /pos/changes
-      'apps/desktop/src/main/branchBranding.ts',    // the till's own branch: getBranding's effective look, the receipt footer
-      'apps/desktop/src/shared/branchBranding.ts',  // the till's screens
-      'apps/dashboard/src/lib/branchBranding.ts',   // Settings › Branding › Per branch; the web POS's branch
-    ],
-  },
-  {
-    // A295 accent guard. shared/ is the source of truth; the renderer imports the
-    // desktop/src/shared copy; the desktop/src/main copy exists ONLY so tsconfig.main
-    // emits dist/main/contrast.js for contrast.test.mjs (the renderer is noEmit).
-    // A319: the web Branding page judges a custom accent with THIS rule (it had its own copy, which
-    // required WHITE button text and measured a different surface — it rejected #F5B800, which the
-    // till accepts with black text). Vendored, not imported: Vercel builds apps/dashboard alone.
-    name: 'contrast.ts',
-    copies: [
-      'shared/contrast.ts',
-      'apps/desktop/src/shared/contrast.ts',
-      'apps/desktop/src/main/contrast.ts',
-      'apps/dashboard/src/lib/contrast.ts',
-    ],
-  },
-  {
-    // A472: the menu in pages (web Products, the till's Menu) and the POS grids a screenful at a time.
-    name: 'paginate.ts',
-    copies: [
-      'shared/paginate.ts',
-      'apps/dashboard/src/lib/paginate.ts',      // the web Products page and the web POS grid
-      'apps/desktop/src/shared/paginate.ts',     // the till's Menu screen and its POS grid
-      'apps/admin/src/lib/paginate.ts',          // A475: the admin portal's long lists (Billing, Audit, a client's devices)
     ],
   },
 ];
@@ -499,6 +219,55 @@ for (const { name, copies } of SHARED) {
     console.error(`\nCopy one over the others verbatim and re-run the vectors:`);
     console.error(`  npx tsx scripts/test-parking-tariff.mjs`);
     problems++;
+  }
+}
+
+// Shared-components (docs/SHARED-COMPONENTS-PLAN.md): a rule that moved to packages/core/src is imported from
+// '@zaptill/core/<name>' and has NO copies. A copy growing back (an old branch merged, a file pasted for speed) would be
+// a second implementation that nothing keeps in step — so a file of the same name in shared/ or an app's lib/, shared/
+// or main/ folder fails, and so does a module that is still listed above.
+const CORE_DIR = path.join(ROOT, 'packages', 'core', 'src');
+const COPY_DIRS = [
+  'shared',
+  'apps/server/src/lib', 'apps/server/src/shared',
+  'apps/dashboard/src/lib',
+  'apps/admin/src/lib',
+  'apps/desktop/src/main', 'apps/desktop/src/shared',
+];
+const coreModules = fs.existsSync(CORE_DIR) ? fs.readdirSync(CORE_DIR).filter((f) => f.endsWith('.ts')) : [];
+for (const mod of coreModules) {
+  const regrown = COPY_DIRS.map((d) => `${d}/${mod}`).filter((c) => fs.existsSync(path.join(ROOT, c)));
+  const listed = SHARED.some((e) => e.name === mod);
+  if (regrown.length || listed) {
+    console.error(`\nFAIL ${mod} lives in packages/core/src — import it as '@zaptill/core/${mod.replace(/\.ts$/, '')}', do not copy it:`);
+    for (const c of regrown) console.error(`  delete ${c}`);
+    if (listed) console.error(`  remove its entry from SHARED in scripts/check-shared-sync.mjs`);
+    problems++;
+  } else {
+    console.log(`  ok   ${mod.padEnd(24)} packages/core only (no copies)`);
+  }
+}
+
+// …and only by its package name. A relative import ('../../../packages/core/src/x') type-checks and even builds, but the
+// cloud's and the desktop main process's compiled code would then require a path outside the app: not shipped in the
+// installer's app.asar, not present on Render. The bundlers would inline it, so the rule is the same everywhere.
+const APP_SRC = ['apps/server/src', 'apps/dashboard/src', 'apps/admin/src', 'apps/desktop/src'];
+const RELATIVE_CORE = /(?:from\s+|import\(\s*|require\(\s*)['"](?:\.\.?\/)+(?:[^'"]*\/)?packages\/core\b/;
+const walkSrc = (d, out = []) => {
+  if (!fs.existsSync(d)) return out;
+  for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name === 'dist') continue;
+    const p = path.join(d, e.name);
+    if (e.isDirectory()) walkSrc(p, out); else if (/\.(tsx?|mjs|cjs|js)$/.test(e.name)) out.push(p);
+  }
+  return out;
+};
+for (const dir of APP_SRC) {
+  for (const f of walkSrc(path.join(ROOT, dir))) {
+    if (RELATIVE_CORE.test(fs.readFileSync(f, 'utf8'))) {
+      console.error(`\nFAIL ${path.relative(ROOT, f)} imports packages/core by a relative path — use '@zaptill/core/<name>'.`);
+      problems++;
+    }
   }
 }
 

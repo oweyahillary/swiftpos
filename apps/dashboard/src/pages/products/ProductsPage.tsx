@@ -12,11 +12,11 @@ import BulkPriceEditor from './BulkPriceEditor';
 import RecipeDrawer from './RecipeDrawer';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
-import { cleanShowDays, showDaysLabel, DAY_SHORT } from '../../lib/productDays';
+import { cleanShowDays, showDaysLabel, DAY_SHORT } from '@zaptill/core/productDays';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { money, pct } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A472
-import { paginate, groupDigits } from '../../lib/paginate';
+import { paginate, groupDigits } from '@zaptill/core/paginate';
 import { nextInStoreCodes } from '../../lib/barcode';   // A571
 import GenerateBarcodes from './GenerateBarcodes';      // A571
 import { useNavigate } from 'react-router-dom';

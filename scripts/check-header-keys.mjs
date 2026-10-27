@@ -41,6 +41,7 @@ const SCAN = [
   'apps/server/src',
   'apps/dashboard/src',
   'shared',
+  'packages', // shared-components: code that moved out of the apps' copies
 ];
 
 /** Known single-word header names that carry no hyphen. */

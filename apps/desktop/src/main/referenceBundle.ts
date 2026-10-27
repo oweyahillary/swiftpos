@@ -28,11 +28,11 @@
 // state products.is_kitchen and the users->roles reshape are exactly the kind of
 // mapping that breaks silently, so they get a test that fails when they regress.
 import { parsePosFeatures } from './posFeatures';
-import { rulesFromWire, type ReversalRules } from './reversalRules';
-import { cleanShowDays } from './productDays';
-import { supportWire } from './support';   // 0.6.35 (A384)
-import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
-import { parseStockCountFreeze, type StockCountFreeze } from './stockCountFreeze';   // A394
+import { rulesFromWire, type ReversalRules } from '@zaptill/core/reversalRules';
+import { cleanShowDays } from '@zaptill/core/productDays';
+import { supportWire } from '@zaptill/core/support';   // 0.6.35 (A384)
+import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
+import { parseStockCountFreeze, type StockCountFreeze } from '@zaptill/core/stockCountFreeze';   // A394
 
 /** A450: the receipt's "Buy Goods: 123456" line. A number is what makes it print; the label defaults to Buy Goods. */
 export interface ReceiptPay { label: string; number: string }

@@ -28,7 +28,7 @@ import { idsOfBusiness } from '../lib/branchGuard';   // A494   // A490
 import { supabase }  from '../lib/supabase';
 import { buildProductPatch, rowMatchKeys, importKey } from '../lib/productImport';
 import { applyPriceOp, parsePriceOp } from '../lib/priceOps';
-import { cleanShowDays } from '../lib/productDays';
+import { cleanShowDays } from '@zaptill/core/productDays';
 import { cleanMenuName, isDuplicateName, menusMissing } from '../lib/menus';   // A542: the import's `menu` column
 
 const router = safeRouter();

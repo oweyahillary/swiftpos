@@ -11,7 +11,7 @@
  *
  *  computeThemeVars is PURE (no DOM) so it is tested directly; applyThemeVars is the only DOM write.
  */
-import { resolveTheme, resolveBrandLayer, labelOn, type Hex } from '../../shared/themes';
+import { resolveTheme, resolveBrandLayer, labelOn, type Hex } from '@zaptill/core/themes';
 
 export interface ThemeInput { themeId?: string | null; accentHex?: string | null }
 export interface ThemeVars {

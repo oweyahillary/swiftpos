@@ -8,7 +8,7 @@
  * Callback refs, not ref objects: the grid unmounts and returns (tables / pumps view) and the observer must follow it.
  */
 import { useEffect, useState } from 'react';
-import { GRID_STEP, nextGridCount } from '../../shared/paginate';
+import { GRID_STEP, nextGridCount } from '@zaptill/core/paginate';
 
 export function useGridWindow(total: number, resetKey: string, step: number = GRID_STEP) {
   const [shown, setShown] = useState(step);

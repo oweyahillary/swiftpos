@@ -37,7 +37,7 @@ Module._resolveFilename = function (req, parent, ...rest) { return req === 'elec
 const L = require(path.join(dist, 'localDb.js'));
 const C = require(path.join(dist, 'deviceConfig.js'));
 const E = require(path.join(dist, 'syncEngine.js'));
-const R = require(path.join(dist, 'reversalRules.js'));
+const R = require('@zaptill/core/reversalRules');
 const O = require(path.join(dist, 'offlineReversal.js'));
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
@@ -45,7 +45,7 @@ const threw = (f) => { try { f(); return null; } catch (e) { return e; } };
 
 console.log('0.6.30 — offline void / refund\n');
 
-// ── The rules (shared/reversalRules.ts) ──────────────────────────────────────
+// ── The rules (packages/core/src/reversalRules.ts) ──────────────────────────────────────
 const d = R.parseReversalRules(null);
 ok('defaults: 30 minutes, cash only, the till\'s own sales', d.voidWindowMinutes === 30
   && JSON.stringify(d.offlineRefundMethods) === '["cash"]' && d.offlineReverseWebSales === false);

@@ -6,8 +6,8 @@
  * (Cash, M-Pesa, Card, Glovo, On account on; the rest off). The tills follow on their next pull, the web POS on its next
  * load. The same switches are on the till: Manager › Settings › Payment methods.
  */
-import { PAYMENT_CATALOGUE, enabledFromSetting } from '../../lib/paymentCatalogue';
-import { methodColour } from '../../lib/paymentColours';
+import { PAYMENT_CATALOGUE, enabledFromSetting } from '@zaptill/core/paymentCatalogue';
+import { methodColour } from '@zaptill/core/paymentColours';
 
 export default function BranchPaymentMethods({ override, businessDefault, onSave, scope = 'branch' }: {
   /** The branch's own list as stored (a JSON string), or undefined when the branch uses the default. */

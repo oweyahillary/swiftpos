@@ -1,4 +1,4 @@
-import { methodColour } from '../../shared/paymentColours';
+import { methodColour } from '@zaptill/core/paymentColours';
 
 /** A344: the payment method's colour, as a small dot beside its name (the name keeps the normal text colour). */
 export default function MethodDot({ method }: { method: string | null | undefined }) {

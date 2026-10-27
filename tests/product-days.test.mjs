@@ -20,7 +20,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const D = await import(pathToFileURL(path.join(ROOT, 'shared/productDays.ts')).href);
+const D = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/productDays.ts')).href);
 const TUE = new Date(2026, 9, 6, 12), WED = new Date(2026, 9, 7, 12);   // Tue 6 Oct 2026, Wed 7 Oct 2026 (local)
 
 await ok('days are read from names, numbers or JSON; none or all seven = every day (null)', () => {

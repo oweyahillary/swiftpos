@@ -17,10 +17,10 @@ import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { usePermissions } from '../../context/PermissionsContext';   // A550
 import { POS_FEATURES } from '../../lib/posFeatures';
-import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../../lib/paymentCatalogue';
-import { OUT_OF_STOCK_MODES, type OutOfStockMode } from '../../lib/stockGate';   // A563
+import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';
+import { OUT_OF_STOCK_MODES, type OutOfStockMode } from '@zaptill/core/stockGate';   // A563
 import { dateShort } from '../../lib/format';
-import { foodAreas } from '../../lib/businessTerms';   // A573
+import { foodAreas } from '@zaptill/core/businessTerms';   // A573
 import BranchPaymentMethods from './BranchPaymentMethods';
 
 /** The four switches the owner sets here (the admin portal shows them read-only). */

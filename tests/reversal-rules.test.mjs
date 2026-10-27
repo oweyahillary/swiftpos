@@ -22,7 +22,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const R = await import(pathToFileURL(path.join(ROOT, 'shared/reversalRules.ts')).href);
+const R = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/reversalRules.ts')).href);
 
 await ok('defaults: a 30-minute void window, cash refunds offline, the till\'s own sales', () => {
   assert.deepEqual(R.parseReversalRules([]), { voidWindowMinutes: 30, offlineRefundMethods: ['cash'], offlineReverseWebSales: false, freeDeliveryAllowed: false, freeDeliveryOver: null });

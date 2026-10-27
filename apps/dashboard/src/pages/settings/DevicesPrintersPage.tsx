@@ -1,7 +1,7 @@
 import SettingsSection from './SettingsSection';
 import DevicesTab from './DevicesTab';
 import { useBusiness } from '../../context/BusinessContext';
-import { foodAreas } from '../../lib/businessTerms';   // A573
+import { foodAreas } from '@zaptill/core/businessTerms';   // A573
 
 // Settings › Devices and printers (register A133).
 // Terminals (fleet health) and Devices (enrolment) are two views of the same

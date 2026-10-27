@@ -27,7 +27,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { can, inBranchSet, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
-import { redactLog } from '../lib/logRedact';
+import { redactLog } from '@zaptill/core/logRedact';
 import { verifyTechToken } from '../lib/techToken';
 import { expireWaiting } from '../lib/logRequests';   // A533
 

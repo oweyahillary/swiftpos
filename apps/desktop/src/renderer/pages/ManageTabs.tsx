@@ -20,9 +20,9 @@ import { posApi } from '../lib/posApi';
 import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import { parseCsvRows, csvBool } from '../lib/csv';
 import Pager, { usePageSize } from '../components/Pager';   // A475
-import { paginate } from '../../shared/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { approvalPinOn } from '../../shared/posFeatures';   // A562
-import { businessTerms } from '../../shared/businessTerms';   // A575
+import { businessTerms } from '@zaptill/core/businessTerms';   // A575
 import type { CsvRow } from '../lib/csv';
 
 const input =

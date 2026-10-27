@@ -5,7 +5,7 @@
 // dont know if this is replicated across all businesses please read all business menu and name items correctly ensure hotel
 // references hav been removed everywere and correct items replace them".
 //
-// RUNS the shared helper (shared/businessTerms.ts and its web copy), the web dashboard's sidebar (DashboardLayout, bundled
+// RUNS the shared helper (packages/core/src/businessTerms.ts, the one file the web and the till import), the web dashboard's sidebar (DashboardLayout, bundled
 // with esbuild, its contexts stubbed, rendered with react-dom/server inside a MemoryRouter), the Menus page, Settings ›
 // Business's setup tab, Devices and printers, and the web POS's MenuBar / CategoryPanel; pins the wiring that is one
 // line in a big screen (the manager portal, the web POS, the roles screen, POS options). And scans every app's source for
@@ -76,7 +76,7 @@ const bundle = async (entry, out) => {
 const TYPES = ['restaurant', 'cafe', 'retail', 'minimart', 'parking', 'petrol_station', 'other'];
 
 try {
-  const T = await import(pathToFileURL(path.join(ROOT, 'shared/businessTerms.ts')).href);
+  const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/businessTerms.ts')).href);
   const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
@@ -90,9 +90,8 @@ try {
     const rules = read('apps/server/src/lib/adminRules.ts');
     assert.match(rules, new RegExp(`BUSINESS_TYPES = \\[${TYPES.map((t) => `'${t}'`).join(', ')}\\]`));
     assert.deepEqual([...T.BUSINESS_TYPE_KEYS], TYPES);
-    const s = read('shared/businessTerms.ts');
-    for (const c of ['apps/dashboard/src/lib/businessTerms.ts', 'apps/desktop/src/shared/businessTerms.ts']) assert.equal(read(c), s, c);
-    assert.match(read('scripts/check-shared-sync.mjs'), /name: 'businessTerms\.ts'/);
+    assert.ok(read('packages/core/src/businessTerms.ts').length > 0);
+    for (const c of ['shared/businessTerms.ts', 'apps/dashboard/src/lib/businessTerms.ts', 'apps/desktop/src/shared/businessTerms.ts']) assert.ok(!fs.existsSync(path.join(ROOT, c)), c);
   });
   await ok('restaurant and café: Menus (Food, Soft drinks …), the Menu section, the Menu page', () => {
     for (const t of ['restaurant', 'cafe']) {

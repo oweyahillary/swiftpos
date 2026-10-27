@@ -9,7 +9,7 @@
 //
 // Drives the REAL compiled dist/main (localDb's migration, syncEngine's whole pull and applyChangeEntries, the branch
 // server's reference bundle, the pos:init handler) on a REAL SQLite file with a stand-in cloud; runs the shared helper
-// (src/shared/menuHours.ts — the web POS runs the same file) with the till's menu bar (src/shared/menuFilter.ts and the
+// (packages/core/src/menuHours.ts — the web POS runs the same file) with the till's menu bar (packages/core/src/menuFilter.ts and the
 // till's MenuBar, bundled with esbuild and rendered with react-dom/server); pins the sale screen's wiring (POSPage is one
 // 2,400-line component — its filter, refusals and timer are read from the source).
 //
@@ -100,8 +100,8 @@ E.configureSyncEngine(CLOUD, 'tok', 'r1');
 const RB = require(path.join(dist, 'referenceBundle.js'));
 const hoursOf = (id) => db.prepare(`SELECT availability FROM menus WHERE id = ?`).get(id)?.availability ?? null;
 
-const H = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'menuHours.ts')).href);
-const M = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'menuFilter.ts')).href);
+const H = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'menuHours.ts')).href);
+const M = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'menuFilter.ts')).href);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const bundleDir = fs.mkdtempSync(path.join(desktop, 'node_modules', '.a578-'));
@@ -290,8 +290,8 @@ try {
       && !/localStorage[^\n]*showAll/i.test(pos));
     ok('the business day\'s end reaches the hours (a window past midnight belongs to the night before)',
       /setMenuDayCutoff\(Number\(bdc\) \|\| 0\)/.test(pos));
-    ok('the till\'s copy of the helper is the shared file, verbatim',
-      src('shared/menuHours.ts') === fs.readFileSync(path.join(desktop, '..', '..', 'shared', 'menuHours.ts'), 'utf8'));
+    ok('the till has no copy of the helper: it imports packages/core/src/menuHours.ts',
+      !fs.existsSync(path.join(desktop, 'src', 'shared', 'menuHours.ts')) && fs.existsSync(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'menuHours.ts')));
   }
 } finally {
   srv.close();

@@ -4,7 +4,7 @@
  * the one database read.
  */
 import { supabase } from './supabase';
-import { parseReversalRules, REVERSAL_SETTING_KEYS, type ReversalRules } from './reversalRules';
+import { parseReversalRules, REVERSAL_SETTING_KEYS, type ReversalRules } from '@zaptill/core/reversalRules';
 
 export async function businessReversalRules(businessId: string | undefined | null): Promise<ReversalRules> {
   if (!businessId) return parseReversalRules(null);

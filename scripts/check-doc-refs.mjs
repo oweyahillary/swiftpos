@@ -38,7 +38,7 @@ const ROOT = path.resolve(HERE, '..');
 // no longer exists is an accurate record of what happened, not a broken
 // reference — and rewriting history to satisfy a gate would be the wrong fix.
 // This checks live code and live docs, which are what a reader follows today.
-const SCAN_DIRS = ['apps', 'shared', 'scripts', 'migrations', 'docs', 'tests', 'e2e'];
+const SCAN_DIRS = ['apps', 'shared', 'packages', 'scripts', 'migrations', 'docs', 'tests', 'e2e'];
 const SKIP_PATHS = [path.join('docs', 'history')];
 const SCAN_EXT  = new Set(['.ts', '.tsx', '.mjs', '.js', '.sql', '.md', '.yml', '.yaml']);
 

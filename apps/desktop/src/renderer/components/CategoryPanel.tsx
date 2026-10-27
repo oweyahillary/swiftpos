@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   ALL_CATEGORIES, ALL_MENUS, PANEL_PREFS_KEY, categoryGroups, menuBarEdges, menuBarLabel, menuTabs, parsePanelPrefs,
   panelPrefsText, panelStartsOpen, panelOpenAfterPick, productCounts, resolveMenu, type MenuTab, type PanelPrefs,
-} from '../../shared/menuFilter';
+} from '@zaptill/core/menuFilter';
 
 function readPrefs(): PanelPrefs {
   try { return parsePanelPrefs(window.localStorage.getItem(PANEL_PREFS_KEY)); } catch { return parsePanelPrefs(null); }

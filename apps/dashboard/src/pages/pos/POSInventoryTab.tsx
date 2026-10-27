@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import OtherBranchesPanel from '../../components/OtherBranchesPanel';   // A564
 
 // ── Types ─────────────────────────────────────────────────────────────────────

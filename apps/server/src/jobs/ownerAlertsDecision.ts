@@ -17,7 +17,7 @@
  *   bigReversals / bigVariances a big void or refund (once per void), a confirmed shift with a big cash difference
  *   decideWeeklySend            Monday 08:00 EAT, once per week
  */
-import { businessDateEAT } from '../lib/businessDay';
+import { businessDateEAT } from '@zaptill/core/businessDay';
 import { sendsHeartbeat } from '../lib/watchdogRules';   // A579
 
 // ── settings ─────────────────────────────────────────────────────────────────

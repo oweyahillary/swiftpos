@@ -54,7 +54,7 @@ import { requirePermission, can, allBranchAccess, inBranchSet } from '../middlew
 import { supabase } from '../lib/supabase';
 import { seesCosts } from '../lib/costAccess';
 import { getDayCutoff } from '../lib/dayCutoff';
-import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { analyticsEnabled } from '../lib/analyticsAccess';
 import {
   ANALYTICS_OFF_MESSAGE, rangeError, defaultRange, classifyMenu, menuWithoutCosts, summariseHeatmap, summariseLeaks,

@@ -9,7 +9,7 @@ import AdjustmentModal from './AdjustmentModal';
 import MovementsDrawer from './MovementsDrawer';
 import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 interface StockRow {
   id: string | null;

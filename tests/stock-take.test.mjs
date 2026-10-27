@@ -5,7 +5,7 @@
  * Owner, 2026-10-04: "We are missing a stock take module" — "Yes the count should be blind, I would recommend freeze but
  * we leave that as a feature which the owner will decide".
  *
- * The rules (lib/stockTakeRules.ts, pure) and the till's freeze parse (shared/stockCountFreeze.ts) run for real; source
+ * The rules (lib/stockTakeRules.ts, pure) and the till's freeze parse (packages/core/src/stockCountFreeze.ts) run for real; source
  * pins on the routes, the web POS, the till and the screens.
  *
  * MUTATIONS TO CONFIRM BITE: lateSales counting a sale made after the count → "a sale after the count is not late"
@@ -25,7 +25,7 @@ let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
 const R = await import(pathToFileURL(path.join(ROOT, 'apps/server/src/lib/stockTakeRules.ts')).href);
-const F = await import(pathToFileURL(path.join(ROOT, 'shared/stockCountFreeze.ts')).href);
+const F = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/stockCountFreeze.ts')).href);
 
 console.log('\nThe rules\n');
 await ok('steps: count and hand in while counting; recount and post under review; cancel while open', () => {

@@ -5,7 +5,7 @@
  *
  *   node tests/payment-catalogue.test.mjs
  *
- * RUNS the real shared/paymentCatalogue.ts (the list, the defaults, the setting, the buttons a screen shows) and the
+ * RUNS the real packages/core/src/paymentCatalogue.ts (the list, the defaults, the setting, the buttons a screen shows) and the
  * till's report names; then pins the chain: the cloud stores and sends the branch's choice, the till keeps it (schema
  * 69) and relays it to its peers, both payment screens and both settings screens use it.
  *
@@ -32,7 +32,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g,
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const C = await import(pathToFileURL(path.join(ROOT, 'shared/paymentCatalogue.ts')).href);
+const C = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/paymentCatalogue.ts')).href);
 // The till's daily report names (its file needs Electron): modeLabel lifted into a temp file.
 const dsr = read('apps/desktop/src/main/dailySalesReport.ts');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-a429-'));
@@ -163,9 +163,9 @@ ok('the web POS: the branch\'s methods, the rest settling like a card; split pay
 ok('Settings › Branches › a branch: the same switches', () => {
   assert.ok(read('apps/dashboard/src/pages/settings/BranchReceiptOverrides.tsx').includes("onSave={(v) => save('payment_methods_enabled', v)} />"));
 });
-ok('one catalogue: the till\'s, the web\'s and the cloud\'s copies are the same file', () => {
-  const s = read('shared/paymentCatalogue.ts');
-  for (const p of ['apps/server/src/lib/paymentCatalogue.ts', 'apps/desktop/src/shared/paymentCatalogue.ts', 'apps/dashboard/src/lib/paymentCatalogue.ts']) assert.equal(read(p), s, p);
+ok('one catalogue: the till, the web and the cloud import the one file in packages/core (no copies left)', () => {
+  assert.ok(read('packages/core/src/paymentCatalogue.ts').length > 0);
+  for (const p of ['shared/paymentCatalogue.ts', 'apps/server/src/lib/paymentCatalogue.ts', 'apps/desktop/src/shared/paymentCatalogue.ts', 'apps/dashboard/src/lib/paymentCatalogue.ts']) assert.ok(!fs.existsSync(path.join(ROOT, p)), p);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

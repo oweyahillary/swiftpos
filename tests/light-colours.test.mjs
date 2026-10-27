@@ -96,7 +96,7 @@ ok('outside @layer base (inside it, Tailwind drops rules like these — A329)', 
 });
 
 // ── A332 (2026-09-27): the web POS's themed buttons in light mode ──
-const T = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/themes.ts')).href);
+const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/themes.ts')).href);
 ok('white labels stay white only where white beats slate on that fill (red-600, the theme\'s action-600 — not green-500)', () => {
   assert.match(block, /\.bg-action-600\.text-white, :root:not\(\.dark\) \.bg-action-600 \.text-white \{ color: #ffffff !important; \}/);
   assert.match(block, /\.bg-red-600\.text-white/);

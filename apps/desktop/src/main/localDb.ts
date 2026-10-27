@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
 import { monoRasterFromRGBA, monoRasterToString } from '@swiftpos/printing';
 import { validateBrandingWrite } from './brandingGuard';
-import { branchBrandingFromWire, resolveBranchBranding, type BranchBranding } from './branchBranding';   // A544
+import { branchBrandingFromWire, resolveBranchBranding, type BranchBranding } from '@zaptill/core/branchBranding';   // A544
 
 // Resolved lazily, NOT at import time.
 //

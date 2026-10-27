@@ -25,7 +25,7 @@ import { localStamp, type ReportColumn, type ReportSheet } from '../../lib/repor
 import { reportPresets } from '../../lib/reportPeriods';   // A467
 import * as fmt from '../../lib/format';   // A471: one money/number/date format
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

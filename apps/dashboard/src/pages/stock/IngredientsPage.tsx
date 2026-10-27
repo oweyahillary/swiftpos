@@ -9,7 +9,7 @@ import { useBranch } from '../../context/BranchContext';
 import BulkIngredientImport from './BulkIngredientImport';
 import { money, dateTime } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

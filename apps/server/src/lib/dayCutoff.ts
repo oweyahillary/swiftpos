@@ -6,7 +6,7 @@
  * minute (and at once on this instance: the settings routes call invalidateDayCutoff).
  */
 import { supabase } from './supabase';
-import { BUSINESS_DAY_CUTOFF_KEY, cleanCutoff } from './businessDay';
+import { BUSINESS_DAY_CUTOFF_KEY, cleanCutoff } from '@zaptill/core/businessDay';
 
 const TTL_MS = 60_000;
 const cache = new Map<string, { at: number; minutes: number }>();

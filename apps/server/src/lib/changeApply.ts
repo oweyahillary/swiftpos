@@ -14,7 +14,7 @@
  */
 import bcrypt from 'bcrypt';
 import { supabase } from './supabase';
-import { ENTITY_SPECS, changeKeys, judgeCreate, judgeUpdate, describeChange, type TillChange } from './tillChanges';
+import { ENTITY_SPECS, changeKeys, judgeCreate, judgeUpdate, describeChange, type TillChange } from '@zaptill/core/tillChanges';
 import { verifyPin } from '../routes/auth';
 import { canAssignRole } from './roleCeiling';
 import { hasPermission, keysBeyond } from './permissions';   // A490

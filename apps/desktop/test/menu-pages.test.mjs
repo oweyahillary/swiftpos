@@ -5,7 +5,7 @@
  *
  *   node test/menu-pages.test.mjs
  *
- * RUNS the till's src/shared/paginate.ts (type-stripped; the same file as the web's — scripts/check-shared-sync.mjs):
+ * RUNS packages/core/src/paginate.ts (type-stripped; the one file the till and the web import as @zaptill/core/paginate):
  * page maths, the numbered window, clamping, the grid's step. Then pins (React is not run here): Menu pages its rows
  * with a pager, resets to page 1 when a filter changes and keeps (clamps) the page on a save / Refresh; the POS grid
  * draws incrementally from an IntersectionObserver on a sentinel in its scroll box, keeps its memoised tiles and testids.
@@ -27,7 +27,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.MENU_PAGES_TS) {
 }
 const DESKTOP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(DESKTOP, p), 'utf8');
-const P = await import(pathToFileURL(path.join(DESKTOP, 'src/shared/paginate.ts')).href);
+const P = await import(pathToFileURL(path.join(DESKTOP, '..', '..', 'packages/core/src/paginate.ts')).href);
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 const eq = (a, b, what = '') => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${what} expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
@@ -92,7 +92,7 @@ ok('Pager: First / Prev / numbered window / Next / Last, current page in the the
   assert(/pageWindow\(page, pages\)\.map/.test(pager), 'window');
   assert(/slot === page \? 'bg-action-500\/10 text-action-400 font-semibold'/.test(pager), 'theme colour');
   assert(!/green-|emerald-/.test(pager), 'no raw green');
-  assert(/from '\.\.\/\.\.\/shared\/paginate'/.test(pager), 'shared helper');
+  assert(pager.includes("from '@zaptill/core/paginate'"), 'shared helper');
   assert(/try \{ return cleanPageSize\(localStorage\.getItem\(key\)\); \} catch/.test(pager) && /try \{ localStorage\.setItem\(key, String\(c\)\); \} catch/.test(pager), 'storage guarded');
 });
 
@@ -116,7 +116,7 @@ ok('POS grid: tiles stay memoised with their testids; the grid filter count is s
 ok('grid hook: IntersectionObserver on the sentinel, root = the grid\'s scroll box, steps by GRID_STEP, resets', () => {
   assert(/new IntersectionObserver\(\s*entries => \{ if \(entries\.some\(e => e\.isIntersecting\)\) setShown\(n => nextGridCount\(n, total, step\)\); \},\s*\{ root, rootMargin: '0px 0px 400px 0px' \},/.test(hook), 'observer');
   assert(/useEffect\(\(\) => \{\s*setShown\(step\);\s*if \(root\) root\.scrollTop = 0;\s*\}, \[resetKey, step\]\);/.test(hook), 'reset');
-  assert(/from '\.\.\/\.\.\/shared\/paginate'/.test(hook), 'shared helper');
+  assert(hook.includes("from '@zaptill/core/paginate'"), 'shared helper');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { cashierHistoryView } from '../lib/cashierHistory';   // 0.6.37 (A387)
+import { cashierHistoryView } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { getHistoryMethods } from '../lib/historyMethods';
 import { cashierHistoryTotals, historyTotal } from '../lib/cashierShiftSales';   // A418
 import { classifyOrderCreateError } from '../lib/orderErrors';
@@ -37,7 +37,7 @@ import { payRider, returnRiderPayout } from '../lib/riderPayout';
 import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
 import { confirmerByPin, confirmerRows, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from '../lib/confirmerLookup';
 import { businessReversalRules } from '../lib/reversalSettings';
-import { voidWindowOpen, windowLabel } from '../lib/reversalRules';
+import { voidWindowOpen, windowLabel } from '@zaptill/core/reversalRules';
 import { frozenAtBranch } from '../lib/stockTakeAccess';
 import { applyOffers, cleanOffer, type AppliedOffer, type OfferLine } from '../lib/offers';   // A445
 import { promotionOffersByIds } from '../lib/promotionOffers';   // A518

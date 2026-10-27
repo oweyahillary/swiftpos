@@ -33,7 +33,7 @@
  */
 import { supabase } from './supabase';
 import { traffic } from './trafficStats';
-import { CONFIG_KEYS, CHANGE_TABLES, isSyncTopic, type ChangeEntry, type ChangesAnswer, type ChangeTable, type SyncTopicName } from './syncTopics';
+import { CONFIG_KEYS, CHANGE_TABLES, isSyncTopic, type ChangeEntry, type ChangesAnswer, type ChangeTable, type SyncTopicName } from '@zaptill/core/syncTopics';
 import { initAnswer } from './posInit';
 import { readTopicVersion } from './syncVersions';
 import { stripFields, COST_FIELDS } from './costAccess';
@@ -41,7 +41,7 @@ import { worksAtBranch } from './branchAccess';
 import { effectiveKeysForRow, clientPermissionMap } from './effectivePermissions';
 import { promotionAsOfferRow, type PromotionRow } from './promotionOffers';
 import { frozenAtBranch, openTake } from './stockTakeAccess';
-import { readAvailability } from './menuHours';   // A578
+import { readAvailability } from '@zaptill/core/menuHours';   // A578
 import { chunkPaged } from './pgQuery';
 
 export const CHANGES_PAGE = 500;

@@ -6,8 +6,8 @@ import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEY
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
-import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "./lib/tenantHost";   // A378: a client's own sign-in address
-import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
+import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "@zaptill/core/tenantHost";   // A378: a client's own sign-in address
+import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "@zaptill/core/support";   // 0.6.35 (A384): a shop's own tech
 import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and Account pages
 import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
 import SystemPage from "./SystemPage";   // A525: what production runs, the deploy check, the dependency scan
@@ -19,7 +19,7 @@ import DownloadZapTill from "./DownloadZapTill";   // A570: the installer, throu
 import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone, expiryText } from "./cloudPlan";   // A569; A581 expiryText
 import CloudPlanCard from "./CloudPlanCard";   // A581: the cloud payment plan
 import AdminPager, { usePageSize } from "./AdminPager";   // A475
-import { paginate } from "./lib/paginate";
+import { paginate } from "@zaptill/core/paginate";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────

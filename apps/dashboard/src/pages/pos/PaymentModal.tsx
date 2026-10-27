@@ -1,7 +1,7 @@
 import MethodDot from '../../components/MethodDot';
 import type { AppliedOffer } from '../../lib/offers';   // A445
-import { enabledFromSetting, paymentButtons } from '../../lib/paymentCatalogue';   // A429
-import { methodColour, methodSolid, methodTint } from '../../lib/paymentColours';
+import { enabledFromSetting, paymentButtons } from '@zaptill/core/paymentCatalogue';   // A429
+import { methodColour, methodSolid, methodTint } from '@zaptill/core/paymentColours';
 import type { MonoRaster } from '../../lib/escposRenderer';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';

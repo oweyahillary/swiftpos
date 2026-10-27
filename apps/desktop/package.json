@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
-    "dev": "concurrently \"tsc -p tsconfig.main.json --watch\" \"vite\" \"wait-on http://localhost:5174 dist/main/index.js && electron .\"",
+    "dev": "concurrently \"tsc -b tsconfig.main.json --watch\" \"vite\" \"wait-on http://localhost:5174 dist/main/index.js && electron .\"",
     "build": "tsc -p tsconfig.json && tsc -b tsconfig.main.json && vite build && electron-builder",
     "build:renderer": "vite build",
     "lint": "echo 'lint desktop'",
@@ -83,6 +83,7 @@
   "dependencies": {
     "@swiftpos/printing": "file:../../shared/printing",
     "@types/node": "^20.19.43",
+    "@zaptill/core": "file:../../packages/core",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.8.9",

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { api, storeSwiftPOSToken, storeRefreshToken, clearAllTokens } from '../lib/api';
 import { useTenant, tenantSignInFields } from '../lib/tenant';
 import { TenantBrand, UnknownTenantAddress } from '../components/TenantBrand';
-import { DEFAULT_SUPPORT_PHONES, whatsappNumber } from '../lib/support';   // 0.6.35 (A384)
+import { DEFAULT_SUPPORT_PHONES, whatsappNumber } from '@zaptill/core/support';   // 0.6.35 (A384)
 import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../lib/otpTrust';   // A391
 import ForgotPassword from '../components/ForgotPassword';   // A402
 import OtpCodeStep, { type OtpPrompt } from '../components/OtpCodeStep';

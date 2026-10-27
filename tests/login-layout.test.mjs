@@ -32,8 +32,8 @@ const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e)
 
 // The two files run as they are, from a temp copy (their import has no .ts extension, which the type stripper needs).
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-a424-'));
-fs.writeFileSync(path.join(tmp, 'contrast.ts'), read('apps/dashboard/src/lib/contrast.ts'));
-fs.writeFileSync(path.join(tmp, 'loginBrand.ts'), read('apps/dashboard/src/lib/loginBrand.ts').replace("from './contrast'", "from './contrast.ts'"));
+fs.writeFileSync(path.join(tmp, 'contrast.ts'), read('packages/core/src/contrast.ts'));
+fs.writeFileSync(path.join(tmp, 'loginBrand.ts'), read('apps/dashboard/src/lib/loginBrand.ts').replace("from '@zaptill/core/contrast'", "from './contrast.ts'"));
 const L = await import(pathToFileURL(path.join(tmp, 'loginBrand.ts')).href);
 const C = await import(pathToFileURL(path.join(tmp, 'contrast.ts')).href);
 

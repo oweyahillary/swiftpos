@@ -26,7 +26,7 @@ let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
 const D = await import(pathToFileURL(path.join(ROOT, 'shared/delivery.ts')).href);
-const R = await import(pathToFileURL(path.join(ROOT, 'shared/reversalRules.ts')).href);
+const R = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/reversalRules.ts')).href);
 
 // ── The delivery rule ─────────────────────────────────────────────────────────
 await ok('the fee is still a must on every delivery (the rider is paid it, free or not)', () => {

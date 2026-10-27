@@ -26,33 +26,33 @@ import VoidModal from '../components/VoidModal';
 import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
 import { reverseActionFor, isRefunded, ageMinutes, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
 import { can, SELL_REFUSAL } from '../lib/access';   // A490: the one rule
-import { windowLabel } from '../../shared/reversalRules';
+import { windowLabel } from '@zaptill/core/reversalRules';
 import { filterSummary, emptyGridMessage } from '../lib/posFilter';
 import { syncNotice, type SyncStatusLike } from '../lib/syncNotice';
 import ShiftPanel from './ShiftPanel';
 import NoteModal from '../components/NoteModal';
 import { noteLines } from '../../shared/orderNotes';
-import { historyView, historyChoices, orderMethod, historyTotal, historyByCashier, orderCashierName, type HistorySort } from '../../shared/historyView';
+import { historyView, historyChoices, orderMethod, historyTotal, historyByCashier, orderCashierName, type HistorySort } from '@zaptill/core/historyView';
 import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, customerDeliveryFee, autoFreeDelivery } from '../../shared/delivery';
 import { noPosFeatures, type PosFeatures } from '../../shared/posFeatures';
-import { NO_FREEZE, isFrozen, frozenMessage, type StockCountFreeze } from '../../shared/stockCountFreeze';   // A394
-import { NO_STOCK_VIEW, showsSoldOut, hiddenOutOfStock, stockRefusals, type OutOfStockMode, type StockView } from '../../shared/stockGate';   // A563
+import { NO_FREEZE, isFrozen, frozenMessage, type StockCountFreeze } from '@zaptill/core/stockCountFreeze';   // A394
+import { NO_STOCK_VIEW, showsSoldOut, hiddenOutOfStock, stockRefusals, type OutOfStockMode, type StockView } from '@zaptill/core/stockGate';   // A563
 import type { ZReport } from '../lib/posApi';
 import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
 import KitchenVoidModal from '../components/KitchenVoidModal';
 import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '../../shared/kitchenLines';
-import { onGrid } from '../../shared/productDays';
-import { exactFirst } from '../../shared/paginate';   // A472
+import { onGrid } from '@zaptill/core/productDays';
+import { exactFirst } from '@zaptill/core/paginate';   // A472
 import { useGridWindow } from '../hooks/useGridWindow';   // A472
 import { reportBusy } from '../lib/activity';   // A508
 import CategoryPanel, { useCategoryPanel, useNarrowWindow, PanelToggle, CategoryChip, MenuBar, LaterButton } from '../components/CategoryPanel';   // A537; A566; A580
-import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../shared/menuFilter';   // A537; A566
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537; A566
 // A566: A564's lookup, from the selling screen. A588: loaded when opened (rarely used; A517's budget).
 const FindInBranches = lazy(() => import('../components/BranchStockTab').then((m) => ({ default: m.FindInBranches })));
 import { mayCheckOtherBranches, outHereMatches, outHereNote } from '../lib/branchCheck';   // A566
 import { useOnlineLicence } from '../lib/onlineLicence';   // A566 (A460)
-import { businessTerms } from '../../shared/businessTerms';   // A573: Menus / Departments / Groups
-import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '../../shared/menuHours';   // A578: menus by time of day; A580: Later
+import { businessTerms } from '@zaptill/core/businessTerms';   // A573: Menus / Departments / Groups
+import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '@zaptill/core/menuHours';   // A578: menus by time of day; A580: Later
 import { useMenuHours } from '../lib/useMenuHours';   // A578
 // A577: items sold by weight — the keypad loads on its first use (the main chunk's budget, lazy-load-a517).
 const WeightModal = lazy(() => import('../components/WeightModal'));

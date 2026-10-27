@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill's own sign-in — plan to replace Supabase Auth</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+a{color:var(--teal)}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+figure{margin:18px 0;text-align:center}
+figure img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+figcaption{color:var(--quiet);font-size:.85rem;margin-top:6px}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+li input[type=checkbox]{margin-right:8px;transform:scale(1.15)}
+li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
+.toc{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;margin:20px 0}
+.toc ol{margin:6px 0 0}
+@media print{.toc{break-after:page} h2{break-before:page;border-top:none} figure{break-inside:avoid} table{break-inside:auto} a{color:inherit;text-decoration:none}}
+</style></head><body><div class="wrap">
+<h1 id="zaptill-s-own-sign-in-plan-to-replace-supabase-auth">ZapTill&#39;s own sign-in — plan to replace Supabase Auth</h1>
+<p>Plan only, 2026-10-26, branch <code>shared-components</code>. No application code is changed by this document. It goes with <code>docs/VPS-MIGRATION-PLAN.md</code> (the move to one server) and <code>docs/PLATFORM-MOVE-OVERVIEW.md</code> (the short version for the owner).</p>
+<p>Owner, 2026-10-26: &quot;while we are doing the shared components work think of implementing auth on our own, it&#39;s a project also, we can do the two in one go.&quot;</p>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#1-inventory-of-every-sign-in-flow-today">1. Inventory of every sign-in flow today</a></li><li><a href="#2-design">2. Design</a></li><li><a href="#3-server-changes">3. Server changes</a></li><li><a href="#4-moving-the-existing-accounts">4. Moving the existing accounts</a></li><li><a href="#5-security-review-checklist-owasp-asvs-4-0-level-2-items-that-apply">5. Security review checklist (OWASP ASVS 4.0, level 2 items that apply)</a></li><li><a href="#6-test-plan">6. Test plan</a></li><li><a href="#7-rollout">7. Rollout</a></li></ol></nav>
+<p><strong>The short answer:</strong> ZapTill already runs most of its own sign-in. Every session — owner, partner, manager, cashier, till, technician, admin — is a ZapTill token signed with ZapTill&#39;s keys, renewed through ZapTill&#39;s own refresh tokens (migration 13, rotation with reuse detection, A88/D13), with ZapTill&#39;s own second step (A391), reset codes (A402) and lockouts (A494). Supabase Auth is used for one thing: <strong>it stores the owners&#39; and partners&#39; email + password and checks it</strong>, plus a few account chores (create, change email, set password, read the email). The web dashboard also keeps a second, Supabase browser session, used for page gating, the live counters and one logo upload. Replacing Supabase Auth is therefore mainly a credential store and about 30 call sites — not a new sign-in system.</p>
+<h2 id="1-inventory-of-every-sign-in-flow-today">1. Inventory of every sign-in flow today</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Flow</th>
+<th>Who</th>
+<th>Credential checked by</th>
+<th>Session issued by</th>
+<th>Files</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Password sign-in to the web dashboard</td>
+<td>owner</td>
+<td><strong>Supabase Auth</strong> (<code>authClient.auth.signInWithPassword</code>, <code>routes/auth.ts:733</code>); then the browser signs in to Supabase <strong>again</strong> itself (<code>LoginPage.tsx:176</code>)</td>
+<td>ZapTill (<code>JWT_SECRET</code>, access 15 min, refresh 30 days, <code>ownerLogin: true</code>) + a Supabase browser session</td>
+<td><code>routes/auth.ts</code> <code>/login</code>, <code>lib/ownerBusiness.ts</code>, <code>apps/dashboard/src/pages/LoginPage.tsx</code>, <code>context/AuthContext.tsx</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Partner sign-in (A550)</td>
+<td>a staff member the owner lets into the full dashboard</td>
+<td><strong>Supabase Auth</strong> (same <code>/login</code>), then the link: <code>business_settings.web_partners</code> (the owner&#39;s grant) <strong>and</strong> the account&#39;s <code>app_metadata.zaptill_partner</code> (business → person)</td>
+<td>ZapTill (<code>webPartner</code>, <code>partnerBranches</code>, <code>allBranches</code>; re-checked at every renewal)</td>
+<td><code>lib/webPartners.ts</code>, <code>routes/auth.ts</code> <code>partnerSignIn</code>, <code>/refresh</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Partner invite / revoke</td>
+<td>owner</td>
+<td>creates a Supabase account with an unusable password (<code>auth.admin.createUser</code>) or finds the existing one (<code>auth.admin.generateLink</code> magic link, not sent), writes <code>app_metadata</code> (<code>updateUserById</code>); revoke clears the link</td>
+<td>— (the invitee sets a password with the A402 code)</td>
+<td><code>routes/staff.ts:193-196, 809-813, 873</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Client created in the admin portal</td>
+<td>ZapTill admin</td>
+<td><code>auth.admin.createUser</code> with the owner&#39;s first password, <code>email_confirm: true</code></td>
+<td>—</td>
+<td><code>routes/admin.ts:469</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Legacy self-onboarding</td>
+<td>(owner)</td>
+<td>browser <code>supabase.auth.signUp</code>, server <code>auth.getUser(token)</code></td>
+<td>—</td>
+<td><code>apps/dashboard/src/pages/OnboardingPage.tsx</code>, <code>routes/onboarding.ts:49</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Owner email changed by the admin</td>
+<td>ZapTill admin</td>
+<td><code>auth.admin.updateUserById(email)</code></td>
+<td>—</td>
+<td><code>routes/admin.ts:1114</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Owner password reset by the admin (A495)</td>
+<td>super admin</td>
+<td><code>setOwnerPassword</code> → <code>auth.admin.updateUserById(password)</code></td>
+<td>revokes the owner&#39;s browser sessions</td>
+<td><code>routes/admin.ts:1045</code>, <code>lib/passwordReset.ts</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>Forgot password / reset code (A402)</td>
+<td>owner, partner</td>
+<td>ZapTill code (6 digits, 15 min, 5 tries, <code>password_reset_codes</code>, migration 124); the new password is written to <strong>Supabase Auth</strong> (<code>updateUserById</code>), email read with <code>getUserById</code></td>
+<td>revokes every browser session (<code>revokeBrowserSessions</code>)</td>
+<td><code>lib/passwordReset.ts</code>, <code>routes/auth.ts</code> <code>/password/forgot</code>, <code>/password/reset</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td>Change password, forced first change (A568)</td>
+<td>owner, partner</td>
+<td>current password checked by <strong>Supabase Auth</strong> (<code>signInWithPassword</code>, <code>routes/auth.ts:2066</code>); set by <code>setOwnerPassword</code>; the browser then signs in to Supabase again (<code>ForcePasswordChangePage.tsx:38</code>)</td>
+<td>the current session kept, others revoked</td>
+<td><code>routes/auth.ts</code> <code>/password/change</code>, <code>ForcePasswordChangePage.tsx</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>Sign-in codes / second step (A391, A398)</td>
+<td>admins, owners, managers, partners</td>
+<td>ZapTill: emailed code or TOTP (<code>lib/loginOtp.ts</code>, migration 119, <code>OTP_PEPPER</code>), trusted-device token; per client switch <code>login_codes</code></td>
+<td>—</td>
+<td><code>lib/loginOtp.ts</code>, <code>routes/auth.ts</code> <code>/otp/*</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td>Sessions: renew, sign out, current session</td>
+<td>everyone with a ZapTill token</td>
+<td>ZapTill <code>refresh_tokens</code> (sha256 of the token, <code>session_id</code>, <code>device_hint</code>, <code>replaced_by</code> — migrations 13, 84; chain-based replay detection <code>lib/refreshGrace.ts</code>; A477 handshake <code>/refresh/ack</code>)</td>
+<td>ZapTill</td>
+<td><code>routes/auth.ts</code> <code>/refresh</code>, <code>/refresh/ack</code>, <code>/logout</code>, <code>/session</code>; <code>lib/tillSessions.ts</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td>Supabase-token fallback in <code>requireAuth</code></td>
+<td>owner</td>
+<td>Supabase JWT (<code>SUPABASE_JWT_SECRET</code>), accepted <strong>only</strong> while sign-in codes are off (<code>LOGIN_OTP=off</code>)</td>
+<td>—</td>
+<td><code>middleware/auth.ts:320-404</code></td>
+</tr>
+<tr>
+<td>13</td>
+<td>Staff invite email</td>
+<td>owner</td>
+<td><code>auth.admin.inviteUserByEmail</code> (creates a Supabase account a cashier never uses — staff sign in with a PIN)</td>
+<td>—</td>
+<td><code>routes/staff.ts:544</code></td>
+</tr>
+<tr>
+<td>14</td>
+<td>Owner&#39;s email for jobs and notices</td>
+<td>—</td>
+<td><code>auth.admin.getUserById</code></td>
+<td>—</td>
+<td><code>jobs/cloudPlanReminders.ts</code>, <code>jobs/dailySummary.ts</code>, <code>jobs/lowStockChecker.ts</code> (2), <code>jobs/ownerAlertsData.ts</code>, <code>lib/ownerBusiness.ts</code>, <code>routes/auth.ts:1200, 2063</code>, <code>routes/staff.ts:193</code></td>
+</tr>
+<tr>
+<td>15</td>
+<td>Till joins the business (enrolment code), till signs itself back in (device secret), machine binding (A415, A477)</td>
+<td>the till</td>
+<td>ZapTill (single-use code; <code>device_secret_hash</code>; till identity)</td>
+<td>ZapTill (till&#39;s own session, no person)</td>
+<td><code>routes/auth.ts</code> <code>/enrol/redeem</code>, <code>/device-token</code>; <code>lib/deviceGrant.ts</code>, <code>lib/tillIdentity.ts</code></td>
+</tr>
+<tr>
+<td>16</td>
+<td>PIN sign-in on a till and the web POS; set PIN</td>
+<td>managers, cashiers</td>
+<td>ZapTill (bcrypt PIN hashes in <code>users</code>, attempts and lockout <code>lib/pinAttempts.ts</code>, A494)</td>
+<td>ZapTill (<code>surface</code>, <code>pinSignIn</code>, branch-scoped)</td>
+<td><code>routes/auth.ts</code> <code>/pos-login</code>, <code>/verify-pin</code>, <code>/set-pin</code>; web POS tokens <code>swiftpos_pos_token</code></td>
+</tr>
+<tr>
+<td>17</td>
+<td>Technician tokens</td>
+<td>technicians</td>
+<td>ZapTill, Ed25519 (<code>TECH_SIGNING_PRIVATE_KEY</code> / <code>_PUBLIC_KEY</code>), verified offline on the till</td>
+<td>—</td>
+<td><code>lib/techToken.ts</code>, <code>routes/tech.ts</code></td>
+</tr>
+<tr>
+<td>18</td>
+<td>Admin portal sign-in</td>
+<td>ZapTill staff</td>
+<td>ZapTill: <code>admin_users.password_hash</code> (bcrypt 12, dummy hash for unknown emails), OTP, account re-read every request (A495)</td>
+<td>ZapTill (<code>ADMIN_JWT_SECRET</code>, 8 h, <code>sessionStorage</code>)</td>
+<td><code>routes/admin.ts</code>, <code>middleware/adminAuth.ts</code>, <code>apps/admin/src/AdminPortal.tsx</code></td>
+</tr>
+<tr>
+<td>19</td>
+<td>Kitchen display token</td>
+<td>KDS screen</td>
+<td>ZapTill (long-lived, branch-scoped, version-revocable, migration 137)</td>
+<td>ZapTill (<code>surface: &#39;kds&#39;</code>)</td>
+<td><code>routes/kitchen.ts</code>, <code>middleware/auth.ts</code></td>
+</tr>
+<tr>
+<td>20</td>
+<td>The till&#39;s push channel (A531)</td>
+<td>the till</td>
+<td>the same <code>requireAuth</code> as every request</td>
+<td>—</td>
+<td><code>lib/liveHub.ts</code></td>
+</tr>
+<tr>
+<td>21</td>
+<td>Branch-server shop network (A489, A496)</td>
+<td>tills at a branch</td>
+<td>certificate pinned on the LAN</td>
+<td>—</td>
+<td><code>apps/desktop/src/main/lanTls.ts</code> (not affected by this plan)</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Ops events, GitHub releases</td>
+<td>machines</td>
+<td><code>OPS_INGEST_TOKEN</code>, <code>GITHUB_RELEASES_TOKEN</code></td>
+<td>—</td>
+<td>unaffected</td>
+</tr>
+</tbody></table>
+<p><strong>Count.</strong> Of 22 flows, <strong>14 depend on Supabase Auth in some way (1–14)</strong>, 8 are already ZapTill&#39;s alone. In code: <strong>23 server call sites in 11 files</strong> (<code>getUserById</code> 12, <code>updateUserById</code> 4, <code>createUser</code> 2, <code>signInWithPassword</code> 2, <code>generateLink</code> 1, <code>inviteUserByEmail</code> 1, <code>getUser</code> 1), plus the <code>requireAuth</code> Supabase-token branch, plus <strong>8 Auth calls, 2 Storage calls and 1 Realtime channel in 7 dashboard files</strong>.</p>
+<p><strong>Token storage in browsers today:</strong> the dashboard keeps ZapTill&#39;s access <strong>and refresh</strong> tokens in <code>localStorage</code> (<code>swiftpos_access_token</code>, <code>swiftpos_refresh_token</code>, <code>swiftpos_pos_token</code>, <code>swiftpos_pos_refresh_token</code>) and sends them as <code>Authorization: Bearer</code>; no cookies, so no CSRF exposure today. The admin portal keeps its token in <code>sessionStorage</code>. The Supabase browser session sits in <code>localStorage</code> too.</p>
+<h2 id="2-design">2. Design</h2>
+<h3 id="accounts">Accounts</h3>
+<p>A new table <strong><code>accounts</code></strong> (in <code>public</code>, service role only, RLS on with no policy, like the other platform tables):</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>id</code></td>
+<td>uuid, primary key</td>
+<td><strong>the same id as <code>auth.users.id</code></strong> — so <code>businesses.owner_id</code> and every partner grant keep pointing at the same person</td>
+</tr>
+<tr>
+<td><code>email</code></td>
+<td>text, not null</td>
+<td>stored lower-case and trimmed; unique index on <code>lower(email)</code></td>
+</tr>
+<tr>
+<td><code>password_hash</code></td>
+<td>text, null</td>
+<td>bcrypt (<code>$2a$…</code> imported, <code>$2b$12$…</code> new); null = no password yet (an invitee)</td>
+</tr>
+<tr>
+<td><code>password_changed_at</code></td>
+<td>timestamptz</td>
+<td>used to refuse tokens issued before a password change</td>
+</tr>
+<tr>
+<td><code>email_verified_at</code></td>
+<td>timestamptz</td>
+<td>imported from <code>email_confirmed_at</code></td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>text: <code>active</code>, <code>disabled</code></td>
+<td><code>banned_until</code> / <code>deleted_at</code> imported as <code>disabled</code></td>
+</tr>
+<tr>
+<td><code>failed_count</code>, <code>locked_until</code></td>
+<td>int, timestamptz</td>
+<td>the A494 account lock made durable (today it is per process, in memory)</td>
+</tr>
+<tr>
+<td><code>last_sign_in_at</code>, <code>created_at</code>, <code>updated_at</code></td>
+<td>timestamptz</td>
+<td></td>
+</tr>
+<tr>
+<td><code>session_version</code></td>
+<td>int, default 1</td>
+<td>bumped by &quot;sign out everywhere&quot; and by a password or email change</td>
+</tr>
+</tbody></table>
+<p>A second table <strong><code>account_links</code></strong> replaces <code>app_metadata.zaptill_partner</code> (A550&#39;s second record): <code>(account_id, business_id, user_id, kind = &#39;partner&#39;, created_at)</code>, unique <code>(account_id, business_id)</code>. Only the server writes it, as only the service role could write <code>app_metadata</code>. The owner&#39;s grant (<code>business_settings.web_partners</code>) stays as it is; both records stay required at every sign-in and renewal, exactly as A550 designed. Owners need no link: <code>businesses.owner_id = accounts.id</code> is the link, as today.</p>
+<p>After the import, a migration repoints the foreign keys that named <code>auth.users</code> (<code>businesses.owner_id</code>, <code>stock_movements.created_by</code>) to <code>accounts(id)</code> (<code>docs/VPS-MIGRATION-PLAN.md</code> § 6). A small compatible <code>auth.uid()</code> function stays for the 149 RLS policies.</p>
+<h3 id="passwords">Passwords</h3>
+<ul>
+<li><strong>bcrypt, cost 12</strong> (the server already uses <code>bcrypt</code> 6 at cost 12 for PINs and admin passwords). Imported Supabase hashes are bcrypt (<code>$2a$10$…</code>, to be verified — § 4); Node&#39;s <code>bcrypt</code> checks <code>$2a$</code> and <code>$2b$</code> alike. On a successful sign-in with a cost-10 hash, the password is re-hashed at cost 12 (transparent upgrade). argon2id would need a second native module and could not check the imported hashes, so bcrypt is the right choice here; bcrypt at cost ≥ 10 meets OWASP ASVS L2.</li>
+<li>bcrypt reads only the first 72 bytes: new passwords are limited to 72 bytes (UTF-8) with a clear message, instead of today&#39;s 128 characters (<code>passwordProblem</code>), so no part of a password is silently ignored.</li>
+<li>Policy: at least <strong>10</strong> characters for new passwords (today 8; existing passwords keep working), not only spaces, not the email, not in a list of the 10,000 most common passwords shipped with the server (no outside call). Decision for the owner: 10 or 12 (ASVS asks 12).</li>
+<li>Unknown email: one comparison against a dummy hash, the same answer and timing as a wrong password (the admin portal already does this, A495).</li>
+</ul>
+<h3 id="rate-limits-and-lockout">Rate limits and lockout</h3>
+<p>Kept as they are: the <code>/api/auth</code> limiter (<code>authLimiter</code>, A494/A505 keys), the per-account lock (<code>pinAttempts.ts</code> <code>accountLocked</code> / <code>noteAccountFailure</code>, A507 tells the account), PIN attempts. The account lock moves to <code>accounts.failed_count</code> / <code>locked_until</code> so it survives a restart. The wrong-password answer stays the same word for word for every reason (A550: never tell a revoked partner their password was right).</p>
+<h3 id="tokens-and-sessions">Tokens and sessions</h3>
+<p>Already in place and kept: access token 15 minutes, refresh 30 days, refresh tokens stored as a sha256 hash with <code>jti</code>, <code>session_id</code>, <code>device_hint</code>, rotated on every use with <code>replaced_by</code> and chain-based replay detection (<code>lib/refreshGrace.ts</code>: a lost response is reissued, a real replay revokes the session), the permissions version check (<code>pv</code>), the A494 re-read of the person at every renewal, the A477 till handshake. Added:</p>
+<ol>
+<li><strong>Key id and rotation.</strong> Tokens get a <code>kid</code> header. <code>JWT_SECRET</code> stays the key for <code>kid</code> <code>k1</code> (so every live session survives the move); a new optional <code>JWT_KEYS</code> holds <code>{kid: secret}</code> for the next key. Signing uses the newest key, verification accepts every listed one; a key is removed after 30 days (the refresh lifetime). The same for <code>ADMIN_JWT_SECRET</code>. Moving to Ed25519 for access tokens (as the technician tokens already use) is possible later; not needed now.</li>
+<li><strong>Revocation on password change, email change, role change.</strong> Password and email changes already revoke the browser sessions (<code>revokeBrowserSessions</code>); with <code>session_version</code> in the token, an access token issued before the change is refused at once instead of living out its 15 minutes. Role and permission changes are already covered by <code>pv</code> (<code>PERMISSIONS_CHANGED</code>).</li>
+<li><strong>Sessions page and &quot;sign out everywhere&quot;.</strong> Settings › Security lists the account&#39;s open sessions from <code>refresh_tokens</code> (device, IP, last renewal, this browser marked), with &quot;Sign out&quot; per row and &quot;Sign out everywhere&quot; (revokes the rows, bumps <code>session_version</code>). Tills&#39; own sessions are never listed or revoked from here (A406/A415).</li>
+<li><strong>Audit entries</strong> (in the existing audit log, never with a password, code or token): sign-in succeeded / failed / locked, second step passed / failed, password set / reset / changed, email changed, session revoked, partner link added / removed, account created / disabled.</li>
+</ol>
+<h3 id="email-verification-and-resets">Email verification and resets</h3>
+<ul>
+<li>Accounts made by the admin portal are verified by definition (the admin typed the email), as today (<code>email_confirm: true</code>). A changed email gets a 6-digit code to the <strong>new</strong> address before it takes effect, and a notice to the old one.</li>
+<li>Forgot password, reset and change keep the A402 design and the existing mailer (<code>lib/mailer.ts</code>, Resend over HTTPS); only the line that writes the password changes, from Supabase to <code>accounts</code>.</li>
+<li>Partner invites keep the A402 code flow (no link that can be forwarded). The invite no longer creates a Supabase account; it creates an <code>accounts</code> row with no password (or finds the existing one by email) and the <code>account_links</code> row.</li>
+<li>The staff invite (<code>inviteUserByEmail</code>) is replaced by the existing mailer with a plain &quot;you were added to … on ZapTill&quot; message; staff still sign in with a PIN.</li>
+</ul>
+<h3 id="one-time-codes-and-totp">One-time codes and TOTP</h3>
+<p>Kept exactly (A391): emailed codes, authenticator-app TOTP, trusted devices, the admin portal&#39;s switch per client, <code>LOGIN_OTP=off</code> as the emergency switch. Nothing of it depends on Supabase. (TOTP is already built — it is not a &quot;later&quot; item.)</p>
+<h3 id="cookie-or-bearer-for-the-dashboards">Cookie or bearer for the dashboards</h3>
+<p><strong>At the cut-over: unchanged — bearer tokens.</strong> Changing the token transport on the same night as the server would add risk for no immediate gain. <strong>After the move (recommended, within a month):</strong> the dashboard&#39;s <strong>refresh</strong> token moves to an <code>HttpOnly; Secure; SameSite=Strict</code> cookie on <code>api.zaptill.co.ke</code>, path <code>/api/auth/refresh</code>, and the access token lives only in memory. <code>app.</code>, <code>admin.</code>, every client address and <code>api.</code> are one site (<code>zaptill.co.ke</code>), so the cookie works with <code>credentials: &#39;include&#39;</code> and <code>Access-Control-Allow-Credentials</code> for the allowed origins (<code>CORS_ORIGINS</code>, <code>TENANT_ROOT_DOMAIN</code>). The refresh endpoint is the only cookie-authenticated route, it checks <code>Origin</code> against the same list, and <code>SameSite=Strict</code> stops cross-site use — so CSRF stays closed. A stolen <code>localStorage</code> (XSS) then yields at most a 15-minute access token, not a 30-day refresh token. Tills, the branch server and the web POS&#39;s till-like sessions keep bearer tokens.</p>
+<h3 id="several-businesses-partners-client-addresses">Several businesses, partners, client addresses</h3>
+<ul>
+<li>An owner of several businesses: unchanged — <code>resolveOwnerBusinesses</code> answers <code>409 MULTIPLE_BUSINESSES</code> with the list and the dashboard asks (BUG-18).</li>
+<li>Partners: <code>resolvePartnerSignIn</code> and <code>checkPartner</code> read <code>account_links</code> instead of <code>app_metadata</code>; everything else in <code>lib/webPartners.ts</code> stays.</li>
+<li>Client addresses (A378): the tenant is still looked up <strong>before</strong> the password is checked, and on a client&#39;s address only that business opens (<code>findTenant</code>, <code>ownedTenantBusiness</code>).</li>
+<li>One email can be an owner in one business and a partner in another: one <code>accounts</code> row, one owner relation, one partner link — the same as one Supabase account today.</li>
+</ul>
+<h3 id="dashboard-changes-removes-supabase-supabase-js-from-the-dashboard">Dashboard changes (removes <code>@supabase/supabase-js</code> from the dashboard)</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/lib/supabase.ts</code></td>
+<td>deleted (<code>VITE_SUPABASE_URL</code>, <code>VITE_SUPABASE_ANON_KEY</code> gone)</td>
+</tr>
+<tr>
+<td><code>src/context/AuthContext.tsx</code></td>
+<td>the session is &quot;a ZapTill token is held and <code>/api/auth/session</code> answers&quot;; sign-out clears ZapTill tokens and calls <code>/api/auth/logout</code></td>
+</tr>
+<tr>
+<td><code>src/lib/api.ts</code></td>
+<td><code>getAuthHeader</code> uses only the ZapTill token</td>
+</tr>
+<tr>
+<td><code>src/pages/LoginPage.tsx</code></td>
+<td>step 3 (the second, Supabase sign-in) removed</td>
+</tr>
+<tr>
+<td><code>src/pages/ForcePasswordChangePage.tsx</code></td>
+<td>the Supabase re-sign-in removed</td>
+</tr>
+<tr>
+<td><code>src/pages/OnboardingPage.tsx</code></td>
+<td>retired (clients are created in the admin portal) or moved to the API, including the logo upload (<code>POST /api/business/logo</code>, stored as the branding logos are)</td>
+</tr>
+<tr>
+<td><code>src/pages/OverviewPage.tsx</code></td>
+<td>the Realtime channel replaced by the existing 60-second refresh, or by a web session on the A531 push channel (a doorbell, then a read) — which also works for partners, who get nothing from Realtime today</td>
+</tr>
+</tbody></table>
+<p>This step can ship on <code>dev</code> <strong>before</strong> the move (it only stops using the Supabase browser session), which takes risk off the cut-over night.</p>
+<h2 id="3-server-changes">3. Server changes</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>new <code>lib/accounts.ts</code></td>
+<td><code>findAccountByEmail</code>, <code>verifyPassword</code> (dummy hash, re-hash on upgrade), <code>setPassword</code>, <code>createAccount</code>, <code>setEmail</code>, <code>disableAccount</code>, <code>accountEmail(id)</code>, partner links</td>
+</tr>
+<tr>
+<td><code>lib/supabase.ts</code></td>
+<td><code>authClient</code> removed</td>
+</tr>
+<tr>
+<td><code>routes/auth.ts</code></td>
+<td><code>/login</code> and <code>/password/change</code> verify with <code>accounts</code>; <code>/refresh</code> reads the email from <code>accounts</code></td>
+</tr>
+<tr>
+<td><code>lib/passwordReset.ts</code></td>
+<td><code>setOwnerPassword</code> writes <code>accounts</code>; emails read from <code>accounts</code>; links from <code>account_links</code></td>
+</tr>
+<tr>
+<td><code>lib/webPartners.ts</code></td>
+<td><code>metaLinks</code> / <code>withMetaLink</code> read and write <code>account_links</code></td>
+</tr>
+<tr>
+<td><code>routes/staff.ts</code></td>
+<td>invite and revoke use <code>accounts</code> + <code>account_links</code>; staff invite email through the mailer</td>
+</tr>
+<tr>
+<td><code>routes/admin.ts</code></td>
+<td>create client → <code>createAccount</code>; change owner email → <code>setEmail</code></td>
+</tr>
+<tr>
+<td><code>routes/onboarding.ts</code></td>
+<td>retired, or accepts a ZapTill token</td>
+</tr>
+<tr>
+<td><code>jobs/*</code> (5 files), <code>lib/ownerBusiness.ts</code></td>
+<td><code>accountEmail(id)</code> instead of <code>getUserById</code></td>
+</tr>
+<tr>
+<td><code>middleware/auth.ts</code></td>
+<td>the Supabase-token branch and <code>SUPABASE_JWT_SECRET</code> removed; <code>kid</code> and <code>session_version</code> checks added</td>
+</tr>
+</tbody></table>
+<p>Behind one flag during the build: <strong><code>AUTH_PROVIDER=supabase</code></strong> (today&#39;s behaviour, the default) or <strong><code>zaptill</code></strong>. One module (<code>lib/accounts.ts</code>) has both implementations, so every route calls the same function whichever is on.</p>
+<h2 id="4-moving-the-existing-accounts">4. Moving the existing accounts</h2>
+<ol>
+<li><strong>Check the hash format first, on dev, then on production</strong> (the owner runs it in Supabase&#39;s SQL editor; it prints no hash):
+<code>select left(encrypted_password, 4) as prefix, count(*) from auth.users group by 1;</code>
+Expected: <code>$2a$</code> for every account that has a password, and empty for invitees who never set one. Anything else (no rows expected) is reset by code after the move.</li>
+<li><strong>Export</strong> only the needed columns (<code>id, email, encrypted_password, email_confirmed_at, created_at, updated_at, last_sign_in_at, banned_until, deleted_at, raw_app_meta_data</code>) with <code>\copy … to &#39;accounts.csv&#39; csv header</code>, run by the owner. The file holds password hashes: copy it to the server over SSH only, load it, delete it (<code>shred -u</code>). Never in git, email or chat.</li>
+<li><strong>Load</strong> into <code>accounts</code> (ids preserved), and <code>raw_app_meta_data -&gt; &#39;zaptill_partner&#39;</code> into <code>account_links</code> (each pair checked against <code>business_settings.web_partners</code>; a link without a grant is dropped, as it opens nothing today either).</li>
+<li><strong>Test</strong> with the dev data: every dev account signs in with its usual password; a test account with a known password is compared with <code>bcrypt.compare</code> before and after.</li>
+<li><strong>First sign-in after the move:</strong> the same email and password work; the session the browser already holds keeps working (the same <code>JWT_SECRET</code>, the same <code>refresh_tokens</code> rows), so most people notice nothing. Only the Supabase browser session is gone, and with § 2&#39;s dashboard change nothing needs it.</li>
+<li><strong>No hash, or a bad one:</strong> &quot;Forgot password?&quot; sends the A402 code. The admin portal&#39;s reset (super admin) still works.</li>
+</ol>
+<h2 id="5-security-review-checklist-owasp-asvs-4-0-level-2-items-that-apply">5. Security review checklist (OWASP ASVS 4.0, level 2 items that apply)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> V2.1 Passwords: minimum length (10 or 12), 72-byte limit stated, no composition rules, common-password list, paste allowed, change requires the current password (A568 ✓).</li>
+<li><input disabled="" type="checkbox"> V2.2 Anti-automation: per-address and per-account limits (A494/A505 ✓), durable account lock, the account told of a lock (A507 ✓), no user enumeration in sign-in, forgot and invite answers.</li>
+<li><input disabled="" type="checkbox"> V2.4 Credential storage: bcrypt cost ≥ 10 (12), unique salt per hash (built in), dummy-hash timing.</li>
+<li><input disabled="" type="checkbox"> V2.5 Recovery: codes 6 digits, 15 minutes, 5 tries, single use, separate hash domain from sign-in codes (A402 ✓); all sessions revoked after a reset ✓; a notice to the account after a change.</li>
+<li><input disabled="" type="checkbox"> V2.7/2.8 Second step: emailed code and TOTP (A391 ✓), the code bound to the sign-in attempt, TOTP secret encrypted at rest (<code>APP_ENCRYPTION_KEY</code>).</li>
+<li><input disabled="" type="checkbox"> V3.2/3.3 Sessions: new session id at sign-in ✓, refresh rotation and replay detection ✓, sign-out revokes server side ✓, absolute lifetime 30 days ✓, revocation on password/email change (session version — new), sign out everywhere (new).</li>
+<li><input disabled="" type="checkbox"> V3.4 Cookies (after the cookie step): <code>HttpOnly</code>, <code>Secure</code>, <code>SameSite=Strict</code>, host-only on <code>api.</code>, narrow path.</li>
+<li><input disabled="" type="checkbox"> V3.5 Tokens: algorithm pinned (<code>HS256</code> only ✓), <code>kid</code> and rotation (new), <code>tokenType</code> checked (access vs refresh) ✓.</li>
+<li><input disabled="" type="checkbox"> V4 Access control: tenant checks in the API unchanged ✓; partner link needs both records ✓; client address checked before the password ✓.</li>
+<li><input disabled="" type="checkbox"> V6 Secrets: <code>JWT_SECRET</code>, <code>JWT_KEYS</code>, <code>ADMIN_JWT_SECRET</code>, <code>OTP_PEPPER</code>, <code>APP_ENCRYPTION_KEY</code> only in the server&#39;s env file; at least 32 random bytes each.</li>
+<li><input disabled="" type="checkbox"> V7 Logging: the audit entries in § 2, never a password, code, token or hash; failed sign-ins logged with the masked email (<code>maskEmail</code>).</li>
+<li><input disabled="" type="checkbox"> V8 Data: the accounts export handled as a secret (§ 4); <code>accounts</code> reachable only by the service role.</li>
+<li><input disabled="" type="checkbox"> V13 API: the auth routes keep <code>validateLoose</code> schemas, JSON only, sizes capped.</li>
+<li><input disabled="" type="checkbox"> V14 Config: <code>helmet</code> ✓; CORS list unchanged; HTTPS only (Caddy, HSTS on <code>api.</code>, <code>app.</code>, <code>admin.</code>).</li>
+</ul>
+<h2 id="6-test-plan">6. Test plan</h2>
+<ul>
+<li><strong>Unit tests</strong> (<code>tests/*.test.mjs</code>, the house style): <code>verifyPassword</code> against a real imported-format <code>$2a$10$</code> hash and a <code>$2b$12$</code> hash; re-hash on upgrade; dummy-hash path for an unknown email; 72-byte rule; password policy; account lock and unlock times; <code>kid</code> selection and an old key accepted, a removed key refused; <code>session_version</code> refusal; partner link requires both records (each missing alone refused); account import mapping (ids kept, partner links filtered by grant).</li>
+<li><strong>HTTP tests</strong> (like <code>tests/auth-hardening.test.mjs</code>, <code>partner-login-a550.test.mjs</code>, <code>password-reset.test.mjs</code>, <code>login-otp.test.mjs</code>) run with <code>AUTH_PROVIDER=zaptill</code>: owner sign-in, <code>409 MULTIPLE_BUSINESSES</code>, client address refusal, partner sign-in and renewal, revoked partner gets the wrong-password answer word for word, forgot/reset revokes sessions, forced change, second step, sign out everywhere, the admin&#39;s create / change email / reset.</li>
+<li><strong>Source checks:</strong> with the flag at <code>zaptill</code>, no <code>auth.admin.</code>, <code>signInWithPassword</code>, <code>auth.getUser</code> or <code>SUPABASE_JWT_SECRET</code> is reachable (a test that fails if one is added back); the dashboard bundle contains no <code>supabase</code> string.</li>
+<li><strong>Mutation checks:</strong> for each guard (timing dummy, lock, partner grant, link, tenant, session version, <code>kid</code>), flip it in a copy and confirm a test fails — as the A494/A550 suites already do.</li>
+<li><strong>Manual, on the VPS dev:</strong> owner, partner and admin sign-ins with real dev accounts; a reset by code; a forced change; a till renewing through the change (tills are never affected).</li>
+<li><strong>Full CI step set</strong> after every step (<code>ci.yml</code>, with the sqlite driver on <code>NODE_PATH</code>), as for the shared-components branch.</li>
+</ul>
+<h2 id="7-rollout">7. Rollout</h2>
+<p><strong>Recommended: build behind the flag, switch at the VPS cut-over (not a long dual-run).</strong> A dual-run in which both Supabase Auth and ZapTill accept passwords would need every password change written to both stores and kept in step; that is more moving parts than it saves. Instead:</p>
+<ol>
+<li><strong><code>accounts</code> and <code>account_links</code> tables</strong> (a migration safe on Supabase and the VPS; unused while the flag is <code>supabase</code>), and the import script. <em>(week 0)</em></li>
+<li><strong>Server side behind <code>AUTH_PROVIDER</code></strong>, every test above. <em>(weeks 0–1)</em></li>
+<li><strong>Dashboard without the Supabase browser session</strong> (§ 2 table) — works with either provider, so it can go to <code>dev</code> and production <strong>before</strong> the move. <em>(week 1)</em></li>
+<li><strong>VPS dev with <code>AUTH_PROVIDER=zaptill</code></strong> on the imported dev accounts; a week of use. <em>(weeks 1–2)</em></li>
+<li><strong>Production: the flag is <code>zaptill</code> from the first minute on the VPS</strong> (accounts imported in the freeze window, with the database). Supabase Auth is never used again.</li>
+<li><strong>Fallback on the night:</strong> if step 4 has not passed its checkpoint, production moves with the GoTrue container (<code>docs/VPS-MIGRATION-PLAN.md</code> § 10) and the flag stays <code>supabase</code>; the switch to <code>zaptill</code> follows on the VPS a week later, after importing accounts from GoTrue&#39;s database on the same server (no Supabase involved).</li>
+<li><strong>After the move:</strong> the cookie step (§ 2), the sessions page, and removal of the flag and the Supabase branch of the code.</li>
+</ol>
+<p><strong>How it fits the branch.</strong> The work is done on <code>shared-components</code> like the rest, in its own commits, and tested on the VPS dev environment, which runs that branch. The branch&#39;s rules apply: no behaviour change for the people using ZapTill (same sign-in pages, same answers), the full CI step set after every step. Because the move to production is made from <code>dev</code>&#39;s code, steps 1–3 are taken to <code>dev</code> on their own (they are self-contained and switched off by default) once tested, without waiting for the whole branch.</p>
+
+</div></body></html>

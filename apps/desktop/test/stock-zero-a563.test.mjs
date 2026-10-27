@@ -36,7 +36,7 @@ const L = require(path.join(dist, 'localDb.js'));
 const C = require(path.join(dist, 'deviceConfig.js'));
 const E = require(path.join(dist, 'syncEngine.js'));
 const G = require(path.join(dist, 'stockGateLocal.js'));
-const S = require(path.join(dist, 'stockGate.js'));
+const S = require('@zaptill/core/stockGate');
 const SH = require(path.join(dist, 'shiftService.js'));
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };

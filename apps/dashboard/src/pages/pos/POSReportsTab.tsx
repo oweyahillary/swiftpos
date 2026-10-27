@@ -7,7 +7,7 @@
  */
 
 import MethodDot from '../../components/MethodDot';
-import { methodColour } from '../../lib/paymentColours';
+import { methodColour } from '@zaptill/core/paymentColours';
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { localDateStr } from '../../lib/localDate';

@@ -1,4 +1,4 @@
-// A578 — menus by time of day: the pure rules (shared/menuHours.ts — the till, the web POS, the Menus page and the cloud
+// A578 — menus by time of day: the pure rules (packages/core/src/menuHours.ts — the till, the web POS, the Menus page and the cloud
 // run this one file), the web POS (CashierScreen, MinimartPOS: the bar, the grid, a scan refused), the Menus page's hours
 // editor, and the cloud's routes and sync.
 //
@@ -51,8 +51,8 @@ const bundle = (entry, out) => {
 const at = (s) => new Date(s);   // local clock (the till's / the browser's)
 
 try {
-  const H = await import(pathToFileURL(path.join(ROOT, 'shared/menuHours.ts')).href);
-  const M = await import(pathToFileURL(path.join(ROOT, 'shared/menuFilter.ts')).href);
+  const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/menuHours.ts')).href);
+  const M = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/menuFilter.ts')).href);
   const BF = H.readAvailability({ days: [1, 2, 3, 4, 5], windows: [{ start: '06:00', end: '11:00' }] });
   const LUNCH = H.readAvailability({ windows: [{ start: '11:00', end: '16:00' }] });
   const NIGHT = H.readAvailability({ days: [5], windows: [{ start: '22:00', end: '02:00' }] });   // Friday nights
@@ -172,8 +172,9 @@ try {
     && /if \(outOfHours\?\.\(p\) && !peekLater\?\.\(p, \{ menu: activeMenu, category: activeCategory, search: catalogueSearch \}\)\) return false;/.test(mm)   // A580
     && /outOfHours=\{\(p: Product\) => hoursRefusal\(p as any, hours\)\}/.test(cs) && /categories=\{categoriesNow\}/.test(cs)
     && /hints=\{menuHints\} trailing=\{menuBarTrailing\} greyed=\{menuLater\}/.test(mm));   // A580: the greyed Later tabs
-  ok('the web\'s copies are the shared file, verbatim (lib/ and the cloud\'s)',
-    read('apps/dashboard/src/lib/menuHours.ts') === read('shared/menuHours.ts') && read('apps/server/src/lib/menuHours.ts') === read('shared/menuHours.ts'));
+  ok('one file: packages/core/src/menuHours.ts, no copies left in the web or the cloud',
+    read('packages/core/src/menuHours.ts').length > 0
+    && ['shared/menuHours.ts', 'apps/dashboard/src/lib/menuHours.ts', 'apps/server/src/lib/menuHours.ts'].every((p) => !fs.existsSync(path.join(ROOT, p))));
 
   console.log('\nE. the Menus page\n');
   const ED = await bundle('src/pages/products/MenuHoursEditor.tsx', 'editor.mjs');

@@ -7,7 +7,7 @@
 // used to appear so that cashiers can easily pick the menu".
 //
 // RUNS the web POS's MenuBar and CategoryPanel (apps/dashboard/src/pages/pos/cashier/CategoryPanel.tsx, bundled with
-// esbuild, rendered with react-dom/server) and the shared helper (lib/menuFilter.ts = shared/menuFilter.ts); pins the two
+// esbuild, rendered with react-dom/server) and the shared helper (packages/core/src/menuFilter.ts); pins the two
 // screens' wiring.
 //
 //   T  menus → a row of top tabs ("All", "Food", "Drinks" …, 46 px, the theme's --act-strong on the chosen one, the POS's
@@ -39,7 +39,7 @@ const bundle = (entry, out) => {
 };
 
 try {
-  const M = await import(pathToFileURL(path.join(DASH, 'src/lib/menuFilter.ts')).href);
+  const M = await import(pathToFileURL(path.join(DASH, '..', '..', 'packages/core/src/menuFilter.ts')).href);
   const CP = await bundle('src/pages/pos/cashier/CategoryPanel.tsx', 'panel.mjs');
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');

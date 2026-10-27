@@ -9,10 +9,10 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
-import { businessTerms } from '../../lib/businessTerms';   // A573
+import { businessTerms } from '@zaptill/core/businessTerms';   // A573
 import { money } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 interface Product {
   id: string;

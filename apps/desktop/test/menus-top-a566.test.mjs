@@ -4,7 +4,7 @@
 // Owner: "if a client has larger categories eg drinks, fast foods etc they should appear the way categories used to
 // appear so that cashiers can easily pick the menu". And A564 left FindInBranches ready but not wired into the sale screen.
 //
-// RUNS the shared helper (src/shared/menuFilter.ts — the web POS runs the same file), the till's MenuBar and CategoryPanel
+// RUNS the shared helper (packages/core/src/menuFilter.ts — the web POS runs the same file), the till's MenuBar and CategoryPanel
 // (bundled with esbuild, rendered with react-dom/server), lib/branchCheck.ts and lib/access.ts; pins the sale screen's
 // wiring (POSPage is one 2,400-line component — its filter and gates are read from the source).
 //
@@ -45,7 +45,7 @@ const bundle = (entry, out) => {
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };
 
-const M = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'menuFilter.ts')).href);
+const M = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'menuFilter.ts')).href);
 const BS = await import(pathToFileURL(path.join(desktop, 'src', 'renderer', 'lib', 'branchCheck.ts')).href);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');

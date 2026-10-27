@@ -11,7 +11,7 @@
  *   <Pager paged={paged} onPage={setPage} onSize={n => { setSize(n); setPage(1); }} />
  */
 import { useCallback, useState } from 'react';
-import { PAGE_SIZES, DEFAULT_PAGE_SIZE, cleanPageSize, pageWindow, rangeLabel, rangeShort, type Paged } from '../lib/paginate';
+import { PAGE_SIZES, DEFAULT_PAGE_SIZE, cleanPageSize, pageWindow, rangeLabel, rangeShort, type Paged } from '@zaptill/core/paginate';
 
 /** The page size for one screen, remembered in this browser. Storage may be blocked (a private window): then 50. */
 export function usePageSize(key: string): [number, (n: number) => void] {

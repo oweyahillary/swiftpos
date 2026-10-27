@@ -1,0 +1,28 @@
+{
+  "name": "@zaptill/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZapTill rules shared by the cloud, the web dashboard and web POS, the admin portal and the desktop POS (pure TypeScript, no dependencies). Consumed as a file: dependency; see docs/SHARED-COMPONENTS-PLAN.md.",
+  "license": "UNLICENSED",
+  "sideEffects": false,
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "import": "./src/*.ts",
+      "require": "./dist/*.js",
+      "default": "./dist/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "src/*"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}

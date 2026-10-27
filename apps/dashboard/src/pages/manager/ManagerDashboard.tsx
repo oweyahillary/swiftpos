@@ -39,9 +39,9 @@ import { localDateStr } from '../../lib/localDate';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { money, compactMoney, litres, dateShort } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { hasAnyPermission } from '../../lib/permissions';   // A490
-import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
+import { businessTerms, foodAreas } from '@zaptill/core/businessTerms';   // A573
 import { OWNER_SETS_LIMITS_LINE, limitBoxForRole } from '../../lib/creditApprovers';   // A585
 // A549 · A553: the Analytics tab loads its own chunk (and the chart library) only when it is opened
 const Analytics = lazy(() => import('../analytics/AnalyticsPage').then((m) => ({ default: m.Analytics })));

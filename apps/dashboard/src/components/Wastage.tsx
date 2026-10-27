@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { money, dateTime } from '../lib/format';
 import Pager, { usePageSize } from './Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 /**
  * Wastage — A399: the wastage log. One screen for the owner (Stock › Wastage) and the manager (Manager › Wastage); the

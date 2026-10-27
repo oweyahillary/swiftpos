@@ -30,7 +30,7 @@ async function expenseIdsOk(req: any, res: any, categoryId: unknown, paidBy: unk
 }
 import { validate } from '../middleware/validate';
 import { CreateExpenseSchema } from '../lib/schemas';
-import { cleanExpenseMethod } from '../lib/expenseMethod';
+import { cleanExpenseMethod } from '@zaptill/core/expenseMethod';
 import { supabase } from '../lib/supabase';
 import { recorderId } from '../lib/expenseRecorder';
 

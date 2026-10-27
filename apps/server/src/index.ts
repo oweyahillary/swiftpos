@@ -27,7 +27,7 @@ import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { refreshPermissionsState } from './lib/permissionsState';   // A490
 import { buildInfo, recordBoot } from './lib/opsEvents';   // A525: what this server runs; its start recorded
-import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own sign-in addresses
+import { isTenantOrigin }       from '@zaptill/core/tenantHost';   // A378: clients' own sign-in addresses
 import { isRenewalPath, renewalKey, RENEWALS_PER_WINDOW } from './lib/authLimits';   // A415
 import { authLimiterKeyFor, apiLimiterKeyFor, BUCKET_VERIFY_OPTIONS } from './lib/limiterKeys';   // A494, A505
 import jwt from 'jsonwebtoken';

@@ -43,7 +43,7 @@ import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
 import { getDeviceConfig, getBusinessDayCutoff } from './deviceConfig';   // 0.6.34 + the day's end
 import { v4 as uuid } from 'uuid';
-import { businessDateLocal, businessDayEndLocal } from './businessDay';   // 0.6.34
+import { businessDateLocal, businessDayEndLocal } from '@zaptill/core/businessDay';   // 0.6.34
 import { signedInCan } from './tillAccess';   // A490
 
 

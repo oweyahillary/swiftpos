@@ -6,7 +6,7 @@
  *
  *   node tests/payment-colours.test.mjs
  *
- * RUNS the real palette (shared/paymentColours.ts) and proves it reads: every dot ≥ 3:1 (a graphic) on the till's dark
+ * RUNS the real palette (packages/core/src/paymentColours.ts) and proves it reads: every dot ≥ 3:1 (a graphic) on the till's dark
  * surfaces and the web POS's dark AND light surfaces; the normal label text ≥ 4.5:1 on each method's tinted button, in both
  * modes; methods distinct from each other; a custom tender always the same colour. The screens are pinned by source.
  *
@@ -36,7 +36,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.PAY_COLOURS_TS) {
   const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
   let pass = 0, fail = 0;
   const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
-  const P = await import(pathToFileURL(path.join(ROOT, 'shared/paymentColours.ts')).href);
+  const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/paymentColours.ts')).href);
 
   const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const lum = (c) => { const v = c.map((x) => x / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4)); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
@@ -87,10 +87,9 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.PAY_COLOURS_TS) {
     }
     assert.deepEqual(bad, []);
   });
-  ok('one palette: the till\'s and the web\'s copies are byte-identical to shared/', () => {
-    const canon = read('shared/paymentColours.ts');
-    assert.equal(read('apps/desktop/src/shared/paymentColours.ts'), canon);
-    assert.equal(read('apps/dashboard/src/lib/paymentColours.ts'), canon);
+  ok('one palette: packages/core/src/paymentColours.ts, no copies left in the till or the web', () => {
+    assert.ok(read('packages/core/src/paymentColours.ts').length > 0);
+    for (const p of ['shared/paymentColours.ts', 'apps/desktop/src/shared/paymentColours.ts', 'apps/dashboard/src/lib/paymentColours.ts']) assert.ok(!fs.existsSync(path.join(ROOT, p)), p);
   });
 
   // ── Where it is used (source — React not run here) ──

@@ -11,7 +11,7 @@
 import { overlayLocalChanges } from './localChanges';   // A448
 import { nodeChangeVersion } from './nodeClient';   // A448
 import { cleanOffer, type Offer } from './offers';   // A445
-import type { ChangeEntry } from './syncTopics';   // A531
+import type { ChangeEntry } from '@zaptill/core/syncTopics';   // A531
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme, applyPulledBranchBranding } from './localDb';
 import { logLine, describeResponse, getLogPath, authLog } from './logFile';
@@ -54,7 +54,7 @@ import {
 } from './nodeIngest';
 import { pruneNodeInstructions } from './branchClose';   // P3
 import { v4 as uuid } from 'uuid';
-import { cleanShowDays } from './productDays';
+import { cleanShowDays } from '@zaptill/core/productDays';
 import { pruneChoices, VARIANT_TABLES, MODIFIER_TABLES } from './choicePrune';   // A425
 import { storeSessionPermissions } from './tillAccess';   // A490
 import { claimOrderNumberForOwnSale } from './billNumber';   // A500
