@@ -70,7 +70,9 @@ export function makeServerIdentity(commonName = 'ZapTill branch server', now = D
   const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const alg = seq(oid(ECDSA_SHA256));
   const name = seq(set(seq(oid(COMMON_NAME), utf8(commonName.slice(0, 64)))));
-  const serial = crypto.randomBytes(16); serial[0] &= 0x7f;
+  // Positive and minimal: top bit clear, next bit set. `&= 0x7f` alone left a 0x00 first byte about 1 time in 256 — a
+  // padded INTEGER that OpenSSL refuses (illegal padding), so that server's TLS could not start (A596).
+  const serial = crypto.randomBytes(16); serial[0] = (serial[0] & 0x3f) | 0x40;
   const tbs = seq(
     explicit(0, int(Buffer.from([2]))),                                     // v3
     int(serial),
