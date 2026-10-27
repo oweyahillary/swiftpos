@@ -197,7 +197,7 @@ try {
   });
   await ok('the switches are the owner\'s: the admin portal is refused (OWNER_SETS)', () => {
     assert.ok(controls.ownerSetsFeature('stock_zero_sold_out') && controls.ownerSetsFeature('stock_zero_hide'));
-    assert.match(read('apps/admin/src/ownerSettings.ts'), /'stock_zero_sold_out', 'stock_zero_hide'\] as const;/);
+    assert.match(read('apps/admin/src/ownerSettings.ts'), /'stock_zero_sold_out', 'stock_zero_hide'(, 'approval_pin')?\] as const;/);
   });
   await ok('the setting syncs: the cloud\'s POS switches (what pos/init sends as posFeatures) carry it', async () => {
     const { businessPosFeatures } = require(path.join(DIST, 'lib/posFeatureFlags.js'));

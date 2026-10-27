@@ -107,7 +107,9 @@ supabase.from = (table) => {
       if (prop === 'ilike') return (k, v) => { f.push((r) => likeRe(v).test(String(r[k] ?? ''))); return q; };
       if (prop === 'or') return (expr) => {
         // 'credit_limit.gt.0,credit_balance.gt.0' or 'name.ilike.%x%,phone.ilike.%x%'
-        const parts = String(expr).split(',').map((x) => { const [k, op, ...v] = x.split('.'); return [k, op, v.join('.')]; });
+        // A595: a value may be one PostgREST quoted literal (lib/personalData.ts customerSearchFilter) — commas inside it are its own.
+        const items = String(expr).match(/[^,"]+(?:"(?:[^"\\]|\\.)*")?/g) ?? [];
+        const parts = items.map((x) => { const [k, op, ...v] = x.split('.'); return [k, op, v.join('.').replace(/^"([\s\S]*)"$/, '$1').replace(/\\(.)/g, '$1')]; });
         f.push((r) => parts.some(([k, op, v]) => (op === 'gt' ? Number(r[k]) > Number(v) : op === 'ilike' ? likeRe(v).test(String(r[k] ?? '')) : false)));
         return q;
       };

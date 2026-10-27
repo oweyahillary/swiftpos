@@ -3,15 +3,16 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { verifyPin } from './auth';
-import { requirePermission, allBranchAccess, branchFilter, oneBranchOnly } from '../middleware/rbac';   // A550: allBranchAccess
+import { requirePermission, requireAnyPermission, allBranchAccess, branchFilter, oneBranchOnly, can } from '../middleware/rbac';   // A550: allBranchAccess
+import { maskPhone, maskEmail, isMasked } from '../lib/personalData';   // A595
 import { supabase } from '../lib/supabase';
 import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
 import { callerHeld, canAssignRole, roleEditRefusal, overridesBeyondCaller } from '../lib/roleCeiling';
 import { isOwnerRoleName } from '../lib/ownerRole';
-import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey } from '../lib/permissions';
-import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf } from '../lib/roleKeys';
+import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf } from '../lib/permissions';
+import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf, withNewParentParts, overridePartsOf } from '../lib/roleKeys';
 import { useEmailCodes } from '../lib/loginOtp';   // A391
 import { keysBeyond } from '../lib/permissions';   // A494
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
@@ -24,6 +25,7 @@ import { sendEmailChecked } from '../lib/mailer';   // A550
 import { signInAddress } from '../lib/tenant';   // A550
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A562
 import { approvalPinOn } from '../lib/posFeatures';   // A562
+import { splitsPending } from '../lib/permissionsState';   // A595
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -48,7 +50,7 @@ function hashOverridePin(pin: string): Promise<string> {
 // always allowed. One already set keeps approving either way (lib/approver.ts reads no switch) — no manager's approval
 // breaks the day the switch is off; the owner removes it on the staff form.
 const APPROVAL_PIN_OFF_BODY = {
-  error: 'Separate approval PINs are off for this business — managers approve with their sign-in PIN. ZapTill support can turn them on.',
+  error: 'Separate approval PINs are off for this business — managers approve with their sign-in PIN. The owner turns them on in Settings › Business › POS options.',
   code: 'APPROVAL_PIN_OFF',
 } as const;
 async function approvalPinAllowed(req: any): Promise<boolean> {
@@ -113,7 +115,7 @@ async function refuseOverridesBeyondCaller(req: any): Promise<{ error: string; m
  * The user_permissions rows a body asks for — `overrides` (by id) and `override_keys` (by key; a broad key becomes the
  * fine keys it stands for; unknown keys are dropped) — or undefined when it names neither (leave them as they are).
  */
-async function overrideRows(userId: string, body: any): Promise<Array<{ user_id: string; permission_id: string; granted: boolean }> | undefined> {
+async function overrideRows(userId: string, body: any, held: ReadonlySet<string> = new Set(['*'])): Promise<Array<{ user_id: string; permission_id: string; granted: boolean }> | undefined> {
   const hasIds = Array.isArray(body?.overrides);
   const hasKeys = body?.override_keys && typeof body.override_keys === 'object';
   if (!hasIds && !hasKeys) return undefined;
@@ -125,6 +127,9 @@ async function overrideRows(userId: string, body: any): Promise<Array<{ user_id:
       if (typeof v !== 'boolean') continue;
       for (const f of expandKeys([k])) if (f !== '*' && isPermissionKey(f)) want.set(f, v);
     }
+    // A595: a client that does not know the split rights (no `parts: true`) sent a parent alone — it meant the parent's
+    // parts too, as before the split (a part it named itself wins).
+    if (body?.parts !== true) for (const [k, v] of overridePartsOf(want)) if (!want.has(k) && (!v || held.has('*') || held.has(k))) want.set(k, v);
     const ids = await permissionIds(want.keys());
     for (const [k, v] of want) { const id = ids.get(k); if (id) byId.set(id, v); }
   }
@@ -261,13 +266,34 @@ async function currentKeys(req: any, targetId: string): Promise<Set<string> | nu
  * kitchen removals (shifts.confirm). What it approves is still decided per action (lib/approver.ts mayApprove,
  * lib/shiftConfirm.ts mayConfirm): the PIN never approves more than its holder's keys.
  */
-export const APPROVAL_PIN_KEYS: readonly string[] = ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm'];
+// A595: and the two approvals split out of shifts.confirm (pay-outs and drawer expenses; kitchen removals).
+export const APPROVAL_PIN_KEYS: readonly string[] = ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm', 'shifts.approve_payout', 'sales.approve_kitchen_void'];
 const holdsApproval = (held: ReadonlySet<string>): boolean => held.has('*') || APPROVAL_PIN_KEYS.some((k) => held.has(k));
 
 /** A494: why this caller may not SET an override PIN for someone who will hold `targetKeys`, or null. */
 function overridePinRefusal(req: any, targetKeys: ReadonlySet<string>): { error: string; code: string } | null {
   if (!holdsApproval(callerHeld(req))) return { error: 'Only the owner, or someone who may approve (void, refund, credit or drawers), sets an approval PIN.', code: 'OVERRIDE_PIN_NOT_YOURS' };
   if (!holdsApproval(targetKeys)) return { error: 'An approval PIN is for someone who may approve voids, refunds, sales on account or drawers — give them that permission first.', code: 'OVERRIDE_PIN_NO_AUTHORITY' };
+  return null;
+}
+
+/** A595: does this body change a person's own rights (overrides by id or by key)? */
+function sendsOverrides(body: any): boolean {
+  return Array.isArray(body?.overrides) || !!(body?.override_keys && typeof body.override_keys === 'object');
+}
+
+/**
+ * A595 (docs/PERMISSIONS-AUDIT.md F6, F26): the parts of staff.edit — setting PINs and approval PINs (staff.pins), a
+ * person's own rights (staff.access), pay rates (staff.pay, which also lets someone without staff.edit change the rate
+ * alone). Migration 176 gave all three to every holder of staff.edit. Returns a 403 body, or null.
+ */
+function staffPartRefusal(req: any, wants: { edit?: boolean; pin?: boolean; approvalPin?: boolean; overrides?: boolean; pay?: boolean }):
+  { error: string; detail: string } | null {
+  const need = (key: string, error: string) => (can(req, key) ? null : { error, detail: `Missing permission: ${key}` });
+  if (wants.edit) { const r = need('staff.edit', 'Your role may only set pay rates.'); if (r) return r; }
+  if (wants.pin || wants.approvalPin) { const r = need('staff.pins', 'Your role does not set or reset PINs - ask the owner.'); if (r) return r; }
+  if (wants.overrides) { const r = need('staff.access', 'Your role does not give people their own rights - ask the owner.'); if (r) return r; }
+  if (wants.pay) { const r = need('staff.pay', 'Your role does not set pay rates - ask the owner.'); if (r) return r; }
   return null;
 }
 
@@ -281,9 +307,15 @@ function overridePinRefusal(req: any, targetKeys: ReadonlySet<string>): { error:
 // stripped before the response leaves.
 // A490: each person's own overrides also come as `override_keys` — { fine key: granted } (a broad override row from
 // before migration 134 shown as the fine keys it stands for).
-function shapeStaff(rows: any[], selfId?: string | null): any[] {
+// A595 (docs/PERMISSIONS-AUDIT.md F5): staff phone numbers and e-mails only with staff.contacts — masked otherwise (the
+// form shows them read-only and never sends them back; PATCH ignores a contact change from someone without the key).
+// Their own row is always theirs to see.
+function shapeStaff(rows: any[], selfId?: string | null, contacts = true): any[] {
   return (rows ?? []).map((u: any) => {
     const { override_pin_hash, pin_hash, ...rest } = u ?? {};
+    if (!contacts && !(selfId && u?.id === selfId)) {
+      rest.email = maskEmail(rest.email); rest.phone = maskPhone(rest.phone); rest.contacts_masked = true;
+    }
     const override_keys: Record<string, boolean> = {};
     for (const up of (u?.user_permissions ?? []) as Array<{ granted?: boolean; permissions?: { key?: string | null } | null }>) {
       const k = up?.permissions?.key;
@@ -314,7 +346,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
       .order('name');
 
     if (error) { sendError(res, error); return; }
-    res.json(shapeStaff(req.isOwner ? (data ?? []) : (data ?? []).filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId));
+    res.json(shapeStaff(req.isOwner ? (data ?? []) : (data ?? []).filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId, can(req, 'staff.contacts')));
     return;
   }
 
@@ -342,7 +374,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
       if (!u?.id || !f.ids.includes(row.branch_id) || seen.has(u.id)) continue;
       seen.set(u.id, { ...u, user_branches: (u.user_branches ?? []).filter((b: any) => f.ids.includes(b?.branch_id)) });
     }
-    res.json(shapeStaff([...seen.values()].filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId));
+    res.json(shapeStaff([...seen.values()].filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId, can(req, 'staff.contacts')));
     return;
   }
 
@@ -378,7 +410,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
   // filter would be undone by anyone talking to the API directly.
   staff = staff.filter((u: any) => !isOwnerRoleName(u?.roles?.name));
 
-  res.json(shapeStaff(staff, req.userId));
+  res.json(shapeStaff(staff, req.userId, can(req, 'staff.contacts')));
 });
 
 // GET /api/staff/authorizers — list staff who can authorize overrides.
@@ -396,11 +428,10 @@ router.get('/authorizers', async (req, res) => {
     .order('name');
 
   if (error) { sendError(res, error); return; }
-  res.json((data ?? []).map((u: any) => ({
-    id:   u.id,
-    name: u.name,
-    role: u.roles?.name ?? null,
-  })));
+  // A595 (docs/PERMISSIONS-AUDIT.md F10): the POS's PIN prompt needs who to pick — ids and names. Their roles only for
+  // someone who may see the staff or the roles.
+  const roles = can(req, 'staff.view', 'staff.edit', 'staff.roles');
+  res.json((data ?? []).map((u: any) => (roles ? { id: u.id, name: u.name, role: u.roles?.name ?? null } : { id: u.id, name: u.name })));
 });
 
 // POST /api/staff — create staff member with PIN
@@ -439,10 +470,14 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
   if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
   const overRefusal = await refuseOverridesBeyondCaller(req);   // A340
   if (overRefusal) { res.status(403).json(overRefusal); return; }
+  // A595: a person's own rights (staff.access) and an approval PIN (staff.pins) are their own parts of staff.edit. Adding
+  // someone needs their first sign-in PIN, so that one comes with adding them.
+  const partRefusal = staffPartRefusal(req, { overrides: sendsOverrides(req.body), approvalPin: typeof req.body?.override_pin === 'string' && req.body.override_pin.length > 0 });
+  if (partRefusal) { res.status(403).json(partRefusal); return; }
 
   // A494: what the new person will hold (role + overrides) — within the caller's keys, and the base of the override-PIN rule.
   let plannedRows: Array<{ permission_id: string; granted: boolean }> | undefined;
-  try { plannedRows = await overrideRows('new', req.body); } catch { res.status(503).json({ error: 'Could not check the permissions being granted' }); return; }
+  try { plannedRows = await overrideRows('new', req.body, callerHeld(req)); } catch { res.status(503).json({ error: 'Could not check the permissions being granted' }); return; }
   const willHold = (await resultingKeys(req, null, role_id, plannedRows)) ?? (req.isOwner ? new Set<string>() : null);
   if (!willHold) { res.status(403).json({ error: 'Could not check this role — please try again' }); return; }
   if (!req.isOwner) {
@@ -485,7 +520,7 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
     );
   }
 
-  const rows = await overrideRows(user.id, req.body);
+  const rows = await overrideRows(user.id, req.body, callerHeld(req));
   if (rows?.length) await supabase.from('user_permissions').insert(rows);
 
   res.status(201).json(user);
@@ -555,8 +590,18 @@ router.post('/invite', requirePermission('staff.edit'), async (req, res) => {
 });
 
 // PATCH /api/staff/:id — update staff member
-router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema), async (req, res) => {
-  const { name, email, role_id, pin, status, branch_ids, hourly_rate } = req.body;
+// A595: the pay rate alone is staff.pay (a Finance Manager sets rates without editing staff); everything else staff.edit.
+router.patch('/:id', requireAnyPermission('staff.edit', 'staff.pay'), validate(UpdateStaffSchema), async (req, res) => {
+  const { name, role_id, pin, status, branch_ids, hourly_rate } = req.body;
+  // A595: an e-mail is changed only by someone who may see staff contacts — never over the real one with a masked value.
+  const email = req.body.email !== undefined && can(req, 'staff.contacts') && !isMasked(req.body.email) ? req.body.email : undefined;
+  const partRefusal = staffPartRefusal(req, {
+    edit: Object.keys(req.body ?? {}).some((k) => k !== 'hourly_rate' && k !== 'parts'),
+    pin: !!pin || (typeof req.body?.override_pin === 'string' && req.body.override_pin.length > 0),
+    overrides: sendsOverrides(req.body),
+    pay: hourly_rate !== undefined,
+  });
+  if (partRefusal) { res.status(403).json(partRefusal); return; }
 
   const { data: existing } = await supabase
     .from('users').select('id, role_id, status, email').eq('id', req.params.id).eq('business_id', req.businessId).single();
@@ -650,7 +695,7 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   }
 
   // (Their token renews on its own: the database bumps permissions_version on any override or role change, migration 13.)
-  const rows = await overrideRows(req.params.id, req.body);
+  const rows = await overrideRows(req.params.id, req.body, callerHeld(req));
 
   // A494: what they WILL hold — the new role and the new overrides together (removed deny rows included) — must stay
   // within a non-owner caller's keys; and it decides whether an override PIN may be set.
@@ -730,7 +775,7 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
 
 // DELETE /api/staff/:id — soft deactivate
 // A391: a manager lost the phone with their authenticator app → back to emailed sign-in codes. The owner only.
-router.post('/:id/reset-otp', requirePermission('staff.edit'), async (req, res) => {
+router.post('/:id/reset-otp', requirePermission('staff.edit'), requirePermission('staff.pins'), async (req, res) => {   // A595
   if (!req.isOwner) { res.status(403).json({ error: 'Only the owner can reset a sign-in code.' }); return; }
   const { data: target } = await supabase
     .from('users').select('id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
@@ -916,7 +961,9 @@ async function writeRoleKeys(roleId: string, keys: string[]): Promise<void> {
 
 // GET /api/staff/roles — every role of the business: its fine keys, whether it is the owner's, whether THIS caller may
 // give it (assignable) and change it (editable), and how many people hold it (members).
-router.get('/roles', async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F10): every role's keys and member count were open to any signed-in session — now for
+// someone who sees or manages staff or roles (the dashboard's Staff and Roles screens, the POS's role picker).
+router.get('/roles', requireAnyPermission('staff.view', 'staff.edit', 'staff.roles'), async (req, res) => {
   const { data, error } = await supabase
     .from('roles')
     .select(`
@@ -935,11 +982,12 @@ router.get('/roles', async (req, res) => {
   const count = new Map<string, number>();
   for (const u of (members ?? []) as Array<{ role_id: string | null }>) if (u.role_id) count.set(u.role_id, (count.get(u.role_id) ?? 0) + 1);
   const held = callerHeld(req);
+  const partsPending = splitsPending();   // A595: before 176 a role's parent grant still brings its parts
   // A340: which of these THIS caller may hand out — the dashboard's and the till's role pickers show only these, so a
   // manager is never offered Owner (the routes refuse it regardless).
   res.json(roles.map((r) => {
     const isOwnerRole = isOwnerRoleName(r.name);
-    const keys = isOwnerRole ? ['*'] : [...expandKeys((r.role_permissions ?? []).map((rp: any) => rp?.permissions?.key).filter(Boolean))].filter((k) => k !== '*');
+    const keys = isOwnerRole ? ['*'] : [...expandKeys((r.role_permissions ?? []).map((rp: any) => rp?.permissions?.key).filter(Boolean), false, partsPending)].filter((k) => k !== '*');
     const role = { name: r.name, keys };
     return {
       ...r, keys, is_owner_role: isOwnerRole,
@@ -954,8 +1002,10 @@ router.get('/roles', async (req, res) => {
 router.get('/permissions', async (req, res) => {
   let ids: Map<string, string>;
   try { ids = await permissionIds(PERMISSIONS.map((p) => p.key)); } catch (e) { sendError(res, e as Error); return; }
+  // A595: and how the Roles screen nests them — a part names its parent; See / Do / Approve; the personal-data badge.
   res.json(PERMISSIONS.map((p) => ({
     id: ids.get(p.key) ?? null, key: p.key, label: p.label, description: p.description, group: p.group, surface: p.surface,
+    view: p.view === true, personal: p.personal === true, parent: parentOf(p.key), parts: [...partsOf(p.key)], kind: permissionKind(p.key),
   })));
 });
 
@@ -984,6 +1034,9 @@ router.put('/roles/:roleId/permissions', requirePermission('staff.roles'), async
   try { role = await loadRole(req.businessId, req.params.roleId); } catch (e) { sendError(res, e as Error); return; }
   if (!role) { res.status(404).json({ error: 'Role not found' }); return; }
 
+  // A595: a parent ticked for the first time by a client that does not know the split rights (no `parts: true`) brings
+  // its parts, as before the split — only those the caller may give.
+  if (req.body?.parts !== true) wanted = withNewParentParts(wanted, role.keys, callerHeld(req));
   const refusal = roleEditRefusal(callerHeld(req), role, wanted);
   if (refusal) { res.status(403).json(refusal); return; }
 
@@ -1009,6 +1062,7 @@ router.post('/roles', requirePermission('staff.roles'), async (req, res) => {
     const srcKeys = isOwnerRoleName(src.name) ? fineKeysOf(PERMISSIONS.map((p) => p.key)) : [...src.keys].filter((k) => k !== '*');
     wanted = [...new Set([...srcKeys, ...wanted])];
   }
+  if (req.body?.parts !== true && !copy_from) wanted = withNewParentParts(wanted, new Set(), callerHeld(req));   // A595
   const refusal = roleEditRefusal(callerHeld(req), { name: clean, keys: [] }, wanted);
   if (refusal) { res.status(403).json(refusal); return; }
 

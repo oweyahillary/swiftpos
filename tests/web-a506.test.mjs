@@ -62,7 +62,7 @@ ok('a staff edit sends only what changed (role_id, override_keys, e-mail, branch
   assert.match(staffRoute, /code: 'PEER_CREDENTIALS'/);
   assert.match(staff, /\.\.\.\(emailChanged \? \{ email: email\.trim\(\) \} : \{\}\)/);
   assert.match(staff, /\.\.\.\(roleChanged \? \{ role_id: roleId \} : \{\}\)/);
-  assert.match(staff, /\.\.\.\(keysChanged \? \{ override_keys \} : \{\}\)/);
+  assert.match(staff, /const keysField: \{ override_keys\?: Record<string, boolean>; parts\?: true \} = keysChanged \? \{ override_keys, parts: true \} : \{\};/);   // A595: parts: true
   assert.match(staff, /sameSet\(selectedBranches, editing\.user_branches\?\.map\(b => b\.branch_id\) \?\? \[\]\) \? \{\} : \{ branch_ids: selectedBranches \}/);
   assert.doesNotMatch(staff, /^\s+role_id: roleId,\s*$/m);
 });
@@ -81,7 +81,8 @@ ok('an override PIN is offered only to someone who will void or refund (OVERRIDE
   assert.match(staffRoute, /OVERRIDE_PIN_NO_AUTHORITY/);
   // A514: the approval PIN is for anyone who may approve — void, refund, sales on account or drawers (the cloud's
   // APPROVAL_PIN_KEYS), now that the business supervisor PIN is retired.
-  assert.match(staff, /const mayApprove = effectiveKeys\.has\('\*'\) \|\| \['sales\.void', 'sales\.refund', 'customers\.credit', 'shifts\.confirm'\]\.some\(k => effectiveKeys\.has\(k\)\);/);
+  // A595: and the two approvals split out of shifts.confirm.
+  assert.match(staff, /const mayApprove = effectiveKeys\.has\('\*'\) \|\| \['sales\.void', 'sales\.refund', 'customers\.credit', 'shifts\.confirm', 'shifts\.approve_payout', 'sales\.approve_kitchen_void'\]\.some\(k => effectiveKeys\.has\(k\)\);/);
   assert.match(staff, /overridePin && mayApprove \? \{ override_pin: overridePin \}/);
   assert.match(staff, /disabled=\{clearOverride \|\| !mayApprove\}/);
 });

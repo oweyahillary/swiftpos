@@ -90,8 +90,12 @@ await ok('a delivery\'s value is what was received at its cost', () => {
 console.log('\nThe cloud and the screens\n');
 const r = read('apps/server/src/routes/payables.ts');
 await ok("bills, payments and balances are the owner's by default; a manager who receives may send goods back", () => {
-  for (const route of ["'/bills'", "'/bills/:id/void'", "'/payments'", "'/payments/:id/void'"]) {
+  for (const route of ["'/bills'", "'/bills/:id/void'"]) {
     assert.match(r, new RegExp(`router\\.(get|post)\\(${route.replace(/[/:]/g, (c) => '\\' + c)}, requirePermission\\('payables\\.manage'\\)`), route);
+  }
+  // A595: paying a supplier (and voiding a payment) is its own part of payables.manage (payables.pay).
+  for (const route of ["'/payments'", "'/payments/:id/void'"]) {
+    assert.match(r, new RegExp(`router\\.(get|post)\\(${route.replace(/[/:]/g, (c) => '\\' + c)}, requirePermission\\('payables\\.pay'\\)`), route);
   }
   // A518: the balances and an account are READ with payables.view (the Accountant's) or payables.manage.
   for (const route of ["'/summary'", "'/suppliers/:id'"]) {

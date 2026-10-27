@@ -155,7 +155,7 @@ function shape(take: TakeRow, lines: LineRow[], full: boolean) {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-router.get('/', requireAnyPermission('inventory.count', 'inventory.adjust'), async (req, res) => {
+router.get('/', requireAnyPermission('inventory.count', 'inventory.adjust', 'inventory.count_review'), async (req, res) => {
   const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
   let q = supabase.from('stock_takes')
     .select('id, branch_id, ref, status, freeze_sales, note, started_at, started_by_name, submitted_at, posted_at, posted_by_name, cancelled_at, summary, branches ( name )')
@@ -163,7 +163,7 @@ router.get('/', requireAnyPermission('inventory.count', 'inventory.adjust'), asy
   q = byBranch(q, bf);
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
-  const full = may(req, 'inventory.adjust');
+  const full = may(req, 'inventory.count_review');   // A595: the expected figures are the count review's
   res.json((data ?? []).map((t: any) => ({ ...t, freeze: t.freeze_sales === true, summary: full ? t.summary : null })));
 });
 
@@ -183,7 +183,7 @@ router.get('/active', async (req, res) => {
     frozen_product_ids: frozen?.productIds ?? [] });
 });
 
-router.post('/', requireAnyPermission('inventory.count', 'inventory.adjust'), async (req, res) => {
+router.post('/', requireAnyPermission('inventory.count', 'inventory.adjust', 'inventory.count_review'), async (req, res) => {
   const b = (req.body ?? {}) as {
     branch_id?: string; products?: boolean; ingredients?: boolean; category_ids?: string[]; ingredient_categories?: string[];
     product_ids?: string[]; ingredient_ids?: string[]; note?: string;
@@ -283,17 +283,17 @@ router.post('/', requireAnyPermission('inventory.count', 'inventory.adjust'), as
   res.status(201).json({ id: t.id, ref: t.ref, items: lines.length, freeze });
 });
 
-router.get('/:id', requireAnyPermission('inventory.count', 'inventory.adjust'), async (req, res) => {
+router.get('/:id', requireAnyPermission('inventory.count', 'inventory.adjust', 'inventory.count_review'), async (req, res) => {
   const take = await loadTake(req, req.params.id);
   if (!take) { res.status(404).json({ error: 'Count not found' }); return; }
   let lines = await loadLines(take.id);
-  const full = may(req, 'inventory.adjust');
+  const full = may(req, 'inventory.count_review');   // A595: the expected figures are the count review's
   if (full && isOpen(take.status)) lines = await preview(take, lines);
   const { data: br } = await supabase.from('branches').select('name').eq('id', take.branch_id).maybeSingle();
   res.json({ ...shape(take, lines, full), branch_name: (br as { name?: string } | null)?.name ?? null });
 });
 
-router.post('/:id/count', requireAnyPermission('inventory.count', 'inventory.adjust'), async (req, res) => {
+router.post('/:id/count', requireAnyPermission('inventory.count', 'inventory.adjust', 'inventory.count_review'), async (req, res) => {
   const take = await loadTake(req, req.params.id);
   if (!take) { res.status(404).json({ error: 'Count not found' }); return; }
   if (!canDo(take.status, 'count')) {
@@ -336,7 +336,7 @@ router.post('/:id/count', requireAnyPermission('inventory.count', 'inventory.adj
   res.json({ saved: toSave.length, counted_at: now });
 });
 
-router.post('/:id/submit', requireAnyPermission('inventory.count', 'inventory.adjust'), async (req, res) => {
+router.post('/:id/submit', requireAnyPermission('inventory.count', 'inventory.adjust', 'inventory.count_review'), async (req, res) => {
   const take = await loadTake(req, req.params.id);
   if (!take) { res.status(404).json({ error: 'Count not found' }); return; }
   if (!canDo(take.status, 'submit')) { res.status(409).json({ error: 'Only a count in progress can be handed in.', code: 'NOT_COUNTING' }); return; }
@@ -353,7 +353,9 @@ router.post('/:id/submit', requireAnyPermission('inventory.count', 'inventory.ad
   res.json({ status: 'review' });
 });
 
-router.post('/:id/recount', requirePermission('inventory.adjust'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F23): reviewing a count — recount, post, the expected figures — is its own part of
+// inventory.adjust (inventory.count_review; migration 176 gave it to every holder).
+router.post('/:id/recount', requirePermission('inventory.count_review'), async (req, res) => {
   const take = await loadTake(req, req.params.id);
   if (!take) { res.status(404).json({ error: 'Count not found' }); return; }
   if (!canDo(take.status, 'recount')) { res.status(409).json({ error: 'Only a count under review can be sent back for a recount.', code: 'NOT_REVIEW' }); return; }
@@ -372,7 +374,7 @@ router.post('/:id/recount', requirePermission('inventory.adjust'), async (req, r
   res.json({ status: 'counting', recount: rows.length });
 });
 
-router.post('/:id/post', requirePermission('inventory.adjust'), async (req, res) => {
+router.post('/:id/post', requirePermission('inventory.count_review'), async (req, res) => {   // A595
   const take = await loadTake(req, req.params.id);
   if (!take) { res.status(404).json({ error: 'Count not found' }); return; }
   const who = await actor(req);
@@ -443,12 +445,12 @@ router.post('/:id/post', requirePermission('inventory.adjust'), async (req, res)
   res.json({ status: 'posted', summary });
 });
 
-router.post('/:id/cancel', requireAnyPermission('inventory.count', 'inventory.adjust'), async (req, res) => {
+router.post('/:id/cancel', requireAnyPermission('inventory.count', 'inventory.adjust', 'inventory.count_review'), async (req, res) => {
   const take = await loadTake(req, req.params.id);
   if (!take) { res.status(404).json({ error: 'Count not found' }); return; }
   if (!canDo(take.status, 'cancel')) { res.status(409).json({ error: 'This count is already closed.', code: 'CLOSED' }); return; }
   // Someone counting may stop a count still in progress; once handed in, only someone who may change stock decides.
-  if (take.status === 'review' && !may(req, 'inventory.adjust')) {
+  if (take.status === 'review' && !may(req, 'inventory.count_review')) {   // A595
     res.status(403).json({ error: 'The count is waiting for review — ask the owner.', code: 'FORBIDDEN' });
     return;
   }

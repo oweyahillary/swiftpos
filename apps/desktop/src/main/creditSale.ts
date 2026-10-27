@@ -74,8 +74,42 @@ export interface CreditCustomer {
   pending: number;
   /** What is owed now, as this till knows it: cloud_balance + pending. */
   owed: number;
-  /** What is left to sell on account: the limit less what is owed (negative = past the limit). */
+  /** What is left to sell on account: the limit less what is owed (negative = past the limit). A595 D4: with a limit at
+   *  this branch, that limit less what is owed HERE. */
   available: number;
+  /** A595 D4: the customer's limit at this branch (null = none: the business-wide limit applies) and what they owe here. */
+  branch_limit?: number | null;
+  owed_here?: number;
+}
+
+// ── A595 D4 (owner, 2026-10-27): credit per branch, kept offline with the list ─────────────────────────────────────────
+export interface CreditBranchRule { credit_enabled: boolean; limits: Record<string, { limit: number; owed: number }> }
+export const BRANCH_RULE_KEY = 'credit_branch';
+export const CREDIT_OFF_HERE = 'This branch does not sell on account. The owner turns credit on for a branch in Credit settings.';
+/** What the cloud sent → the rule. Unreadable or none: credit on, no branch limits (as before A595). */
+export function cleanBranchRule(raw: unknown): CreditBranchRule {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { credit_enabled: true, limits: {} };
+  const o = raw as { credit_enabled?: unknown; limits?: unknown };
+  const limits: CreditBranchRule['limits'] = {};
+  if (o.limits && typeof o.limits === 'object' && !Array.isArray(o.limits)) {
+    for (const [id, v] of Object.entries(o.limits as Record<string, any>)) {
+      const limit = Number(v?.limit), owed = Number(v?.owed);
+      if (id && Number.isFinite(limit) && limit >= 0) limits[id] = { limit: round2(limit), owed: Number.isFinite(owed) ? round2(owed) : 0 };
+    }
+  }
+  return { credit_enabled: o.credit_enabled !== false, limits };
+}
+/** Keep it — only when one was sent (an older cloud sends none: the last one stands, credit on if never). */
+export function writeCreditBranch(db: Database.Database, raw: unknown): void {
+  if (!raw || typeof raw !== 'object') return;
+  db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(BRANCH_RULE_KEY, JSON.stringify(cleanBranchRule(raw)), new Date().toISOString());
+}
+export function readCreditBranch(db: Database.Database = getLocalDb()): CreditBranchRule {
+  try {
+    const r = db.prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(BRANCH_RULE_KEY) as { value?: string } | undefined;
+    return r?.value ? cleanBranchRule(JSON.parse(r.value)) : { credit_enabled: true, limits: {} };
+  } catch { return { credit_enabled: true, limits: {} }; }
 }
 
 /** Replace the list with the cloud's (or the branch server's copy). `pulledAt` = when the cloud read it, on THIS till's
@@ -111,10 +145,15 @@ function view(db: Database.Database, r: any): CreditCustomer {
        AND (t.synced_at IS NULL OR t.synced_at > ?)`).get(r.id, r.pulled_at) as { n: number };
   const pending = round2(Number(p?.n) || 0);
   const owed = round2((Number(r.credit_balance) || 0) + pending);
+  // A595 D4: a limit at this branch — checked against what is owed HERE (the cloud's figure and this POS's pending sales,
+  // which are all at this branch).
+  const here = readCreditBranch(db).limits[r.id];
+  const owedHere = here ? round2(here.owed + pending) : undefined;
   return {
     id: r.id, name: r.name, phone: r.phone ?? null, status: r.status ?? 'active',
     credit_limit: round2(Number(r.credit_limit) || 0), cloud_balance: round2(Number(r.credit_balance) || 0),
-    pending, owed, available: round2((Number(r.credit_limit) || 0) - owed),
+    pending, owed, available: here ? round2(here.limit - (owedHere ?? 0)) : round2((Number(r.credit_limit) || 0) - owed),
+    branch_limit: here ? here.limit : null, ...(owedHere !== undefined ? { owed_here: owedHere } : {}),
   };
 }
 
@@ -208,7 +247,7 @@ export function limitProblem(c: CreditCustomer, amount: number, currency = 'KES'
   if (c.status !== 'active') return `${c.name}'s account is not active.`;
   const f = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (round2(amount) > round2(c.available) + 0.004) {
-    return c.credit_limit <= 0
+    return c.credit_limit <= 0 && !(c.branch_limit && c.branch_limit > 0)
       ? `${c.name} has no credit limit — the owner or a manager sets one (Customers › Credit on the web).`
       : `Over ${c.name}'s credit limit: ${f(Math.max(0, c.available))} left, this sale ${f(amount)}.`;
   }
@@ -277,6 +316,7 @@ export async function prepareCreditSale(payload: any, o: { asker: LocalPerson | 
   if (onAccount.length > 1) throw new Error(ONE_ACCOUNT_LEG);
   if (!onAccountOffered(db, o.enabled === undefined ? getPaymentMethodsEnabled() : o.enabled)) throw new Error(NO_ON_ACCOUNT);
   if (!mayFindCreditCustomers(o.asker)) throw new Error(o.asker?.id ? NO_CUSTOMER_ACCESS : 'Not signed in');   // A559
+  if (!readCreditBranch(db).credit_enabled) throw new Error(CREDIT_OFF_HERE);   // A595 D4: this branch sells nothing on account
   const amount = round2(Math.abs(Number(onAccount[0].amount) || 0));
   if (!(amount > 0)) throw new Error('The amount on account must be more than nothing.');
   const customer = creditCustomerById(db, payload.customer_id);
@@ -288,7 +328,9 @@ export async function prepareCreditSale(payload: any, o: { asker: LocalPerson | 
   const balanceAfter = round2(customer.owed + amount);
   payload.customer_id = customer.id;
   payload.customer_name = customer.name;
-  payload.customer_phone = customer.phone;
+  // A595: the cloud masks a credit customer's number for the POS's own list (07•• ••• 678) — a masked number is never put
+  // on the sale (the cloud puts the customer's real number on the order from their record).
+  payload.customer_phone = customer.phone && !String(customer.phone).includes('•') ? customer.phone : null;
   payload.credit_approved_by = approver.id;   // the cloud checks this person and the sale is born confirmed by them (A552)
   payload.on_account = { customer: customer.name, balance_owed: balanceAfter };   // the receipt only (peerRelay drops it)
   logLine('sale', `A552: on account ${amount} to customer ${customer.id} approved by ${approver.id === o.asker?.id ? 'the seller' : (approver.name ?? approver.id)}`);
@@ -306,7 +348,7 @@ let lastTriedAt = 0;
 const isServer = (): boolean => isNodeRole(getDeviceConfig()?.device_role ?? null);
 
 /** A till behind a branch server asks the server's copy (shop network); null = ask the cloud (no server, an older one). */
-async function askServer(): Promise<{ customers: unknown; ageMs: number; approval?: unknown } | null> {
+async function askServer(): Promise<{ customers: unknown; ageMs: number; approval?: unknown; branch?: unknown } | null> {
   const base = nodeUrl();
   const now = Date.now();
   if (!base || isServer() || now < serverUnsupportedUntil) return null;
@@ -318,9 +360,9 @@ async function askServer(): Promise<{ customers: unknown; ageMs: number; approva
       return null;
     }
     if (!res.ok) return null;
-    const b = await res.json() as { customers?: unknown; age_ms?: unknown; approval?: unknown };
+    const b = await res.json() as { customers?: unknown; age_ms?: unknown; approval?: unknown; branch?: unknown };
     if (!Array.isArray(b?.customers)) return null;
-    return { customers: b.customers, ageMs: Math.max(0, Number(b.age_ms) || 0), approval: b.approval };
+    return { customers: b.customers, ageMs: Math.max(0, Number(b.age_ms) || 0), approval: b.approval, branch: b.branch };
   } catch { return null; }
 }
 
@@ -335,6 +377,7 @@ export function pullCreditCustomers(db: Database.Database = getLocalDb()): Promi
         // The server's copy is ageMs old; 2 s more of margin counts a sale synced just then as not yet in it (safe side).
         const n = writeCreditCustomers(db, fromServer.customers, new Date(Date.now() - fromServer.ageMs - 2_000));
         writeCreditApproval(db, fromServer.approval);   // A585
+        writeCreditBranch(db, (fromServer as { branch?: unknown }).branch);   // A595 D4
         logLine('sync', `A552: ${n} credit customer(s) from the branch server`);
         return true;
       }
@@ -343,10 +386,11 @@ export function pullCreditCustomers(db: Database.Database = getLocalDb()): Promi
       const res = await liveCloudGet('/api/pos/credit-customers');
       if (res.status === 404) { cloudUnsupportedUntil = Date.now() + UNSUPPORTED_WAIT_MS; return false; }   // an older cloud
       if (!res.ok) return false;
-      const b = await res.json() as { customers?: unknown; approval?: unknown };
+      const b = await res.json() as { customers?: unknown; approval?: unknown; branch?: unknown };
       if (!Array.isArray(b?.customers)) return false;
       writeCreditCustomers(db, b.customers, sent);
       writeCreditApproval(db, b.approval);   // A585
+      writeCreditBranch(db, b.branch);   // A595 D4
       return true;
     } catch (e: any) {
       logLine('sync', `A552: credit customers not read: ${e?.message ?? e}`);
@@ -371,7 +415,7 @@ export async function answerCreditCustomers(db: Database.Database = getLocalDb()
   const at = creditListAt(db);
   if (!at) return { status: 503, body: { error: 'The branch server has no credit customers yet - ask again shortly.' } };
   const rows = db.prepare(`SELECT id, name, phone, status, credit_limit, credit_balance FROM credit_customers`).all();
-  return { status: 200, body: { age_ms: Math.max(0, Date.now() - Date.parse(at)), customers: rows, approval: readCreditApproval(db) } };   // A585
+  return { status: 200, body: { age_ms: Math.max(0, Date.now() - Date.parse(at)), customers: rows, approval: readCreditApproval(db), branch: readCreditBranch(db) } };   // A585, A595 D4
 }
 
 /** Tests only. */

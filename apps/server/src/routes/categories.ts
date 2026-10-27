@@ -87,7 +87,9 @@ router.patch('/:id', requirePermission('menu.edit'), async (req, res) => {
 });
 
 // DELETE /api/categories/:id
-router.delete('/:id', requirePermission('menu.edit'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F24): deleting is its own part of menu.edit (menu.delete — migration 176 gave it to every
+// holder of menu.edit).
+router.delete('/:id', requirePermission('menu.delete'), async (req, res) => {
   const { id } = req.params;
 
   const { error } = await supabase

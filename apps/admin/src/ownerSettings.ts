@@ -11,13 +11,15 @@
 
 /** Settings › Business › POS options — the owner switches them. */
 /** A563: + 'When an item's stock reaches zero' (two switches, one owner choice). */
+/** A594: + 'approval_pin' (A562's separate approval PIN — the owner's alone now). */
 export const OWNER_POS_OPTIONS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'loyalty_enabled',
-  'stock_zero_sold_out', 'stock_zero_hide'] as const;
+  'stock_zero_sold_out', 'stock_zero_hide', 'approval_pin'] as const;
 
 /** Were cashier switches; now a permission each role holds or not. */
 export const PER_ROLE_SWITCHES: Record<string, string> = {
   cashier_own_history:  'See every cashier’s sales (sales.history_all)',
-  cashier_no_money_out: 'Cash in, cash out and drawer expenses (shifts.cash_movements)',
+  // A594: three rights now — Record cash in, Record cash out / pay-outs, Record expenses.
+  cashier_no_money_out: 'Record cash in, cash out / pay-outs and expenses (shifts.cash_movements, shifts.cash_out, expenses.record)',
   cashier_no_reprint:   'Reprint receipts (sales.reprint)',
 };
 

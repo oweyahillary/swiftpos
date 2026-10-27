@@ -22,8 +22,9 @@ ok('A215: POST /adjust is gated on inventory.adjust (owner-only)', () => {
     'POST /adjust must require inventory.adjust');
 });
 ok('A215: PATCH /threshold is gated (adjust or receive), not open to any auth user', () => {
-  assert.match(inv, /router\.patch\('\/:product_id\/threshold',\s*requireAnyPermission\('inventory\.adjust',\s*'inventory\.receive'\)/,
-    'PATCH /threshold must require adjust-or-receive');
+  // A595: reorder levels are their own part of BOTH adjust and receive (inventory.reorder — every holder of either got it).
+  assert.match(inv, /router\.patch\('\/:product_id\/threshold',\s*requirePermission\('inventory\.reorder'\)/,
+    'PATCH /threshold must require inventory.reorder');
 });
 ok('A215: the guards are imported', () => {
   assert.match(inv, /requirePermission,\s*requireAnyPermission|requireAnyPermission[\s\S]*requirePermission/,

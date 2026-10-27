@@ -60,7 +60,7 @@ import { worksAtBranch } from '../lib/branchAccess';   // A426
 import { effectiveKeysForRow, tokenKeys, clientPermissionMap } from '../lib/effectivePermissions';   // A490
 import { isOwnerRoleName } from '../lib/ownerRole';   // A490
 import { isBackOffice } from '../lib/permissions';   // A490
-import { permissionsOpenBefore } from '../lib/permissionsState';   // A490
+import { permissionsOpenBefore, splitsPending } from '../lib/permissionsState';   // A490, A595
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY, accountLocked, noteAccountFailure, noteAccountSuccess, ACCOUNT_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { notifyAccountLocked } from '../lib/accountLockNotice';   // A507
@@ -131,14 +131,16 @@ function issueTokenPair(payload: TokenPayload): IssuedTokenPair {
   const accessJti  = crypto.randomUUID();
   const refreshJti = crypto.randomUUID();
 
+  // A595: `parts` — this token's keys were worked out with the split rights (shared permissions.ts SPLITS): a part not
+  // in it is not held. A token without it was made before A595: requireAuth gives its parents their parts.
   const accessToken = jwt.sign(
-    { ...payload, jti: accessJti, tokenType: 'access' },
+    { ...payload, parts: true, jti: accessJti, tokenType: 'access' },
     JWT_SECRET,
     { expiresIn: ACCESS_EXPIRES_IN },
   );
 
   const refreshToken = jwt.sign(
-    { ...payload, jti: refreshJti, tokenType: 'refresh' },
+    { ...payload, parts: true, jti: refreshJti, tokenType: 'refresh' },
     JWT_SECRET,
     { expiresIn: REFRESH_EXPIRES_IN },
   );
@@ -1255,7 +1257,7 @@ router.post('/refresh', async (req, res) => {
         personPermissions = { '*': true };
         if (!ownerPassword) cleanPayload.branchId = null;   // the owner's role works at every branch (as at sign-in)
       } else {
-        const held = keysFromGrants(row.roles?.role_permissions, row.user_permissions, permissionsOpenBefore());
+        const held = keysFromGrants(row.roles?.role_permissions, row.user_permissions, permissionsOpenBefore(), splitsPending());   // A595
         cleanPayload.permissionKeys = tokenKeys(held);
         personPermissions = clientPermissionMap(held);
       }

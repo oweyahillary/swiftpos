@@ -181,7 +181,9 @@ router.post('/bills/:id/void', requirePermission('payables.manage'), async (req,
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
-router.post('/payments', requirePermission('payables.manage'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F18): paying a supplier, and voiding a payment, are their own part of payables.manage
+// (payables.pay — migration 176 gave it to every holder); recording bills and returns stays the parent.
+router.post('/payments', requirePermission('payables.pay'), async (req, res) => {
   const b = (req.body ?? {}) as Record<string, unknown>;
   const supplier = await supplierOf(req.businessId, String(b.supplier_id ?? ''));
   if (!supplier) { res.status(400).json({ error: 'Choose the supplier.' }); return; }
@@ -211,7 +213,7 @@ router.post('/payments', requirePermission('payables.manage'), async (req, res) 
   res.status(201).json(data);
 });
 
-router.post('/payments/:id/void', requirePermission('payables.manage'), async (req, res) => {
+router.post('/payments/:id/void', requirePermission('payables.pay'), async (req, res) => {   // A595
   const reason = String(req.body?.reason ?? '').trim();
   if (!reason) { res.status(400).json({ error: 'Say why the payment is voided.', code: 'REASON_REQUIRED' }); return; }
   const who = await actor(req);

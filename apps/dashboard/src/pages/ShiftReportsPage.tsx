@@ -28,6 +28,7 @@ import {
   methodName, shiftReportStatus, shiftStatusLabel, shiftReportLines, shiftDifference, type ShiftReportStatus,
 } from '../lib/shiftConfirm';
 import { money, num, dayTime, time } from '../lib/format';
+import ExpectedCashBreakdown, { type ExpectedBreakdown } from '../components/ExpectedCashBreakdown';   // A594
 
 interface ShiftRow {
   id: string;
@@ -86,6 +87,8 @@ export default function ShiftReportsPage() {
   const [error, setError] = useState('');
   const [view, setView] = useState<ShiftRow | null>(null);
   const [viewByMethod, setViewByMethod] = useState<{ method: string; amount: number }[]>([]);
+  // A594: expected cash part by part, with each cash in / out — sent only to someone who may see drawer figures.
+  const [viewBreakdown, setViewBreakdown] = useState<ExpectedBreakdown | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -125,10 +128,11 @@ export default function ShiftReportsPage() {
   }), [rows]);
 
   const openView = async (s: ShiftRow) => {
-    setView(s); setViewByMethod([]);
+    setView(s); setViewByMethod([]); setViewBreakdown(null);
     try {
-      const d = await api.get<{ by_method?: { method: string; amount: number }[] }>(`/api/shifts/${s.id}`);
+      const d = await api.get<{ by_method?: { method: string; amount: number }[]; expected_breakdown?: ExpectedBreakdown }>(`/api/shifts/${s.id}`);
       setViewByMethod(Array.isArray(d?.by_method) ? d.by_method : []);
+      setViewBreakdown(d?.expected_breakdown && Array.isArray(d.expected_breakdown.movements) ? d.expected_breakdown : null);   // A594
     } catch { /* the table still shows what the shift row holds */ }
   };
 
@@ -303,6 +307,8 @@ export default function ShiftReportsPage() {
                   </table>
                 </div>
               )}
+
+              <ExpectedCashBreakdown b={viewBreakdown} currency={currency} />
 
               <div className="text-xs text-gray-500 space-y-1">
                 {st !== 'running' && <p>Variance = {confirmed ? 'the manager\'s count' : 'the cashier\'s figure (not yet confirmed)'} − what the POS recorded. Cash “POS recorded” is the expected cash in the drawer (float + cash sales + pay-ins − pay-outs − expenses).</p>}

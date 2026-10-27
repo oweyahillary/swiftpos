@@ -208,7 +208,9 @@ export default function PaymentModal({
   const { session, hasPermission } = usePOSAuth();
   // A490: giving a discount on a sale is sales.discount — without it no manual discount (a promo code) reaches the
   // sale; offers (automatic) are not a discount the cashier gives and still come off.
-  const mayDiscount = hasPermission('sales.discount');
+  // A595 (owner decision D6): a set-up discount or promo code is sales.discount_preset (typing an amount stays sales.discount;
+  // this screen applies set-up ones only — the cloud checks the discount named and its amount).
+  const mayDiscount = hasPermission('sales.discount') || hasPermission('sales.discount_preset');
 
   // Double-submit protection. chargingRef blocks a second call synchronously
   // (before React re-renders the button as disabled — a fast touchscreen

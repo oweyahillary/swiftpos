@@ -568,5 +568,29 @@ await ok('the job runs every 15 min from the server; the page has the three sect
   assert.match(page, /bg-swift-strong/);
 });
 
+console.log('\nA595 — owner decision D3 (2026-10-27): the e-mails go out once a recipient is set\n');
+await ok('the daily report goes to the recipients set in the scheduler, even with its switch never turned on', async () => {
+  reset();
+  db.business_settings.push({ id: 'rs', business_id: BZ, key: 'report_schedule', value: JSON.stringify(schedule({ enabled: false, send_time: '00:00', recipients: ['books@biz.test'] })) });
+  await DS.runDailySummary(new Date());
+  assert.equal(SENT.length, 1, 'sent');
+  assert.ok(to(SENT[0]).includes('books@biz.test') && to(SENT[0]).includes('owner@biz.test'), SENT[0].to);
+  reset();
+  db.business_settings.push({ id: 'rs', business_id: BZ, key: 'report_schedule', value: JSON.stringify(schedule({ enabled: false, send_time: '00:00', recipients: [] })) });
+  await DS.runDailySummary(new Date());
+  assert.equal(SENT.length, 0, 'no recipient and the switch off: nothing');
+});
+await ok('a low-stock alert goes to the owner AND the scheduler\'s recipients (it went to the owner alone)', async () => {
+  reset();
+  const LS = require(path.join(DIST, 'jobs/lowStockChecker.js'));
+  db.business_settings.push({ id: 'rs', business_id: BZ, key: 'report_schedule', value: JSON.stringify(schedule({ recipients: ['stock@biz.test'] })) });
+  db.stock_levels.push({ product_id: 'p-milk', branch_id: BR1, quantity: 1, low_stock_threshold: 5 });
+  db.products.push({ id: 'p-milk', business_id: BZ, name: 'Milk' });
+  await LS.checkLowStock(BZ, BR1, ['p-milk']);
+  const mail = SENT.find((m) => /Low stock/.test(m.subject ?? ''));
+  assert.ok(mail, 'a low-stock e-mail: ' + JSON.stringify(SENT.map((m) => m.subject)));
+  assert.deepEqual(to(mail), ['owner@biz.test', 'stock@biz.test']);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;   // not process.exit(): on Windows it can abort while the test server's handles close

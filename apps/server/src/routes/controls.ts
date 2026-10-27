@@ -5,7 +5,8 @@
  * /api/controls (docs/PERMISSIONS-A490.md "Owner controls"):
  *
  *   GET  /api/controls            { pos?, loyalty?, payments? } — each section only with its key
- *   PUT  /api/controls/pos/:key   { enabled }            settings.pos — delivery_fee, pay_later_tabs, pay_before_kitchen, login_codes
+ *   PUT  /api/controls/pos/:key   { enabled }            settings.pos — delivery_fee, pay_later_tabs, pay_before_kitchen, login_codes,
+ *                                                        approval_pin (A594; login_codes and approval_pin: the owner only)
  *   PUT  /api/controls/loyalty    { enabled?, earn_rate? } settings.pos
  *   PUT  /api/controls/stock-zero { mode }               settings.pos — A563: when an item's stock reaches zero
  *                                                        ('sell' | 'sold_out' | 'hide'; two feature_flags, lib/stockGate.ts)
@@ -30,8 +31,13 @@ import { STOCK_ZERO_KEYS } from '../lib/posFeatures';   // A563
 import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '../lib/stockGate';   // A563
 
 /** The POS options the owner sets (settings.pos). */
-export const OWNER_POS_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes'] as const;
-/** The cashier switches A490 retired — now permissions per role (sales.history_all, shifts.cash_movements, sales.reprint). */
+// A594 (owner, 2026-10-26: "some items can be permissions … I like your proposal"): + approval_pin (A562 — was the admin
+// portal's), the owner's alone like login_codes.
+export const OWNER_POS_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin'] as const;
+/** The options only the real owner (signed in as themselves) changes — account security and who approves with what. */
+export const OWNER_ONLY_POS_KEYS = ['login_codes', 'approval_pin'] as const;
+/** The cashier switches A490 retired — now permissions per role (sales.history_all, sales.reprint; A594: cash in / cash out /
+ *  expenses as shifts.cash_movements, shifts.cash_out, expenses.record). */
 export const RETIRED_SWITCHES = ['cashier_own_history', 'cashier_no_money_out', 'cashier_no_reprint'] as const;
 
 /** A493 (owner, 2026-10-15): "update approval should live under admin some clients my not want to pay for updates so they
@@ -89,7 +95,7 @@ router.get('/', async (req, res) => {
   res.json(out);
 });
 
-// PUT /api/controls/pos/:key { enabled } — one of the four POS options.
+// PUT /api/controls/pos/:key { enabled } — one of the owner's POS options (OWNER_POS_KEYS).
 router.put('/pos/:key', requirePermission('settings.pos'), async (req, res) => {
   const key = String(req.params.key);
   if (!(OWNER_POS_KEYS as readonly string[]).includes(key)) {
@@ -98,8 +104,9 @@ router.put('/pos/:key', requirePermission('settings.pos'), async (req, res) => {
   // A494: sign-in codes (a one-time code by e-mail for back-office sign-in) are an account-security switch — the real
   // owner's alone, signed in as themselves: a settings.pos holder could switch off the code that guards their own and
   // everyone's back-office sign-in, and a till's own token is not a person.
-  if (key === 'login_codes' && (!req.isOwner || req.isTill)) {
-    res.status(403).json({ error: 'Only the owner can change sign-in codes.', code: 'OWNER_ONLY' }); return;
+  // A594: the separate approval PIN (A562) likewise — it decides how every manager's approval is given.
+  if ((OWNER_ONLY_POS_KEYS as readonly string[]).includes(key) && (!req.isOwner || req.isTill)) {
+    res.status(403).json({ error: key === 'login_codes' ? 'Only the owner can change sign-in codes.' : 'Only the owner can change the approval PIN option.', code: 'OWNER_ONLY' }); return;
   }
   const enabled = req.body?.enabled;
   if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled (true or false) is required' }); return; }

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
-import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, STAFF_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538; A543; A562
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538; A543 (A594: the approval PIN is the owner's)
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
@@ -1714,7 +1714,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
           {POS_FEATURES.map(pf => {
             if ((RECEIPT_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
             if ((KITCHEN_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A543: switched below
-            if ((STAFF_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A562: switched below
+            // A594: the approval PIN (A562 STAFF_OPTION_KEYS) is the owner's now — listed here, read-only, like the rest.
             const on = features.some(f => f.key === pf.key && f.enabled);
             const perRole = PER_ROLE_SWITCHES[pf.key];
             return (
@@ -1766,22 +1766,6 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{kf?.description}</div>
                 </div>
                 {toggle(on, () => toggleFeature(key, !on), kf?.label ?? key)}
-              </div>
-            );
-          })}
-          {/* A562 (owner, 2026-10-22: "we remove approval pin and add it as a feature we can turn on or off in the admin
-              panel"): off = managers approve with their sign-in PIN and the staff form offers no approval PIN. */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Staff options</div>
-          {STAFF_OPTION_KEYS.map(key => {
-            const sf = POS_FEATURES.find(x => x.key === key);
-            const on = features.some(f => f.key === key && f.enabled);
-            return (
-              <div key={key} data-testid={`staff-feature-${key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{sf?.label ?? key}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{sf?.description}</div>
-                </div>
-                {toggle(on, () => toggleFeature(key, !on), sf?.label ?? key)}
               </div>
             );
           })}

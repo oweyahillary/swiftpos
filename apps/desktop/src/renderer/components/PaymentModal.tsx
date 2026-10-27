@@ -368,7 +368,10 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                         <button onClick={() => setCustomer(null)} className="text-xs text-action-400 hover:text-action-300">Change</button>
                       </div>
                       <div className="flex justify-between text-gray-300"><span>Credit limit</span><span>{fmt(customer.credit_limit)}</span></div>
-                      <div className="flex justify-between text-gray-300"><span>Owed now</span><span>{fmt(customer.owed)}</span></div>
+                      {customer.owed_here !== undefined
+                        ? <><div className="flex justify-between text-gray-300"><span>Owed here</span><span>{fmt(customer.owed_here)}</span></div>
+                            <div className="flex justify-between text-gray-400"><span>Owed in total</span><span>{fmt(customer.owed)}</span></div></>
+                        : <div className="flex justify-between text-gray-300"><span>Owed now</span><span>{fmt(customer.owed)}</span></div>}
                       <div className="flex justify-between font-semibold">
                         <span className="text-gray-300">Left to use</span>
                         <span className={customer.available + EPSILON >= creditAmount ? 'text-white' : 'text-red-400'}>{fmt(Math.max(0, customer.available))}</span>

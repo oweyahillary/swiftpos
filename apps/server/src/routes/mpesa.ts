@@ -48,6 +48,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission, oneBranchOnly } from '../middleware/rbac';
 import { decryptSecret } from '../lib/crypto';
 import { sendError }   from '../lib/sendError';
+import { maskCustomerContacts } from '../lib/personalData';   // A595
 
 const router = safeRouter();
 
@@ -535,7 +536,8 @@ router.post('/callback', async (req, res) => {
 // ── GET /api/mpesa/status/:checkoutId ────────────────────────────────────────
 // Frontend polls this every 3 seconds while showing "Waiting for payment…"
 
-router.get('/status/:checkoutId', requireAuth, async (req, res) => {
+// A595: the payer's number masked unless the caller holds customers.contacts (lib/personalData.ts).
+router.get('/status/:checkoutId', requireAuth, maskCustomerContacts(), async (req, res) => {
   const { checkoutId } = req.params;
 
   // Read from the payments row (source of truth). Scoped to the caller's
@@ -601,7 +603,7 @@ router.get('/config', requireAuth, async (req, res) => {
 // that table; no dashboard UI page consumes it yet (flagged as a follow-up,
 // not built here). Same permission tier as the other financial-sensitive
 // report reads (H6).
-router.get('/exceptions', requireAuth, requirePermission('reports.payments'), async (req, res) => {
+router.get('/exceptions', requireAuth, requirePermission('reports.payments'), maskCustomerContacts(), async (req, res) => {   // A595: payers masked
   if (oneBranchOnly(req, res)) return;   // A582: the exceptions name no branch — never combined for a partner's set
   const { resolved } = req.query as Record<string, string>;
   let query = supabase

@@ -153,26 +153,26 @@ let sentId;
   ok('one the till answered cannot be withdrawn', c2.ok === false && !!db.prepare(`SELECT 1 FROM node_instructions WHERE id = ?`).get(second.instruction_id));
   // sentId was delivered above (collectInstructions): the till may have recorded it already, so it is not withdrawn
   ok('one the till has picked up cannot be withdrawn (it may be on its books already)', c.ok === false && !!db.prepare(`SELECT 1 FROM node_instructions WHERE id = ?`).get(sentId));
-  const fresh = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 5 });
+  const fresh = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 5, reason: 'A594 test' });
   const c3 = await H['branchClose:cancelShiftMoney'](null, { instruction_id: fresh.instruction_id });
   ok('Cancel withdraws one the till has not picked up', fresh.ok && c3.ok && !db.prepare(`SELECT 1 FROM node_instructions WHERE id = ?`).get(fresh.instruction_id));
 }
 {
   db.prepare(`UPDATE node_peer_state SET updated_at = ? WHERE device_id = 'dev-P'`).run(new Date(Date.now() - 5 * 60_000).toISOString());
-  const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10 });
+  const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10, reason: 'A594 test' });
   // A521 (#13, owner 2026-10-17: "never wait on an absent till … queue the rest for when it reconnects"): a till that is
   // off is no longer refused — the row waits for it (no 24-h expiry, Cancel until it is picked up), said plainly.
   ok('a till not heard from is queued for when it reconnects, said plainly (A521)',
     r.ok === true && r.queued_offline === true && r.message === 'The POS is not connected — this applies when it reconnects.', JSON.stringify(r));
   await H['branchClose:cancelShiftMoney'](null, { instruction_id: r.instruction_id });
   peerReport([peerShift('awaiting')]);
-  const c = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10 });
+  const c = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10, reason: 'A594 test' });
   ok('a shift its till reports closed is refused', c.ok === false && /no longer open/.test(c.error ?? ''), JSON.stringify(c));
   peerReport([peerShift('open')]);
 }
 {
   signIn('u-amira', 'Amira', 'cashier');
-  const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10 });
+  const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10, reason: 'A594 test' });
   ok('a cashier signed in on the server cannot', r.ok === false && /manager/i.test(r.error ?? ''), JSON.stringify(r));
   signIn('u-mary', 'Mary', 'manager', '{"*":true}');
   const e = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'expense', amount: 10, description: '  ' });
@@ -182,7 +182,7 @@ let sentId;
 console.log('\nA plain POS: unchanged\n');
 DC.saveDeviceConfig({ device_role: 'till' });
 {
-  const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10 });
+  const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10, reason: 'A594 test' });
   ok('a plain till cannot record on another till\'s shift', r.ok === false && /branch server/.test(r.error ?? ''), JSON.stringify(r));
   const before = db.prepare(`SELECT COUNT(*) AS n FROM float_transactions WHERE shift_id = ?`).get(sh.id).n;
   signIn('u-amira', 'Amira', 'cashier');

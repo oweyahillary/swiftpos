@@ -36,7 +36,7 @@ process.env.ADMIN_JWT_SECRET ??= randomBytes(24).toString('hex');
 process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
-const { mayRecordMoneyMovement, POS_FEATURE_KEYS, MONEY_MOVEMENT_MANAGER_ONLY } = require(path.join(DIST, 'lib/posFeatures.js'));
+const { mayRecordMoneyMovement, POS_FEATURE_KEYS } = require(path.join(DIST, 'lib/posFeatures.js'));
 const jwt = require('jsonwebtoken');
 
 const BZ = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222';
@@ -116,23 +116,27 @@ try {
     assert.equal(r.status, 403); assert.equal(r.body.code, 'PAYOUT_APPROVAL_REQUIRED');
   });
 
-  console.log('\nSwitch on — only a manager signed in\n');
-  await ok('a cashier\'s pay-in is refused and nothing is written', async () => {
+  // A594 (owner, 2026-10-26: "turn off that option for cashiers by default unless allowed"): the deliberate change — a
+  // person who may not record cash in (no shifts.cash_movements, or this older map's switch) is no longer refused outright:
+  // a manager approves each cash in / cash out / expense on the spot (PIN). tests/cash-movements-a594.test.mjs covers the
+  // approval itself; here: the old refusal is gone and nothing is written without a manager.
+  console.log('\nSwitch on — a manager approves on the spot (A594), never written without one\n');
+  await ok('a cashier\'s pay-in now needs a manager\'s approval (no MANAGER_ONLY_MONEY) and nothing is written without it', async () => {
     reset(true);
-    const r = await post(CASHIER_T, 'float', { type: 'float_in', amount: 500 });
-    assert.equal(r.status, 403); assert.equal(r.body.code, 'MANAGER_ONLY_MONEY'); assert.equal(r.body.error, MONEY_MOVEMENT_MANAGER_ONLY);
+    const r = await post(CASHIER_T, 'float', { type: 'float_in', amount: 500, reason: 'change' });
+    assert.equal(r.status, 403); assert.equal(r.body.code, 'PAYOUT_APPROVAL_REQUIRED');
     assert.equal(db.float_transactions.length, 0);
   });
-  await ok('a cashier\'s pay-out is refused even with a manager\'s PIN', async () => {
+  await ok('a cashier\'s pay-out with a PIN goes to the PIN check (no MANAGER_ONLY_MONEY); a wrong PIN writes nothing', async () => {
     reset(true);
-    const r = await post(CASHIER_T, 'float', { type: 'float_out', amount: 300, pin: '1234' });
-    assert.equal(r.status, 403); assert.equal(r.body.code, 'MANAGER_ONLY_MONEY');
+    const r = await post(CASHIER_T, 'float', { type: 'float_out', amount: 300, reason: 'bank', pin: '1234' });
+    assert.notEqual(r.body?.code, 'MANAGER_ONLY_MONEY'); assert.ok(r.status === 403 || r.status === 400, String(r.status));
     assert.equal(db.float_transactions.length, 0);
   });
-  await ok('a cashier\'s expense is refused, even with a manager\'s PIN', async () => {
+  await ok('a cashier\'s expense with a PIN goes to the PIN check too (no MANAGER_ONLY_MONEY)', async () => {
     reset(true);
     const r = await post(CASHIER_T, 'expense', { description: 'Token', amount: 4000, payment_method: 'cash', pin: '1234' });
-    assert.equal(r.status, 403); assert.equal(r.body.code, 'MANAGER_ONLY_MONEY');
+    assert.notEqual(r.body?.code, 'MANAGER_ONLY_MONEY'); assert.ok(r.status === 403 || r.status === 400, String(r.status));
     assert.equal(db.expenses.length, 0);
   });
   await ok('a manager signed in records a pay-out and an expense', async () => {
@@ -146,36 +150,28 @@ try {
   });
 
   console.log('\nThe till and the web POS follow the same rule\n');
-  await ok('the till refuses it in its own main process (float and expense), not only on screen', () => {
-    // A490: the rule is shifts.cash_movements (tillAccess mayMoveMoney); on a map from before migration 134 the switch
-    // still applies unless the person may confirm drawers — exactly this guard's meaning before.
+  await ok('the till asks a manager in its own main process (float and expense) — the A453 refusal is gone', () => {
     const h = ipcHandlersSource();
-    const n = (h.match(/if \(!mayMoveMoney\(sessionPerson\(\), getPosFeatures\(\)\.cashier_no_money_out\)\) throw new Error\(MONEY_MOVEMENT_MANAGER_ONLY\);/g) ?? []).length;
-    assert.equal(n, 2, 'shift:float and expense:create');
+    assert.equal((h.match(/throw new Error\(MONEY_MOVEMENT_MANAGER_ONLY\)/g) ?? []).length, 0, 'no outright refusal left');
     const fl = h.slice(h.indexOf("handle('shift:float'"), h.indexOf("handle('shift:close'"));
-    assert.ok(fl.indexOf('mayMoveMoney') >= 0 && fl.indexOf('mayMoveMoney') < fl.indexOf('payoutApprover'), 'before any PIN is checked');
+    assert.match(fl, /const mayCashIn = mayMoveMoney\(sessionPerson\(\), getPosFeatures\(\)\.cashier_no_money_out\);\s*const approver = cashMovementNeedsApprover\(type, mayCashIn\) \? await payoutApprover\(pin\) : null;/);
     const ex = h.slice(h.indexOf("handle('expense:create'"), h.indexOf("handle('expense:range'"));
-    assert.ok(ex.indexOf('mayMoveMoney') >= 0 && ex.indexOf('mayMoveMoney') < ex.indexOf('payoutApprover'), 'expense: before any PIN too');
-    // …and the rule itself (read from source: the root suites run before the till is built): the switch binds an older
-    // map's cashier, not someone who may confirm; a catalogue map decides by shifts.cash_movements alone; the owner always.
+    assert.match(ex, /const approver = await payoutApprover\(pin\);/);
+    // the rule itself is unchanged (read from source): the switch binds an older map's cashier; a catalogue map decides
+    // by shifts.cash_movements alone; the owner always.
     assert.match(read('apps/desktop/src/main/personAccess.ts'), /export function mayMoveMoney\(p: PersonLike \| null \| undefined, cashierNoMoneyOut: boolean\): boolean \{\s*if \(!p\) return false;\s*const held = personKeys\(p\.roleName, p\.permissions\);\s*if \(held\.has\('\*'\)\) return true;\s*if \(hasMarker\(p\.permissions\)\) return hasPermission\(held, 'shifts\.cash_movements'\);\s*return !cashierNoMoneyOut \|\| hasPermission\(held, 'shifts\.confirm'\);/);
   });
-  await ok('the till\'s shift screen hides the Expenses tab and the cash movement form from a cashier', () => {
+  await ok('the till\'s shift screen shows the cash movement and Expenses to everyone, with "ask a manager" where needed', () => {
     const p = read('apps/desktop/src/renderer/pages/ShiftPanel.tsx');
-    // A490: the same rule on screen (lib/access.ts mayMoveMoney, on the signed-in session and the switch).
-    assert.match(p, /const moneyAllowed = mayMoveMoney\(me, managerOnlyMoney\);/);
-    assert.match(p, /posApi\.auth\.getStaffSession\(\)\.then\(\(s\) => setMe\(s \?\? null\)\)/);
-    assert.match(read('apps/desktop/src/renderer/lib/access.ts'), /export function mayMoveMoney\(s: SessionLike \| null \| undefined, cashierNoMoneyOut: boolean\): boolean \{\s*if \(!s\) return false;\s*if \(isOwner\(s\)\) return true;\s*if \(hasMarker\(s\)\) return can\(s, 'shifts\.cash_movements'\);\s*return !cashierNoMoneyOut \|\| can\(s, 'shifts\.confirm'\);/);
-    assert.match(p, /\(moneyAllowed \? \(\['shift', 'expenses'\] as const\) : \(\['shift'\] as const\)\)/);
-    assert.match(p, /activeTab === 'expenses' && moneyAllowed &&/);
-    assert.match(p, /data-testid="money-manager-only"/);
+    assert.match(p, /const mayCashIn = mayMoveMoney\(me, managerOnlyMoney\);/);
+    assert.match(p, /\{\(\['shift', 'expenses'\] as const\)\.map\(t =>/);
+    assert.match(p, /data-testid="cash-ask-manager"/);
+    assert.doesNotMatch(p, /data-testid="money-manager-only"/);
   });
-  await ok('the web POS shows Float and Expense only when allowed', () => {
+  await ok('the web POS shows Float and Expense to everyone on the drawer (a manager approves without the right)', () => {
     const w = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-    // A490: the key (shifts.cash_movements) AND, as before, the switch for anyone who cannot confirm drawers — a map
-    // from before the catalogue holds the key for everyone, so the switch alone decides there (unchanged meaning).
-    assert.match(w, /const mayMoveMoney = hasPermission\('shifts\.cash_movements'\)\s*&& mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\);/);
-    assert.match(w, /\{mayMoveMoney && \(<>[\s\S]{0,400}setShiftModal\('float'\)[\s\S]{0,500}setShiftModal\('expense'\)[\s\S]{0,120}<\/>\)\}/);
+    assert.match(w, /const mayCashIn = hasPermission\('shifts\.cash_movements'\)\s*&& mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\);/);
+    assert.match(w, /mayCashIn=\{mayCashIn\}/);
   });
 } finally { server.close(); }
 

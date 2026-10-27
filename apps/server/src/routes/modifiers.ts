@@ -146,7 +146,9 @@ router.patch('/groups/:id', requirePermission('menu.edit'), async (req, res) => 
 });
 
 // DELETE /api/modifiers/groups/:id  (cascades to modifier_options)
-router.delete('/groups/:id', requirePermission('menu.edit'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F24): deleting is its own part of menu.edit (menu.delete — migration 176 gave it to every
+// holder of menu.edit).
+router.delete('/groups/:id', requirePermission('menu.delete'), async (req, res) => {
   const { id } = req.params;
 
   const { data: group } = await supabase
@@ -249,7 +251,9 @@ router.patch('/options/:id', requirePermission('menu.edit'), async (req, res) =>
 });
 
 // DELETE /api/modifiers/options/:id
-router.delete('/options/:id', requirePermission('menu.edit'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F24): deleting is its own part of menu.edit (menu.delete — migration 176 gave it to every
+// holder of menu.edit).
+router.delete('/options/:id', requirePermission('menu.delete'), async (req, res) => {
   const { id } = req.params;
 
   if (!(await modifierOptionOwned(id, req.businessId))) {

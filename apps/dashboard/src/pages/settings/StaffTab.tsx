@@ -29,6 +29,9 @@ interface StaffMember {
   can_authorize?: boolean;
   /** A562: the row of whoever is signed in (the owner's own account, for the owner). */
   is_self?: boolean;
+  /** A595: the cloud masked this row's e-mail and phone (07•• ••• 678) — the caller lacks staff.contacts. Shown read-only,
+   *  never sent back. */
+  contacts_masked?: boolean;
 }
 
 interface Props {
@@ -39,7 +42,19 @@ interface Props {
   canEdit?: boolean;
   /** A550: the owner gives, re-sends and takes away web dashboard access (partner login) — the owner's dashboard only. */
   webAccess?: boolean;
+  /** A595: does the signed-in person hold this key — for the parts of staff.edit (staff.pins, staff.access, staff.pay).
+   *  Not given: everything (the owner's dashboard before A550). */
+  can?: (key: string) => boolean;
 }
+
+/** A595: what this person may change on a staff card — the parts of staff.edit, as the cloud checks them. */
+export interface StaffRights { edit: boolean; pins: boolean; access: boolean; pay: boolean }
+export function staffRights(canEdit: boolean, can: (key: string) => boolean = () => true): StaffRights {
+  return { edit: canEdit, pins: canEdit && can('staff.pins'), access: canEdit && can('staff.access'), pay: can('staff.pay') };
+}
+
+/** A595: a value the cloud masked (it never sends the real one back). */
+export const isMaskedValue = (v: unknown): boolean => typeof v === 'string' && v.includes('•');
 
 /** A550: GET /api/staff/web-access — each person's web dashboard access. */
 type WebAccessState = { status: 'invited' | 'active' | 'revoked'; granted_at: string; activated_at: string | null; revoked_at: string | null };
@@ -78,7 +93,8 @@ const STATUS_COLORS: Record<string, string> = {
   inactive: 'bg-gray-700 text-gray-500',
 };
 
-export default function StaffTab({ branches, canResetSignIn, canEdit = true, webAccess = false }: Props) {
+export default function StaffTab({ branches, canResetSignIn, canEdit = true, webAccess = false, can }: Props) {
+  const rights = staffRights(canEdit, can);   // A595
   const { activeBranchId } = useBranch();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -285,7 +301,8 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
                       Reset sign-in code
                     </button>
                   )}
-                  {canEdit && <button onClick={() => { setEditing(s); setShowModal(true); }}
+                  {/* A595: staff.pay alone opens a person to set their pay rate (and nothing else). */}
+                  {(canEdit || rights.pay) && <button onClick={() => { setEditing(s); setShowModal(true); }} data-testid="staff-edit"
                     className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
                     Edit
                   </button>}
@@ -320,6 +337,7 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
           mode={mode}
           setMode={setMode}
           approvalPin={approvalPin}
+          rights={rights}
           web={webAccess && editing ? web[editing.id] ?? null : undefined}
           onWebGive={(again) => editing && giveWeb(editing, again)}
           onWebRevoke={() => editing && revokeWeb(editing)}
@@ -355,6 +373,8 @@ interface ModalProps {
   setMode: (m: 'pin' | 'invite') => void;
   /** A562: the admin portal's 'approval_pin' switch — off, no approval PIN is offered (one already set may be removed). */
   approvalPin: boolean;
+  /** A595: which parts of the card this user may change. */
+  rights: StaffRights;
   /** A550: this person's web dashboard access — undefined when this user does not give it (only the owner does). */
   web?: WebAccessState | null;
   onWebGive: (again: boolean) => void;
@@ -396,7 +416,11 @@ const field = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 te
 // saved email and password. Every email here is autoComplete="off" and every PIN "new-password" — the form starts empty.
 // A562: one column of plain steps — name and role, email, PIN, (approval PIN when switched on), branches, hourly rate,
 // permissions, web dashboard access.
-function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMode, approvalPin, web, onWebGive, onWebRevoke, onClose, onSaved }: ModalProps) {
+function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMode, approvalPin, rights, web, onWebGive, onWebRevoke, onClose, onSaved }: ModalProps) {
+  // A595: staff.pay without staff.edit — the card opens to set the pay rate only.
+  const payOnly = !!editing && !rights.edit && rights.pay;
+  // A595: the cloud masked their e-mail and phone (no staff.contacts) — shown as sent, read-only, never sent back.
+  const masked = !!editing && (editing.contacts_masked === true || isMaskedValue(editing.email) || isMaskedValue(editing.phone));
   const [hourlyRate, setHourlyRate] = useState(editing?.hourly_rate != null ? String(editing.hourly_rate) : '');
   const [name, setName] = useState(editing?.name ?? '');
   const [email, setEmail] = useState(editing?.email ?? '');
@@ -437,7 +461,7 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
   // The cloud's rule is the same list (routes/staff.ts APPROVAL_PIN_KEYS). A518: an approver's SIGN-IN PIN approves as it
   // is; this approval PIN is optional — a second PIN for someone who would rather not type their sign-in PIN in front of
   // cashiers. A562: offered only when the admin portal's 'approval_pin' switch is on for this business.
-  const mayApprove = effectiveKeys.has('*') || ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm'].some(k => effectiveKeys.has(k));
+  const mayApprove = effectiveKeys.has('*') || ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm', 'shifts.approve_payout', 'sales.approve_kitchen_void'].some(k => effectiveKeys.has(k));   // A595: the approval parts
   const hasApprovalPin = !!editing?.can_authorize;
   // A562: the owner's own e-mail is how they sign in — ZapTill support changes it (the cloud refuses OWNER_SIGNIN_EMAIL).
   const ownSignInEmail = !!editing?.is_self && !!roleById(editing?.roles?.id ?? '')?.is_owner_role;
@@ -454,6 +478,17 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
     if (!editing && mode === 'pin' && !pin) { setError('PIN is required'); return; }
     if (!editing && mode === 'invite' && !email) { setError('Email is required'); return; }
 
+    // A595: staff.pay alone — the pay rate and nothing else (the cloud refuses any other field without staff.edit).
+    if (payOnly && editing) {
+      setLoading(true); setError('');
+      try {
+        await api.patch(`/api/staff/${editing.id}`, { hourly_rate: hourlyRate ? Number(hourlyRate) : null });
+        onSaved();
+      } catch (err: any) { setError(err.message ?? 'Failed to save'); }
+      finally { setLoading(false); }
+      return;
+    }
+
     // A490: what differs from the role, by key.
     const override_keys: Record<string, boolean> = {};
     if (!roleBaseline.has('*')) {
@@ -464,8 +499,10 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
     // Override (approval) PIN payload: '' clears (revoke), a value sets/replaces, omit = keep. A506/A514: only for someone
     // who will be able to approve (the cloud refuses it otherwise — OVERRIDE_PIN_NO_AUTHORITY). A562: a new one only while
     // the switch is on (the cloud refuses it otherwise — APPROVAL_PIN_OFF); removing one is always allowed.
+    // A595: setting or removing one is staff.pins.
     const overrideField: { override_pin?: string } =
-      clearOverride ? { override_pin: '' }
+      !rights.pins ? {}
+      : clearOverride ? { override_pin: '' }
       : approvalPin && overridePin && mayApprove ? { override_pin: overridePin }
       : {};
 
@@ -479,27 +516,35 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
     const branchField: { branch_ids?: string[] } = editing
       ? (sameSet(selectedBranches, editing.user_branches?.map(b => b.branch_id) ?? []) ? {} : { branch_ids: selectedBranches })
       : selectedBranches.length ? { branch_ids: selectedBranches } : {};
-    const keysChanged = !editing || !sameOverrides(override_keys, editing.override_keys);
+    // A595: a person's own rights are staff.access — without it they are never sent (the cloud keeps them as they are).
+    // `parts: true`: these keys are exactly what is meant (a part left unticked under a ticked parent stays off).
+    const keysChanged = rights.access && (!editing || !sameOverrides(override_keys, editing.override_keys));
+    const keysField: { override_keys?: Record<string, boolean>; parts?: true } = keysChanged ? { override_keys, parts: true } : {};
     const roleChanged = !editing || roleId !== (editing.roles?.id ?? '');
-    const emailChanged = !editing || email.trim() !== (editing.email ?? '');
+    // A595: a masked e-mail is never sent back (the cloud ignores it anyway).
+    const emailChanged = !masked && (!editing || email.trim() !== (editing.email ?? '')) && !isMaskedValue(email);
+    // A595: the pay rate is staff.pay — without it, never sent.
+    const payField: { hourly_rate?: number | null } = rights.pay ? { hourly_rate: hourlyRate ? Number(hourlyRate) : null } : {};
+    // A595: a sign-in PIN on an edit is staff.pins (adding someone brings their first PIN with it).
+    const pinField: { pin?: string } = pin && (!editing || rights.pins) ? { pin } : {};
 
     setLoading(true); setError('');
     try {
       if (editing) {
         await api.patch(`/api/staff/${editing.id}`, {
-          hourly_rate: hourlyRate ? Number(hourlyRate) : null,
+          ...payField,
           name,
           ...(emailChanged ? { email: email.trim() } : {}),   // A506: '' clears it (the cloud stores null)
           ...(roleChanged ? { role_id: roleId } : {}),
-          ...(pin ? { pin } : {}),
+          ...pinField,
           ...overrideField,
           ...branchField,
-          ...(keysChanged ? { override_keys } : {}),
+          ...keysField,
         });
       } else if (mode === 'pin') {
-        await api.post('/api/staff', { name, email: email || undefined, phone: phone || undefined, role_id: roleId, pin, ...branchField, override_keys, ...overrideField });
+        await api.post('/api/staff', { name, email: email || undefined, phone: phone || undefined, role_id: roleId, ...pinField, ...branchField, ...keysField, ...overrideField });
       } else {
-        await api.post('/api/staff/invite', { name, email, role_id: roleId, ...branchField, override_keys, ...overrideField });
+        await api.post('/api/staff/invite', { name, email, role_id: roleId, ...branchField, ...keysField, ...overrideField });
       }
       onSaved();
     } catch (err: any) {
@@ -527,11 +572,11 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-gray-400 mb-1">Full name</label>
-            <input value={name} onChange={e => setName(e.target.value)} className={field} />
+            <input value={name} onChange={e => setName(e.target.value)} readOnly={payOnly} className={`${field} read-only:opacity-60`} />
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">Role</label>
-            <select value={roleId} onChange={e => handleRoleChange(e.target.value)} disabled={picker.locked} data-testid="staff-role"
+            <select value={roleId} onChange={e => handleRoleChange(e.target.value)} disabled={picker.locked || payOnly} data-testid="staff-role"
               title={picker.locked ? picker.note : undefined}
               className={`${field} capitalize disabled:opacity-60 disabled:cursor-not-allowed`}>
               {picker.options.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -539,6 +584,9 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
             {picker.note && <p className="text-xs text-gray-500 mt-1" data-testid="staff-role-note">{picker.note}</p>}
           </div>
         </div>
+        {payOnly && (
+          <p className="text-xs text-gray-500" data-testid="staff-pay-only">Your role sets pay rates only — the rest of this card is changed by someone who edits staff.</p>
+        )}
 
         {/* Email — what it is for */}
         {(!editing && mode === 'invite') && (
@@ -550,16 +598,22 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
             <p className="text-xs text-gray-600 mt-1">They get an invitation to set up their sign-in.</p>
           </div>
         )}
-        {editing && (
+        {editing && !payOnly && (
           <div>
             <label className="block text-sm text-gray-400 mb-1">
               Email <span className="text-amber-400 text-xs ml-1">— used for sign-in</span>
             </label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-              name="staff-email" autoComplete="off" readOnly={ownSignInEmail}
-              placeholder="staff@example.com"
+              name="staff-email" autoComplete="off" readOnly={ownSignInEmail || masked} data-testid="staff-email"
+              placeholder={masked ? '' : 'staff@example.com'}
               className={`${field} read-only:opacity-60`} />
             {ownSignInEmail && <p className="text-xs text-gray-600 mt-1">Your own sign-in email — ZapTill support changes it for you.</p>}
+            {/* A595: without staff.contacts the cloud sends the e-mail and phone masked. */}
+            {masked && !ownSignInEmail && (
+              <p className="text-xs text-gray-600 mt-1" data-testid="staff-contacts-masked">
+                {editing.phone ? `Phone ${editing.phone}. ` : ''}Contact details are hidden for your role — the owner or someone who may see staff contacts changes them.
+              </p>
+            )}
           </div>
         )}
         {(!editing && mode === 'pin') && (
@@ -576,8 +630,9 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
         )}
 
         {/* PIN (and, adding by PIN, the phone) */}
-        {(mode === 'pin' || editing) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* A595: changing a PIN is staff.pins; adding someone by PIN always sets their first one. */}
+        {((!editing && mode === 'pin') || (editing && rights.pins)) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="staff-pin">
             <div>
               <label className="block text-sm text-gray-400 mb-1">
                 PIN {editing ? '(leave blank to keep)' : '(4–6 digits)'}
@@ -597,7 +652,7 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
         )}
 
         {/* A562: the approval PIN — only when ZapTill switched it on for this business. */}
-        {approvalPin && (
+        {approvalPin && rights.pins && (
           <div data-testid="approval-pin">
             <label className="block text-sm text-gray-400 mb-1">
               {/* A518 (owner, 2026-10-16: "rather than them having to remember 2 pins"): the sign-in PIN already approves
@@ -629,7 +684,7 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           </div>
         )}
         {/* A562: switched off, a PIN set before still approves — the owner can take it away here. */}
-        {!approvalPin && editing && hasApprovalPin && (
+        {!approvalPin && editing && hasApprovalPin && rights.pins && (
           <p className="text-xs text-gray-500" data-testid="approval-pin-left">
             They still have an approval PIN from before (it works until removed; managers otherwise approve with their sign-in PIN).
             <button type="button" onClick={() => setClearOverride(c => !c)}
@@ -640,7 +695,7 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
         )}
 
         {/* Branch access — dropdown */}
-        {branches.length > 0 && (
+        {branches.length > 0 && !payOnly && (
           <div>
             <label className="block text-sm text-gray-400 mb-1">Branch access</label>
 
@@ -692,8 +747,9 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           </div>
         )}
 
-        {/* Hourly rate */}
-        <div>
+        {/* Hourly rate — A595: staff.pay */}
+        {rights.pay && (
+        <div data-testid="staff-pay">
           <label className="block text-sm text-gray-400 mb-1">Hourly rate (optional)</label>
           <div className="relative sm:max-w-[50%]">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">KES</span>
@@ -705,9 +761,12 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           </div>
           <p className="text-xs text-gray-600 mt-1">Used for labour cost % in the SPLH report.</p>
         </div>
+        )}
 
-        {/* A490: this person's rights, key by key — pre-filled from the role; what differs from it is marked. */}
-        <div>
+        {/* A490: this person's rights, key by key — pre-filled from the role; what differs from it is marked.
+            A595: only with staff.access (a person's own rights). */}
+        {rights.access && (
+        <div data-testid="staff-rights">
           <div className="flex items-start justify-between gap-3 mb-3">
             <div className="min-w-0">
               <p className="text-white text-sm font-medium">This person's permissions</p>
@@ -722,9 +781,10 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           <PermissionPicker keys={catalogue.keys} groups={catalogue.groups} checked={effectiveKeys}
             onChange={setEffectiveKeys} baseline={roleBaseline} idPrefix="staff" />
         </div>
+        )}
 
         {/* A550: web dashboard access — the owner's to give; never on the owner's role, an inactive person or no email. */}
-        {web !== undefined && editing && (
+        {web !== undefined && editing && !payOnly && (
           <div data-testid="staff-web-access" className="flex items-center justify-between gap-3 flex-wrap border-t border-gray-800 pt-4">
             <div className="min-w-0">
               <p className="text-white text-sm font-medium">Web dashboard access</p>

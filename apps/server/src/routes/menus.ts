@@ -122,7 +122,9 @@ router.patch('/:id', requirePermission('menu.edit'), async (req, res) => {
 });
 
 // DELETE /api/menus/:id — soft: the row stays (deleted_at), the tills are told it is gone; its categories have no menu.
-router.delete('/:id', requirePermission('menu.edit'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F24): deleting is its own part of menu.edit (menu.delete — migration 176 gave it to every
+// holder of menu.edit).
+router.delete('/:id', requirePermission('menu.delete'), async (req, res) => {
   const { data: m, error: e1 } = await supabase.from('menus').select('id')
     .eq('id', req.params.id).eq('business_id', req.businessId).is('deleted_at', null).maybeSingle();
   if (e1) { sendError(res, e1); return; }

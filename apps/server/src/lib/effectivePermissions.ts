@@ -11,20 +11,21 @@
 import { supabase } from './supabase';
 import { permissionMapFor, PERMISSION_KEYS } from './permissions';
 import { keysFromGrants, keysForRow, type GrantRow, type OverrideRow } from './effectiveKeys';
-import { permissionsOpenBefore } from './permissionsState';
+import { permissionsOpenBefore, splitsPending } from './permissionsState';
 
 export type { GrantRow, OverrideRow } from './effectiveKeys';
 
 /** The person's fine keys from their role's grants and their own overrides (an override wins for its key). */
 export function effectiveKeys(roleGrants: GrantRow[] | null | undefined, overrides: OverrideRow[] | null | undefined,
-  openBefore: boolean = permissionsOpenBefore()): Set<string> {
-  return keysFromGrants(roleGrants, overrides, openBefore);
+  openBefore: boolean = permissionsOpenBefore(), partsBefore: boolean = splitsPending()): Set<string> {
+  return keysFromGrants(roleGrants, overrides, openBefore, partsBefore);
 }
 
 /** A users row selected with `roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted,
  *  permissions ( key ) )` — the select every caller already makes. The owner holds '*'. */
-export function effectiveKeysForRow(row: Parameters<typeof keysForRow>[0], openBefore: boolean = permissionsOpenBefore()): Set<string> {
-  return keysForRow(row, openBefore);
+export function effectiveKeysForRow(row: Parameters<typeof keysForRow>[0], openBefore: boolean = permissionsOpenBefore(),
+  partsBefore: boolean = splitsPending()): Set<string> {
+  return keysForRow(row, openBefore, partsBefore);
 }
 
 /** Read and work out a person's fine keys (sign-in and token renewal). */

@@ -29,7 +29,8 @@ export default function DiscountPanel({ orderTotal, currency, discountState, onD
   const [error, setError] = useState('');
   // A490: entering a discount is sales.discount — the input is not offered without it (the cloud refuses it too).
   const { hasPermission } = usePOSAuth();
-  const mayDiscount = hasPermission('sales.discount');
+  // A595 (D6): promo codes and set-up discounts are sales.discount_preset (typed amounts sales.discount).
+  const mayDiscount = hasPermission('sales.discount') || hasPermission('sales.discount_preset');
 
   async function applyCode() {
     if (!code.trim()) return;

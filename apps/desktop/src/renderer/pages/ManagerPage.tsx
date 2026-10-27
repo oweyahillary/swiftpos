@@ -2105,7 +2105,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'orders':  return <OrdersTab currency={currency} rights={{ void: has('sales.void'), refund: has('sales.refund') }} />;
       case 'shift':   return <ShiftTab currency={currency} />;
       case 'expenses': return <ExpensesTab currency={currency} canAddType={has('expenses.manage')}
-                                           canRecord={mayMoveMoney(staff, noMoneyOut)} />;
+                                           canRecord={has('expenses.record') || mayMoveMoney(staff, noMoneyOut)} />;   // A594: Record expenses
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} businessName={businessName} />;
       // Tabs of Sales (A351): Shift report, Item Mix (restaurant).

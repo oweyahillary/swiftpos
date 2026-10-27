@@ -69,9 +69,11 @@ await ok('the read routes take either key; every write stays payables.manage', (
   assert.match(src, /router\.get\('\/summary', requireAnyPermission\('payables\.view', 'payables\.manage'\)/);
   assert.match(src, /router\.get\('\/suppliers\/:id', requireAnyPermission\('payables\.view', 'payables\.manage'\)/);
   assert.match(src, /router\.get\('\/returns', requireAnyPermission\('inventory\.receive', 'payables\.manage', 'payables\.view'\)/);
-  for (const w of ["'/bills'", "'/bills/:id/void'", "'/payments'", "'/payments/:id/void'"]) {
+  for (const w of ["'/bills'", "'/bills/:id/void'"]) {
     assert.ok(src.includes(`router.post(${w}, requirePermission('payables.manage')`), w);
   }
+  // A595: paying a supplier (and voiding a payment) is its own part of payables.manage — payables.view never writes.
+  for (const w of ["'/payments'", "'/payments/:id/void'"]) assert.ok(src.includes(`router.post(${w}, requirePermission('payables.pay')`), w);
   assert.match(src, /router\.post\('\/returns', requireAnyPermission\('inventory\.receive', 'payables\.manage'\)/, 'sending goods back is not payables.view');
 });
 await ok('the web: the manager portal lists the bills for either key, read-only without payables.manage; the owner\'s Suppliers page too', () => {

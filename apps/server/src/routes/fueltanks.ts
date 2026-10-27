@@ -31,6 +31,10 @@ import type { Request, Response } from 'express';
 // A490: setting up pumps and tanks, deliveries and pump state are fuel.manage (everyone held it before migration 134 —
 // OPEN_BEFORE_A490). Reading the pumps and tanks also serves selling fuel and the fuel reports.
 const canManageFuel = requirePermission('fuel.manage');
+// A595 (docs/PERMISSIONS-AUDIT.md F13): setting up pumps and tanks, and recording a tank delivery, are their own parts of
+// fuel.manage (fuel.setup, fuel.deliveries — migration 176 gave both to every holder; a false delivery hides missing fuel).
+const canSetUpFuel = requirePermission('fuel.setup');
+const canRecordDelivery = requirePermission('fuel.deliveries');
 const canReadFuel = requireAnyPermission('fuel.manage', 'reports.fuel', 'orders.create');
 
 // ── A494: branches and ids ────────────────────────────────────────────────────
@@ -96,7 +100,7 @@ fuelTanksRouter.get('/', canReadFuel, async (req, res) => {
   res.json(visible(req, data as Array<{ branch_id: string | null }>));   // A494
 });
 
-fuelTanksRouter.post('/', canManageFuel, async (req, res) => {
+fuelTanksRouter.post('/', canSetUpFuel, async (req, res) => {
   const { name, fuel_product_id, capacity_litres, current_level, reorder_level, branch_id } = req.body;
   if (!name || !fuel_product_id || !capacity_litres) {
     res.status(400).json({ error: 'name, fuel_product_id, capacity_litres are required' });
@@ -120,7 +124,7 @@ fuelTanksRouter.post('/', canManageFuel, async (req, res) => {
   res.status(201).json(data);
 });
 
-fuelTanksRouter.patch('/:id', canManageFuel, async (req, res) => {
+fuelTanksRouter.patch('/:id', canSetUpFuel, async (req, res) => {
   const { id } = req.params;
   const { name, fuel_product_id, capacity_litres, current_level, reorder_level } = req.body;
   if (!(await ownRow(req, res, 'fuel_tanks', 'Tank'))) return;   // A494
@@ -144,7 +148,7 @@ fuelTanksRouter.patch('/:id', canManageFuel, async (req, res) => {
   res.json(data);
 });
 
-fuelTanksRouter.delete('/:id', canManageFuel, async (req, res) => {
+fuelTanksRouter.delete('/:id', canSetUpFuel, async (req, res) => {
   if (!(await ownRow(req, res, 'fuel_tanks', 'Tank'))) return;   // A494
   const { error } = await supabase
     .from('fuel_tanks')
@@ -216,7 +220,7 @@ fuelTanksRouter.get('/movements', canReadFuel, async (req, res) => {
   res.json(result);
 });
 
-fuelTanksRouter.post('/:id/delivery', canManageFuel, async (req, res) => {
+fuelTanksRouter.post('/:id/delivery', canRecordDelivery, async (req, res) => {
   const { id } = req.params;
   const { litres, delivery_note, supplier_id } = req.body;
 
@@ -301,7 +305,7 @@ pumpsRouter.get('/', canReadFuel, async (req, res) => {
   res.json(visible(req, data as Array<{ branch_id: string | null }>));   // A494: also when the branch is not a UUID
 });
 
-pumpsRouter.post('/', canManageFuel, async (req, res) => {
+pumpsRouter.post('/', canSetUpFuel, async (req, res) => {
   const { name, fuel_product_id, tank_id, status, sort_order, branch_id } = req.body;
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
   if (!(await idsOk(req, res, { branch_id: branch_id ?? (allBranchAccess(req) ? null : req.branchId), fuel_product_id, tank_id }))) return;   // A494
@@ -322,7 +326,7 @@ pumpsRouter.post('/', canManageFuel, async (req, res) => {
   res.status(201).json(data);
 });
 
-pumpsRouter.patch('/:id', canManageFuel, async (req, res) => {
+pumpsRouter.patch('/:id', canSetUpFuel, async (req, res) => {
   const { name, fuel_product_id, tank_id, status, sort_order } = req.body;
   if (!(await ownRow(req, res, 'pumps', 'Pump'))) return;   // A494
   if (!(await idsOk(req, res, { fuel_product_id, tank_id }))) return;
@@ -345,7 +349,7 @@ pumpsRouter.patch('/:id', canManageFuel, async (req, res) => {
   res.json(data);
 });
 
-pumpsRouter.delete('/:id', canManageFuel, async (req, res) => {
+pumpsRouter.delete('/:id', canSetUpFuel, async (req, res) => {
   if (!(await ownRow(req, res, 'pumps', 'Pump'))) return;   // A494
   const { error } = await supabase
     .from('pumps')

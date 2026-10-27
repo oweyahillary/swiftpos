@@ -35,14 +35,14 @@ ok('a cashier — even holding the staff list and everything everyone held — m
 });
 ok('staff changes need staff.edit; menu changes menu.edit; stations stations.manage', () => {
   assert.deepEqual(T.changeKeys('staff', 'create'), ['staff.edit']);
-  assert.deepEqual(T.changeKeys('staff_pin', 'update'), ['staff.edit']);
+  assert.deepEqual(T.changeKeys('staff_pin', 'update'), ['staff.pins']);   // A595: a PIN is its own part of staff.edit
   assert.deepEqual(T.changeKeys('category', 'create'), ['menu.edit']);
   assert.deepEqual(T.changeKeys('product', 'create', { name: 'Chips', base_price: 200 }), ['menu.edit']);
   assert.deepEqual(T.changeKeys('station', 'update'), ['stations.manage']);
 });
-ok('a price change needs menu.prices, a cost change menu.costs, anything else on the product menu.edit — all together', () => {
+ok('a price change needs menu.prices, a cost change menu.costs_edit (A595), anything else on the product menu.edit — all together', () => {
   assert.deepEqual(T.changeKeys('product', 'update', { base_price: 250 }), ['menu.prices']);
-  assert.deepEqual(T.changeKeys('product', 'update', { cost_price: 90 }), ['menu.costs']);
+  assert.deepEqual(T.changeKeys('product', 'update', { cost_price: 90 }), ['menu.costs_edit']);   // A595: changing a cost is its own part
   assert.deepEqual(T.changeKeys('product', 'update', { name: 'Chips L', base_price: 250 }).sort(), ['menu.edit', 'menu.prices']);
   const pricer = P.expandKeys(['menu.prices']);
   assert.equal(holdsAll(pricer, T.changeKeys('product', 'update', { name: 'x', base_price: 1 })), false, 'a renamed product needs menu.edit too');

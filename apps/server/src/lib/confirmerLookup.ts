@@ -8,7 +8,8 @@
 import bcrypt from 'bcrypt';
 import { supabase } from './supabase';
 import { findApprover, type ApproverRow } from './approver';
-import { mayConfirm } from './shiftConfirm';
+import { mayApproveWith, type ApprovalKey } from './shiftConfirm';
+import { splitsPending } from './permissionsState';   // A595
 import { verifyPin } from '../routes/auth';
 
 export async function confirmerRows(businessId: string) {
@@ -44,10 +45,13 @@ export const NO_CONFIRMER_BODY = {
   code:  'NO_OVERRIDE_CONFIGURED',
 } as const;
 
+/** A595: `scope.key` — what the PIN approves (default: confirming a drawer, shifts.confirm; a pay-out
+ *  shifts.approve_payout; a kitchen removal sales.approve_kitchen_void). */
 export async function confirmerByPin(businessId: string, pin: string, authorizerId?: string,
-  scope?: { branchId?: string | null; actorId?: string | null }): Promise<{ id: string; name: string | null } | null | 'self' | 'none'> {
+  scope?: { branchId?: string | null; actorId?: string | null; key?: ApprovalKey }): Promise<{ id: string; name: string | null } | null | 'self' | 'none'> {
   const { rows, ownerId } = await confirmerRows(businessId);
-  const found = await findApprover(rows, { pin, authorizerId, ownerId, may: mayConfirm, branchId: scope?.branchId ?? null, actorId: scope?.actorId ?? null }, {
+  const may = mayApproveWith(scope?.key ?? 'shifts.confirm', splitsPending());
+  const found = await findApprover(rows, { pin, authorizerId, ownerId, may, branchId: scope?.branchId ?? null, actorId: scope?.actorId ?? null }, {
     loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
     overridePin: (p, h) => bcrypt.compare(p, h),
   });

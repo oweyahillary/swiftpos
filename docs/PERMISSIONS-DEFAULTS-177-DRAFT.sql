@@ -1,0 +1,48 @@
+-- PERMISSIONS-DEFAULTS-177-DRAFT.sql — A595. NOT a migration (nothing here runs).
+--
+-- This was the draft of the owner's decisions D1–D10 (docs/PERMISSIONS-AUDIT.md, "Decisions needed from you"). The owner
+-- answered every one on 2026-10-27; what changes a database is now in REAL migrations:
+--   migrations/177_permission_default_changes.sql   D1 (no + add customers + KRA PIN), D2, D3, D5, D6, D8
+--   migrations/178_branch_credit.sql                D4's schema (the lock, customer_branch_credit_limits)
+-- What each decision became:
+--   D1  NO   cashiers and waiters KEEP customers' contacts and history. They add customers: the built-in Cashier and
+--            Waiter roles hold customers.edit (177). Customers get a KRA PIN (customers.kra_pin, 177): personal and tax
+--            data, shown in full to holders of customers.contacts (masked A•••Z otherwise).
+--   D2  YES  menu.costs_edit off the built-in Auditor and Storekeeper (177); never in their new-business defaults.
+--   D3  YES  webhooks the owner's alone (settings.webhooks off every role but the owner's, 177; not a new General Manager's).
+--            Report e-mails (who receives them): the owner and the partners — the cloud's rule (routes/business.ts
+--            mayReportEmails); settings.report_emails off every role (177), a person the owner gives it keeps it. The
+--            daily report goes out once a recipient is set (jobs/dailySummary.ts); stock alerts go to the owner and the
+--            recipients (jobs/lowStockChecker.ts).
+--   D4  YES  credit limits with branches (the approved design): the owner's ceiling (credit_max_limit), the owner's lock,
+--            credit per branch (branch setting credit_enabled), partners decide at their own branches when the owner
+--            allows (credit_partner_branches), a customer's limit at one branch (customer_branch_credit_limits), checked at
+--            the sale (owed here vs the branch limit, else the business limit vs everything owed), every change audited.
+--            Code: lib/branchCredit.ts, routes/credit.ts, routes/orders.ts, routes/pos.ts; the desktop POS keeps the branch
+--            rule offline (main/creditSale.ts).
+--   D5  YES  fuel.deliveries and fuel.setup off the built-in Cashier and Fuel attendant (177).
+--   D6  YES  sales.discount (typed) off the built-in Cashier (177) and off a new business's Cashier; set-up discounts
+--            and promo codes stay (sales.discount_preset). The Waiter keeps typed discounts (the owner named cashiers).
+--   D7  NO CHANGE  customers stay business-wide; partners see all customers.
+--   D8  YES  Overview alone answers today only (routes/reports.ts); roles that had only Overview got the Sales and Item
+--            reports (177) so what they used stays open.
+--   D9  YES, new businesses only  a new business's built-in Manager does not get customers.credit_adjust, staff.access,
+--            staff.pay, devices.retire, expenses.edit, expenses.monthly, settings.mpesa (shared/permissions.ts). Existing
+--            Managers unchanged — nothing to run.
+--   D10 AS IS  sales.history_all stays ("See every cashier's sales", off for cashiers); no orders.view_own now.
+--
+-- Not decided by a number in the audit, left for the owner's review (no migration written):
+--   C6  cashiers stop voiding parking tickets (parking.void off the built-in Cashier)
+--   C8  the Finance Manager stops approving kitchen removals (sales.approve_kitchen_void)
+--   C9  the Supervisor stops opening Analytics (reports.analytics)
+-- If approved, each is one guarded block of the shape 177 uses, for example:
+--   DO $c6$ BEGIN
+--   IF NOT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = '179_c6_parking_void') THEN
+--     DELETE FROM public.role_permissions rp USING public.permissions p, public.roles r
+--      WHERE rp.permission_id = p.id AND r.id = rp.role_id AND r.is_default
+--        AND regexp_replace(lower(trim(r.name)), '[[:space:]_]+', ' ', 'g') = 'cashier' AND p.key = 'parking.void';
+--     INSERT INTO public.schema_migrations (version, notes) VALUES ('179_c6_parking_void', 'A595 C6: parking voids off built-in Cashier');
+--   END IF;
+--   END $c6$;
+-- Code follow-up (not SQL): Analytics' "money leaks" also needing Voids, refunds and exceptions (reports.voids) — today a
+-- Supervisor sees it with Analytics alone; changing that would take it away, so it waits for the owner.

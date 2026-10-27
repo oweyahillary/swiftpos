@@ -226,7 +226,7 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/orders':                ['orders.view_all'],
   '/dashboard/expenses':              ['expenses.view', 'expenses.manage'],
   '/dashboard/reports':               REPORT_KEYS,
-  '/dashboard/analytics':             ['reports.sales'],   // A558: the cloud's own gate for every /api/analytics route
+  '/dashboard/analytics':             ['reports.analytics'],   // A558: the cloud's own gate for every /api/analytics route (A595: its own part of reports.sales)
   '/dashboard/watch-list':            ['reports.voids'],   // A576: the cloud's own gate for /api/loss-alerts
   '/dashboard/shift-reports':         ['reports.shifts', 'shifts.confirm'],
   '/dashboard/turnover':              ['orders.view_all'],
@@ -234,9 +234,10 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/tills-days':            ['shifts.close_day', 'shifts.force_close'],
   '/dashboard/customers':             ['customers.view'],
   '/dashboard/customers/credit':      ['customers.credit', 'customers.view'],
-  '/dashboard/settings/devices':      ['devices.approve', 'stations.manage'],
+  '/dashboard/settings/devices':      ['devices.view', 'devices.approve', 'stations.manage'],   // A595: seeing the POS devices
   '/dashboard/settings/business':     ['settings.business', 'settings.branches', 'settings.payments', 'settings.reversals',
-    'settings.integrations', 'settings.pos', 'receipt.manage', 'tables.manage', 'etims.manage'],
+    'settings.integrations', 'settings.pos', 'receipt.manage', 'tables.manage', 'etims.manage',
+    'settings.tax', 'settings.sales_rules', 'settings.webhooks', 'settings.report_emails'],   // A595: the parts
 };
 
 const TYPE_ICON: Record<string, string> = {

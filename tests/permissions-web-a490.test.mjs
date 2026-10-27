@@ -131,7 +131,7 @@ const EXPECTED_NAV = {
   receiving: "['inventory.receive', 'inventory.transfer']", counts: "'inventory.count'", wastage: "'inventory.waste'",
   // A523: Shifts also opens for whoever may close a day or force-close a drawer (Tills & days lives in it).
   expiry: "'inventory.waste'", history: "'inventory.receive'", orders: "'orders.view_all'", shift: "['orders.view_all', 'shifts.close_day', 'shifts.force_close']",
-  reports: 'MANAGER_REPORT_KEYS', analytics: "'reports.sales'" /* A549 */, turnover: "'orders.view_all'", expenses: "'expenses.view'", customers: "'customers.view'",
+  reports: 'MANAGER_REPORT_KEYS', analytics: "'reports.analytics'" /* A549; A595: its own part of reports.sales */, turnover: "'orders.view_all'", expenses: "'expenses.view'", customers: "'customers.view'",
   credit: "'customers.view'", staff: "'staff.view'", printers: "'stations.manage'", security: 'null',
   // A502: the owner's by default, for someone the owner gives the right.
   promotions: "'menu.promotions'", reversals: "'settings.reversals'",
@@ -164,7 +164,8 @@ await ok('every manager report tab has its key; the page shows only the ones hel
 await ok('manager actions: credit edits, drawer confirm / count, day close, staff edits, costs', () => {
   const md = read('pages/manager/ManagerDashboard.tsx');
   assert.match(md, /const canManage = hasPermission\('customers\.credit'\);/);
-  assert.match(md, /<StaffTab branches=\{managerBranch\} canEdit=\{hasAnyPermission\(held, \['staff\.edit'\]\)\} \/>/);
+  // A595: and the parts of staff.edit (PINs, own rights, pay) by the person's own keys.
+  assert.match(md, /<StaffTab branches=\{managerBranch\} canEdit=\{hasAnyPermission\(held, \['staff\.edit'\]\)\} can=\{\(k\) => hasPermission\(k\)\} \/>/);
   assert.match(md, /const seesCosts\s+= hasAnyPermission\(held, \['menu\.costs', 'reports\.costs'\]\);/);
   assert.match(md, /<Wastage [^>]*showCosts=\{seesCosts\} \/>/);
   assert.match(md, /<Expiry [^>]*showCosts=\{seesCosts\}\s+canEditBatches=/);   // A506: + batch edits by receive / adjust
@@ -193,13 +194,15 @@ await ok('the Overview fetches a report only with its key', () => {
 });
 
 // ── Web POS ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-await ok('discount: sales.discount — no manual discount reaches the sale without it; the input is not offered', () => {
+// A595 (owner decision D6): the web POS applies set-up discounts and promo codes — sales.discount_preset (or the typed
+// discounts' sales.discount); the cloud checks the discount named and its amount (routes/orders.ts discountRefused).
+await ok('discount: sales.discount or its set-up part — no discount reaches the sale without one; the input is not offered', () => {
   const pm = read('pages/pos/PaymentModal.tsx');
-  assert.match(pm, /const mayDiscount = hasPermission\('sales\.discount'\);/);
+  assert.match(pm, /const mayDiscount = hasPermission\('sales\.discount'\) \|\| hasPermission\('sales\.discount_preset'\);/);
   assert.match(pm, /const rawPromoDiscount\s+= mayDiscount \? \(discountState\?\.discount_amount \?\? 0\) : 0;/);
   assert.equal((pm.match(/discount_id:\s+mayDiscount \? \(discountState\?\.discount\.id \?\? null\) : null,/g) ?? []).length, 2);
   const dp = read('pages/pos/DiscountPanel.tsx');
-  assert.match(dp, /const mayDiscount = hasPermission\('sales\.discount'\);/);
+  assert.match(dp, /const mayDiscount = hasPermission\('sales\.discount'\) \|\| hasPermission\('sales\.discount_preset'\);/);
   assert.match(dp, /if \(!mayDiscount\) return null;/);
 });
 await ok('void and refund: sales.void and sales.refund, each on its own', () => {
@@ -223,7 +226,8 @@ await ok('Z-report: kept for the cashier, but expected cash and the difference n
 });
 await ok('Float / Expense: shifts.cash_movements (the old switch still applies on a map from before); printers: stations.manage', () => {
   const cs = read('pages/pos/CashierScreen.tsx');
-  assert.match(cs, /const mayMoveMoney = hasPermission\('shifts\.cash_movements'\)\s*&& mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\);/);
+  // A594: shifts.cash_movements is "Record cash in" now; Float / Expense are offered to all (a manager approves without it).
+  assert.match(cs, /const mayCashIn = hasPermission\('shifts\.cash_movements'\)\s*&& mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\);/);
   assert.match(cs, /const canSetPrinters = hasPermission\('stations\.manage'\);/);
   assert.match(cs, /\{canSetPrinters && \(/);
   assert.doesNotMatch(cs, /isManager\b/);
@@ -264,8 +268,10 @@ await ok('RolesTab: the new API — keys, copy_from, rename, delete with ROLE_IN
 });
 await ok('StaffTab: a person\'s rights by key (override_keys) on the same picker, against the role; no role names', () => {
   const s = read('pages/settings/StaffTab.tsx');
-  assert.match(s, /\.\.\.\(keysChanged \? \{ override_keys \} : \{\}\),\s*\}\);/);   // A506: an edit sends them when they changed
-  assert.match(s, /api\.post\('\/api\/staff', \{[^}]*override_keys/);
+  // A506: an edit sends them when they changed; A595: with `parts: true` (the keys exactly as ticked), and only with staff.access.
+  assert.match(s, /const keysField: \{ override_keys\?: Record<string, boolean>; parts\?: true \} = keysChanged \? \{ override_keys, parts: true \} : \{\};/);
+  assert.match(s, /\.\.\.keysField,\s*\}\);/);
+  assert.match(s, /api\.post\('\/api\/staff', \{[^}]*\.\.\.keysField/);   // A595: the person's rights (override_keys, parts: true) when the adder holds staff.access
   assert.match(s, /<PermissionPicker keys=\{catalogue\.keys\} groups=\{catalogue\.groups\} checked=\{effectiveKeys\}\s+onChange=\{setEffectiveKeys\} baseline=\{roleBaseline\}/);
   assert.match(s, /canResetSignIn && s\.status === 'active' && needsSignInCode\(role, s\.override_keys\)/);
   assert.doesNotMatch(s, /OTP_ROLES|excludeRoles|permission_id: p\.id/);
@@ -279,7 +285,7 @@ await ok('Business: POS options and the business-wide payment methods, on /api/c
   assert.match(c, /api\.put\('\/api\/controls\/loyalty', patch\)/);
   assert.doesNotMatch(c, /\/api\/controls\/updates/);
   assert.match(c, /api\.post\('\/api\/business\/settings', \{ key: PAYMENT_METHODS_ENABLED_KEY, value: v \}\)/);
-  assert.match(c, /export const POS_OPTION_KEYS = \['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes'\] as const;/);
+  assert.match(c, /export const POS_OPTION_KEYS = \['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin'\] as const;/);   // A594
   const bp = read('pages/settings/BusinessPage.tsx');
   assert.match(bp, /\{ to: 'pos-options',\s+label: 'POS options' \}/);
   assert.doesNotMatch(bp, /till-updates/);

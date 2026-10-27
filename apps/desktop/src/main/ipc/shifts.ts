@@ -4,7 +4,7 @@ import { assertPayload } from '../ipcValidate';
 import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import { getOpenShift } from '../syncEngine';
-import { MONEY_MOVEMENT_MANAGER_ONLY } from '../posFeatures';
+import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_WARNING, cashMovementNeedsApprover, looksLikeDrawerCount } from '../posFeatures';   // A594
 import { signedIn as sessionPerson, personCan, mayMoveMoney } from '../tillAccess';
 import { getDeviceConfig, getPosFeatures } from '../deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, forceCloseShift, listShifts, awaitingConfirmation, confirmShift, shiftCloseRights, blindClose, blindReport, confirmView } from '../shiftService';
@@ -30,13 +30,29 @@ export function registerShiftHandlers(ctx: IpcShared) {
     return currentShiftReport();
   });
 
-  handle('shift:float', async (_event, { type, amount, reason, pin }: { type: 'float_in' | 'float_out'; amount: number; reason?: string; pin?: string }) => {
-    // A490: shifts.cash_movements (before migration 134: A453's 'cashier_no_money_out' switch, unless they may confirm).
-    if (!mayMoveMoney(sessionPerson(), getPosFeatures().cashier_no_money_out)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
-    // 0.6.37 (A388): a cash-out needs a manager — signed in, or their PIN on the spot. A pay-in needs nobody.
-    const approver = type === 'float_out' ? await payoutApprover(pin) : null;
-    addFloat(type, Number(amount), reason, approver);
-    if (approver) logLine('shift', `pay-out ${Number(amount)} approved by ${approver.name ?? approver.id}`);
+  handle('shift:float', async (_event, { type, amount, reason, pin, countAck }: { type: 'float_in' | 'float_out'; amount: number; reason?: string; pin?: string; countAck?: boolean }) => {
+    // A594 (owner, 2026-10-26: "turn off that option for cashiers by default unless allowed"): every cash in / cash out
+    // gives a reason; a person without "Record cash in" (shifts.cash_movements) needs a manager — signed in, or their PIN on
+    // the spot — for a cash in too (a cash out always did, A388).
+    const why = String(reason ?? '').trim();
+    if (!why) throw new Error(CASH_MOVEMENT_REASON_REQUIRED);
+    if (!(Number(amount) > 0)) throw new Error('Enter an amount greater than zero');
+    // A594: a cash in of what the drawer should hold (or its cash sales) is a count typed in the wrong place — said before
+    // anything is written, and recorded only once the person confirms it is a real cash in (countAck). The figure itself
+    // is never sent back (a cashier's close stays blind).
+    if (type === 'float_in' && countAck !== true) {
+      const r = currentShiftReport();
+      if (r && looksLikeDrawerCount(Number(amount), { openingFloat: r.shift.opening_float, cashSales: r.totals.cashSales, expected: r.totals.expectedCash })) {
+        throw new Error(DRAWER_COUNT_WARNING);
+      }
+    }
+    // 0.6.37 (A388): a cash-out needs a manager — signed in, or their PIN on the spot. A594: so does a cash in by anyone who
+    // may not record one on their own (A453 refused them outright; now a manager approves on the spot instead).
+    // shifts.cash_movements is "Record cash in" (A594); on a map from before the catalogue, A453's switch rule (mayMoveMoney).
+    const mayCashIn = mayMoveMoney(sessionPerson(), getPosFeatures().cashier_no_money_out);
+    const approver = cashMovementNeedsApprover(type, mayCashIn) ? await payoutApprover(pin) : null;
+    addFloat(type, Number(amount), why.slice(0, 200), approver);
+    logLine('shift', `${type === 'float_in' ? 'cash in' : 'pay-out'} ${Number(amount)}${approver ? ` approved by ${approver.name ?? approver.id}` : ''}${countAck === true ? ' (confirmed: not a drawer count)' : ''}`);
     pushNow();
     return currentShiftReport();
   });

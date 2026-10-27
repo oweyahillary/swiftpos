@@ -212,7 +212,9 @@ router.post('/adjust', requirePermission('inventory.adjust'), async (req, res) =
 // A494: the product and the branch were never checked — any id, any branch, any business (and an upsert made a stock
 // row for a branch that has none). Now: the product is this business's, the branch is this business's and the caller's,
 // the threshold a number — and only then is the (product, branch) row written.
-router.patch('/:product_id/threshold', requireAnyPermission('inventory.adjust', 'inventory.receive'), async (req, res) => {
+// A595: reorder levels are their own part of receiving and of adjusting stock (inventory.reorder — migration 176 gave it to
+// every holder of either).
+router.patch('/:product_id/threshold', requirePermission('inventory.reorder'), async (req, res) => {
   const { product_id } = req.params;
   const { branch_id, low_stock_threshold } = req.body ?? {};
   const t = Number(low_stock_threshold);

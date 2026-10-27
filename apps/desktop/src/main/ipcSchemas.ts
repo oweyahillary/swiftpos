@@ -236,7 +236,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'branchClose:closeTill':  { device_id: { t: 'string' }, counted_cash: { t: 'number' }, notes: { t: 'string', optional: true } },
   'branchClose:confirmShift': { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } },   // A452
   'branchClose:closeBranch':  { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true }, without_tills: { t: 'stringArray', optional: true } },   // A452, A458, A521
-  'branchClose:shiftMoney':   { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true }, expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true } },   // A465
+  'branchClose:shiftMoney':   { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true }, expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true }, count_ack: { t: 'boolean', optional: true } },   // A465; A594: count_ack
   'branchClose:cancelShiftMoney': { instruction_id: { t: 'number' } },   // A465
   'branchClose:forgetTill':   { device_id: { t: 'string', min: 1 } },   // F4 (A521: "Revoke this till")
   'branchClose:hideTill':     { device_id: { t: 'string', min: 1 } },   // A521
@@ -247,7 +247,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'day:close':              { countedCash: { t: 'number' }, notes: { t: 'string', optional: true } },
   'shift:forceClose':       { reason: { t: 'string' } },
   'shift:open':             { opening_float: { t: 'number' }, drawer_label: { t: 'string', optional: true } },
-  'shift:float':            { type: { t: 'enum', values: ['float_in','float_out'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, pin: { t: 'string', optional: true } },   // 0.6.37: pin
+  'shift:float':            { type: { t: 'enum', values: ['float_in','float_out'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, pin: { t: 'string', optional: true }, countAck: { t: 'boolean', optional: true } },   // 0.6.37: pin; A594: countAck
   'shift:close':            { closing_float: { t: 'number' }, notes: { t: 'string', optional: true }, declared: { t: 'any', optional: true } },
   'shift:awaiting':         NO_PAYLOAD,
   'shift:canConfirm':       NO_PAYLOAD,
@@ -286,6 +286,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'credit:awaiting':             NO_PAYLOAD,
   'credit:dismiss':              { kind: 'string' },
   'credit:customers':            { search: { t: 'string', optional: true } },   // A552: On account at the till
+  'customer:create':             { name: { t: 'string' }, phone: { t: 'string' }, email: { t: 'string', optional: true }, kra_pin: { t: 'string', optional: true } },   // A595 D1
   'batches:expiring':            NO_PAYLOAD,
   'manage:createCategory':      { name: { t: 'string' } },
   'manage:updateCategory':      idPatch,
