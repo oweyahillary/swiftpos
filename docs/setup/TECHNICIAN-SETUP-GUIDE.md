@@ -1,10 +1,12 @@
 # ZapTill Technician Setup Guide
 
-*Version 1.8 · 24 October 2026 · ZapTill 1.0.20 · for ZapTill field technicians*
+*Version 1.9 · 27 October 2026 · ZapTill 1.0.22 · for ZapTill field technicians*
 
 This guide takes a ZapTill technician from an empty account to a client selling on a working POS, then to the technician access used for support afterwards. Follow the steps in order; each one depends on the one before.
 
 **Words:** ZapTill now says **POS** (point of sale) everywhere it used to say "till": **Branches & POS**, **Enrol POS**, **Rejoin this POS**, **POS & days**, "This POS …". M-Pesa's own **Till number** (Buy Goods) keeps its name. Some screenshots in this guide were taken before the change and may still show "till"; the buttons and steps are the same.
+
+**New in 1.0.22:** the Roles and permissions screen lists each area as See / Do / Approve, with the narrower rights under the broad ones and a **Personal data** mark; customers' phone numbers and e-mails are masked for anyone without that right; cashiers and waiters add customers with a KRA PIN (**+ Customer** on the desktop POS); the owner's credit settings (a maximum limit, locked limits, which branches sell on account, partners deciding at their own branches, a limit per branch) (Steps 5 and 6).
 
 **New in 1.0.20:** the installer is downloaded from the admin portal (Step 7a); the first desktop licence starts a one-month cloud trial, so the licence now comes before web access (Step 2); the owner must change the temporary password at the first sign-in (Step 3); a customer gets a credit limit from **+ Give credit**, and only the owner or a manager sets credit limits; the owner may choose who approves sales on account, branch by branch, and a customer's profile shows their **Credit history** (Step 6); the business type now decides the wording, such as Menus or Departments (Step 1); the cloud is now a payment plan per business (month on month by default, KES 3,000 a month) with **Record payment**; an invoice is emailed on the first day of each period and a client unpaid 7 days after it is locked at once (the web dashboard paused, the points of sale keep selling but stop syncing); the old KES 10,000 **Enable web access** is gone (Step 2b); a partner of some branches sees only theirs, with **All my branches** to add them up (Step 5); plus the zero-stock setting, menus as tabs on the POS, other branches' stock, barcodes and labels, and the approval PIN as a feature switch.
 
@@ -165,11 +167,10 @@ Without web access (and outside a trial) the owner sees "Web portal access not e
 | Full-size receipt logo | The client wants a big logo (up to 36 mm) |
 | Extra paper before the cut | The printer's cutter clips the last line |
 | Kitchen tickets in the small font | Long kitchen orders need less paper (harder to read at a distance) |
-| Separate approval PIN for managers (under **Staff options**) | Managers prefer a different PIN for approvals than for signing in |
 
-**The approval PIN is off for every client by default.** Off, managers approve voids, refunds, sales on account and drawers with their own sign-in PIN, and the staff form has no approval PIN field. Switch it on only when the client asks: the staff forms on the dashboard and the POS then show **Approval PIN**. An approval PIN set before 1.0.20 keeps working until someone removes it, whatever the switch.
+**The separate approval PIN is now the owner's choice** (off by default). The owner turns it on in the dashboard under **Settings › Business › POS options › Separate approval PIN for managers** (only the owner can change it). Off, managers approve voids, refunds, sales on account and drawers with their own sign-in PIN, and the staff form has no approval PIN field. On, the staff forms on the dashboard and the POS show **Approval PIN**. An approval PIN set before 1.0.20 keeps working until someone removes it, whatever the switch. The admin portal shows the switch read-only.
 
-The **POS switches** on this tab (delivery fee, cashiers see only their own sales, pay before kitchen and others) are read-only here. The owner sets them in the dashboard under **Settings › Business › POS options**.
+The **POS switches** on this tab (delivery fee, eat now pay later, pay before kitchen, sign-in codes, the approval PIN, items at zero stock) are read-only here. The owner sets them in the dashboard under **Settings › Business › POS options**.
 
 ![The Features tab](screenshots/02e-admin-features.png)
 
@@ -295,6 +296,7 @@ Every person gets a role and a 4–6 digit PIN; the role decides what they can d
 3. Enter **Email** (used for sign-in) and a **PIN (4–6 digits)**. Give every person a different PIN.
 4. Under **Branch access**, tick the branches they work at. With none ticked they get every branch.
 5. Optional: **Hourly rate**, and single permissions under **This person's permissions** (pre-filled from the role).
+   **Cash in and cash out are off for cashiers by default.** A cashier's **Cash in** on the POS needs a manager's PIN on the spot, as a cash out and an expense already did; the manager's name is kept on the entry, and every cash in and cash out needs a reason. To let one cashier record a cash in without a manager, tick **Record cash in** under **This person's permissions**; for every cashier, tick it on the **Cashier** role (**Roles and permissions**). **Record cash out / pay-outs** and **Record expenses** are the other two rights; a manager approves those every time.
 6. Click **Add Staff**.
 
 ![Add Staff Member, filled in for a cashier](screenshots/05a-dashboard-add-staff.png)
@@ -320,6 +322,14 @@ Nobody can be given the owner's role, not even by the owner: for full rights use
 ![The Give web access confirmation](screenshots/05e-dashboard-give-web-access-confirm.png)
 
 **Custom roles:** **Roles and permissions › + New role**, start from an existing role, then tick permissions. Changes apply at the person's next sign-in or POS refresh.
+
+**Reading the Roles and permissions screen (new in 1.0.22).** Each area (Selling, Drawers, Reports, Menu, Stock, Customers, Expenses, Staff, Front of house, Settings) lists its rights in three parts: **See** (lists, reports and figures), **Do** (add, change, sell, record) and **Approve** (with their PIN, or someone else's request). A broad right shows its narrower parts indented under it, marked **includes**: for example **See customers** includes **See customer phone numbers and e-mails** and **See what a customer bought**; **Add and change the menu** includes **Delete products, categories and menus** and **Bulk changes**; **Add and edit staff** includes **Set and reset PINs**, **Give a person their own rights** and **Set staff pay rates**. Ticking the broad right ticks its parts; untick a part to take only that away. Rights marked **Personal data** show or set personal data (phone numbers, e-mails, KRA PINs, what a customer bought, PINs, pay): give them only to people who need them. The same layout is used for a person's own rights on their staff card.
+
+Without **See customer phone numbers and e-mails**, phone numbers show masked (07•• ••• 678) everywhere: customer lists, credit accounts, orders, M-Pesa payers and Analytics; e-mails and KRA PINs show masked too. Finding a customer by typing their whole number still works. Without **See staff phone numbers and e-mails**, the staff list shows them masked and the staff card shows them read-only.
+
+**What each built-in role starts with, after the owner's choices (27 October 2026).** Cashiers and waiters see customers' phone numbers and history and add customers (name, phone, e-mail, KRA PIN). Cashiers apply set-up discounts and promo codes but do not type a discount amount (a supervisor or manager does). Cashiers and fuel attendants switch pumps on and off but do not record fuel deliveries or set up pumps and tanks. The Auditor and the Storekeeper see cost prices but do not change them. Webhooks are the owner's alone; who receives the report e-mails is set by the owner or a partner. A new business's Manager does not write off credit balances, give people their own rights, set pay rates, retire POS devices, change or remove recorded expenses, record monthly-pack entries or set the M-Pesa number (the owner gives any of these per person or per role). The **Overview** right shows today; longer periods need **Sales reports** or **Item mix**. Existing businesses were moved to these defaults by the ZapTill update; a right the owner had given one person on their staff card stays.
+
+**Adding a customer at the POS.** On the desktop POS, **+ Customer** at the top of the sale screen opens **New customer**: name, phone, e-mail and **KRA PIN** (a letter, 9 digits and a letter, for example A123456789Z; leave it blank if the customer has none). It needs the internet. On the web POS, type the customer's number in **Loyalty**; when nobody is found, fill in the name, e-mail and KRA PIN and click **Create & attach**. On the dashboard, **Customers › + New Customer** and a customer's profile have the KRA PIN too.
 
 ## Step 6 — Payments, M-Pesa and credit accounts
 
@@ -358,6 +368,13 @@ The dashboard sets which payment methods the business takes; the M-Pesa number i
 ![The POS asks for an approver's PIN](screenshots/06k-till-credit-approver-pin.png)
 
 **Credit history.** **Customers**, open a customer: under the credit limit, **Credit history** lists every limit change (who, from which branch for a manager, when, old → new) and their recent sales on account with who sold each and who approved it.
+
+**Credit by branch (new in 1.0.22, the owner's settings).** At the top of **Customers › Credit Accounts**, **Credit settings** (the owner):
+- **Maximum credit limit**: nobody but the owner can give a customer a limit above it; a manager, general manager or partner who tries is told "Only the owner sets a credit limit above …". Leave it blank for no maximum.
+- **Partners decide credit at their own branches**: when ticked, a partner may switch credit on or off for their own branches and set a customer's limit at one of their branches.
+- **Branches that sell on account**: untick a branch and its points of sale offer no **On account** ("This branch does not sell on account…"); the desktop POS keeps this offline.
+
+Open a customer: **By branch** shows, per branch, **Owed here**, the total owed, and the **limit here** if one is set. A limit at a branch is what the customer may owe at that branch only; a sale there is checked against what they owe there. Without one, the business-wide limit applies to everything they owe, as before. The owner can tick **Lock this limit (only you change it)**: a manager or partner can then change neither the limit nor its branch limits. Every change (limit, lock, branch limit, a branch switched on or off) is recorded with who, which branch and old → new, and the customer's changes show in **Credit history**. The desktop POS payment screen shows **Owed here** and **Owed in total** for a customer with a branch limit.
 
 ![A customer's Credit history](screenshots/06j-dashboard-credit-history.png)
 
@@ -658,7 +675,10 @@ Tick every line before you leave the site.
 | Installer downloads are not set up on this server | A developer sets `DESKTOP_DOWNLOAD_BASE_URL` or `GITHUB_RELEASES_TOKEN` on the cloud (Step 7a) |
 | The owner's role belongs to the owner alone | Give the person another role, e.g. General Manager |
 | {Item} is sold out. / Only {n} of {item} left. | The zero-stock setting is on (Step 3) and the branch's stock is at zero: receive stock, or ask the owner to choose **Sell as normal** |
-| Someone sees "Only the owner or a manager sets credit limits." | By design: only the owner, the built-in Manager and General Manager roles, and partners at one of their branches set credit limits (Step 6) |
+| Someone sees "Only the owner or a manager sets credit limits." | By design: only the owner, people whose role has **Set credit limits** (the built-in Manager and General Manager have it), and partners at one of their branches set credit limits (Step 6) |
+| "The owner locked this customer's credit limit" / "Only the owner sets a credit limit above …" | The owner's lock or maximum (Credit settings, Step 6): the owner changes it |
+| "This branch does not sell on account" | The owner (or a partner of that branch, if allowed) switches credit on for the branch in Credit settings (Step 6) |
+| A cashier sees phone numbers as 07•• ••• 678 | Their role lacks **See customer phone numbers and e-mails** (Roles and permissions, Step 5) |
 | A partner sees "Pick one of your branches at the top of the page to set a credit limit." | They are on **All my branches**: pick one branch, then set the limit (Step 6) |
 | "Only the people the owner chose to approve credit sales at this branch (or the owner) confirm or dispute them." | Credit approvals is on: someone ticked for that branch, or the owner, confirms it (Step 6) |
 | A client shows **Not interested** | Unpaid 3 months: still locked, no invoices. Record a payment to start a new period (Step 2b) |

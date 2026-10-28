@@ -671,6 +671,32 @@ jobs:
       - name: Admin alert messages (A592)
         run: node --no-warnings tests/alert-format-a592.test.mjs
 
+      # A594 — "we need to turn off that option for cashiers by default unless allowed" (a cashier typed the drawer counts
+      # into Cash in): cash in / cash out / expenses as three rights (Record cash in = shifts.cash_movements, shifts.cash_out,
+      # expenses.record — none a cashier default); a cashier's cash in needs a manager on the spot (PIN), the approver kept;
+      # every one gives a reason; a cash in of the cash sales / expected / float + cash sales (± 1) is asked again (409
+      # CASH_IN_LOOKS_LIKE_COUNT, no figures back); Shift Reports' breakdown of expected cash (drawer-figure viewers only,
+      # rendered); approval PIN the owner's alone. Migration 175 (the carry-over) replayed into PGlite. Needs the server
+      # build. In the loop too; named here so a failure says what broke.
+      - name: Cash in / cash out rights and the drawer-count warning (A594) and migration 175
+        run: |
+          node --no-warnings tests/cash-movements-a594.test.mjs
+          node --no-warnings scripts/test-migration-175.mjs
+
+      # A595 — "break down any right that you feel is too big and exposes data": 36 narrower rights (shared/permissions.ts
+      # SPLITS), every route the audit maps checking its part (a parent accepted until migration 176 is recorded, and for a
+      # token made before A595), customers' and staff's phones / e-mails / KRA PIN masked without the contacts rights, the
+      # closed gaps (POS credit list, staff roles, authorizers, the customer search filter), credit limits by key; then the
+      # owner's decisions of 2026-10-27 (D3 report e-mails and webhooks, D4 credit with branches, D8 Overview today, the
+      # KRA PIN). Migrations 176 (carry-over: nobody gains or loses) and 177 (the decided defaults) replayed into PGlite.
+      - name: User rights split, personal data, the owner's decisions (A595) and migrations 176 / 177 / 178
+        run: |
+          TZ=UTC node --no-warnings tests/permissions-split-a595.test.mjs
+          TZ=UTC node --no-warnings tests/owner-decisions-a595.test.mjs
+          node --no-warnings scripts/test-migration-176.mjs
+          node --no-warnings scripts/test-migration-177.mjs
+          node --no-warnings scripts/test-migration-178.mjs
+
       - name: Run offline suites
         run: |
           set -e
@@ -1071,6 +1097,19 @@ jobs:
       - name: Desktop pay out and expense approval
         working-directory: apps/desktop
         run: node --no-warnings test/payout-approval.test.mjs
+
+      # A594 — on the desktop POS: a cashier without Record cash in types a manager's PIN for a cash in (offline too), the
+      # approver kept; the reason required; the drawer-count warning and countAck; a manager's flow unchanged; expenses
+      # approved, never refused outright; the branch server's remote path (reason, count_ack). Real IPC handlers.
+      - name: Desktop cash in / cash out rights (A594)
+        working-directory: apps/desktop
+        run: node --no-warnings test/cash-movements-a594.test.mjs
+
+      # A595 D4 — credit per branch on the desktop POS, offline: the branch switch and a customer's limit at the branch kept
+      # with the credit list (the branch server hands them on), owed here / owed in total, a masked number never on a sale.
+      - name: Desktop credit per branch (A595)
+        working-directory: apps/desktop
+        run: node --no-warnings test/credit-branch-a595.test.mjs
 
       # 0.6.39 (A401) — a drawer force-closed (or closed) on the web closes on the till too: the till asks the cloud
       # about its open shifts on the 20-s beat and closes each one the cloud closed. Real syncEngine on real SQLite.

@@ -36,7 +36,9 @@ import { changesAnswer, ChangesUnavailable } from '../lib/syncChanges';         
 import { menusForPos } from '../lib/menus';                                    // A537
 import { servedBranchBranding } from '../lib/branchBrandingStore';             // A544
 import { businessOutOfStockMode, branchStockView } from '../lib/stockGateStore';  // A563
-import { assertBranchAccess } from '../middleware/rbac';                        // A563
+import { assertBranchAccess, can } from '../middleware/rbac';                   // A563, A595
+import { maskPhone, seesCustomerContacts } from '../lib/personalData';           // A595
+import { branchCreditEnabled, branchLimitsAt, owedByCustomerAt } from '../lib/branchCredit';   // A595 D4
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
@@ -156,7 +158,7 @@ router.get('/changes', async (req, res) => {
   try {
     // A535: and whether the caller may see a level a blind count is counting (a till's own session never — A394).
     const answer = await changesAnswer({ businessId: req.businessId!, branchId, isTill: !!req.isTill, seesCosts: seesCosts(req),
-      seesCountedStock: mayStock(req, 'inventory.adjust') }, since);
+      seesCountedStock: mayStock(req, 'inventory.adjust') || mayStock(req, 'inventory.count_review') }, since);   // A595
     res.set('Cache-Control', 'no-store');
     res.json(answer);
   } catch (e) {
@@ -752,8 +754,16 @@ router.get('/stock-view', async (req, res) => {
   }
 });
 
+// A595 (docs/PERMISSIONS-AUDIT.md F4): this answered every credit customer's name, phone, limit and balance to ANY desktop
+// session. Now: the POS's own session (it keeps the list offline for every seller — names, limits and balances; phones
+// masked, the last three digits still tell two customers apart), or a person holding customers.view or customers.credit
+// (phones masked unless they hold customers.contacts). The credit sale needs the id, name, limit and balance only: the
+// cloud puts the customer's real number on the order itself (routes/orders.ts, a masked number is never stored).
+export const CREDIT_LIST_REFUSED = { error: 'Your role does not see customers on account.', code: 'NO_CUSTOMER_ACCESS' } as const;
 router.get('/credit-customers', async (req, res) => {
   if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
+  if (!req.isTill && !can(req, 'customers.view', 'customers.credit')) { res.status(403).json(CREDIT_LIST_REFUSED); return; }
+  const fullPhones = !req.isTill && seesCustomerContacts(req);
   try {
     const at = new Date().toISOString();
     const rows = await pageAll<any>(() => supabase.from('customers')
@@ -763,7 +773,7 @@ router.get('/credit-customers', async (req, res) => {
     const customers = rows
       .filter((c) => c && c.status !== 'deleted' && (Number(c.credit_limit) > 0 || Number(c.credit_balance) > 0))
       .slice(0, 5000)
-      .map((c) => ({ id: c.id, name: c.name ?? '', phone: c.phone ?? null, status: c.status ?? 'active',
+      .map((c) => ({ id: c.id, name: c.name ?? '', phone: fullPhones ? (c.phone ?? null) : maskPhone(c.phone), status: c.status ?? 'active',
         credit_limit: Number(c.credit_limit) || 0, credit_balance: Number(c.credit_balance) || 0 }));
     // A585: who approves a sale on account at THIS branch — the owner's choice (off = A552's customers.credit rule). The
     // till keeps it with the list, so it holds offline. owner_id: the owner always approves.
@@ -771,8 +781,24 @@ router.get('/credit-customers', async (req, res) => {
     const [rule, { data: biz }] = await Promise.all([loadCreditRule(req.businessId),
       supabase.from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle()]);
     const approval = { on: rule.on, approvers: rule.on ? approversAt(rule, branchId) : [], owner_id: (biz as { owner_id?: string | null } | null)?.owner_id ?? null };
+    // A595 D4 (owner, 2026-10-27): whether this branch sells on account, and each customer's limit AT this branch with
+    // what they owe here — the POS keeps them with the list (offline) and checks the sale against them.
+    let branch: { credit_enabled: boolean; limits: Record<string, { limit: number; owed: number }> } = { credit_enabled: true, limits: {} };
+    if (branchId) {
+      const [enabled, limits] = await Promise.all([branchCreditEnabled(req.businessId!, branchId), branchLimitsAt(req.businessId!, branchId)]);
+      const owed = await owedByCustomerAt(req.businessId!, branchId, [...limits.keys()]);
+      branch = { credit_enabled: enabled, limits: Object.fromEntries([...limits].map(([c, l]) => [c, { limit: l, owed: owed.get(c) ?? 0 }])) };
+      // a customer with a limit only at this branch (none business-wide) is offered here too
+      const missing = [...limits.keys()].filter((c) => !customers.some((x) => x.id === c));
+      if (missing.length) {
+        const { data: extra } = await supabase.from('customers').select('id, name, phone, credit_limit, credit_balance, status')
+          .eq('business_id', req.businessId).in('id', missing.slice(0, 1000));
+        for (const c of (extra ?? []) as any[]) if (c.status !== 'deleted') customers.push({ id: c.id, name: c.name ?? '', phone: fullPhones ? (c.phone ?? null) : maskPhone(c.phone),
+          status: c.status ?? 'active', credit_limit: Number(c.credit_limit) || 0, credit_balance: Number(c.credit_balance) || 0 });
+      }
+    }
     res.set('Cache-Control', 'no-store');
-    res.json({ at, customers, approval });
+    res.json({ at, customers, approval, branch });
   } catch (e: any) {
     sendError(res, e);
   }

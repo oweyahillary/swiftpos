@@ -226,7 +226,9 @@ export default function CashierScreen() {
   // A490: cash in / out and drawer expenses are shifts.cash_movements. A map from before the catalogue (no MAP_MARKER)
   // holds it for everyone (expandMap's open keys), so the 'cashier_no_money_out' switch still applies there to anyone
   // who cannot confirm drawers — exactly as before; migration 134 switches it off and the role decides from then on.
-  const mayMoveMoney = hasPermission('shifts.cash_movements')
+  // A594: shifts.cash_movements is "Record cash in" (with nobody approving it). Float and Expense are offered to everyone on
+  // the drawer: without the right a manager approves each one on the spot (their PIN) — a cash in too.
+  const mayCashIn = hasPermission('shifts.cash_movements')
     && mayRecordMoneyMovement(posFeatures, maySignedInConfirm(session as any));
 
   // ── Business mode (from usePOSData) ──────────────────────────────────────
@@ -1394,8 +1396,8 @@ export default function CashierScreen() {
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
               >⏱ Clock</button>
-              {/* A453 / A490: shifts.cash_movements (and, on a map from before the catalogue, the old switch). */}
-              {mayMoveMoney && (<>
+              {/* A594: for everyone on the drawer — without the right, a manager approves on the spot (ShiftModal). */}
+              {(<>
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
                 onClick={() => setShiftModal('float')}
@@ -2911,6 +2913,7 @@ Signature: _______________`;
             navigate('/pos');
           }}
           onFloatRecorded={() => setShiftModal(null)}
+          mayCashIn={mayCashIn}   // A594
           onClockRecorded={() => setShiftModal(null)}
           onClose={() => {
             if (shiftModal === 'open' && !currentShift) {

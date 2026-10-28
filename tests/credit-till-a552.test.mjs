@@ -267,7 +267,8 @@ try {
     assert.ok(!Number.isNaN(Date.parse(r.body.at)));
     assert.deepEqual(r.body.customers.map((c) => c.id).sort(), [CUST, CUST2].sort());
     const a = r.body.customers.find((c) => c.id === CUST);
-    assert.deepEqual([a.name, a.phone, a.credit_limit, a.credit_balance, a.status], ['Acme Ltd', '0712 000 111', 1000, 300, 'active']);
+    // A595 (docs/PERMISSIONS-AUDIT.md F4): the POS's own session gets names, limits and balances — the phone masked.
+    assert.deepEqual([a.name, a.phone, a.credit_limit, a.credit_balance, a.status], ['Acme Ltd', '07•• ••• 111', 1000, 300, 'active']);
     assert.ok(!lines.some((l) => /\[tillScope\] REFUSED/.test(l)), lines.join('\n'));
   });
 

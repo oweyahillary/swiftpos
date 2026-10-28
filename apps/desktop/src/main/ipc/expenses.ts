@@ -5,7 +5,6 @@ import { logLine } from '../logFile';
 import { readSessionTokens, readStaffTokens } from '../tokenStore';
 import { cloudFetch } from '../cloudGateway';
 import { getOpenShift } from '../syncEngine';
-import { MONEY_MOVEMENT_MANAGER_ONLY } from '../posFeatures';
 import { signedIn as sessionPerson, personCan, mayMoveMoney } from '../tillAccess';
 import { getDeviceConfig, getPosFeatures } from '../deviceConfig';
 import { recordExpense, listExpenses } from '../shiftService';
@@ -47,9 +46,10 @@ export function registerExpenseHandlers(ctx: IpcShared) {
     description, amount, expense_category_id, paid_by, payment_method, category_name, pin, no_drawer,
   }: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
        payment_method?: string; category_name?: string; pin?: string; no_drawer?: boolean }) => {
-    // A490: shifts.cash_movements (before migration 134: A453's 'cashier_no_money_out' switch, unless they may confirm).
-    if (!mayMoveMoney(sessionPerson(), getPosFeatures().cashier_no_money_out)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
-    const approver = await payoutApprover(pin);   // 0.6.37 (A388): every expense needs a manager
+    // 0.6.37 (A388): every expense needs a manager — signed in, or their PIN on the spot. A594: a person without
+    // shifts.cash_movements is no longer refused outright (A453/A490) — the manager's approval is the check, as for a cash
+    // in or a cash out (cashiers lost the key by default in A594, and still record a drawer expense with a manager's PIN).
+    const approver = await payoutApprover(pin);
     // the till's own open drawer (none: paid outside any drawer). A466: on the branch server a manager may record it
     // "Not from a drawer" even while this terminal has a shift open (owner: "the manager can fail to choose a drawer").
     const outside = no_drawer === true && isNodeRole(getDeviceConfig()?.device_role) && signedInConfirmer() !== null;
@@ -74,7 +74,8 @@ export function registerExpenseHandlers(ctx: IpcShared) {
   handle('expense:list', async () => {
     // A490: expenses.view — or the person recording money on this drawer (they see what they recorded on it).
     const me = sessionPerson();
-    if (!me || !(personCan(me, 'expenses.view', 'expenses.manage') || mayMoveMoney(me, getPosFeatures().cashier_no_money_out))) return [];
+    // A594: and whoever sells on it (a cashier records a drawer expense with a manager's PIN, key or not).
+    if (!me || !(personCan(me, 'expenses.view', 'expenses.manage', 'orders.create') || mayMoveMoney(me, getPosFeatures().cashier_no_money_out))) return [];
     const db = getLocalDb();
     const shift = db.prepare(`SELECT id FROM shifts WHERE status='open'
        AND COALESCE(device_id,'') = COALESCE(?,'')

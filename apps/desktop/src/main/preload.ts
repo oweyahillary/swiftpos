@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
               ipcRenderer.invoke('order:refund', { orderId, reason, override_pin, authorizer_id }),
     // A552: On account — offered here?, may the person approve it themselves, the customers matching a name or phone.
     creditCustomers: (search?: string) => ipcRenderer.invoke('credit:customers', { search }),
+    // A595 D1: add a customer (name, phone, e-mail, KRA PIN) — on the cloud, online.
+    createCustomer: (c: { name: string; phone: string; email?: string; kra_pin?: string }) => ipcRenderer.invoke('customer:create', c),
   },
 
   sync: {
@@ -134,7 +136,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
       ipcRenderer.invoke('branchClose:closeBranch', { notes, totals_confirmed: totalsConfirmed === true, ...(withoutTills?.length ? { without_tills: withoutTills } : {}) }),
     // A465: a cash in / out or expense on any running shift of the branch (the till records it); withdraw one not yet taken.
     shiftMoney: (req: { device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
-      description?: string; expense_category_id?: string; category_name?: string; payment_method?: string }) => ipcRenderer.invoke('branchClose:shiftMoney', req),
+      description?: string; expense_category_id?: string; category_name?: string; payment_method?: string; count_ack?: boolean }) => ipcRenderer.invoke('branchClose:shiftMoney', req),   // A594: count_ack
     cancelShiftMoney: (instruction_id: number) => ipcRenderer.invoke('branchClose:cancelShiftMoney', { instruction_id }),
     // F4: a till gone for good leaves the Close Branch list. A521: "Revoke this till" — its device key goes too.
     forgetTill: (device_id: string) => ipcRenderer.invoke('branchClose:forgetTill', { device_id }),
@@ -284,7 +286,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
       ipcRenderer.on('shift:changedElsewhere', h);
       return () => { ipcRenderer.removeListener('shift:changedElsewhere', h); };
     },
-    float:   (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason, pin }),   // 0.6.37: pin
+    float:   (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string, countAck?: boolean) => ipcRenderer.invoke('shift:float', { type, amount, reason, pin, ...(countAck ? { countAck: true } : {}) }),   // 0.6.37: pin; A594: countAck
     close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),
     // A365: shifts awaiting a manager, and a manager's blind recount (PIN + every method).
     awaiting: ()                                                         => ipcRenderer.invoke('shift:awaiting'),

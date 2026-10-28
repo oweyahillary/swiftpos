@@ -193,7 +193,7 @@ console.log('\n2. One PIN limiter\n');
   ok('the lock screen is locked too', /Too many wrong PINs/.test(await said(() => call('auth:unlock', { pin: '1111' }))));
   // A519: the update bar asks no PIN any more (one tap for back office) — nothing there to lock.
   signIn(fine('orders.create', 'shifts.cash_movements'), 'cashier', 'u-cash');
-  ok('…and a manager-PIN prompt (cash out)', /Too many wrong PINs/.test(await said(() => call('shift:float', { type: 'float_out', amount: 5, pin: '7070' }))));
+  ok('…and a manager-PIN prompt (cash out)', /Too many wrong PINs/.test(await said(() => call('shift:float', { type: 'float_out', amount: 5, reason: 'A594 test', pin: '7070' }))));
   PA.resetPinAttempts();
   ok('after the lockout the right PIN signs in', (await verify('1111')) === 'OK');
 
@@ -221,7 +221,7 @@ console.log('\n2. One PIN limiter\n');
 
   // A manager-PIN prompt counts a PIN that does not approve.
   signIn(fine('orders.create', 'shifts.cash_movements'), 'cashier', 'u-cash');
-  for (let i = 0; i < 5; i++) await said(() => call('shift:float', { type: 'float_out', amount: 5, pin: '6060' }));   // Sam: real PIN, no approval
+  for (let i = 0; i < 5; i++) await said(() => call('shift:float', { type: 'float_out', amount: 5, reason: 'A594 test', pin: '6060' }));   // Sam: real PIN, no approval
   ok('five refused approvals (a real PIN that may not approve) lock the PIN checks', PA.pinLockRemaining() > 0);
   PA.resetPinAttempts();
 }

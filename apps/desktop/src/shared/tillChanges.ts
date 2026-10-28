@@ -93,8 +93,9 @@ export const ENTITY_SPECS: Record<ChangeEntity, EntitySpec> = {
       pin: (v) => (/^\d{4,6}$/.test(String(v ?? '')) ? ok(String(v)) : no('must be 4–6 digits')) },
     required: ['name', 'role_id', 'pin'], sameBy: [], defaults: { status: 'active' },
   },
+  // A595: setting a PIN is its own part of staff.edit (staff.pins — every holder of staff.edit got it in migration 176).
   staff_pin: {
-    table: 'users', permissions: ['staff.edit'],
+    table: 'users', permissions: ['staff.pins'],
     fields: { pin: (v) => (/^\d{4,6}$/.test(String(v ?? '')) ? ok(String(v)) : no('must be 4–6 digits')) },
     required: ['pin'], sameBy: [], defaults: {},
   },
@@ -111,7 +112,7 @@ export function changeKeys(entity: ChangeEntity, op: string, data?: Record<strin
   const set = (k: string) => data[k] !== undefined;
   const keys = new Set<string>();
   if (set('base_price')) keys.add('menu.prices');
-  if (set('cost_price')) keys.add('menu.costs');
+  if (set('cost_price')) keys.add('menu.costs_edit');   // A595: changing a cost price is its own part of menu.costs
   if (Object.keys(data).some((k) => set(k) && k !== 'base_price' && k !== 'cost_price') || !keys.size) keys.add('menu.edit');
   return [...keys];
 }

@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import tls from 'node:tls';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +68,10 @@ console.log('\nThe branch server\'s certificate\n');
   const b = T.makeServerIdentity();
   ok('a security code a person can compare: 12 hex digits in threes, different per server',
     /^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/.test(T.securityCode(a.cert)) && T.securityCode(a.cert) !== T.securityCode(b.cert), T.securityCode(a.cert));
+  // A596: a 0x00-led serial (1 in ~256 before) made OpenSSL refuse the certificate — "illegal padding".
+  let refused = 0;
+  for (let i = 0; i < 2000; i++) { const id = T.makeServerIdentity(); try { tls.createSecureContext({ cert: id.cert, key: id.key }); } catch { refused++; } }
+  ok('every certificate it makes loads into TLS (2,000 made, none refused)', refused === 0, `${refused} refused`);
   ok('anything that is not a certificate has no code and cannot be pinned',
     T.securityCode('nope') === null && T.securityCode(null) === null && !!(await rejects(Promise.resolve().then(() => T.setTillPin('nope')))));
 }

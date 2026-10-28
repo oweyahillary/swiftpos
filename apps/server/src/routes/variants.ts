@@ -62,7 +62,7 @@ function stockFields(o: any): {
 // Body: { rows: [{ product, group, type(free|upgrade), option, price_added }] }
 // Name-keyed by product; an uploaded (product, group) REPLACES that group's
 // options wholesale and sets its kind from `type`. option=DELETE removes the group.
-router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
+router.post('/bulk', requirePermission('menu.bulk'), async (req, res) => {   // A595: many items at once (menu.bulk)
   const { rows } = req.body ?? {};
   if (!Array.isArray(rows) || rows.length === 0) { res.status(400).json({ error: 'rows array is required' }); return; }
   if (rows.length > 2000) { res.status(400).json({ error: 'Maximum 2000 rows per import' }); return; }
@@ -308,7 +308,9 @@ router.patch('/groups/:id', requirePermission('menu.edit'), async (req, res) => 
 });
 
 // DELETE /api/variants/groups/:id  (cascades to variant_options)
-router.delete('/groups/:id', requirePermission('menu.edit'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F24): deleting is its own part of menu.edit (menu.delete — migration 176 gave it to every
+// holder of menu.edit).
+router.delete('/groups/:id', requirePermission('menu.delete'), async (req, res) => {
   const { id } = req.params;
 
   const { data: group } = await supabase
@@ -422,7 +424,9 @@ router.patch('/options/:id', requirePermission('menu.edit'), async (req, res) =>
 });
 
 // DELETE /api/variants/options/:id
-router.delete('/options/:id', requirePermission('menu.edit'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F24): deleting is its own part of menu.edit (menu.delete — migration 176 gave it to every
+// holder of menu.edit).
+router.delete('/options/:id', requirePermission('menu.delete'), async (req, res) => {
   const { id } = req.params;
 
   if (!(await variantOptionOwned(id, req.businessId))) {

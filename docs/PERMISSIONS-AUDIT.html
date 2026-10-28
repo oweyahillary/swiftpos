@@ -1,0 +1,3047 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User rights audit and split design</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+a{color:var(--teal)}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+pre{background:#f3f4f6;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:.88rem;line-height:1.5}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+figure{margin:18px 0;text-align:center}
+figure img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+figcaption{color:var(--quiet);font-size:.85rem;margin-top:6px}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+li input[type=checkbox]{margin-right:8px;transform:scale(1.15)}
+li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
+.toc{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;margin:20px 0}
+.toc ol{margin:6px 0 0}
+@media print{.toc{break-after:page} h2{break-before:page;border-top:none} figure{break-inside:avoid} table{break-inside:auto} a{color:inherit;text-decoration:none}}
+</style></head><body><div class="wrap">
+<h1 id="user-rights-audit-and-split-design">User rights audit and split design</h1>
+<p><strong>ZapTill, 26 October 2026.</strong> A read-only audit of every permission key, followed by a design for breaking up the keys that are too broad. No code was changed for this document. It builds on A594, which is in progress on <code>dev</code> (cash in / cash out / expenses as three keys, migration 175, POS options moved to the owner). It does not repeat A594&#39;s keys or its planned <code>orders.view_own</code> / <code>orders.view_all</code> and reprint splits.</p>
+<p>Owner, 2026-10-26: <em>&quot;implement the changes and break down any right that you feel is too big and exposes data — I feel some are too broad; some can be broken down to view and edit etc.&quot;</em></p>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#owner-summary">Owner summary</a></li><li><a href="#1-how-this-was-measured">1. How this was measured</a></li><li><a href="#2-inventory-every-key-and-who-holds-it-by-default">2. Inventory: every key and who holds it by default</a></li><li><a href="#3-mapping-each-key-to-its-routes-pos-channels-and-screens">3. Mapping: each key to its routes, POS channels and screens</a></li><li><a href="#4-findings-ranked">4. Findings, ranked</a></li><li><a href="#5-proposed-split">5. Proposed split</a></li><li><a href="#6-implementation-plan">6. Implementation plan</a></li><li><a href="#appendix-method-notes">Appendix: method notes</a></li><li><a href="#7-implemented-a595-27-october-2026">7. Implemented (A595, 27 October 2026)</a></li></ol></nav>
+<h2 id="owner-summary">Owner summary</h2>
+<p><strong>In short.</strong> Today a person&#39;s role is made of 70 rights. Most of them are already narrow. About twenty are too broad: one tick gives both &quot;see&quot; and &quot;change&quot;, or shows personal data the person does not need. The worst examples:</p>
+<ul>
+<li>A cashier can page through every customer&#39;s phone number and e-mail.</li>
+<li>The Auditor role, which is meant to change nothing, can change cost prices.</li>
+<li>A cashier at a petrol station can add or delete pumps and record fuel deliveries.</li>
+</ul>
+<p>This design adds <strong>36 narrower rights</strong>, plus one reserved for a future customer download. Nobody gains or loses anything on the day it goes live: everyone who has a broad right today gets all of its new parts automatically. After that, you remove the parts you don&#39;t want people to have, per role or per person.</p>
+<p><strong>The 10 most important splits</strong></p>
+<ol>
+<li><strong>Customer phone numbers and e-mails</strong> (<code>customers.contacts</code>). Without it, numbers are shown masked (07•• ••• 123) everywhere: the customer list, credit accounts, orders, M-Pesa payer numbers and Analytics. Looking a customer up by typing their number still works. Personal data under the Kenya Data Protection Act 2019.</li>
+<li><strong>Customer purchase history</strong> (<code>customers.history</code>), split from seeing the customer.</li>
+<li><strong>Cost prices: see vs change</strong> (<code>menu.costs_edit</code>). Today &quot;See cost prices&quot; also lets people change them, so the Auditor, Storekeeper and Kitchen Manager can all change cost prices.</li>
+<li><strong>Staff details</strong>: phone/e-mail (<code>staff.contacts</code>), PINs (<code>staff.pins</code>), pay rates (<code>staff.pay</code>) and per-person rights (<code>staff.access</code>), each split from &quot;Add and edit staff&quot;.</li>
+<li><strong>Data that leaves the business</strong>: webhooks (<code>settings.webhooks</code>) and scheduled report e-mails (<code>settings.report_emails</code>) come out of &quot;Integrations&quot;. Either one can send every sale, with customers&#39; details, to any address.</li>
+<li><strong>Customer credit</strong>, split four ways: approve a sale on account, record a repayment (<code>customers.credit_payment</code>), adjust or write off a balance (<code>customers.credit_adjust</code>), and set limits (<code>customers.credit_limit</code>). Today, who may set limits depends on the role&#39;s <em>name</em>. It becomes a right like any other.</li>
+<li><strong>Fuel</strong>, split three ways: pump on/off, tank deliveries (<code>fuel.deliveries</code>) and pump/tank set-up (<code>fuel.setup</code>). Today every cashier role has all three.</li>
+<li><strong>Discounts</strong>: set-up discounts and promo codes (<code>sales.discount_preset</code>) vs typing your own amount (<code>sales.discount</code>).</li>
+<li><strong>Approvals</strong>: confirming drawers, approving pay-outs and drawer expenses (<code>shifts.approve_payout</code>), and approving the removal of items already sent to the kitchen (<code>sales.approve_kitchen_void</code>).</li>
+<li><strong>Back-office actions split from the everyday ones.</strong> Stock: suppliers, purchase orders, reviewing counts and reorder levels. Menu: deleting items and bulk changes. Tills: viewing, approving and retiring them. Expenses: adding, changing and expense types. Suppliers: paying them. Tax rates and discount limits come out of Business settings.</li>
+</ol>
+<p><strong>What changes for cashiers by default.</strong> This applies to new businesses only. Existing cashier roles keep exactly what they have unless you approve the default changes in the decisions list below.</p>
+<ul>
+<li>Customers&#39; phone numbers and e-mails are masked, and their history is hidden. Cashiers can still find a customer by typing the number, add a customer and see points.</li>
+<li>Set-up discounts and promo codes only. A typed discount needs a manager.</li>
+<li>Parking: open and close tickets, but no voids.</li>
+<li>Fuel: pumps on and off only. No deliveries and no pump set-up.</li>
+<li>From A594: no cash in, cash out or drawer expense without a manager&#39;s PIN.</li>
+</ul>
+<p><strong>Decisions needed from you</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Decision</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>D1</td>
+<td>Take customer phone numbers / e-mails and customer history off <strong>existing</strong> Cashier and Waiter roles (not only new businesses)?</td>
+<td>Yes: a cashier needs to find a customer, not read the list</td>
+</tr>
+<tr>
+<td>D2</td>
+<td>Take &quot;Change cost prices&quot; off existing <strong>Auditor</strong> roles (a correction: the role is &quot;changes nothing&quot;) and off <strong>Storekeeper</strong> roles?</td>
+<td>Yes for Auditor; Storekeeper your call (deliveries keep their own cost on receiving)</td>
+</tr>
+<tr>
+<td>D3</td>
+<td>Webhooks and report e-mails: owner-only by default, even for General Manager roles?</td>
+<td>Yes. Data leaving the business is the owner&#39;s decision</td>
+</tr>
+<tr>
+<td>D4</td>
+<td>Credit limits: give the new right only to the roles that may set limits today (built-in Manager / General Manager), and keep or drop the rule that a <strong>partner</strong> sets limits at their own branch whatever their role?</td>
+<td>Keep today&#39;s holders; partners by their role&#39;s right only</td>
+</tr>
+<tr>
+<td>D5</td>
+<td>Fuel: take tank deliveries and pump set-up off <strong>existing</strong> cashier / fuel attendant roles?</td>
+<td>Yes. Recording a fake delivery hides missing fuel</td>
+</tr>
+<tr>
+<td>D6</td>
+<td>Discounts: take <em>typed</em> discounts off <strong>existing</strong> Cashier / Waiter roles (set-up discounts and promo codes stay)?</td>
+<td>Your call: shops that let cashiers haggle need it</td>
+</tr>
+<tr>
+<td>D7</td>
+<td>Partners of some branches: should they see customers who never bought at their branches? Customers are business-wide records today</td>
+<td>No: show a partner only the customers seen at their branches (needs a customer-branch link, see F11)</td>
+</tr>
+<tr>
+<td>D8</td>
+<td>Overview: stop it opening the full sales and item reports for any date range (it is meant to be today&#39;s page)? Custom roles that relied on it keep the reports through the carry-over</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>D9</td>
+<td>Manager&#39;s built-in defaults for new businesses (each listed in the &quot;default change&quot; table): no write-offs, no per-person rights, no pay rates, no retiring tills, no M-Pesa number, no editing or removing expenses</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>D10</td>
+<td>A594 coordination: should A594&#39;s planned <code>orders.view_own</code> replace <code>sales.history_all</code>?</td>
+<td>Let A594 decide; this design assumes its names</td>
+</tr>
+</tbody></table>
+<p><strong>The owner&#39;s answers (27 October 2026)</strong> — built as A595 (section 7):</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Answer</th>
+<th>Where it is</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>D1</td>
+<td><strong>No.</strong> Cashiers and waiters keep customers&#39; phone numbers, e-mails and history. They add customers, with the KRA PIN.</td>
+<td>Migration 177 gives the built-in Cashier and Waiter roles &quot;Add and edit customers&quot;; <code>customers.kra_pin</code> (a letter, 9 digits, a letter), masked without <code>customers.contacts</code></td>
+</tr>
+<tr>
+<td>D2</td>
+<td><strong>Yes</strong>, for the Auditor and the Storekeeper.</td>
+<td>177; new-business defaults</td>
+</tr>
+<tr>
+<td>D3</td>
+<td>Webhooks: the <strong>owner</strong> alone. Report e-mails: the <strong>owner and partners</strong> choose the recipients, never a manager by role; the e-mails go out once a recipient is set (daily report, stock alerts).</td>
+<td>177 takes both rights off every role but the owner&#39;s; <code>routes/business.ts mayReportEmails</code>; <code>jobs/dailySummary.ts</code>, <code>jobs/lowStockChecker.ts</code></td>
+</tr>
+<tr>
+<td>D4</td>
+<td>The approved design: the owner&#39;s <strong>maximum</strong> limit, <strong>locked</strong> limits, <strong>credit per branch</strong>, <strong>partners</strong> deciding at their own branches (the owner&#39;s switch), a <strong>limit per branch</strong>, checked at the sale (owed here), every change audited.</td>
+<td>Migration 178; <code>lib/branchCredit.ts</code>, <code>routes/credit.ts</code>, <code>routes/orders.ts</code>, <code>routes/pos.ts</code>; desktop <code>main/creditSale.ts</code> (offline)</td>
+</tr>
+<tr>
+<td>D5</td>
+<td><strong>Yes.</strong></td>
+<td>177</td>
+</tr>
+<tr>
+<td>D6</td>
+<td><strong>Yes</strong>, for cashiers (the waiter keeps typed discounts).</td>
+<td>177; new-business Cashier default</td>
+</tr>
+<tr>
+<td>D7</td>
+<td><strong>No change</strong>: customers stay business-wide.</td>
+<td>—</td>
+</tr>
+<tr>
+<td>D8</td>
+<td><strong>Yes.</strong></td>
+<td><code>routes/reports.ts</code>; 177 gives roles that had only Overview the Sales and Item reports</td>
+</tr>
+<tr>
+<td>D9</td>
+<td><strong>Yes, new businesses only.</strong></td>
+<td><code>shared/permissions.ts</code> (<code>manager</code> flags)</td>
+</tr>
+<tr>
+<td>D10</td>
+<td><strong>As is</strong>: <code>sales.history_all</code> stays.</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<h2 id="1-how-this-was-measured">1. How this was measured</h2>
+<ul>
+<li><p><strong>Catalogue</strong>: <code>shared/permissions.ts</code> as it stands on <code>dev</code> with A594&#39;s uncommitted change: <strong>70 fine keys</strong> in 11 groups, 8 legacy broad keys, 13 built-in roles plus the owner&#39;s role (<code>&#39;*&#39;</code>).</p>
+</li>
+<li><p><strong>Cloud</strong>: a static scan of every route in <code>apps/server/src/routes</code> (70 files). It found <strong>521 routes</strong>: 87 are admin portal routes (ZapTill staff, admin sign-in, no business permission keys) and <strong>434</strong> are business routes. For each route it recorded:</p>
+<ul>
+<li>the gate: <code>requirePermission</code>, <code>requireAnyPermission</code>, a router-wide <code>router.use(...)</code>, or a named gate such as <code>limitSetterGate</code> or <code>ownerOnlyGate</code>;</li>
+<li>the checks inside the handler: <code>can(req, …)</code>, <code>holds</code>, <code>hasPermission</code>, <code>seesCosts</code> / <code>withoutCosts</code> / <code>stripCostsUnlessAllowed</code>, <code>seesDrawerFigures</code>, <code>callerMayConfirm</code>, <code>ownHistoryOnly</code>, <code>mayMoveMoney</code>, <code>seesCredit</code>, <code>req.isOwner</code>, and partner scoping (<code>branchFilter</code>, <code>allBranchAccess</code>).</li>
+</ul>
+<p>After that, every risky route named in the findings was read by hand, and a few scanner misreads were corrected (listed under the mapping table). <strong>575 key-to-route links</strong> came out of it.</p>
+</li>
+<li><p><strong>Desktop POS</strong>: every IPC channel in <code>apps/desktop/src/main</code>. There are <strong>260 channels</strong> and <strong>85</strong> of them check a key (<code>requireKey</code>, <code>signedInCan</code>, <code>personCan</code>, <code>personAccess.ts</code>, <code>tillGates.ts</code>, <code>ipc/shared.ts</code>). Screens in <code>apps/desktop/src/renderer</code> were checked too.</p>
+</li>
+<li><p><strong>Web</strong>: the dashboard and web POS (<code>apps/dashboard/src</code>), checked through the files that name each key. The admin portal (<code>apps/admin/src</code>) names no business keys. It only holds its copy of the catalogue.</p>
+</li>
+<li><p><strong>Counts are a floor, not an exact figure.</strong> A check built from a variable key, or one hidden behind a helper defined in another file, may be missed. Every key that a finding below relies on was checked in the code.</p>
+</li>
+</ul>
+<h2 id="2-inventory-every-key-and-who-holds-it-by-default">2. Inventory: every key and who holds it by default</h2>
+<p>Role abbreviations: Mgr = Manager, GM = General Manager, Ops = Operations Manager, Fin = Finance Manager, Acc = Accountant, Aud = Auditor, Sup = Supervisor, Csh = Cashier, Wtr = Waiter, Kit = Kitchen, KMg = Kitchen Manager, Sto = Storekeeper, Fuel = Fuel attendant.</p>
+<ul>
+<li><strong>Owner</strong>: always everything (<code>&#39;*&#39;</code>). The owner is never refused, and the owner-only rules apply to the owner alone.</li>
+<li><strong>Kitchen, Waiter and Kitchen Manager</strong> exist only at restaurants and cafés (A580). <strong>Fuel attendant</strong> exists only at petrol stations (A514).</li>
+<li><strong>&quot;(owner only)&quot;</strong> means no built-in role starts with the key. General Manager holds every key, so a key marked &quot;(owner only)&quot; still lists GM.</li>
+<li><code>shifts.cash_out</code> and <code>expenses.record</code> are A594&#39;s new keys and are not committed yet.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Key</th>
+<th>Group</th>
+<th>Where</th>
+<th>Label</th>
+<th>View only</th>
+<th>Built-in roles holding it by default</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>orders.create</code></td>
+<td>selling</td>
+<td>both</td>
+<td>Sell</td>
+<td></td>
+<td>Mgr, GM, Sup, Csh, Wtr, Fuel</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>sales.discount</code></td>
+<td>selling</td>
+<td>both</td>
+<td>Give discounts</td>
+<td></td>
+<td>Mgr, GM, Sup, Csh, Wtr</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>sales.void</code></td>
+<td>selling</td>
+<td>both</td>
+<td>Void sales</td>
+<td></td>
+<td>Mgr, GM, Sup</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>sales.refund</code></td>
+<td>selling</td>
+<td>both</td>
+<td>Refund sales</td>
+<td></td>
+<td>Mgr, GM, Sup</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>sales.reprint</code></td>
+<td>selling</td>
+<td>both</td>
+<td>Reprint receipts</td>
+<td></td>
+<td>Mgr, GM, Sup</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>sales.history_all</code></td>
+<td>selling</td>
+<td>both</td>
+<td>See every cashier&#39;s sales</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Aud, Sup</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>invoice.create</code></td>
+<td>selling</td>
+<td>web</td>
+<td>Raise invoices</td>
+<td></td>
+<td>Mgr, GM, Sup, Csh</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>shifts.cash_movements</code></td>
+<td>drawer</td>
+<td>both</td>
+<td>Record cash in</td>
+<td></td>
+<td>Mgr, GM, Sup</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>shifts.cash_out</code></td>
+<td>drawer</td>
+<td>both</td>
+<td>Record cash out / pay-outs</td>
+<td></td>
+<td>Mgr, GM, Sup</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>expenses.record</code></td>
+<td>drawer</td>
+<td>both</td>
+<td>Record expenses</td>
+<td></td>
+<td>Mgr, GM, Sup</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>shifts.confirm</code></td>
+<td>drawer</td>
+<td>both</td>
+<td>Approve with their PIN</td>
+<td></td>
+<td>Mgr, GM, Fin, Sup</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>shifts.force_close</code></td>
+<td>drawer</td>
+<td>both</td>
+<td>Force-close a drawer</td>
+<td></td>
+<td>Mgr, GM, Ops</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>shifts.close_day</code></td>
+<td>drawer</td>
+<td>both</td>
+<td>Close the day</td>
+<td></td>
+<td>Mgr, GM, Ops, Sup</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>shifts.close_branch</code></td>
+<td>drawer</td>
+<td>till</td>
+<td>Close the branch</td>
+<td></td>
+<td>Mgr, GM, Ops</td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>reports.overview</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Overview</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>reports.sales</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Sales reports</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Fin, Acc, Aud, Sup</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>reports.items</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Item mix and menu matrix</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>reports.staff</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Staff performance</td>
+<td>yes</td>
+<td>Mgr, GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>19</td>
+<td><code>reports.shifts</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Shift reports and Z-reports</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Fin, Acc, Aud, Sup</td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>reports.voids</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Voids, refunds and exceptions</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>reports.inventory</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Inventory report</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Fin, Acc, Aud, KMg, Sto</td>
+</tr>
+<tr>
+<td>22</td>
+<td><code>reports.fuel</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Fuel reports</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>23</td>
+<td><code>reports.tax</code></td>
+<td>reports</td>
+<td>web</td>
+<td>Tax report</td>
+<td>yes</td>
+<td>GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>24</td>
+<td><code>reports.costs</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Costs, margins and profit</td>
+<td>yes</td>
+<td>GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>25</td>
+<td><code>reports.labour</code></td>
+<td>reports</td>
+<td>web</td>
+<td>Labour cost</td>
+<td>yes</td>
+<td>GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>26</td>
+<td><code>reports.monthly_pack</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Monthly pack</td>
+<td>yes</td>
+<td>GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>27</td>
+<td><code>reports.payments</code></td>
+<td>reports</td>
+<td>web</td>
+<td>Payment exceptions</td>
+<td>yes</td>
+<td>GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>28</td>
+<td><code>reports.export</code></td>
+<td>reports</td>
+<td>both</td>
+<td>Download reports</td>
+<td>yes</td>
+<td>GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>29</td>
+<td><code>orders.view_all</code></td>
+<td>orders</td>
+<td>both</td>
+<td>Orders, shifts and turnover pages</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>30</td>
+<td><code>products.view</code></td>
+<td>menu</td>
+<td>both</td>
+<td>See the menu</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Aud, Sup, Csh, Wtr, Kit, KMg, Sto, Fuel</td>
+</tr>
+<tr>
+<td>31</td>
+<td><code>menu.edit</code></td>
+<td>menu</td>
+<td>both</td>
+<td>Edit the menu</td>
+<td></td>
+<td>GM, Ops, KMg</td>
+</tr>
+<tr>
+<td>32</td>
+<td><code>menu.prices</code></td>
+<td>menu</td>
+<td>both</td>
+<td>Change prices</td>
+<td></td>
+<td>GM, Ops</td>
+</tr>
+<tr>
+<td>33</td>
+<td><code>menu.offers</code></td>
+<td>menu</td>
+<td>both</td>
+<td>Discounts and offers</td>
+<td></td>
+<td>Mgr, GM, Ops</td>
+</tr>
+<tr>
+<td>34</td>
+<td><code>menu.promotions</code></td>
+<td>menu</td>
+<td>web</td>
+<td>Promotions</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>35</td>
+<td><code>menu.recipes</code></td>
+<td>menu</td>
+<td>web</td>
+<td>Recipes and packaging</td>
+<td></td>
+<td>GM, Ops, KMg</td>
+</tr>
+<tr>
+<td>36</td>
+<td><code>menu.costs</code></td>
+<td>menu</td>
+<td>both</td>
+<td>See cost prices</td>
+<td>yes</td>
+<td>GM, Ops, Aud, KMg, Sto</td>
+</tr>
+<tr>
+<td>37</td>
+<td><code>inventory.view</code></td>
+<td>stock</td>
+<td>both</td>
+<td>See stock levels</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Aud, Sup, Csh, Wtr, KMg, Sto</td>
+</tr>
+<tr>
+<td>38</td>
+<td><code>inventory.receive</code></td>
+<td>stock</td>
+<td>both</td>
+<td>Receive deliveries</td>
+<td></td>
+<td>Mgr, GM, Ops, KMg, Sto</td>
+</tr>
+<tr>
+<td>39</td>
+<td><code>inventory.transfer</code></td>
+<td>stock</td>
+<td>both</td>
+<td>Transfer stock</td>
+<td></td>
+<td>Mgr, GM, Ops, Sto</td>
+</tr>
+<tr>
+<td>40</td>
+<td><code>inventory.count</code></td>
+<td>stock</td>
+<td>both</td>
+<td>Count stock</td>
+<td></td>
+<td>Mgr, GM, Ops, KMg, Sto</td>
+</tr>
+<tr>
+<td>41</td>
+<td><code>inventory.waste</code></td>
+<td>stock</td>
+<td>both</td>
+<td>Record wastage</td>
+<td></td>
+<td>Mgr, GM, Ops, KMg, Sto</td>
+</tr>
+<tr>
+<td>42</td>
+<td><code>inventory.count_freeze</code></td>
+<td>stock</td>
+<td>web</td>
+<td>Stock count freeze</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>43</td>
+<td><code>inventory.adjust</code></td>
+<td>stock</td>
+<td>web</td>
+<td>Adjust stock</td>
+<td></td>
+<td>GM, Ops</td>
+</tr>
+<tr>
+<td>44</td>
+<td><code>ingredients.manage</code></td>
+<td>stock</td>
+<td>web</td>
+<td>Ingredient list</td>
+<td></td>
+<td>GM, Ops, KMg</td>
+</tr>
+<tr>
+<td>45</td>
+<td><code>payables.manage</code></td>
+<td>stock</td>
+<td>web</td>
+<td>Supplier bills and payments</td>
+<td></td>
+<td>GM, Fin</td>
+</tr>
+<tr>
+<td>46</td>
+<td><code>payables.view</code></td>
+<td>stock</td>
+<td>web</td>
+<td>See supplier bills</td>
+<td>yes</td>
+<td>GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>47</td>
+<td><code>customers.view</code></td>
+<td>customers</td>
+<td>both</td>
+<td>See customers</td>
+<td>yes</td>
+<td>Mgr, GM, Fin, Aud, Sup, Csh, Wtr</td>
+</tr>
+<tr>
+<td>48</td>
+<td><code>customers.edit</code></td>
+<td>customers</td>
+<td>both</td>
+<td>Add and edit customers</td>
+<td></td>
+<td>Mgr, GM, Sup, Csh, Wtr</td>
+</tr>
+<tr>
+<td>49</td>
+<td><code>customers.credit</code></td>
+<td>customers</td>
+<td>both</td>
+<td>Customer credit</td>
+<td></td>
+<td>Mgr, GM, Fin, Sup</td>
+</tr>
+<tr>
+<td>50</td>
+<td><code>expenses.view</code></td>
+<td>expenses</td>
+<td>both</td>
+<td>See expenses</td>
+<td>yes</td>
+<td>Mgr, GM, Fin, Acc, Aud</td>
+</tr>
+<tr>
+<td>51</td>
+<td><code>expenses.manage</code></td>
+<td>expenses</td>
+<td>both</td>
+<td>Record expenses</td>
+<td></td>
+<td>Mgr, GM, Fin</td>
+</tr>
+<tr>
+<td>52</td>
+<td><code>staff.view</code></td>
+<td>staff</td>
+<td>both</td>
+<td>See staff</td>
+<td>yes</td>
+<td>Mgr, GM, Ops, Aud</td>
+</tr>
+<tr>
+<td>53</td>
+<td><code>staff.edit</code></td>
+<td>staff</td>
+<td>both</td>
+<td>Add and edit staff</td>
+<td></td>
+<td>Mgr, GM, Ops</td>
+</tr>
+<tr>
+<td>54</td>
+<td><code>staff.roles</code></td>
+<td>staff</td>
+<td>web</td>
+<td>Roles and permissions</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>55</td>
+<td><code>reservations.manage</code></td>
+<td>front</td>
+<td>web</td>
+<td>Reservations and waitlist</td>
+<td></td>
+<td>Mgr, GM, Ops, Sup, Csh, Wtr</td>
+</tr>
+<tr>
+<td>56</td>
+<td><code>parking.manage</code></td>
+<td>front</td>
+<td>both</td>
+<td>Parking</td>
+<td></td>
+<td>Mgr, GM, Ops, Sup, Csh</td>
+</tr>
+<tr>
+<td>57</td>
+<td><code>fuel.manage</code></td>
+<td>front</td>
+<td>both</td>
+<td>Fuel pumps and tanks</td>
+<td></td>
+<td>Mgr, GM, Ops, Sup, Csh, Fuel</td>
+</tr>
+<tr>
+<td>58</td>
+<td><code>settings.business</code></td>
+<td>settings</td>
+<td>both</td>
+<td>Business settings</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>59</td>
+<td><code>settings.branches</code></td>
+<td>settings</td>
+<td>web</td>
+<td>Branches</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>60</td>
+<td><code>settings.payments</code></td>
+<td>settings</td>
+<td>both</td>
+<td>Payment methods</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>61</td>
+<td><code>settings.mpesa</code></td>
+<td>settings</td>
+<td>till</td>
+<td>M-Pesa number</td>
+<td></td>
+<td>Mgr, GM</td>
+</tr>
+<tr>
+<td>62</td>
+<td><code>settings.reversals</code></td>
+<td>settings</td>
+<td>web</td>
+<td>Void and refund rules</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>63</td>
+<td><code>settings.integrations</code></td>
+<td>settings</td>
+<td>web</td>
+<td>Integrations</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>64</td>
+<td><code>settings.pos</code></td>
+<td>settings</td>
+<td>web</td>
+<td>POS options</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>65</td>
+<td><code>receipt.manage</code></td>
+<td>settings</td>
+<td>both</td>
+<td>Receipt text</td>
+<td></td>
+<td>Mgr, GM</td>
+</tr>
+<tr>
+<td>66</td>
+<td><code>stations.manage</code></td>
+<td>settings</td>
+<td>both</td>
+<td>Printers and print stations</td>
+<td></td>
+<td>Mgr, GM, Ops, KMg</td>
+</tr>
+<tr>
+<td>67</td>
+<td><code>tables.manage</code></td>
+<td>settings</td>
+<td>web</td>
+<td>Tables and zones</td>
+<td></td>
+<td>Mgr, GM, Ops</td>
+</tr>
+<tr>
+<td>68</td>
+<td><code>devices.approve</code></td>
+<td>settings</td>
+<td>web</td>
+<td>Tills and devices</td>
+<td></td>
+<td>Mgr, GM</td>
+</tr>
+<tr>
+<td>69</td>
+<td><code>etims.manage</code></td>
+<td>settings</td>
+<td>web</td>
+<td>eTIMS / KRA</td>
+<td></td>
+<td>GM</td>
+</tr>
+<tr>
+<td>70</td>
+<td><code>changes.approve</code></td>
+<td>settings</td>
+<td>web</td>
+<td>Approve till changes</td>
+<td></td>
+<td>GM, Ops</td>
+</tr>
+</tbody></table>
+<p><strong>Rules that live outside any key</strong> (owner-only by design, A490 / A550):</p>
+<ul>
+<li>the owner&#39;s password, account and role;</li>
+<li>web dashboard access for partners;</li>
+<li>the M-Pesa credentials;</li>
+<li>the sign-in-code and approval-PIN switches (A594 adds the approval PIN);</li>
+<li>the kitchen display key;</li>
+<li>void/refund rules (<code>settings.reversals</code> is the owner&#39;s by default);</li>
+<li>the stock-count freeze;</li>
+<li>the loss-alert settings;</li>
+<li>who approves credit sales (<code>/credit/approvers</code>);</li>
+<li>test e-mails;</li>
+<li>resetting someone&#39;s sign-in code. This is <code>staff.edit</code> plus an owner check in places.</li>
+</ul>
+<p><strong>Partners (A550 / A582).</strong> A partner is a staff member the owner lets into the web dashboard. A partner:</p>
+<ul>
+<li>holds exactly their role&#39;s keys plus their own overrides, the same as on the till;</li>
+<li>is never the owner (<code>req.isOwner</code> stays false), so every owner-only rule above refuses them;</li>
+<li>works at the branches on their staff record: every branch, one branch, or a set of branches (&quot;All my branches&quot;, A582);</li>
+<li>in a set of branches, may only read: <code>requireAuth</code> refuses every write, and reads are narrowed by <code>branchFilter</code> / <code>byBranch</code> (81 business routes do this).</li>
+</ul>
+<p>Two current exceptions read something other than keys:</p>
+<ol>
+<li>Credit limits: a partner at their own branch may set limits whatever their role (<code>maySetCreditLimits</code>).</li>
+<li>Customer records are business-wide, so a partner of one shop who holds <code>customers.view</code> sees every shop&#39;s customers (F11).</li>
+</ol>
+<h2 id="3-mapping-each-key-to-its-routes-pos-channels-and-screens">3. Mapping: each key to its routes, POS channels and screens</h2>
+<p>&quot;Gate&quot; means the route refuses without the key. &quot;In handler&quot; means the key changes what the answer contains, or the handler decides by it (for example, cost fields stripped, own sales only, or an approver must hold it). A route gated by several keys appears under each key, which is why the 17 report keys each count the router-wide report gate (<code>anyReport</code>, <code>routes/reports.ts</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Server routes (gate + in-handler)</th>
+<th>Server routes</th>
+<th>Desktop IPC channels</th>
+<th>Web screens (dashboard / web POS)</th>
+<th>Desktop screens</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>orders.create</code></td>
+<td>7 + 0</td>
+<td>GET /fuel-tanks; GET /fuel-tanks/movements; GET /pumps; POST /orders; POST /orders/open; POST /orders/:id/pay; POST /orders/:id/fire-course</td>
+<td>1: expense:list</td>
+<td>DashboardLayout, lib/businessTerms</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>sales.discount</code></td>
+<td>1 + 2</td>
+<td>POST /discounts/apply; POST /orders (in handler); POST /orders/:id/pay (in handler)</td>
+<td>1: order:create</td>
+<td>pos/DiscountPanel, pos/PaymentModal</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>sales.void</code></td>
+<td>1 + 0</td>
+<td>POST /orders/:id/void</td>
+<td>1: order:void</td>
+<td>OrdersPage, pos/POSOrderHistoryTab, settings/StaffTab</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>sales.refund</code></td>
+<td>1 + 0</td>
+<td>POST /orders/:id/refund</td>
+<td>1: order:refund</td>
+<td>OrdersPage, pos/POSOrderHistoryTab, settings/StaffTab</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>sales.reprint</code></td>
+<td>0 + 2</td>
+<td>GET /orders (in handler); POST /orders/:id/whatsapp-receipt (in handler)</td>
+<td>1: escpos:reprintReceipt</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>sales.history_all</code></td>
+<td>0 + 2</td>
+<td>GET /orders (in handler); GET /orders/:id (in handler)</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>invoice.create</code></td>
+<td>0 + 0</td>
+<td>none (client side only)</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>shifts.cash_movements</code></td>
+<td>0 + 1</td>
+<td>POST /shifts/:id/float (in handler)</td>
+<td>1: expense:list</td>
+<td>pos/CashierScreen</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>shifts.cash_out</code></td>
+<td>0 + 0</td>
+<td>none (client side only)</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>expenses.record</code></td>
+<td>0 + 0</td>
+<td>none (client side only)</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>shifts.confirm</code></td>
+<td>0 + 16</td>
+<td>GET /orders (in handler); GET /orders/:id (in handler); POST /orders/:id/kitchen-void (in handler); GET /reports/eod (in handler); POST /shifts/:id/foreign-cash (in handler); POST /shifts/:id/foreign-orders (in handler); POST /shifts/:id/close (in handler); POST /shifts/:id/confirm (in handler); POST /shifts/:id/manager-confirm (in handler); GET /shifts/:id/confirm-view (in handler); POST /shifts/:id/expense (in handler); GET /shifts/branch-report (in handler); GET /shifts/:id/zreport (in handler); GET /shifts (in handler); GET /shifts/:id (in handler); GET /tills-days/overview (in handler)</td>
+<td>7: shift:stale, manager:branchDay, manager:branchShifts, manager:remoteZReport, shift:remoteConfirmView, shift:zreport, shift:history</td>
+<td>DashboardLayout, lib/businessTerms, lib/shiftConfirm, manager/ManagerShiftTab, pos/ZReportModal, settings/StaffTab</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>shifts.force_close</code></td>
+<td>3 + 0</td>
+<td>POST /shifts/:id/force-close; GET /tills-days/overview; POST /tills-days/close-drawer</td>
+<td>1: shift:forceClose</td>
+<td>DashboardLayout, manager/ManagerDashboard, manager/ManagerShiftTab</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>shifts.close_day</code></td>
+<td>9 + 1</td>
+<td>GET /credit/sales/count; POST /day-close/instruct; GET /day-close/overview; POST /day-close/:id/cancel; POST /day-close/abandon; GET /tills-days/overview; POST /tills-days/close-day; POST /tills-days/instructions/:id/cancel; POST /tills-days/abandon; POST /shifts/:id/close (in handler)</td>
+<td>1: day:summary</td>
+<td>DashboardLayout, manager/ManagerDashboard, manager/ManagerShiftTab, manager/RemoteDayClose</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>shifts.close_branch</code></td>
+<td>1 + 0</td>
+<td>GET /credit/sales/count</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.overview</code></td>
+<td>17 + 0</td>
+<td>GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>8: manager:salesSummary, manager:topProducts, manager:recentOrders, manager:branchDay, manager:fuelSales, manager:pumpStatus, manager:tableOccupancy, manager:branchReport</td>
+<td>DashboardLayout, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.sales</code></td>
+<td>34 + 0</td>
+<td>GET /analytics/menu-engineering; GET /analytics/heatmap; GET /analytics/money-leaks; GET /analytics/credit-ageing; GET /analytics/overview; GET /analytics/item-times; GET /analytics/recommendations; GET /analytics/stock; GET /analytics/customers; GET /analytics/costs; GET /analytics/branches; GET /analytics/together; GET /analytics/insights; GET /orders/turnover/report; GET /reports/export/daily; GET /reports/export/hourly; GET /reports/export/sales; GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>5: day:summary, manager:salesSummary, manager:exportCsv, manager:dailyReport, manager:branchReport</td>
+<td>DashboardLayout, manager/ManagerDashboard, manager/ManagerReportsPage, pos/POSReportsTab</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.items</code></td>
+<td>18 + 0</td>
+<td>GET /reports/export/products; GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>2: manager:topProducts, manager:exportCsv</td>
+<td>DashboardLayout, lib/businessTerms, manager/ManagerDashboard, manager/ManagerReportsPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.staff</code></td>
+<td>17 + 0</td>
+<td>GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerReportsPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.shifts</code></td>
+<td>18 + 5</td>
+<td>GET /reports/export/shifts; GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock; GET /shifts/branch-report (in handler); GET /shifts/:id/zreport (in handler); GET /shifts (in handler); GET /shifts/:id (in handler); GET /tills-days/overview (in handler)</td>
+<td>5: manager:branchDay, manager:branchShifts, manager:remoteZReport, shift:zreport, shift:history</td>
+<td>DashboardLayout, manager/ManagerReportsPage, manager/ManagerShiftTab, pos/ZReportModal</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.voids</code></td>
+<td>20 + 0</td>
+<td>GET /loss-alerts; PATCH /loss-alerts/:id/dismiss; GET /reports/export/audit; GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerDashboard, manager/ManagerReportsPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.inventory</code></td>
+<td>17 + 0</td>
+<td>GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.fuel</code></td>
+<td>20 + 0</td>
+<td>GET /fuel-tanks; GET /fuel-tanks/movements; GET /pumps; GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>2: manager:fuelSales, manager:pumpStatus</td>
+<td>DashboardLayout, manager/ManagerDashboard, manager/ManagerReportsPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.tax</code></td>
+<td>18 + 0</td>
+<td>GET /etims/invoices; GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.costs</code></td>
+<td>18 + 0</td>
+<td>GET /reports/export/pnl; GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>0</td>
+<td>DashboardLayout, lib/businessTerms, manager/ManagerDashboard, manager/ManagerHistoryTab, manager/ManagerReceivingTab, pos/ZReportModal</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.labour</code></td>
+<td>17 + 0</td>
+<td>GET /reports/sales; GET /reports/products; GET /reports/staff; GET /reports/inventory; GET /reports/eod; GET /reports/shifts; GET /reports/master; GET /reports/hourly; GET /reports/voids; GET /reports/refunds; GET /reports/tax; GET /reports/products-v2; GET /reports/food-cost; GET /reports/splh; GET /reports/fuel-sales; GET /reports/pump-monitor; GET /reports/wet-stock</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.monthly_pack</code></td>
+<td>3 + 0</td>
+<td>GET /reports/monthly; GET /reports/monthly/export; GET /reports/monthly/movements</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.payments</code></td>
+<td>1 + 0</td>
+<td>GET /mpesa/exceptions</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reports.export</code></td>
+<td>8 + 0</td>
+<td>GET /reports/export/daily; GET /reports/export/hourly; GET /reports/export/audit; GET /reports/export/sales; GET /reports/export/products; GET /reports/export/pnl; GET /reports/export/shifts; GET /reports/export/expenses</td>
+<td>2: manager:exportCsv, manager:dailyReport</td>
+<td>DashboardLayout, manager/ManagerReportsPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>orders.view_all</code></td>
+<td>1 + 0</td>
+<td>GET /orders/turnover</td>
+<td>6: manager:recentOrders, manager:branchOrders, manager:branchDay, manager:exportCsv, manager:tableOccupancy, manager:branchReport</td>
+<td>DashboardLayout, lib/businessTerms, OrdersPage, manager/ManagerDashboard, pos/POSDrawer</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>products.view</code></td>
+<td>0 + 0</td>
+<td>none (client side only)</td>
+<td>0</td>
+<td>DashboardLayout, lib/businessTerms, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>menu.edit</code></td>
+<td>34 + 0</td>
+<td>POST /categories; PATCH /categories/:id; DELETE /categories/:id; POST /combos; PATCH /combos/:id; PUT /combos/:id/items; DELETE /combos/:id; POST /menus; POST /menus/reorder; PATCH /menus/:id; DELETE /menus/:id; POST /modifiers/groups; PATCH /modifiers/groups/:id; DELETE /modifiers/groups/:id; POST /modifiers/options; PATCH /modifiers/options/:id; DELETE /modifiers/options/:id; POST /products/barcodes/generate; PUT /products/barcodes/settings; PUT /products/labels/settings; POST /products; PATCH /products/:id; DELETE /products/:id; PATCH /products/bulk-tax/by-category; PATCH /products/bulk-tax/by-ids; PATCH /products/bulk-track/by-ids; POST /products/bulk; POST /variants/bulk; POST /variants/groups; PATCH /variants/groups/:id; DELETE /variants/groups/:id; POST /variants/options; PATCH /variants/options/:id; DELETE /variants/options/:id</td>
+<td>16: labels:setup, labels:save, labels:print, labels:numbering, manage:bulkProducts, manage:createCombo, manage:updateCombo, manage:setComboItems, manage:updateVariantGroup, manage:createVariantOption, manage:updateVariantOption, manage:deleteVariantOption, manage:createVariantGroup, manage:deleteVariantGroup, manage:createModifierGroup, manage:deleteModifierGroup</td>
+<td>DashboardLayout, lib/businessTerms, pos/CashierScreen, products/LabelsPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>menu.prices</code></td>
+<td>3 + 6</td>
+<td>POST /branch-prices/sync; PATCH /products/:id; POST /products/bulk-price; PATCH /combos/:id (in handler); POST /modifiers/groups (in handler); POST /modifiers/options (in handler); PATCH /modifiers/options/:id (in handler); POST /products/bulk (in handler); POST /variants/bulk (in handler)</td>
+<td>1: manager:priceList</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>menu.offers</code></td>
+<td>7 + 1</td>
+<td>POST /discounts; PUT /discounts/:id; PATCH /discounts/:id/toggle; DELETE /discounts/:id; POST /offers; PATCH /offers/:id; DELETE /offers/:id; GET /discounts (in handler)</td>
+<td>3: manage:offers, manage:saveOffer, manage:deleteOffer</td>
+<td>DashboardLayout, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>menu.promotions</code></td>
+<td>3 + 0</td>
+<td>POST /promotions; PATCH /promotions/:id; DELETE /promotions/:id</td>
+<td>0</td>
+<td>manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>menu.recipes</code></td>
+<td>4 + 0</td>
+<td>POST /recipes/bulk; POST /recipes/:productId; DELETE /recipes/:productId; POST /recipes/:productId/packaging</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>menu.costs</code></td>
+<td>2 + 8</td>
+<td>PATCH /products/:id; PATCH /products/bulk-cost/by-ids; POST /products (in handler); POST /products/bulk (in handler); POST /stock/ingredients (in handler); POST /stock/ingredients/bulk (in handler); PATCH /stock/ingredients/:id (in handler); POST /stock/purchase-orders (in handler); POST /stock/grn (in handler); POST /wastage (in handler)</td>
+<td>2: manage:createProduct, manage:bulkProducts</td>
+<td>lib/businessTerms, manager/ManagerDashboard, manager/ManagerHistoryTab, manager/ManagerReceivingTab</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>inventory.view</code></td>
+<td>4 + 0</td>
+<td>GET /inventory/movements; GET /products/labels/restocked; GET /stock/ingredients/:id/movements; GET /stock/other-branches</td>
+<td>4: branchStock:find, manager:stockLevels, manager:branchReport, batches:expiring</td>
+<td>DashboardLayout, manager/ManagerDashboard, pos/POSDrawer</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>inventory.receive</code></td>
+<td>18 + 0</td>
+<td>GET /batches; POST /batches; PATCH /batches/:id; PATCH /inventory/:product_id/threshold; GET /payables/returns; POST /payables/returns; GET /stock/suppliers; POST /stock/suppliers; PATCH /stock/suppliers/:id; DELETE /stock/suppliers/:id; GET /stock/purchase-orders; GET /stock/purchase-orders/:id; POST /stock/purchase-orders; PATCH /stock/purchase-orders/:id; POST /stock/purchase-orders/:id/cancel; DELETE /stock/purchase-orders/:id; GET /stock/grn; POST /stock/grn</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerDashboard, manager/ManagerReceivingTab, pos/POSInventoryTab, stock/SuppliersPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>inventory.transfer</code></td>
+<td>6 + 1</td>
+<td>GET /stock/transfers; POST /stock/transfers; PATCH /stock/transfers/:id/status; GET /stock/requests; POST /stock/requests; POST /stock/requests/:id/${step}; GET /stock/requests/count (in handler)</td>
+<td>7: branchStock:requests, branchStock:request, branchStock:decide, transfers:list, transfers:branches, transfers:create, transfers:status</td>
+<td>DashboardLayout, manager/ManagerDashboard, manager/ManagerHistoryTab, manager/ManagerReceivingTab, pos/POSInventoryTab, stock/OtherBranchesPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>inventory.count</code></td>
+<td>6 + 0</td>
+<td>GET /stock-takes; POST /stock-takes; GET /stock-takes/:id; POST /stock-takes/:id/count; POST /stock-takes/:id/submit; POST /stock-takes/:id/cancel</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>inventory.waste</code></td>
+<td>4 + 0</td>
+<td>GET /batches; GET /wastage; GET /wastage/items; POST /wastage</td>
+<td>2: wastage:items, wastage:dismiss</td>
+<td>DashboardLayout, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>inventory.count_freeze</code></td>
+<td>1 + 0</td>
+<td>POST /business/settings</td>
+<td>0</td>
+<td>manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>inventory.adjust</code></td>
+<td>21 + 1</td>
+<td>GET /batches; POST /batches; PATCH /batches/:id; POST /batches/:id/close; PUT /branches/:id/stock/:productId; POST /inventory/adjust; PATCH /inventory/:product_id/threshold; POST /stock/ingredients/:id/adjust; PATCH /stock/ingredients/:id/reorder; GET /stock-takes; POST /stock-takes; GET /stock-takes/:id; POST /stock-takes/:id/count; POST /stock-takes/:id/submit; POST /stock-takes/:id/recount; POST /stock-takes/:id/post; POST /stock-takes/:id/cancel; GET /wastage; GET /wastage/items; POST /wastage; POST /wastage/:id/void; GET /pos/changes (in handler)</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerDashboard, pos/POSInventoryTab</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>ingredients.manage</code></td>
+<td>3 + 0</td>
+<td>POST /stock/ingredients; POST /stock/ingredients/bulk; PATCH /stock/ingredients/:id</td>
+<td>0</td>
+<td>DashboardLayout, stock/IngredientsPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>payables.manage</code></td>
+<td>8 + 0</td>
+<td>GET /payables/summary; GET /payables/suppliers/:id; POST /payables/bills; POST /payables/bills/:id/void; POST /payables/payments; POST /payables/payments/:id/void; GET /payables/returns; POST /payables/returns</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerDashboard, stock/SuppliersPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>payables.view</code></td>
+<td>3 + 1</td>
+<td>GET /payables/summary; GET /payables/suppliers/:id; GET /payables/returns; POST /payables/returns (in handler)</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerDashboard, stock/SuppliersPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>customers.view</code></td>
+<td>7 + 4</td>
+<td>GET /credit/customers; GET /credit/customer/:id; GET /credit/customer/:id/history; POST /loyalty/customer; GET /loyalty/customer/:id/transactions; GET /loyalty/customer/:id/insights; GET /loyalty/customers; GET /analytics/credit-ageing (in handler); GET /analytics/recommendations (in handler); GET /analytics/customers (in handler); GET /analytics/insights (in handler)</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerDashboard, pos/POSDrawer</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>customers.edit</code></td>
+<td>3 + 1</td>
+<td>POST /loyalty/customer; PATCH /loyalty/customer/:id; DELETE /loyalty/customer/:id; POST /orders/:id/whatsapp-receipt (in handler)</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>customers.credit</code></td>
+<td>9 + 4</td>
+<td>GET /credit/customers; GET /credit/customer/:id; GET /credit/customer/:id/history; POST /credit/customer/:id/payment; POST /credit/customer/:id/adjustment; GET /credit/sales; GET /credit/sales/count; POST /credit/sales/:orderId/confirm; POST /credit/sales/:orderId/dispute; GET /analytics/credit-ageing (in handler); GET /analytics/recommendations (in handler); GET /analytics/customers (in handler); GET /analytics/insights (in handler)</td>
+<td>3: credit:list, credit:decide, credit:dismiss</td>
+<td>DashboardLayout, lib/creditLimit, customers/CreditAccountsPage, manager/ManagerDashboard, settings/StaffTab</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>expenses.view</code></td>
+<td>4 + 2</td>
+<td>GET /expenses; GET /expenses/summary; GET /reports/export/expenses; GET /reports/monthly/movements; GET /reports/eod (in handler); GET /reports/master (in handler)</td>
+<td>2: expense:range, expense:list</td>
+<td>DashboardLayout, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>expenses.manage</code></td>
+<td>11 + 0</td>
+<td>POST /expenses/categories; PATCH /expenses/categories/:id; DELETE /expenses/categories/:id; POST /expenses; PATCH /expenses/:id; DELETE /expenses/:id; GET /reports/monthly; GET /reports/monthly/export; GET /reports/monthly/movements; POST /reports/monthly/movements; DELETE /reports/monthly/movements/:id</td>
+<td>5: expense:addCategory, expense:range, expense:list, monthly:addMovement, monthly:removeMovement</td>
+<td>DashboardLayout, expenses/ExpensesPage, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>staff.view</code></td>
+<td>2 + 0</td>
+<td>GET /branches/:id/staff; GET /staff</td>
+<td>2: manage:listStaff, manage:listRoles</td>
+<td>manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>staff.edit</code></td>
+<td>5 + 0</td>
+<td>POST /staff; POST /staff/invite; PATCH /staff/:id; POST /staff/:id/reset-otp; DELETE /staff/:id</td>
+<td>2: manage:listStaff, manage:listRoles</td>
+<td>manager/ManagerDashboard, settings/UsersAccessPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>staff.roles</code></td>
+<td>4 + 1</td>
+<td>PUT /staff/roles/:roleId/permissions; POST /staff/roles; PATCH /staff/roles/:roleId; DELETE /staff/roles/:roleId; GET /staff/roles (in handler)</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>reservations.manage</code></td>
+<td>7 + 0</td>
+<td>GET /reservations; POST /reservations; PATCH /reservations/:id; DELETE /reservations/:id; GET /reservations/waitlist; POST /reservations/waitlist; PATCH /reservations/waitlist/:id</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>parking.manage</code></td>
+<td>6 + 0</td>
+<td>POST /parking-sessions; GET /parking-sessions; GET /parking-sessions/:id; PATCH /parking-sessions/:id; POST /parking-sessions/:id/close; POST /parking-sessions/:id/void</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>fuel.manage</code></td>
+<td>12 + 0</td>
+<td>GET /fuel-tanks; POST /fuel-tanks; PATCH /fuel-tanks/:id; DELETE /fuel-tanks/:id; GET /fuel-tanks/movements; POST /fuel-tanks/:id/delivery; GET /pumps; POST /pumps; PATCH /pumps/:id; DELETE /pumps/:id; PATCH /pumps/:id/activate; PATCH /pumps/:id/idle</td>
+<td>1: manager:pumpStatus</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>settings.business</code></td>
+<td>7 + 0</td>
+<td>PATCH /business; PUT /business/branding; GET /business/branding/branches; PATCH /business/branding/branches/:branchId; DELETE /business/branding/branches/:branchId; POST /business/settings; PUT /flags/:key</td>
+<td>8: manage:setContinuousOperation, manage:setCashierHistoryMethods, branding:set, node:tlsRetrust, node:syncHealth, node:distribution, node:drawersStatus, node:retryFailed</td>
+<td>DashboardLayout, manager/ManagerDashboard, settings/BusinessPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>settings.branches</code></td>
+<td>4 + 0</td>
+<td>PUT /branches/:id; PUT /branches/:id/set-main; DELETE /branches/:id; POST /branches/:id/settings</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>settings.payments</code></td>
+<td>5 + 1</td>
+<td>POST /branches/:id/settings; POST /business/settings; POST /payment-methods; PATCH /payment-methods/:id; DELETE /payment-methods/:id; GET /controls (in handler)</td>
+<td>4: manage:setPaymentMethodsEnabled, manage:createPaymentMethod, manage:updatePaymentMethod, manage:deletePaymentMethod</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>settings.mpesa</code></td>
+<td>0 + 2</td>
+<td>GET /branches/:id/mpesa (in handler); PUT /branches/:id/mpesa (in handler)</td>
+<td>0</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>settings.reversals</code></td>
+<td>1 + 0</td>
+<td>POST /business/settings</td>
+<td>0</td>
+<td>DashboardLayout, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>settings.integrations</code></td>
+<td>8 + 0</td>
+<td>POST /business/settings; PATCH /qr/settings; GET /webhooks; POST /webhooks; PATCH /webhooks/:id; DELETE /webhooks/:id; GET /webhooks/:id/deliveries; POST /webhooks/:id/test</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>settings.pos</code></td>
+<td>4 + 1</td>
+<td>POST /business/settings; PUT /controls/pos/:key; PUT /controls/loyalty; PUT /controls/stock-zero; GET /controls (in handler)</td>
+<td>0</td>
+<td>DashboardLayout, lib/businessTerms, settings/BusinessPage</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>receipt.manage</code></td>
+<td>6 + 0</td>
+<td>POST /branches/:id/settings; PUT /business/branding; GET /business/branding/branches; PATCH /business/branding/branches/:branchId; DELETE /business/branding/branches/:branchId; POST /business/settings</td>
+<td>2: manage:setReceiptText, branding:set</td>
+<td>DashboardLayout, manager/ManagerDashboard</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>stations.manage</code></td>
+<td>8 + 0</td>
+<td>POST /printers; PATCH /printers/:id; DELETE /printers/:id; POST /stations/seed-defaults; POST /stations; PATCH /stations/:id; PUT /stations/:id/categories; DELETE /stations/:id</td>
+<td>4: manage:seedDefaultStations, escpos:setKitchenExclusions, escpos:clearKitchenExclusions, escpos:assignments</td>
+<td>DashboardLayout, lib/businessTerms, manager/ManagerDashboard, pos/CashierScreen</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>tables.manage</code></td>
+<td>4 + 0</td>
+<td>GET /tables/all; POST /tables; PATCH /tables/:id; DELETE /tables/:id</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>devices.approve</code></td>
+<td>9 + 2</td>
+<td>GET /devices; GET /devices/fleet; PATCH /devices/:id/label; PATCH /devices/:id/retire; PATCH /devices/:id/unretire; PATCH /devices/:id/approve; PATCH /devices/:id/reject; DELETE /devices/:id; POST /devices/:id/authorise-handover; GET /support/terminal-codes (in handler); GET /tech/branch-config/:branchId (in handler)</td>
+<td>1: node:answerJoin</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>etims.manage</code></td>
+<td>4 + 0</td>
+<td>GET /etims/config; PUT /etims/config; POST /etims/branches/:branchId/register; POST /etims/retry</td>
+<td>0</td>
+<td>DashboardLayout</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>changes.approve</code></td>
+<td>0 + 3</td>
+<td>GET /changes/count (in handler); GET /changes (in handler); POST /changes/:id/decide (in handler)</td>
+<td>0</td>
+<td>DashboardLayout, lib/businessTerms</td>
+<td>-</td>
+</tr>
+</tbody></table>
+<p><strong>Corrections made by reading the code</strong>:</p>
+<ul>
+<li><code>POST /orders/:id/void</code> needs <code>sales.void</code> and <code>POST /orders/:id/refund</code> needs <code>sales.refund</code>. The scanner saw both keys in <code>reversalGate</code>&#39;s ternary.</li>
+<li><code>POST /shifts/:id/confirm</code>, <code>/manager-confirm</code> and <code>/expense</code> decide through the approver&#39;s PIN. The approver must hold <code>shifts.confirm</code> (lib/shiftConfirm.ts, lib/approver.ts).</li>
+<li><code>POST /credit/sales/:orderId/confirm|dispute</code> go through <code>personGate</code>, which means <code>customers.credit</code> plus the owner&#39;s chosen approvers (A585).</li>
+<li><code>GET|PUT /credit/approvers</code> are owner-only.</li>
+<li><code>products.view</code> is not checked by the cloud at all. Menu reads are open to every signed-in session, which the POS needs. On the till, <code>products.view</code> is one of the keys that opens the menu screen (<code>MENU_READ</code>).</li>
+<li><code>shifts.cash_out</code> and <code>expenses.record</code> are not checked by the cloud yet. A594 removed the key refusal on <code>/shifts/:id/expense</code> and put &quot;a manager approves every one&quot; in its place.</li>
+</ul>
+<p><strong>Checks that are not a single key</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Derived check</th>
+<th>What it means</th>
+<th>Routes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>~costs</code></td>
+<td>menu.costs or reports.costs (cost fields stripped from the answer)</td>
+<td>80: GET /analytics/costs; GET /batches; POST /batches; PATCH /batches/:id; POST /batches/:id/close; GET /inventory; POST /inventory/adjust; PATCH /inventory/:product_id/threshold; GET /inventory/movements; GET /orders/:id; GET /payables/returns; POST /payables/returns; GET /pos/changes; GET /pos/init; GET /products; GET /products/plu/:code; GET /products/barcode/:code; POST /products/barcodes/generate; GET /products/barcodes/settings; PUT /products/barcodes/settings; GET /products/labels/settings; PUT /products/labels/settings; GET /products/labels/restocked; POST /products; PATCH /products/:id; DELETE /products/:id; PATCH /products/bulk-tax/by-category; PATCH /products/bulk-tax/by-ids; PATCH /products/bulk-cost/by-ids; PATCH /products/bulk-track/by-ids; POST /products/bulk-price; POST /products/bulk; GET /recipes; GET /recipes/:productId; POST /recipes/bulk; POST /recipes/:productId; DELETE /recipes/:productId; GET /recipes/:productId/packaging; POST /recipes/:productId/packaging; GET /reports/products-v2; GET /stock/ingredients; POST /stock/ingredients; POST /stock/ingredients/bulk; PATCH /stock/ingredients/:id; POST /stock/ingredients/:id/adjust; PATCH /stock/ingredients/:id/reorder; GET /stock/ingredients/:id/movements; GET /stock/suppliers; POST /stock/suppliers; PATCH /stock/suppliers/:id; DELETE /stock/suppliers/:id; GET /stock/purchase-orders; GET /stock/purchase-orders/:id; POST /stock/purchase-orders; PATCH /stock/purchase-orders/:id; POST /stock/purchase-orders/:id/cancel; DELETE /stock/purchase-orders/:id; GET /stock/grn; POST /stock/grn; GET /stock/transfers; POST /stock/transfers; PATCH /stock/transfers/:id/status; GET /stock/other-branches; GET /stock/requests; GET /stock/requests/count; POST /stock/requests; POST /stock/requests/:id/${step}; GET /stock-takes; GET /stock-takes/active; POST /stock-takes; GET /stock-takes/:id; POST /stock-takes/:id/count; POST /stock-takes/:id/submit; POST /stock-takes/:id/recount; POST /stock-takes/:id/post; POST /stock-takes/:id/cancel; GET /wastage; GET /wastage/items; POST /wastage; POST /wastage/:id/void</td>
+</tr>
+<tr>
+<td><code>~drawer_figures</code></td>
+<td>reports.shifts or shifts.confirm (drawer figures stripped)</td>
+<td>2: GET /shifts; GET /shifts/:id</td>
+</tr>
+<tr>
+<td><code>~owner_only</code></td>
+<td>the real owner only</td>
+<td>7: GET /credit/approvers; PUT /credit/approvers; GET /loss-alerts/settings; PUT /loss-alerts/settings; GET /staff/web-access; POST /staff/:id/web-access; DELETE /staff/:id/web-access</td>
+</tr>
+<tr>
+<td><code>~owner_or_manager_role</code></td>
+<td>the owner, a built-in role NAMED Manager / General Manager, or a partner at their own branch (a role-name check)</td>
+<td>2: GET /credit/candidates; PATCH /credit/customer/:id/limit</td>
+</tr>
+<tr>
+<td><code>~owner_check</code></td>
+<td>req.isOwner branch inside the handler</td>
+<td>28: POST /auth/set-pin; POST /auth/password/change; GET /auth/session; PUT /branches/:id/mpesa; GET /business/cloud-trial; POST /business/settings; POST /changes; PUT /controls/pos/:key; GET /day-close/overview; POST /inventory/adjust; POST /kitchen/kds-token; GET /notifications; PATCH /notifications; POST /notifications; POST /orders; POST /orders/:id/refund; POST /orders/:id/void; POST /shifts/:id/close; GET /shifts/:id; GET /staff; POST /staff; POST /staff/invite; PATCH /staff/:id; POST /staff/:id/reset-otp; DELETE /staff/:id; POST /stock/ingredients/bulk; GET /support/terminal-codes; POST /sync/push</td>
+</tr>
+</tbody></table>
+<p><strong>Business routes with no key at all (96).</strong> These were read and sorted into the groups below. None is a gap except those named in the findings.</p>
+<ul>
+<li><strong>Sign-in and session</strong>: <code>/auth/*</code> and <code>/tenant/:subdomain</code>.</li>
+<li><strong>The till&#39;s own session</strong>, refused for a person&#39;s session, or reading only what every till needs:<ul>
+<li><code>/pos/catalogue-version</code>, <code>/pos/join-code</code>, <code>/pos/branch-staff</code> (PIN hashes go to the till&#39;s own session only), <code>/pos/stock-view</code>, <code>/pos/test-data-clears</code>, <code>/pos/branch-drawers</code>, <code>/pos/credit-customers</code> (F4);</li>
+<li><code>/desktop-update/*</code>, <code>/day-close/pending|ack</code>, <code>/support/*</code>, <code>/tech/*</code>, <code>/ops/events</code>.</li>
+</ul>
+</li>
+<li><strong>Reads every seller needs</strong>:<ul>
+<li>menu, categories, combos, variants, modifiers, menus, offers, promotions;</li>
+<li>payment methods, tables, stations, printers, flags, <code>/business</code>, <code>/business/settings</code> (an allow-list: secrets are never returned), branding;</li>
+<li>expense types, shift state, terminals, the open drawer;</li>
+<li><code>/loyalty/customer</code> (look up a customer by their exact phone number, at the till), <code>/loyalty/settings</code>, <code>/kitchen/tickets</code>.</li>
+</ul>
+</li>
+<li><strong>Customer-facing</strong>: QR menu and order, M-Pesa STK push, callback and status, <code>/mpesa/config</code>.</li>
+<li><strong>Owner-only inside the handler</strong>: web access, loss-alert settings, credit approvers, <code>PUT /controls/updates</code> (refused for everyone).</li>
+<li><strong>Worth a gate (F10)</strong>: <code>GET /staff/roles</code> (every role&#39;s keys and member count, to any signed-in person) and <code>GET /staff/authorizers</code> (who can approve, by name).</li>
+</ul>
+<h2 id="4-findings-ranked">4. Findings, ranked</h2>
+<p>The ranking puts personal data first (Kenya Data Protection Act 2019: data must be limited to what is necessary for the purpose, with protection by design and by default; legal wording to be confirmed by counsel). Money actions come next, then operations. <strong>H</strong> = high, <strong>M</strong> = medium, <strong>L</strong> = low.</p>
+<h3 id="personal-data">Personal data</h3>
+<p><strong>F1 (H) <code>customers.view</code> shows every customer&#39;s phone, e-mail, spend and notes, and it is a Cashier and Waiter default.</strong></p>
+<ul>
+<li><strong>Who sees what.</strong> Any holder can page through every customer of the business:<ul>
+<li><code>GET /loyalty/customers</code>, 50 per page with no page limit, giving name, phone, e-mail, points, total spent and visits;</li>
+<li><code>/loyalty/customer/:id/transactions</code> (what they bought, when);</li>
+<li><code>/loyalty/customer/:id/insights</code>;</li>
+<li><code>GET /credit/customers</code> and <code>/credit/customer/:id</code> (balances and limits);</li>
+<li>with <code>reports.sales</code>, the Analytics customer list and credit ageing (<code>seesCredit</code>).</li>
+</ul>
+</li>
+<li><strong>What a cashier needs.</strong> Only to find the customer in front of them. <code>GET /loyalty/customer?phone=</code> already does that by exact number and needs no key.</li>
+<li><strong>Split.</strong> <code>customers.view</code> (the list and records, contacts masked), <code>customers.contacts</code> (full phone numbers and e-mails) and <code>customers.history</code> (purchases and insights).</li>
+</ul>
+<p><strong>F2 (H) Customer phone numbers also travel with sales.</strong></p>
+<ul>
+<li><code>GET /orders/:id</code> returns <code>orders.*</code> (<code>customer_phone</code>) and <code>payments(*)</code>, which includes <code>mpesa_phone</code>, the payer&#39;s M-Pesa number.</li>
+<li><code>GET /mpesa/status/:checkoutId</code> returns the payer&#39;s phone.</li>
+<li><code>/mpesa/exceptions</code> (<code>reports.payments</code>) lists payer numbers.</li>
+<li><strong>Who sees it.</strong> A cashier sees their own sales; anyone with <code>sales.history_all</code> sees every sale of the branch.</li>
+<li><strong>Split.</strong> Mask these numbers without <code>customers.contacts</code>. The WhatsApp receipt already sends to the order&#39;s own number without showing it (<code>POST /orders/:id/whatsapp-receipt</code>).</li>
+</ul>
+<p><strong>F3 (H) <code>settings.integrations</code> can send all the business&#39;s data out.</strong></p>
+<ul>
+<li>Webhooks (<code>/webhooks/*</code>, 6 routes) post every order, customer details included, to any URL.</li>
+<li>Scheduled report e-mails (<code>/business/settings/report-schedule</code>, the key <code>report_schedule</code> in <code>POST /business/settings</code>) mail reports to any address.</li>
+<li>The same tick also covers QR ordering, which is harmless.</li>
+<li><strong>Who holds it.</strong> General Manager, and every role that held the legacy <code>settings.manage</code>.</li>
+<li><strong>Split.</strong> <code>settings.webhooks</code> and <code>settings.report_emails</code>. <code>settings.integrations</code> keeps QR ordering.</li>
+</ul>
+<p><strong>F4 (M) <code>GET /pos/credit-customers</code> has no key.</strong></p>
+<ul>
+<li>Any desktop-surface session, whether a person&#39;s sign-in or the till&#39;s own, gets every credit customer: name, phone, limit and balance, up to 5,000.</li>
+<li>The till keeps the list offline for credit sales.</li>
+<li><strong>Fix.</strong> Keep the list for the till&#39;s own session and for people holding <code>customers.credit</code> or <code>customers.view</code>, and mask the phone unless the person holds <code>customers.contacts</code>. The till&#39;s local copy is then masked at the source.</li>
+</ul>
+<p><strong>F5 (M) <code>staff.view</code> shows staff phone numbers and e-mails.</strong></p>
+<ul>
+<li><code>GET /staff</code> and <code>/branches/:id/staff</code> return <code>email</code> and <code>phone</code>.</li>
+<li><strong>Who holds it.</strong> Migration 134 gave <code>staff.view</code> to <em>every</em> role, because everyone had it before. Migrations 140 and 141 then took it off Cashier, Waiter and Teller. Every other pre-134 custom role still holds it.</li>
+<li><strong>Split.</strong> <code>staff.view</code> (names, roles, branches and status) and <code>staff.contacts</code> (phone and e-mail).</li>
+</ul>
+<p><strong>F6 (M) Staff pay rates are part of &quot;Add and edit staff&quot;.</strong></p>
+<ul>
+<li><code>PATCH /staff/:id</code> writes <code>hourly_rate</code>.</li>
+<li>The labour report (<code>reports.labour</code>, <code>/reports/splh</code>) shows each person&#39;s rate.</li>
+<li><strong>Split.</strong> <code>staff.pay</code> for setting rates. The labour report stays under <code>reports.labour</code>, as an accountant&#39;s figure.</li>
+</ul>
+<p><strong>F7 (M) The Analytics area is opened by <code>reports.sales</code> alone.</strong></p>
+<ul>
+<li><code>/analytics/*</code> (13 routes, premium) includes:<ul>
+<li>&quot;money leaks&quot;: voids and refunds by staff, which is <code>reports.voids</code> data;</li>
+<li>the branch comparisons;</li>
+<li>recommendations.</li>
+</ul>
+</li>
+<li>A Supervisor (<code>reports.sales</code>) gets all of it.</li>
+<li><strong>Split.</strong> <code>reports.analytics</code> opens the area. Inside it, money leaks also needs <code>reports.voids</code>, and the cost, customer and credit cards keep their own keys, as they do today.</li>
+</ul>
+<p><strong>F8 (M) <code>reports.overview</code> reads the full sales and item reports.</strong></p>
+<ul>
+<li><code>/reports/sales</code> and <code>/reports/products</code> accept <code>reports.overview</code> instead of <code>reports.sales</code> / <code>reports.items</code>, for any date range.</li>
+<li>The desktop&#39;s <code>manager:salesSummary</code> / <code>topProducts</code> do the same.</li>
+<li><strong>Why it matters.</strong> The label says &quot;today&#39;s sales, orders and open drawers&quot;.</li>
+<li><strong>Fix (narrowing, D8).</strong> With Overview alone, the cloud answers today&#39;s range only.</li>
+</ul>
+<p><strong>F9 (L) Supplier records are part of &quot;Receive deliveries&quot;.</strong></p>
+<ul>
+<li><code>inventory.receive</code> also adds, changes and deletes suppliers: contacts and payment details (<code>/stock/suppliers</code>).</li>
+<li>It also raises and cancels purchase orders.</li>
+<li><strong>Split.</strong> <code>suppliers.manage</code> and <code>inventory.order</code>. <code>inventory.receive</code> keeps the receiving itself (GRNs) and reading suppliers and purchase orders.</li>
+</ul>
+<p><strong>F10 (L) Role lists are open.</strong></p>
+<ul>
+<li><code>GET /staff/roles</code> (every role&#39;s keys and member counts) and <code>GET /staff/authorizers</code> (who can approve, by name) need only a sign-in.</li>
+<li><strong>Fix.</strong> Gate them on <code>staff.view</code>, <code>staff.edit</code> or <code>staff.roles</code>. The till&#39;s role picker uses <code>staff.edit</code>.</li>
+</ul>
+<p><strong>F11 (M) Partners and branch staff see the whole business&#39;s customers.</strong></p>
+<ul>
+<li>Customers have no branch, so the list is business-wide (<code>.eq(&#39;business_id&#39;)</code> only).</li>
+<li>This works against A582&#39;s rule that a partner sees only their own branches.</li>
+<li><strong>Fix (D7).</strong> Narrow partners in a set of branches, and branch-only partners, to customers with an order at their branches.</li>
+</ul>
+<h3 id="money">Money</h3>
+<p><strong>F12 (H) <code>menu.costs</code> is a &quot;view&quot; key that also changes cost prices.</strong></p>
+<ul>
+<li><code>PATCH /products/:id</code> accepts a <code>cost_price</code> change from anyone holding <code>menu.costs</code>. The route gate is any of <code>menu.edit</code> / <code>menu.prices</code> / <code>menu.costs</code>, and the field decides which is needed.</li>
+<li><code>PATCH /products/bulk-cost/by-ids</code> needs only <code>menu.costs</code>.</li>
+<li><strong>Who can therefore change cost prices.</strong><ul>
+<li>The built-in <strong>Auditor</strong>: <code>VIEW_KEYS</code> includes <code>menu.costs</code>, yet the role &quot;changes nothing&quot;.</li>
+<li>The <strong>Storekeeper</strong> and <strong>Kitchen Manager</strong>.</li>
+</ul>
+</li>
+<li><strong>Split.</strong> <code>menu.costs</code> (see) and <code>menu.costs_edit</code> (change).</li>
+</ul>
+<p><strong>F13 (H) <code>fuel.manage</code> is a Cashier default and covers set-up and deliveries.</strong></p>
+<ul>
+<li>Every cashier role, at every business type, can create, change and delete pumps and tanks (<code>/pumps</code>, <code>/fuel-tanks</code>) and record tank deliveries (<code>POST /fuel-tanks/:id/delivery</code>).</li>
+<li>A false delivery hides missing fuel.</li>
+<li><strong>Split.</strong> <code>fuel.manage</code> (pump active / idle and the reads), <code>fuel.deliveries</code> and <code>fuel.setup</code>.</li>
+</ul>
+<p><strong>F14 (H) <code>customers.credit</code> covers approving, repaying and writing off; credit limits go by role name.</strong></p>
+<ul>
+<li>One key approves a sale on account with a PIN, records repayments (<code>POST /credit/customer/:id/payment</code>) and adjusts balances, including write-offs (<code>/adjustment</code>).</li>
+<li>Credit limits (<code>PATCH /credit/customer/:id/limit</code>, <code>/credit/candidates</code>) go by role NAME: a built-in role called Manager or General Manager, the owner, or a partner at their own branch (<code>lib/creditApprovers.ts maySetCreditLimits</code>). That breaks rule 2 of A490 (&quot;no role-name checks&quot;).</li>
+<li><strong>Split.</strong> <code>customers.credit</code> (approve a sale on account; the till checks it by this name), <code>customers.credit_payment</code>, <code>customers.credit_adjust</code> and <code>customers.credit_limit</code>.</li>
+</ul>
+<p><strong>F15 (M) <code>shifts.confirm</code> approves three different kinds of money action.</strong></p>
+<ul>
+<li>It confirms drawers and shows the expected cash. That is right together.</li>
+<li>It also makes the holder an approver for cash out, pay-outs and drawer expenses (with their PIN).</li>
+<li>It also approves removing items already sent to the kitchen (<code>POST /orders/:id/kitchen-void</code>, the till&#39;s <code>kitchen:void</code>).</li>
+<li>A Finance Manager confirms drawers but has no business approving kitchen removals.</li>
+<li><strong>Split.</strong> <code>shifts.approve_payout</code> and <code>sales.approve_kitchen_void</code>.</li>
+</ul>
+<p><strong>F16 (M) <code>sales.discount</code> (Cashier default) covers typed and set-up discounts.</strong></p>
+<ul>
+<li>The same key covers a typed manual amount or percent, up to the business limit (<code>orders</code> POST / pay, <code>discountRefused</code>), and applying a set-up discount or promo code (<code>POST /discounts/apply</code>).</li>
+<li><strong>Split.</strong> <code>sales.discount</code> (typed; the till checks it by this name) and <code>sales.discount_preset</code>.</li>
+</ul>
+<p><strong>F17 (M) <code>expenses.manage</code> adds, changes, removes, and sets types and monthly-pack entries.</strong></p>
+<ul>
+<li>Changing or removing a recorded expense rewrites the books.</li>
+<li>The monthly pack&#39;s cash and M-Pesa books (<code>POST /reports/monthly/movements</code>) are a finance task.</li>
+<li>A594 added <code>expenses.record</code> for the drawer. Its label &quot;Record expenses&quot; is the same as <code>expenses.manage</code>&#39;s, so two ticks on the Roles screen read alike. <strong>Rename the labels</strong> (section 5).</li>
+<li><strong>Split.</strong> <code>expenses.manage</code> (add a back-office expense), <code>expenses.edit</code>, <code>expenses.types</code> and <code>expenses.monthly</code>.</li>
+</ul>
+<p><strong>F18 (M) <code>payables.manage</code> records bills and pays suppliers.</strong></p>
+<ul>
+<li><strong>Split.</strong> <code>payables.manage</code> (bills, returns and voiding them) and <code>payables.pay</code> (record a payment and void one).</li>
+</ul>
+<p><strong>F19 (M) <code>devices.approve</code> (Manager default) covers approving, retiring and removing tills.</strong></p>
+<ul>
+<li>It approves and rejects new tills, renames them, retires, unretires, removes them, authorises a hand-over, and lists the fleet.</li>
+<li><strong>Split.</strong> <code>devices.view</code>, <code>devices.approve</code> (approve / reject / rename) and <code>devices.retire</code> (retire, unretire, remove, hand over).</li>
+</ul>
+<p><strong>F20 (M) <code>settings.business</code> covers the profile, tax rates and selling limits.</strong></p>
+<ul>
+<li>Through <code>POST /business/settings</code> and the till&#39;s <code>tillGates.ts</code> it covers the profile and hours, the receipt and history rules, VAT and levy rates (<code>vat_rate</code>, <code>ctl_rate</code>), the discount limit (<code>max_discount_pct</code>) and continuous operation.</li>
+<li><strong>Split.</strong> <code>settings.business</code> (profile, hours, receipt and history rules), <code>settings.tax</code> and <code>settings.sales_rules</code>.</li>
+</ul>
+<p><strong>F21 (M) <code>settings.mpesa</code> is a Manager default.</strong></p>
+<ul>
+<li>It sets the M-Pesa number customers pay to. The owner is told of every change, but a wrong number sends the day&#39;s money elsewhere.</li>
+<li><strong>Fix.</strong> No split. The default changes (D9): new businesses&#39; Manager roles do not get it.</li>
+</ul>
+<p><strong>F22 (L) <code>parking.manage</code> (Cashier default) includes voiding tickets.</strong></p>
+<ul>
+<li><strong>Split.</strong> <code>parking.void</code>.</li>
+</ul>
+<h3 id="operations">Operations</h3>
+<p><strong>F23 (M) <code>inventory.adjust</code> covers hand changes, count review and reorder levels.</strong></p>
+<ul>
+<li>It covers:<ul>
+<li>changing a stock figure by hand (<code>/inventory/adjust</code>, <code>/stock/ingredients/:id/adjust</code>, <code>/branches/:id/stock/:productId</code>);</li>
+<li>reviewing counts, which also unblinds the expected figure (<code>/stock-takes/:id/recount|post</code>);</li>
+<li>reorder levels and thresholds;</li>
+<li>closing batches and voiding wastage.</li>
+</ul>
+</li>
+<li><strong>Split.</strong> <code>inventory.adjust</code> (hand changes, batches, wastage voids), <code>inventory.count_review</code> and <code>inventory.reorder</code>. Reorder is also offered to <code>inventory.receive</code> holders today.</li>
+</ul>
+<p><strong>F24 (M) <code>menu.edit</code> (34 routes) covers adding, deleting and bulk changes.</strong></p>
+<ul>
+<li>Deleting products, categories, menus, variant / modifier groups and options, or combos (8 routes) loses history from the screens.</li>
+<li>Bulk import, bulk tax class, bulk stock tracking and code generation (6 routes) change hundreds of items at once.</li>
+<li><strong>Split.</strong> <code>menu.edit</code>, <code>menu.delete</code> and <code>menu.bulk</code>.</li>
+</ul>
+<p><strong>F25 (L) <code>changes.approve</code> covers menu and staff changes made on a till.</strong></p>
+<ul>
+<li>Staff changes made on a till (new people, PINs) are approved by the same key as menu changes. The Operations Manager holds it.</li>
+<li><strong>Split.</strong> <code>changes.approve_staff</code>.</li>
+</ul>
+<p><strong>F26 (L) <code>staff.edit</code> covers PINs and per-person rights.</strong></p>
+<ul>
+<li>Setting or resetting PINs and approval PINs and resetting sign-in codes are security actions.</li>
+<li>Per-person rights (override keys) widen one person beyond their role, within the ceiling.</li>
+<li><strong>Split.</strong> <code>staff.pins</code> and <code>staff.access</code>. Giving a person a role stays with <code>staff.edit</code>, which a manager needs to take on a cashier.</li>
+</ul>
+<p><strong>Already right, and kept:</strong></p>
+<ul>
+<li>void vs refund (two keys);</li>
+<li>Close Day vs Close Branch (A520);</li>
+<li>force-close;</li>
+<li>every report on its own key;</li>
+<li>receipt text vs business settings;</li>
+<li>promotions (owner) vs offers;</li>
+<li>the count freeze (owner);</li>
+<li><code>payables.view</code> vs <code>payables.manage</code>;</li>
+<li>drawer figures stripped (A494) and cost fields stripped (A490 rule 4).</li>
+</ul>
+<p><strong>Considered and not proposed now:</strong></p>
+<ul>
+<li>splitting &quot;approve a void / refund&quot; from &quot;void / refund&quot; (<code>sales.void_approve</code>). Today the approver must hold the same key; revisit if owners ask for cashier-started voids;</li>
+<li><code>settings.branches_close</code> (deactivate a branch / set the main branch, where branch creation is ZapTill&#39;s);</li>
+<li>a price-override key. There is no open-price feature at the POS yet; if one is added, it gets its own key (<code>sales.price_override</code>).</li>
+</ul>
+<h2 id="5-proposed-split">5. Proposed split</h2>
+<h3 id="5-1-the-new-keys">5.1 The new keys</h3>
+<p>Each new key is one part of a key that exists today (its <strong>parent</strong>). The parent keeps its name and the part a 1.0.21 desktop POS checks by that name. This is the same pattern A594 used for <code>shifts.cash_movements</code>. <strong>Personal</strong> marks keys that show personal data: they get a badge on the Roles screen and are left out of the built-in Auditor (section 5.4).</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>New key</th>
+<th>Parent</th>
+<th>Label (owner&#39;s words)</th>
+<th>Guards</th>
+<th>Personal</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>customers.contacts</code></td>
+<td>customers.view</td>
+<td>See customers&#39; phone numbers and e-mails</td>
+<td>full <code>phone</code> / <code>email</code> in <code>/loyalty/customers</code>, <code>/loyalty/customer/:id</code>, <code>/credit/customers</code>, <code>/credit/customer/:id</code>, <code>/pos/credit-customers</code>, <code>/analytics/customers</code>, <code>/analytics/credit-ageing</code>; <code>customer_phone</code> and <code>payments.mpesa_phone</code> in <code>/orders</code>, <code>/orders/:id</code>; <code>/mpesa/status</code>, <code>/mpesa/exceptions</code>. Without it: masked. Desktop: customer and credit screens</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>customers.history</code></td>
+<td>customers.view</td>
+<td>See what a customer bought</td>
+<td><code>/loyalty/customer/:id/transactions</code>, <code>/loyalty/customer/:id/insights</code>, the named list in <code>/analytics/customers</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>customers.delete</code></td>
+<td>customers.edit</td>
+<td>Remove customers</td>
+<td><code>DELETE /loyalty/customer/:id</code> (also the way to honour an erasure request)</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>customers.credit_payment</code></td>
+<td>customers.credit</td>
+<td>Record credit repayments</td>
+<td><code>POST /credit/customer/:id/payment</code>; the Credit accounts screen (CreditAccountsPage)</td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>customers.credit_adjust</code></td>
+<td>customers.credit</td>
+<td>Adjust or write off credit balances</td>
+<td><code>POST /credit/customer/:id/adjustment</code></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>customers.credit_limit</code></td>
+<td>(role-name rule)</td>
+<td>Set customers&#39; credit limits</td>
+<td><code>GET /credit/candidates</code>, <code>PATCH /credit/customer/:id/limit</code> (replaces <code>maySetCreditLimits</code>&#39;s role names)</td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>customers.export</code></td>
+<td>(reserved)</td>
+<td>Download customer lists</td>
+<td>no route today; registered with the first customer download, which must need it</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>staff.contacts</code></td>
+<td>staff.view</td>
+<td>See staff phone numbers and e-mails</td>
+<td><code>phone</code> / <code>email</code> in <code>GET /staff</code>, <code>/branches/:id/staff</code>, the till&#39;s <code>manage:listStaff</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>staff.pins</code></td>
+<td>staff.edit</td>
+<td>Set and reset PINs and sign-in codes</td>
+<td><code>pin</code> / approval PIN fields of <code>POST /staff</code>, <code>PATCH /staff/:id</code>; <code>POST /staff/:id/reset-otp</code>; till staff PIN change</td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>staff.access</code></td>
+<td>staff.edit</td>
+<td>Give a person their own rights</td>
+<td><code>override_keys</code> / <code>overrides</code> of <code>POST /staff</code>, <code>PATCH /staff/:id</code> (the ceiling still applies)</td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>staff.pay</code></td>
+<td>staff.edit</td>
+<td>Set staff pay rates</td>
+<td><code>hourly_rate</code> of <code>PATCH /staff/:id</code> (accepted with <code>staff.pay</code> alone for that field)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>settings.webhooks</code></td>
+<td>settings.integrations</td>
+<td>Webhooks (send sales to another system)</td>
+<td><code>/webhooks/*</code> (6)</td>
+<td></td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>settings.report_emails</code></td>
+<td>settings.integrations</td>
+<td>Scheduled report e-mails</td>
+<td><code>GET /business/settings/report-schedule</code>, <code>report_schedule</code> in <code>POST /business/settings</code></td>
+<td></td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>reports.analytics</code></td>
+<td>reports.sales</td>
+<td>Analytics</td>
+<td><code>router.use</code> of <code>/analytics/*</code> (13); money leaks also needs <code>reports.voids</code></td>
+<td></td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>reports.audit</code></td>
+<td>reports.voids</td>
+<td>Audit trail</td>
+<td><code>GET /reports/export/audit</code></td>
+<td></td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>menu.costs_edit</code></td>
+<td>menu.costs</td>
+<td>Change cost prices</td>
+<td><code>cost_price</code> in <code>PATCH /products/:id</code>, <code>POST /products</code>, <code>POST /products/bulk</code>; <code>PATCH /products/bulk-cost/by-ids</code>; the till&#39;s cost field (ipc/menu.ts)</td>
+<td></td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>menu.delete</code></td>
+<td>menu.edit</td>
+<td>Delete products, categories and menus</td>
+<td><code>DELETE</code> of <code>/products/:id</code>, <code>/categories/:id</code>, <code>/menus/:id</code>, <code>/variants/groups/:id</code>, <code>/variants/options/:id</code>, <code>/modifiers/groups/:id</code>, <code>/modifiers/options/:id</code>, <code>/combos/:id</code>; till delete buttons</td>
+<td></td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>menu.bulk</code></td>
+<td>menu.edit</td>
+<td>Bulk changes to the menu</td>
+<td><code>POST /products/bulk</code>, <code>PATCH /products/bulk-tax/by-category</code>, <code>/bulk-tax/by-ids</code>, <code>/bulk-track/by-ids</code>, <code>POST /variants/bulk</code>, <code>POST /products/barcodes/generate</code></td>
+<td></td>
+</tr>
+<tr>
+<td>19</td>
+<td><code>suppliers.manage</code></td>
+<td>inventory.receive</td>
+<td>Add, change and remove suppliers</td>
+<td><code>POST</code>, <code>PATCH</code>, <code>DELETE /stock/suppliers</code> (reading stays with receive)</td>
+<td></td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>inventory.order</code></td>
+<td>inventory.receive</td>
+<td>Purchase orders</td>
+<td><code>POST</code>, <code>PATCH /stock/purchase-orders</code>, <code>/:id/cancel</code>, <code>DELETE</code> (reading stays with receive)</td>
+<td></td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>inventory.count_review</code></td>
+<td>inventory.adjust</td>
+<td>Review and post stock counts</td>
+<td><code>POST /stock-takes/:id/recount</code>, <code>/post</code>; the unblinded expected figure (<code>stockTakeAccess.may</code>)</td>
+<td></td>
+</tr>
+<tr>
+<td>22</td>
+<td><code>inventory.reorder</code></td>
+<td>inventory.adjust, inventory.receive</td>
+<td>Reorder levels</td>
+<td><code>PATCH /inventory/:product_id/threshold</code>, <code>PATCH /stock/ingredients/:id/reorder</code></td>
+<td></td>
+</tr>
+<tr>
+<td>23</td>
+<td><code>fuel.deliveries</code></td>
+<td>fuel.manage</td>
+<td>Record fuel deliveries</td>
+<td><code>POST /fuel-tanks/:id/delivery</code></td>
+<td></td>
+</tr>
+<tr>
+<td>24</td>
+<td><code>fuel.setup</code></td>
+<td>fuel.manage</td>
+<td>Set up pumps and tanks</td>
+<td><code>POST</code>, <code>PATCH</code>, <code>DELETE /pumps</code>, <code>/fuel-tanks</code> (6)</td>
+<td></td>
+</tr>
+<tr>
+<td>25</td>
+<td><code>shifts.approve_payout</code></td>
+<td>shifts.confirm</td>
+<td>Approve cash out and drawer expenses with their PIN</td>
+<td>the approver of <code>POST /shifts/:id/float</code> (cash out), <code>/shifts/:id/expense</code>; till approvals (<code>approverByPin</code>, shiftService)</td>
+<td></td>
+</tr>
+<tr>
+<td>26</td>
+<td><code>sales.approve_kitchen_void</code></td>
+<td>shifts.confirm</td>
+<td>Approve removing items sent to the kitchen</td>
+<td>the approver of <code>POST /orders/:id/kitchen-void</code>; till <code>kitchen:void</code> (approver via <code>mayConfirmLocal</code>, ipc/shared.ts)</td>
+<td></td>
+</tr>
+<tr>
+<td>27</td>
+<td><code>sales.discount_preset</code></td>
+<td>sales.discount</td>
+<td>Apply set-up discounts and promo codes</td>
+<td><code>POST /discounts/apply</code>; the till&#39;s discount picker presets</td>
+<td></td>
+</tr>
+<tr>
+<td>28</td>
+<td><code>expenses.edit</code></td>
+<td>expenses.manage</td>
+<td>Change or remove recorded expenses</td>
+<td><code>PATCH</code>, <code>DELETE /expenses/:id</code></td>
+<td></td>
+</tr>
+<tr>
+<td>29</td>
+<td><code>expenses.types</code></td>
+<td>expenses.manage</td>
+<td>Expense types</td>
+<td><code>POST</code>, <code>PATCH</code>, <code>DELETE /expenses/categories</code>; till <code>expense:addCategory</code></td>
+<td></td>
+</tr>
+<tr>
+<td>30</td>
+<td><code>expenses.monthly</code></td>
+<td>expenses.manage</td>
+<td>Monthly pack entries</td>
+<td><code>POST /reports/monthly/movements</code>; the monthly pack read that <code>expenses.manage</code> opens today</td>
+<td></td>
+</tr>
+<tr>
+<td>31</td>
+<td><code>payables.pay</code></td>
+<td>payables.manage</td>
+<td>Pay suppliers</td>
+<td><code>POST /payables/payments</code>, <code>/payments/:id/void</code></td>
+<td></td>
+</tr>
+<tr>
+<td>32</td>
+<td><code>devices.view</code></td>
+<td>devices.approve</td>
+<td>See the tills</td>
+<td><code>GET /devices</code>, <code>/devices/fleet</code></td>
+<td></td>
+</tr>
+<tr>
+<td>33</td>
+<td><code>devices.retire</code></td>
+<td>devices.approve</td>
+<td>Retire, remove or hand over tills</td>
+<td><code>PATCH /devices/:id/retire</code>, <code>/unretire</code>, <code>DELETE /devices/:id</code>, <code>POST /devices/:id/authorise-handover</code></td>
+<td></td>
+</tr>
+<tr>
+<td>34</td>
+<td><code>settings.tax</code></td>
+<td>settings.business</td>
+<td>Tax rates</td>
+<td><code>vat_rate</code>, <code>ctl_rate</code> in <code>POST /business/settings</code> and <code>tillGates.ts</code></td>
+<td></td>
+</tr>
+<tr>
+<td>35</td>
+<td><code>settings.sales_rules</code></td>
+<td>settings.business</td>
+<td>Discount limit and selling rules</td>
+<td><code>max_discount_pct</code>, <code>continuous_operation</code> and the history rules in <code>POST /business/settings</code> and <code>tillGates.ts</code></td>
+<td></td>
+</tr>
+<tr>
+<td>36</td>
+<td><code>changes.approve_staff</code></td>
+<td>changes.approve</td>
+<td>Approve staff changes made on a till</td>
+<td><code>POST /changes/:id/decide</code> when the change is a staff change; the count and list show staff changes only with it</td>
+<td></td>
+</tr>
+<tr>
+<td>37</td>
+<td><code>parking.void</code></td>
+<td>parking.manage</td>
+<td>Void parking tickets</td>
+<td><code>POST /parking-sessions/:id/void</code></td>
+<td></td>
+</tr>
+</tbody></table>
+<p>The parents&#39; new labels:</p>
+<ul>
+<li><code>customers.view</code>: &quot;See customers (phone numbers masked)&quot;.</li>
+<li><code>customers.credit</code>: &quot;Approve sales on account&quot;.</li>
+<li><code>staff.view</code>: &quot;See staff&quot;.</li>
+<li><code>staff.edit</code>: &quot;Add and edit staff, their branches and role&quot;.</li>
+<li><code>settings.integrations</code>: &quot;QR ordering&quot;.</li>
+<li><code>menu.costs</code>: &quot;See cost prices&quot;.</li>
+<li><code>menu.edit</code>: &quot;Add and change the menu&quot;.</li>
+<li><code>inventory.receive</code>: &quot;Receive deliveries&quot;.</li>
+<li><code>inventory.adjust</code>: &quot;Change stock figures by hand&quot;.</li>
+<li><code>fuel.manage</code>: &quot;Pumps on and off&quot;.</li>
+<li><code>shifts.confirm</code>: &quot;Confirm drawers and see the expected cash&quot;.</li>
+<li><code>sales.discount</code>: &quot;Give typed discounts (up to the limit)&quot;.</li>
+<li><code>expenses.manage</code>: &quot;Add back-office expenses&quot; (and A594&#39;s <code>expenses.record</code> becomes &quot;Record drawer expenses&quot;).</li>
+<li><code>payables.manage</code>: &quot;Record supplier bills and returns&quot;.</li>
+<li><code>devices.approve</code>: &quot;Approve and rename tills&quot;.</li>
+<li><code>settings.business</code>: &quot;Business profile, hours and receipt rules&quot;.</li>
+<li><code>changes.approve</code>: &quot;Approve menu changes made on a till&quot;.</li>
+<li><code>parking.manage</code>: &quot;Open and close parking tickets&quot;.</li>
+</ul>
+<p>Each new key also needs its business-type wording in <code>shared/businessTerms.ts</code> where the parent has one (for example, &quot;products&quot; instead of &quot;menu&quot; for a shop).</p>
+<h3 id="5-2-defaults-per-built-in-role-new-businesses">5.2 Defaults per built-in role (new businesses)</h3>
+<p>A tick means the built-in role is seeded with the key (<code>BUILT_IN_ROLES</code>, <code>lib/defaultRolePermissions.ts</code>). General Manager holds every key by definition (<code>PERMISSION_KEYS</code>), except where D3 makes webhooks and report e-mails the owner&#39;s. The Owner always holds everything.</p>
+<table>
+<thead>
+<tr>
+<th>New key</th>
+<th>Mgr</th>
+<th>GM</th>
+<th>Ops</th>
+<th>Fin</th>
+<th>Acc</th>
+<th>Aud</th>
+<th>Sup</th>
+<th>Csh</th>
+<th>Wtr</th>
+<th>Kit</th>
+<th>KMg</th>
+<th>Sto</th>
+<th>Fuel</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>customers.contacts</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>customers.history</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>customers.delete</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>customers.credit_payment</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>customers.credit_adjust</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>customers.credit_limit</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>customers.export</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>staff.contacts</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>staff.pins</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>staff.access</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>staff.pay</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>settings.webhooks</td>
+<td></td>
+<td>(D3)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>settings.report_emails</td>
+<td></td>
+<td>(D3)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>reports.analytics</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>reports.audit</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>menu.costs_edit</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>menu.delete</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>menu.bulk</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>suppliers.manage</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>inventory.order</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>inventory.count_review</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>inventory.reorder</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+</tr>
+<tr>
+<td>fuel.deliveries</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>fuel.setup</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>shifts.approve_payout</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>sales.approve_kitchen_void</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>sales.discount_preset</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>expenses.edit</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>expenses.types</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>expenses.monthly</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>payables.pay</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>devices.view</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>devices.retire</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>settings.tax</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>settings.sales_rules</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>changes.approve_staff</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>parking.void</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+<p>Changes to the built-in defaults of <strong>existing</strong> keys for new businesses:</p>
+<ul>
+<li><code>sales.discount</code> (typed) leaves Cashier and Waiter: they get <code>sales.discount_preset</code>.</li>
+<li><code>settings.mpesa</code> leaves Manager (F21).</li>
+<li>The Auditor&#39;s <code>menu.costs</code> stays (it is a view). The Auditor never gets <code>menu.costs_edit</code>.</li>
+</ul>
+<h3 id="5-3-carry-over-nobody-gains-or-loses-on-deploy">5.3 Carry-over: nobody gains or loses on deploy</h3>
+<p><strong>The rule.</strong> Every holder of a parent gets all of its new parts:</p>
+<ul>
+<li>every role that holds the parent, through <code>role_permissions</code>;</li>
+<li>every person override of the parent, through <code>user_permissions</code>, given or taken away. A taken-away parent becomes taken-away parts.</li>
+</ul>
+<p>The owner&#39;s roles get every new key, as every new key always has. What a person may do the day after the deploy equals what they could do the day before, because the parent still guards what it guarded and the new keys are already held wherever the parent is.</p>
+<table>
+<thead>
+<tr>
+<th>Parent held</th>
+<th>Gets</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>customers.view</td>
+<td>customers.contacts, customers.history</td>
+</tr>
+<tr>
+<td>customers.edit</td>
+<td>customers.delete</td>
+</tr>
+<tr>
+<td>customers.credit</td>
+<td>customers.credit_payment, customers.credit_adjust</td>
+</tr>
+<tr>
+<td>built-in Manager / General Manager roles (<code>is_default</code>, by today&#39;s role-name rule) and the owner roles</td>
+<td>customers.credit_limit (exactly who sets limits today)</td>
+</tr>
+<tr>
+<td>staff.view</td>
+<td>staff.contacts</td>
+</tr>
+<tr>
+<td>staff.edit</td>
+<td>staff.contacts, staff.pins, staff.access, staff.pay</td>
+</tr>
+<tr>
+<td>settings.integrations</td>
+<td>settings.webhooks, settings.report_emails</td>
+</tr>
+<tr>
+<td>reports.sales</td>
+<td>reports.analytics</td>
+</tr>
+<tr>
+<td>reports.voids</td>
+<td>reports.audit</td>
+</tr>
+<tr>
+<td>menu.costs</td>
+<td>menu.costs_edit</td>
+</tr>
+<tr>
+<td>menu.edit</td>
+<td>menu.delete, menu.bulk</td>
+</tr>
+<tr>
+<td>inventory.receive</td>
+<td>suppliers.manage, inventory.order, inventory.reorder</td>
+</tr>
+<tr>
+<td>inventory.adjust</td>
+<td>inventory.count_review, inventory.reorder</td>
+</tr>
+<tr>
+<td>fuel.manage</td>
+<td>fuel.deliveries, fuel.setup</td>
+</tr>
+<tr>
+<td>shifts.confirm</td>
+<td>shifts.approve_payout, sales.approve_kitchen_void</td>
+</tr>
+<tr>
+<td>sales.discount</td>
+<td>sales.discount_preset</td>
+</tr>
+<tr>
+<td>expenses.manage</td>
+<td>expenses.edit, expenses.types, expenses.monthly</td>
+</tr>
+<tr>
+<td>payables.manage</td>
+<td>payables.pay</td>
+</tr>
+<tr>
+<td>devices.approve</td>
+<td>devices.view, devices.retire</td>
+</tr>
+<tr>
+<td>settings.business</td>
+<td>settings.tax, settings.sales_rules</td>
+</tr>
+<tr>
+<td>changes.approve</td>
+<td>changes.approve_staff</td>
+</tr>
+<tr>
+<td>parking.manage</td>
+<td>parking.void</td>
+</tr>
+<tr>
+<td>reports.overview without reports.sales / reports.items (custom roles only; no built-in role)</td>
+<td>reports.sales / reports.items, so F8&#39;s narrowing takes nothing away (D8)</td>
+</tr>
+</tbody></table>
+<p>The <strong>legacy broad keys</strong> get the parts too, wherever their list holds the parent. An old token, an override row or a till map that still carries a broad key then keeps its meaning:</p>
+<ul>
+<li><code>settings.manage</code> gets devices, settings.business, changes and integrations parts;</li>
+<li><code>products.manage</code> gets the menu.edit and menu.costs parts;</li>
+<li><code>customers.manage</code> gets customers.delete and the credit parts;</li>
+<li><code>staff.manage</code> gets the staff parts;</li>
+<li><code>reports.view</code> gets reports.analytics and reports.audit;</li>
+<li><code>orders.void</code> and <code>shifts.manage</code> get the shifts.confirm parts.</li>
+</ul>
+<p><code>legacyKeysFor</code> then reports a broad key only when every part is held, which is what the carry-over guarantees.</p>
+<p><strong>Partners.</strong> They are treated exactly as their role and overrides say. Nothing extra and nothing less:</p>
+<ul>
+<li>They pass through the same carry-over.</li>
+<li>In &quot;All my branches&quot; they still only read.</li>
+<li>Owner-only rules stay owner-only.</li>
+<li>One partner exception is decided by D4: today a partner sets credit limits at their own branch whatever their role. Kept, the rule stays as it is. Dropped, partners set limits only through <code>customers.credit_limit</code>. Their roles then need the key, and 176 can give it to the roles of today&#39;s live partners (<code>web_partners</code>) so nothing changes on the day.</li>
+</ul>
+<h3 id="5-4-default-changes-for-owner-review">5.4 Default changes for owner review</h3>
+<p>These are the only places where an <strong>existing</strong> role changes. They are not part of the carry-over migration. Each one runs only if the owner says yes, in its own guarded block of a second migration (section 6.1).</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Change</th>
+<th>Roles affected</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>C1 (D1)</td>
+<td>Take off customers.contacts, customers.history</td>
+<td>built-in Cashier and Waiter roles, and roles that hold <code>orders.create</code> but nothing beyond the floor keys (<code>isBackOffice</code> false)</td>
+<td>A cashier finds a customer by number; the list is not theirs</td>
+</tr>
+<tr>
+<td>C2 (D2)</td>
+<td>Take off menu.costs_edit</td>
+<td>built-in Auditor roles (correction); optionally Storekeeper</td>
+<td>&quot;Changes nothing&quot; / receiving carries its own cost</td>
+</tr>
+<tr>
+<td>C3 (D3)</td>
+<td>Take off settings.webhooks, settings.report_emails</td>
+<td>every non-owner role</td>
+<td>Data leaving the business</td>
+</tr>
+<tr>
+<td>C4 (D5)</td>
+<td>Take off fuel.deliveries, fuel.setup</td>
+<td>built-in Cashier and Fuel attendant roles</td>
+<td>A false delivery hides missing fuel</td>
+</tr>
+<tr>
+<td>C5 (D6)</td>
+<td>Take off sales.discount (typed), keep sales.discount_preset</td>
+<td>built-in Cashier and Waiter roles</td>
+<td>Typed discounts are the most common till fraud (finding M4, orders.ts)</td>
+</tr>
+<tr>
+<td>C6</td>
+<td>Take off parking.void</td>
+<td>built-in Cashier roles</td>
+<td>A void is a money action</td>
+</tr>
+<tr>
+<td>C7 (D9)</td>
+<td>Take off customers.credit_adjust, staff.access, staff.pay, devices.retire, expenses.edit, expenses.monthly; settings.mpesa</td>
+<td>built-in Manager roles</td>
+<td>Write-offs, pay rates and rights are the owner&#39;s or the finance manager&#39;s</td>
+</tr>
+<tr>
+<td>C8</td>
+<td>Take off sales.approve_kitchen_void</td>
+<td>built-in Finance Manager roles</td>
+<td>Finance confirms drawers, not kitchen removals</td>
+</tr>
+<tr>
+<td>C9</td>
+<td>Take off reports.analytics</td>
+<td>built-in Supervisor roles</td>
+<td>The premium area is for managers</td>
+</tr>
+</tbody></table>
+<p><strong>Built-in Auditor and personal data.</strong> The Auditor is defined as <code>VIEW_KEYS</code>, every key marked as a view. The three new contact and history keys are views, so the definition becomes &quot;view and not personal&quot;. New Auditor roles then never get them, and existing Auditor roles keep them only if C1 is not extended to them. Recommendation: extend C1 to the Auditor too, because an outside auditor needs figures, not phone numbers.</p>
+<h2 id="6-implementation-plan">6. Implementation plan</h2>
+<h3 id="6-1-catalogue-and-migrations">6.1 Catalogue and migrations</h3>
+<ol>
+<li><strong><code>shared/permissions.ts</code></strong> (and its 5 copies, kept identical by <code>scripts/check-shared-sync.mjs</code>):<ul>
+<li>add the 37 entries to <code>PERMISSIONS</code>, with group, surface, <code>view</code> and a new <code>personal?: boolean</code>;</li>
+<li>add <code>SPLITS: Record&lt;parent, children[]&gt;</code> (section 5.3). This is the one source for the migration test, the Roles screen&#39;s nesting and <code>expandKeys</code>&#39; pre-migration behaviour;</li>
+<li>append the children to every <code>LEGACY</code> list that holds a parent;</li>
+<li>change <code>VIEW_KEYS</code> for the Auditor to view and not personal;</li>
+<li>update <code>BUILT_IN_ROLES</code> (section 5.2) and <code>FLOOR_KEYS</code>. <code>sales.discount_preset</code> is a floor key and <code>sales.discount</code> stays one, so a cashier is never &quot;back office&quot;.</li>
+<li>Before the migration has run (<code>splitsPending()</code>, on the pattern of <code>permissionsOpenBefore()</code>), <code>expandKeys</code> also adds the children of a held parent. Every client therefore behaves the same before and after the migration.</li>
+</ul>
+</li>
+<li><strong>Migration <code>176_permission_splits.sql</code></strong>: the first free number after A594&#39;s 175. If A594 adds another migration, take the next one.<ul>
+<li><strong>Register</strong> the keys idempotently, with EXACTLY the catalogue&#39;s tuple <code>(&#39;key&#39;, &#39;label&#39;, &#39;group&#39;, &#39;description&#39;)</code>. <code>test-migration-134.mjs</code>&#39;s <code>registeredLater</code> looks for that exact text, so 134&#39;s frozen test stays green. Relabel the parents with <code>UPDATE … SET label = …, description = … WHERE key = …</code>, the catalogue&#39;s exact words (as 140 and 147 do).</li>
+<li><strong>Carry over once</strong>, guarded by its own <code>schema_migrations</code> row:<ul>
+<li><code>INSERT … SELECT DISTINCT role_id, child FROM role_permissions JOIN permissions … WHERE key = parent ON CONFLICT DO NOTHING</code>, per <code>SPLITS</code> pair, generated from the catalogue the way 134&#39;s mapping is;</li>
+<li>the same for <code>user_permissions</code> with the same <code>granted</code> value;</li>
+<li><code>customers.credit_limit</code> for built-in Manager / General Manager roles (<code>is_default</code> and the role name, the rule it replaces) and the owner roles;</li>
+<li><code>reports.sales</code> / <code>reports.items</code> for roles holding <code>reports.overview</code> without them.</li>
+</ul>
+</li>
+<li>The <code>role_permissions</code> / <code>user_permissions</code> triggers bump <code>permissions_version</code>, so tokens renew and the tills get a staff change. The migration takes nothing away.</li>
+<li>A read-only preview query goes in the header, as in 175.</li>
+</ul>
+</li>
+<li><strong>Migration <code>177_permission_default_changes.sql</code></strong>: only the default changes the owner approves (C1–C9). Each sits in its own block under its own <code>schema_migrations</code> row, so an unapproved one is simply left out. Per-person overrides are never touched. A person given a right in Staff keeps it, as in 175.</li>
+</ol>
+<h3 id="6-2-cloud-enforcement-where-each-key-is-checked">6.2 Cloud enforcement (where each key is checked)</h3>
+<ul>
+<li><strong>Writes</strong> use the new key at the route (<code>requirePermission(child)</code>), or per field inside a mixed write, as <code>PATCH /products/:id</code> already does with <code>need.add(...)</code>. The field-level points are:<ul>
+<li><code>POST|PATCH /staff</code> (<code>pin</code> → staff.pins, <code>override_keys</code> → staff.access, <code>hourly_rate</code> → staff.pay);</li>
+<li><code>POST /business/settings</code> (<code>SETTING_WRITE_KEYS</code>: vat/ctl → settings.tax, <code>max_discount_pct</code> / <code>continuous_operation</code> / history rules → settings.sales_rules, <code>report_schedule</code> → settings.report_emails);</li>
+<li><code>PATCH /products/:id</code> (<code>cost_price</code> → menu.costs_edit);</li>
+<li><code>/changes/:id/decide</code> (by the change&#39;s kind).</li>
+</ul>
+</li>
+<li><strong>Approvers.</strong> <code>lib/approver.ts</code> <code>APPROVE_KEY</code> gains <code>payout: &#39;shifts.approve_payout&#39;</code> and <code>kitchen_void: &#39;sales.approve_kitchen_void&#39;</code>. <code>lib/confirmerLookup.ts</code> and <code>shiftConfirm.mayConfirm</code> keep <code>shifts.confirm</code> for drawers. <code>APPROVAL_PIN_KEYS</code> (routes/staff.ts) gains the two approver keys.</li>
+<li><strong>Reads that mask.</strong> A new <code>lib/personalData.ts</code>: <code>maskPhone(&#39;0712345678&#39;) → &#39;07•• ••• 678&#39;</code>, plus <code>withoutContacts(req, body)</code>, the same shape as <code>withoutCosts</code>, stripping or masking <code>phone</code>, <code>email</code>, <code>customer_phone</code>, <code>mpesa_phone</code> and <code>payer_phone</code> unless <code>customers.contacts</code> is held. It is applied as router middleware on <code>/loyalty</code>, <code>/credit</code>, <code>/analytics</code>, <code>/mpesa</code> (status and exceptions), <code>/orders</code> (list and detail) and <code>/pos/credit-customers</code>. Staff: <code>shapeStaff</code> drops <code>phone</code> / <code>email</code> without <code>staff.contacts</code>. Rule 4 of A490 holds: data a person may not see is not sent.</li>
+<li><strong>Narrowings:</strong><ul>
+<li><code>/reports/sales</code> and <code>/reports/products</code> with <code>reports.overview</code> only → today&#39;s range;</li>
+<li><code>/staff/roles</code> and <code>/staff/authorizers</code> → staff.view, staff.edit or staff.roles;</li>
+<li><code>/pos/credit-customers</code> → till session, customers.credit or customers.view;</li>
+<li><code>/credit/candidates</code> and <code>/credit/customer/:id/limit</code> → <code>customers.credit_limit</code> (the role-name rule in <code>maySetCreditLimits</code> goes; D4 decides the partner rule);</li>
+<li>customers for partners → D7.</li>
+</ul>
+</li>
+<li><code>rbac.ts</code>&#39;s <code>assertFineKeys</code> already refuses a non-catalogue key when a route file loads, and <code>check-permission-catalogue</code> refuses a legacy key in a check. Both stay as they are.</li>
+</ul>
+<h3 id="6-3-pos-desktop-1-0-22-and-offline">6.3 POS (desktop 1.0.22) and offline</h3>
+<ul>
+<li>The till&#39;s permission map comes from the cloud&#39;s <code>clientPermissionMap</code> / <code>permissionMapFor</code>, which already sends every fine key. The roster (<code>/pos/branch-staff</code>) carries each person&#39;s map, and the till keeps it offline. <strong>No local schema change</strong> is needed: the keys are strings in the cached map.</li>
+<li><strong>Older tills (1.0.21 and earlier)</strong> ignore keys they do not know: <code>expandMap</code> keeps only catalogue keys. They keep checking the parents, which still mean what they meant for those builds.<ul>
+<li>A parent holder has every child after 176, so nothing changes for them.</li>
+<li>A role that holds only a child and not its parent fails closed on an older till. This can only happen through the new defaults or an owner&#39;s choice. Example: a new business&#39;s Cashier with set-up discounts only cannot discount on 1.0.21. The 1.0.22 release notes say so.</li>
+</ul>
+</li>
+<li><strong>1.0.22 changes:</strong><ul>
+<li>copy the catalogue into <code>apps/desktop/src/{shared,main}/permissions.ts</code>;</li>
+<li><code>tillGates.ts</code> (<code>vat_rate</code>, <code>ctl_rate</code> → settings.tax; <code>max_discount_pct</code>, <code>continuous_operation</code> → settings.sales_rules);</li>
+<li><code>ipc/sale.ts</code> (typed vs preset discount);</li>
+<li><code>shiftService</code> / <code>ipc/shifts.ts</code> approvals (<code>shifts.approve_payout</code>), <code>ipc/kitchen.ts</code> (<code>sales.approve_kitchen_void</code>);</li>
+<li><code>ipc/menu.ts</code> (<code>menu.costs_edit</code>, <code>menu.delete</code>, <code>menu.bulk</code>), <code>ipc/staff.ts</code> (pins, access, pay), <code>ipc/credit.ts</code> (payment, adjust);</li>
+<li><code>ipc/expenses.ts</code> (types), <code>ipc/join.ts</code> / devices (<code>devices.view</code>);</li>
+<li>the screens in <code>renderer/pages/ManagerPage.tsx</code>, <code>POSPage.tsx</code> and <code>App.tsx</code>, and <code>renderer/lib/access.ts</code>.</li>
+</ul>
+</li>
+<li><strong>Masked data offline.</strong> The till&#39;s copy of credit customers comes masked from the cloud for people without <code>customers.contacts</code>. The till&#39;s own session keeps the full list only where it must dial or send (WhatsApp receipt). Otherwise mask at the source and let the till ask the cloud for the number when it sends.</li>
+</ul>
+<h3 id="6-4-screens">6.4 Screens</h3>
+<ul>
+<li><strong>Roles and permissions</strong> (<code>apps/dashboard/src/pages/settings/RolesTab.tsx</code>):<ul>
+<li>each group shows its keys in three columns: <strong>See</strong>, <strong>Do</strong> and <strong>Approve</strong> (keys of the same area side by side);</li>
+<li>a parent shows its parts indented under it, labelled &quot;includes&quot;;</li>
+<li>ticking a parent ticks its parts the first time, so an owner who ticks the old box gets what they always got; each part can then be unticked;</li>
+<li>a <strong>personal data</strong> badge on the four personal keys;</li>
+<li>the ceiling rule (<code>keysBeyond</code>) applies per part.</li>
+</ul>
+</li>
+<li><strong>Staff</strong> (<code>StaffTab.tsx</code>, <code>UsersAccessPage.tsx</code>):<ul>
+<li>per-person overrides use the same nesting;</li>
+<li>the form hides the PIN fields without <code>staff.pins</code>, the rights panel without <code>staff.access</code> and the pay rate without <code>staff.pay</code>;</li>
+<li>phone and e-mail are shown masked without <code>staff.contacts</code>.</li>
+</ul>
+</li>
+<li><strong>Web screens to update</strong> (from the mapping table):<ul>
+<li><code>DashboardLayout</code> (nav items per key);</li>
+<li><code>ManagerDashboard</code>, <code>CreditAccountsPage</code>, <code>ExpensesPage</code>, <code>SuppliersPage</code>, <code>OtherBranchesPage</code>;</li>
+<li><code>POSDrawer</code> / <code>CashierScreen</code> / <code>DiscountPanel</code> / <code>PaymentModal</code> (web POS);</li>
+<li><code>BusinessPage</code>, <code>WebhooksTab</code>, <code>ReportSchedulerTab</code>, <code>DevicesTab</code>.</li>
+</ul>
+</li>
+</ul>
+<h3 id="6-5-tests">6.5 Tests</h3>
+<ul>
+<li><p><strong>Catalogue</strong> (<code>scripts/test-permission-catalogue.mjs</code>):</p>
+<ul>
+<li>every <code>SPLITS</code> child is a fine key, has one parent and no cycles;</li>
+<li>every child is in each <code>LEGACY</code> list that holds its parent;</li>
+<li><code>VIEW_KEYS</code> for the Auditor has no personal key;</li>
+<li>every new key has its words in <code>businessTerms.ts</code> where the parent has.</li>
+</ul>
+</li>
+<li><p><strong>Migration</strong> (<code>scripts/test-migration-176.mjs</code>, on the pattern of 142, 159 and 175), on a fixture database of roles and overrides:</p>
+<ul>
+<li>after the migration, each role holds exactly what it held plus <code>SPLITS</code> children of what it held, plus the credit-limit and overview rows;</li>
+<li>overrides are carried with the same <code>granted</code> value;</li>
+<li>the owner roles hold everything;</li>
+<li>running it again changes nothing;</li>
+<li>the registered words equal the catalogue&#39;s;</li>
+<li>134&#39;s test stays green.</li>
+</ul>
+</li>
+<li><p><code>test-migration-177.mjs</code>: each approved block changes only its named roles, and per-person overrides are untouched.</p>
+</li>
+<li><p><strong>Routes</strong>: a generated matrix test (<code>tests/permission-splits.test.mjs</code>). For every new key and every route in section 5.1:</p>
+<ul>
+<li>a token holding only the child is allowed;</li>
+<li>a token holding the parent alone is allowed while <code>splitsPending()</code>, and refused after it for the split-off part;</li>
+<li>a token with neither is refused (403 with <code>Missing permission: &lt;child&gt;</code>).</li>
+</ul>
+<p>Masking:</p>
+<ul>
+<li>a token without <code>customers.contacts</code> gets masked <code>phone</code> / <code>mpesa_phone</code> and no <code>email</code> from each read in item 1 of section 5.1;</li>
+<li>with the key, the full values.</li>
+</ul>
+</li>
+<li><p><strong>Mutation checks</strong>:</p>
+<ul>
+<li>remove one <code>requirePermission(child)</code> and the matrix fails;</li>
+<li>drop a child from a <code>LEGACY</code> list and the catalogue test fails;</li>
+<li>make the 176 carry-over skip overrides and the migration test fails.</li>
+</ul>
+</li>
+<li><p><strong>Parity</strong>: update <code>scripts/permission-parity-baseline.json</code> so <code>check-permission-parity</code> compares the new keys&#39; web and till gates.</p>
+</li>
+<li><p><strong>Before each commit</strong>, run every step of <code>ci.yml</code> (the repo&#39;s rule).</p>
+</li>
+</ul>
+<h3 id="6-6-risks">6.6 Risks</h3>
+<ul>
+<li><strong>Lock-out during the deploy.</strong> Prevented by accepting the parent until 176 has run (<code>splitsPending()</code>). The narrowing (section 6.7, step 3) comes only after the post-migration check.</li>
+<li><strong>Approvals at an older till.</strong> A 1.0.21 till checks <code>shifts.confirm</code> for pay-out approvals offline, and every current approver holds it. A person given only <code>shifts.approve_payout</code> cannot approve on a 1.0.21 till. Release note.</li>
+<li><strong>A crowded Roles screen.</strong> 70 → 107 keys. The nesting keeps a group&#39;s first view as short as today: parents only, with &quot;includes&quot; folded.</li>
+<li><strong>The ceiling.</strong> A manager editing a role can hand out only parts they hold. After the carry-over they hold every part of what they held, so no manager loses the ability to give what they gave before.</li>
+<li><strong>Wording per business type</strong> must be added for each new key (<code>businessTerms.ts</code>), or a shop reads &quot;menu&quot; where it means &quot;products&quot;.</li>
+<li><strong>A594 is in flight</strong> on the same files (<code>shared/permissions.ts</code>, <code>routes/staff.ts</code>, <code>routes/shifts.ts</code>, migration numbering). Build this after A594 is committed, on top of its keys. Take the migration number after its last.</li>
+<li><strong>Masking breaks a flow that needs the number:</strong><ul>
+<li>calling a credit customer is a <code>customers.contacts</code> job;</li>
+<li>reservations keep the guest&#39;s phone for whoever holds <code>reservations.manage</code> (they must call the guest);</li>
+<li>the WhatsApp receipt sends server-side without showing the number.</li>
+</ul>
+</li>
+</ul>
+<h3 id="6-7-rollout-order">6.7 Rollout order</h3>
+<ol>
+<li><strong>Cloud, step 1</strong> (no visible change):<ul>
+<li>catalogue with <code>SPLITS</code>;</li>
+<li>every route accepts the child or the parent;</li>
+<li>masking reads check <code>customers.contacts</code> (held by every <code>customers.view</code> holder after 176, so nobody sees less);</li>
+<li>deploy, then run migration 176 and verify with the preview query that every parent holder holds its children.</li>
+</ul>
+</li>
+<li><strong>Web screens</strong>: the Roles and Staff nesting and the personal-data badge, the dashboard and web POS gated by the child keys. Owners can now untick parts.</li>
+<li><strong>Cloud, step 2</strong>: the split-off routes stop accepting the parent. Run migration 177 with the owner&#39;s approved default changes. New businesses get the new built-in defaults.</li>
+<li><strong>Desktop 1.0.22</strong> in the next batch release (no tag per feature): the till&#39;s gates use the child keys, and the release notes cover the older-till behaviour.</li>
+</ol>
+<h2 id="appendix-method-notes">Appendix: method notes</h2>
+<ul>
+<li>The tables in sections 2 and 3 were generated from the code on 2026-10-26 by a read-only scan (Node scripts kept in the session&#39;s scratchpad, not in the repo). If the tables need refreshing after A594 lands, re-run that scan, or turn it into <code>scripts/report-permission-map.mjs</code> with the implementation.</li>
+<li>An aside, outside this audit&#39;s scope: <code>GET /loyalty/customers?search=</code> builds a PostgREST <code>or(...)</code> filter from the raw search text. Commas or brackets in the search can add filter terms, always still inside the business (<code>eq(&#39;business_id&#39;)</code> is applied separately). Quoting the search text, as <code>likeLiteral</code> does for promo codes, closes it.</li>
+</ul>
+<h2 id="7-implemented-a595-27-october-2026">7. Implemented (A595, 27 October 2026)</h2>
+<p><strong>Keys.</strong> 36 added (106 in all): 35 parts of a broad key (<code>SPLITS</code> in <code>shared/permissions.ts</code>) and <code>customers.credit_limit</code>. <code>customers.export</code> stays reserved (no download exists). The parents keep their names and their frozen words in the database (migration 134); what is left of each is shown at display time (<code>shared/businessTerms.ts</code> <code>SPLIT_PARENT_WORDS</code>). <code>personal: true</code> marks <code>customers.contacts</code>, <code>customers.history</code>, <code>staff.contacts</code>, <code>staff.pins</code>, <code>staff.pay</code>; the built-in Auditor (<code>VIEW_KEYS</code>) takes view keys that are not personal.</p>
+<p><strong>Nobody gained or lost on the day.</strong></p>
+<ul>
+<li>Migration 176 gave every role and every per-person override holding a parent all of its parts (a part with two parents: what the person had through either), credit limits to the built-in Manager and General Manager roles (the rule by role name it replaces), the owner roles every new key. <code>scripts/test-migration-176.mjs</code> proves, person by person, that what anyone holds after 176 equals what they held before.</li>
+<li>Until 176 is recorded (<code>lib/permissionsState.ts splitsPending</code>), and for a token made before A595 (no <code>parts</code> in it), a parent still brings its parts. After that a part not held was taken away on purpose, and the owner can untick parts.</li>
+<li>A screen that does not know the parts (no <code>parts: true</code> on the save) ticking a parent for the first time gets its parts too, within the caller&#39;s own keys.</li>
+<li>A 1.0.21 desktop POS keeps checking the parents, which every parent holder still has.</li>
+</ul>
+<p><strong>Checked by the cloud.</strong> Every route in the section 5.1 table checks its part: discounts/apply; Analytics; the audit download; the eight menu deletes and six bulk routes; cost prices (products, bulk cost, ingredients); suppliers; purchase orders; count review (recount, post, the expected figures); reorder levels (an ingredient&#39;s still needs Change stock figures by hand, as before); paying suppliers; customer history and removal; credit repayments, adjustments and limits; expense edits, types and the monthly pack; staff PINs, own rights and pay (pay alone may set the rate); parking voids; fuel deliveries and set-up; webhooks; report e-mails; tax rates; selling rules; seeing and retiring POS devices; staff changes made on a POS; the two PIN approvals (pay-outs and drawer expenses; kitchen removals).</p>
+<p><strong>Personal data.</strong> <code>lib/personalData.ts</code>: phone numbers masked as 07•• ••• 678, e-mails as m•••@domain, KRA PINs as A•••Z, unless the person holds <code>customers.contacts</code> (customer lists and records, credit accounts, the POS credit list, orders and their M-Pesa payers, M-Pesa status and exceptions, Analytics) or <code>staff.contacts</code> (staff lists). A masked value sent back is never written; an order takes the customer&#39;s real number from their record.</p>
+<p><strong>Gaps closed.</strong> <code>GET /api/pos/credit-customers</code>: a person needs <code>customers.view</code> or <code>customers.credit</code>; the POS&#39;s own session gets names, limits and balances with phones masked. <code>GET /api/staff/roles</code>: a staff or roles right. <code>GET /api/staff/authorizers</code>: ids and names (roles only with a staff right). The customer search: one quoted PostgREST literal per value (it was pasted in raw), LIKE wildcards literal, and without <code>customers.contacts</code> a phone matches only when typed in full.</p>
+<p><strong>Screens.</strong> Roles and permissions and a person&#39;s own rights: See / Do / Approve per area, parts nested under their parent, a <strong>Personal data</strong> mark. Staff cards: PIN, own rights and pay shown by their parts; contacts read-only when masked. Credit Accounts: Credit settings and By branch (D4). The desktop POS: <strong>+ Customer</strong> (lazy-loaded), On account refused at a branch without credit, owed here / owed in total. Main chunk: 439.9 KiB of 450 (the void dialog now loads on demand).</p>
+<p><strong>Tests.</strong> <code>tests/permissions-split-a595.test.mjs</code>, <code>tests/owner-decisions-a595.test.mjs</code>, <code>tests/owner-alerts.test.mjs</code> (D3&#39;s e-mails), <code>apps/desktop/test/credit-branch-a595.test.mjs</code>, <code>scripts/test-migration-176.mjs</code>, <code>177</code>, <code>178</code>.</p>
+
+</div></body></html>

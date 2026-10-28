@@ -105,22 +105,23 @@ console.log('\nThe cloud\n');
 const st = read('apps/server/src/routes/stockTakes.ts');
 const acc = read('apps/server/src/lib/stockTakeAccess.ts');
 await ok('who: counting is inventory.count; recount and post are inventory.adjust (the owner by default)', () => {
-  assert.match(st, /router\.post\('\/:id\/count', requireAnyPermission\('inventory\.count', 'inventory\.adjust'\)/);
-  assert.match(st, /router\.post\('\/:id\/recount', requirePermission\('inventory\.adjust'\)/);
-  assert.match(st, /router\.post\('\/:id\/post', requirePermission\('inventory\.adjust'\)/);
+  // A595: reviewing a count (recount, post, the expected figures) is its own part of inventory.adjust (inventory.count_review).
+  assert.match(st, /router\.post\('\/:id\/count', requireAnyPermission\('inventory\.count', 'inventory\.adjust', 'inventory\.count_review'\)/);
+  assert.match(st, /router\.post\('\/:id\/recount', requirePermission\('inventory\.count_review'\)/);
+  assert.match(st, /router\.post\('\/:id\/post', requirePermission\('inventory\.count_review'\)/);
   assert.match(read('shared/permissions.ts'), /key: 'inventory\.count'/  /* A490: the catalogue is shared/permissions.ts */);
   assert.match(read('apps/server/src/routes/index.ts'), /router\.use\('\/stock-takes',\s+stockTakeRoutes\);/);
 });
 await ok('blind on the cloud: the items and totals reach only someone who may change stock', () => {
   assert.match(st, /lines: full \? lines : lines\.map\(\(l\) => blindLine\(/);
   assert.match(st, /summary: full \? \(take\.summary \?\? summary\) : null,/);
-  assert.match(st, /const full = may\(req, 'inventory\.adjust'\);\n  if \(full && isOpen\(take\.status\)\) lines = await preview\(take, lines\);/);
+  assert.match(st, /const full = may\(req, 'inventory\.count_review'\);[^\n]*\n  if \(full && isOpen\(take\.status\)\) lines = await preview\(take, lines\);/);
   // what the system held at the moment of the count is recorded, never sent back
   assert.match(st, /counted_qty: s\.qty, expected_qty: levels\.get\(lineKey\(s\.line\)\) \?\? 0, counted_at: now/);
   assert.match(st, /res\.json\(\{ saved: toSave\.length, counted_at: now \}\);/);
 });
 await ok('blind beyond the count screen: stock screens hide the counted items from someone who may not change stock', () => {
-  assert.match(acc, /if \(!branchId \|\| may\(req, 'inventory\.adjust'\)\) return hide;/);
+  assert.match(acc, /if \(!branchId \|\| may\(req, 'inventory\.adjust'\) \|\| may\(req, 'inventory\.count_review'\)\) return hide;/);   // A595
   assert.match(read('apps/server/src/routes/inventory.ts'), /hide\.has\(`p:\$\{r\.product_id\}`\) \? \{ \.\.\.r, quantity: null, qty_pieces: null, counting: true \} : r/);
   assert.match(read('apps/server/src/routes/stock.ts'), /hide\.has\(`i:\$\{i\.id\}`\) \? \{ \.\.\.i, current_stock: null, branch_stock: \[\], counting: true \} : i/);
 });

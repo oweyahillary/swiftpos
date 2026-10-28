@@ -7,9 +7,10 @@
  *   personKeys(userId)    a person's effective fine keys (role + overrides; the owner's role '*')
  */
 import { supabase } from './supabase';
-import { expandKeys, isPermissionKey } from './permissions';
+import { expandKeys, isPermissionKey, partsOf } from './permissions';
 import { PERMISSION_CATALOGUE } from './permissionCatalogue';
 import { effectiveKeysForRow } from './effectivePermissions';
+import { splitsPending } from './permissionsState';   // A595
 
 /** key → permissions.id for the given keys. A catalogue key with no row yet is registered first. */
 export async function permissionIds(keys: Iterable<string>): Promise<Map<string, string>> {
@@ -46,7 +47,9 @@ export async function roleKeyMap(roleIds: string[]): Promise<Map<string, Set<str
     const k = r.permissions?.key;
     if (k) (raw.get(r.role_id) ?? raw.set(r.role_id, []).get(r.role_id)!).push(k);
   }
-  for (const [id, keys] of raw) map.set(id, expandKeys(keys));
+  // A595: until migration 176 is recorded a broad grant still brings its parts (what the role could do).
+  const partsBefore = splitsPending();
+  for (const [id, keys] of raw) map.set(id, expandKeys(keys, false, partsBefore));
   return map;
 }
 
@@ -77,4 +80,28 @@ export async function personKeys(businessId: string, userId: string): Promise<{ 
 export function fineKeysOf(keys: unknown): string[] {
   if (!Array.isArray(keys)) return [];
   return [...expandKeys(keys.filter((k): k is string => typeof k === 'string'))].filter((k) => k !== '*' && isPermissionKey(k));
+}
+
+/**
+ * A595: a parent key ticked for the FIRST time (not in `before`) by a client that does not know the split rights brings
+ * its parts — what ticking it meant before the split (shared permissions.ts SPLITS) — unless the client named one of its
+ * parts itself. Only parts within the caller's own keys are added (the ceiling): a manager ticking "See customers" without
+ * holding their phone numbers gives the list, not the numbers.
+ */
+export function withNewParentParts(wanted: string[], before: ReadonlySet<string>, held: ReadonlySet<string>): string[] {
+  const out = new Set(wanted);
+  for (const k of wanted) {
+    if (before.has(k)) continue;
+    const parts = partsOf(k);
+    if (!parts.length || parts.some((c) => out.has(c))) continue;
+    for (const c of parts) if (held.has('*') || held.has(c)) out.add(c);
+  }
+  return [...out];
+}
+
+/** A595: the parts of every parent in a person's overrides, with the parent's value (given or taken). */
+export function overridePartsOf(want: ReadonlyMap<string, boolean>): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  for (const [k, v] of want) for (const c of partsOf(k)) if (!out.has(c) || v) out.set(c, v);
+  return out;
 }

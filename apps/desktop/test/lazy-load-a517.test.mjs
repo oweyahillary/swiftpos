@@ -88,7 +88,9 @@ if (!vite) {
   console.log(`  (built: main chunk ${kb(entry)} kB; ${chunks.filter((c) => !c.isEntry).map((c) => `${c.name} ${kb(c)} kB`).join(', ')})`);
   ok('the main chunk holds the PIN screen, the POS and what a sale needs',
     ['pages/PinPage.tsx', 'pages/POSPage.tsx', 'components/PaymentModal.tsx', 'pages/ShiftPanel.tsx', 'components/HeldOrdersModal.tsx',
-      'lib/printReceipt.ts', 'lib/cart.ts', 'components/LockCurtain.tsx'].every(inEntry));
+      'lib/printReceipt.ts', 'lib/cart.ts', 'components/LockCurtain.tsx'].every(inEntry),
+    ['pages/PinPage.tsx', 'pages/POSPage.tsx', 'components/PaymentModal.tsx', 'pages/ShiftPanel.tsx', 'components/HeldOrdersModal.tsx',
+      'lib/printReceipt.ts', 'lib/cart.ts', 'components/LockCurtain.tsx'].filter((m) => !inEntry(m)).join(', '));
   const managerOnly = ['pages/ManagerPage.tsx', 'pages/ManageTabs.tsx', 'pages/MenuWorkbench.tsx', 'pages/BranchCloseTab.tsx',
     'pages/DayCloseTab.tsx', 'components/SettingsPanel.tsx', 'components/MonthlyPackTab.tsx', 'components/TransfersTab.tsx',
     'screens/OffersScreen.tsx', 'screens/PrintersScreen.tsx', 'components/TillWastage.tsx'];

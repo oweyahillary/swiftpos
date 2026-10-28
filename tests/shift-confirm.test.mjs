@@ -270,7 +270,7 @@ try {
     const pg = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/ShiftReportsPage.tsx'), 'utf8');
     assert.match(pg, /api\.get<ShiftRow\[\]>\(`\/api\/shifts\?\$\{qs\}`\)/);
     assert.match(pg, /<th className="px-3 py-2">Cashier<\/th><th className=\{DESK\}>POS<\/th><th className=\{DESK\}>Shift<\/th><th>Status<\/th><th className=\{DESK\}>Difference<\/th>/);   // A464: a phone opens the rest with View more
-    assert.match(pg, /api\.get<\{ by_method\?: \{ method: string; amount: number \}\[\] \}>\(`\/api\/shifts\/\$\{s\.id\}`\)/);
+    assert.match(pg, /api\.get<\{ by_method\?: \{ method: string; amount: number \}\[\];[^>]*\}>\(`\/api\/shifts\/\$\{s\.id\}`\)/);
     assert.match(pg, /<th className="py-1">Method<\/th><th className=\{`text-right \$\{DESK\}`\}>Cashier said<\/th><th className=\{`text-right \$\{DESK\}`\}>Manager counted<\/th><th className=\{`text-right \$\{DESK\}`\}>POS recorded<\/th><th className="text-right">Variance<\/th>/);
     assert.match(pg, /\['problems', `Problems \(\$\{counts\.problems\}\)`\]/);
     assert.match(pg, /const exportCsv = \(\) =>/);

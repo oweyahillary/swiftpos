@@ -1,5 +1,19 @@
 import { supabase } from '../lib/supabase';
 import { sendEmail } from '../lib/mailer';
+import { ownerAndExtras } from './ownerAlertsData';   // A595 (owner decision D3)
+import { readReportSchedule } from './dailySummary';
+
+/**
+ * A595 (owner, 2026-10-27, decision D3: "the emails must go out automatically once a recipient is set — daily report,
+ * stock alerts"): a stock alert goes to the owner AND every address in the Report Scheduler (it went to the owner alone).
+ */
+async function stockAlertRecipients(business: { id: string; owner_id: string | null } | null): Promise<string[]> {
+  if (!business?.owner_id) return [];
+  try {
+    const schedule = await readReportSchedule(business.id);
+    return await ownerAndExtras({ owner_id: business.owner_id }, schedule ?? {});
+  } catch { return []; }
+}
 import {
   classifyStockLevel,
   shouldResolveStockAlert,
@@ -77,11 +91,9 @@ export async function checkLowStock(
       .from('branches').select('name').eq('id', branchId).maybeSingle();
     const branchName = branch?.name ?? 'branch';
 
-    let ownerEmail: string | null = null;
-    if (business?.owner_id) {
-      const { data: { user } } = await supabase.auth.admin.getUserById(business.owner_id);
-      ownerEmail = user?.email ?? null;
-    }
+    // A595 (D3): the owner and the Report Scheduler's recipients.
+    const alertTo = await stockAlertRecipients(business as { id: string; owner_id: string | null } | null);
+    const ownerEmail: string | null = alertTo.length ? alertTo.join(', ') : null;
 
     // 5. For each affected item: dedupe + notify
     for (const item of alerts) {
@@ -242,11 +254,9 @@ export async function checkLowIngredients(
       .from('branches').select('name').eq('id', branchId).maybeSingle();
     const branchName = branch?.name ?? 'branch';
 
-    let ownerEmail: string | null = null;
-    if (business?.owner_id) {
-      const { data: { user } } = await supabase.auth.admin.getUserById(business.owner_id);
-      ownerEmail = user?.email ?? null;
-    }
+    // A595 (D3): the owner and the Report Scheduler's recipients.
+    const alertTo = await stockAlertRecipients(business as { id: string; owner_id: string | null } | null);
+    const ownerEmail: string | null = alertTo.length ? alertTo.join(', ') : null;
 
     for (const item of lowItems as any[]) {
       const name    = item.ingredients?.name ?? 'Unknown ingredient';

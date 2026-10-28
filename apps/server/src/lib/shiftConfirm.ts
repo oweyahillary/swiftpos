@@ -21,16 +21,36 @@ export type MethodMap = Record<string, number>;
  * 134 holds it, expanded — shared permissions.ts LEGACY). Never a plain cashier.
  */
 export function mayConfirm(row: ApproverRow, ownerId: string | null | undefined): boolean {
-  if (ownerId && row.id === ownerId) return true;
-  if (isOwnerRoleName(row.roles?.name)) return true;
-  return hasPermission(keysForRow(row, false), 'shifts.confirm');
+  return mayApproveWith('shifts.confirm')(row, ownerId);
+}
+
+/**
+ * A595: what a manager's PIN approves, each its own part of shifts.confirm (shared permissions.ts SPLITS): confirming a
+ * drawer (shifts.confirm), a cash out / pay-out / drawer expense / cash in without the right (shifts.approve_payout), an
+ * item off an order already sent to the kitchen (sales.approve_kitchen_void).
+ */
+export type ApprovalKey = 'shifts.confirm' | 'shifts.approve_payout' | 'sales.approve_kitchen_void';
+
+/** A595: who may approve with their PIN for this key — the owner, the owner's role, or the key held (role grants and their
+ *  overrides; `partsBefore` — until migration 176 is recorded — shifts.confirm brings its two approval parts). */
+export function mayApproveWith(key: ApprovalKey, partsBefore = false) {
+  return (row: ApproverRow, ownerId: string | null | undefined): boolean => {
+    if (ownerId && row.id === ownerId) return true;
+    if (isOwnerRoleName(row.roles?.name)) return true;
+    return hasPermission(keysForRow(row, false, partsBefore), key);
+  };
 }
 
 /** The same rule for the signed-in caller (the token's keys), so a manager on the dashboard confirms without a PIN. */
 export function callerMayConfirm(req: { isOwner?: boolean; permissionKeys?: string[]; isTill?: boolean }): boolean {
+  return callerMayApprove(req, 'shifts.confirm');
+}
+
+/** A595: the signed-in caller approves as themselves for this key (requireAuth already gave an older token its parts). */
+export function callerMayApprove(req: { isOwner?: boolean; permissionKeys?: string[]; isTill?: boolean }, key: ApprovalKey): boolean {
   // A415: the till's own session is not a person — a manager confirms or approves with their own PIN.
   if (req.isTill) return false;
-  return !!req.isOwner || hasPermission(expandKeys(req.permissionKeys ?? []), 'shifts.confirm');
+  return !!req.isOwner || hasPermission(expandKeys(req.permissionKeys ?? []), key);
 }
 
 /**

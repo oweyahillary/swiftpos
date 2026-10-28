@@ -65,7 +65,8 @@ export async function frozenAtBranch(businessId: string, branchId: string | null
  */
 export async function hiddenWhileCounting(req: Request, branchId: string | null): Promise<Set<string>> {
   const hide = new Set<string>();
-  if (!branchId || may(req, 'inventory.adjust')) return hide;
+  // A595: someone who changes stock by hand or reviews counts sees the figures (inventory.count_review is the review's part).
+  if (!branchId || may(req, 'inventory.adjust') || may(req, 'inventory.count_review')) return hide;
   try {
     const take = await openTake(req.businessId, branchId);
     if (!take) return hide;

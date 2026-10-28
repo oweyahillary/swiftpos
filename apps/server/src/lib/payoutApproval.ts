@@ -7,7 +7,7 @@
  * like a shift confirmation (confirmerByPin: the login PIN or the override PIN of someone who may confirm).
  */
 import { supabase } from './supabase';
-import { callerMayConfirm } from './shiftConfirm';
+import { callerMayApprove } from './shiftConfirm';
 import { confirmerByPin, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from './confirmerLookup';
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from './pinAttempts';   // A494
 
@@ -30,7 +30,9 @@ export async function payoutApprover(
     // A494: behind the one PIN limiter (lib/pinAttempts.ts) — a caller's wrong PINs pause their PIN entry.
     const key = pinKey(req);
     if (pinLocked(key)) return { ok: false, status: 429, error: PIN_LOCKED_BODY.error, code: 'PIN_LOCKED' };
-    const who = await confirmerByPin(req.businessId!, pin, req.body?.authorizer_id || undefined, { branchId, actorId: req.userId ?? null });
+    // A595: a pay-out / drawer expense / cash in is approved by someone holding shifts.approve_payout (a part of
+    // shifts.confirm — every holder of it got the part in migration 176).
+    const who = await confirmerByPin(req.businessId!, pin, req.body?.authorizer_id || undefined, { branchId, actorId: req.userId ?? null, key: 'shifts.approve_payout' });
     // A505: the asker's own PIN — not a wrong guess (no strike); someone else must approve.
     if (who === 'self') return { ok: false, status: 403, error: SELF_APPROVAL_BODY.error, code: 'SELF_APPROVAL' };
     // A518: nobody at the branch who may approve has a PIN — not a wrong guess (no strike); say who can fix it.
@@ -39,7 +41,7 @@ export async function payoutApprover(
     return who ? { ok: true, approver: who }
       : { ok: false, status: 403, error: PIN_NOT_RECOGNISED, code: 'INVALID_CONFIRMER_PIN' };
   }
-  if (callerMayConfirm(req) && req.userId) {
+  if (callerMayApprove(req, 'shifts.approve_payout') && req.userId) {
     const { data } = await supabase.from('users').select('name').eq('id', req.userId).maybeSingle();
     return { ok: true, approver: { id: req.userId, name: (data as any)?.name ?? null } };
   }

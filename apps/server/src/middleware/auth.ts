@@ -7,7 +7,7 @@ import { recordWriteGuard } from '../lib/watchdogCounters';   // A383
 import { otpDisabled } from '../lib/loginOtp';   // A391
 import { isTillPayload, isOwnerEraTillPayload, tillBlockReason } from '../lib/deviceGrant';   // A415
 import { expandKeys } from '../lib/permissions';                 // A490
-import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
+import { permissionsOpenBefore, splitsPending } from '../lib/permissionsState'; // A490, A595
 import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
 import { partnerRequestBranch, partnerBranchSet } from '../lib/webPartners';    // A550, A582
@@ -48,6 +48,8 @@ declare global {
       branchId:           string | null;
       roleId:             string | null;
       permissionKeys:     string[];
+      /** A595: the token's keys were worked out with the split rights (a token made from A595 on; false for an older one). */
+      permissionParts?:   boolean;
       isOwner:            boolean;
       surface:            string | null;
       /** A159: the token is a person's PIN sign-in on a till (not the till's device token). */
@@ -160,7 +162,11 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.roleId             = payload.roleId ?? null;
     // A490: fine keys only. A token from before A490 (or a role not yet rewritten by migration 134) carries broad keys —
     // expanded here into exactly the fine keys they stood for, so every check below reads one vocabulary.
-    req.permissionKeys     = [...expandKeys(payload.permissionKeys ?? [], permissionsOpenBefore())];
+    // A595: a token made before the split rights (no `parts`), or any token until migration 176 is recorded: a broad key
+    // still brings its parts (shared permissions.ts SPLITS) — nobody loses anything while their token renews.
+    req.permissionParts    = (payload as { parts?: unknown }).parts === true;
+    req.permissionKeys     = [...expandKeys(payload.permissionKeys ?? [], permissionsOpenBefore(),
+      !req.permissionParts || splitsPending())];
     req.isOwner            = payload.isOwner ?? false;
     req.surface            = payload.surface ?? null;
     req.pinSignIn          = (payload as { pinSignIn?: unknown }).pinSignIn === true;

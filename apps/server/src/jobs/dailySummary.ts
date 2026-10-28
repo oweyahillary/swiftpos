@@ -97,10 +97,13 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
       const schedule = pre1 === undefined ? await readReportSchedule(biz.id) : parseReportSchedule(pre1);
       // A591: a business with the report off is decided without its last-sent stamp (decideDailySend refuses a schedule
       // that is off first) — one Supabase call per business every 15 minutes instead of two.
-      if (!schedule?.enabled) continue;
+      // A595 (owner, 2026-10-27, decision D3: "the emails must go out automatically once a recipient is set"): an address
+      // in the scheduler sends the daily report, whether or not its switch was turned on.
+      const sends = !!schedule?.enabled || (schedule?.recipients?.length ?? 0) > 0;
+      if (!sends) continue;
       const pre2 = one(biz.id, 'report_schedule_last_sent');
       const lastSent = pre2 === undefined ? await readLastSent(biz.id) : lastSentOf(pre2);
-      if (!decideDailySend(schedule, nowEatDate, nowEatHHMM, lastSent)) continue;
+      if (!decideDailySend({ ...schedule, enabled: true }, nowEatDate, nowEatHHMM, lastSent)) continue;
 
       const recipients = await gatherRecipients(biz, schedule);
       if (recipients.length === 0) {

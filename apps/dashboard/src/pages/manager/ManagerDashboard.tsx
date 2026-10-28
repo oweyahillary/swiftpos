@@ -109,7 +109,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'history',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">History</span></>,   title: 'Stock history', permission: 'inventory.receive', group: 'Inventory' },
   // A549: Analytics (premium) — this branch only; off for the business, the page says it is part of ZapTill Premium.
   // A558: first in Finance — the decisions page.
-  { key: 'analytics', label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Analytics</span></>, title: 'Analytics', permission: 'reports.sales', group: 'Finance' },
+  { key: 'analytics', label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Analytics</span></>, title: 'Analytics', permission: 'reports.analytics', group: 'Finance' },   // A595
   // A576: the watch list — unusual voids, discounts, cash differences at this branch (reports.voids); never about the reader.
   { key: 'watch',     label: <><Icon d={I.warning}   className="flex-shrink-0" /><span className="truncate">Watch list</span></>, title: 'Watch list', permission: 'reports.voids', group: 'Finance' },
   // A518: supplier bills — read with payables.view (the Accountant's), recorded and paid with payables.manage.
@@ -1453,7 +1453,7 @@ export default function ManagerDashboard() {
               <p className="text-gray-500 text-sm mt-0.5">Manage cashiers for {session.branchName}</p>
             </div>
             {/* A490: which roles may be given is the cloud's `assignable` (never beyond this person's own keys). */}
-            <StaffTab branches={managerBranch} canEdit={hasAnyPermission(held, ['staff.edit'])} />
+            <StaffTab branches={managerBranch} canEdit={hasAnyPermission(held, ['staff.edit'])} can={(k) => hasPermission(k)} />   {/* A595: the parts of staff.edit */}
           </div>
         );
       case 'printers':

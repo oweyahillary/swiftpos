@@ -87,8 +87,17 @@ const roleNamed = async (biz, name) => (await rolesOf(biz)).find((r) => r.name =
 // gives the Accountant payables.view. 142 itself carries the shared defaults without them.
 // A520: 147 gives the Manager shifts.close_branch (every role holding close_day, supervisors aside); 146 gives roles named
 // supervisor shifts.close_day — the built-in Supervisor's defaults carry it since A520.
-const LATER = { Accountant: ['payables.view'], Manager: ['shifts.close_branch'], Supervisor: ['shifts.close_day'] };
-const keys142 = (r) => [...new Set(r.keys)].filter((k) => !(LATER[r.name] ?? []).includes(k));
+// A594: 175 gives the roles that keep cash in (Manager, Supervisor) shifts.cash_out and expenses.record; and the Cashier's
+// defaults no longer carry shifts.cash_movements (Record cash in) — 142 gave it, 175 takes it off (test-migration-175.mjs).
+const LATER = { Accountant: ['payables.view'], Manager: ['shifts.close_branch', 'shifts.cash_out', 'expenses.record'],
+  Supervisor: ['shifts.close_day', 'shifts.cash_out', 'expenses.record'] };
+// A595: the owner's decisions of 2026-10-27 — a NEW business's Cashier types no discounts (D6; 177 takes it off existing
+// built-in Cashiers) and a new Manager does not set the M-Pesa number (D9, new businesses only).
+const TAKEN_LATER = { Cashier: ['shifts.cash_movements', 'sales.discount'], Manager: ['settings.mpesa'] };
+// A595: the 36 narrower rights are registered (and carried over to every holder of their parent) by 176 — not 142's
+// (test-migration-176.mjs proves who gets them).
+const A595 = new Set([...Object.values(P.SPLITS).flat(), 'customers.credit_limit']);
+const keys142 = (r) => [...new Set([...r.keys, ...(TAKEN_LATER[r.name] ?? [])])].filter((k) => !(LATER[r.name] ?? []).includes(k) && !A595.has(k));
 // A550: the roles migration 159 adds later (General Manager, Operations Manager, …) are not 142's — 142 is compared with the
 // built-in roles it made, in their order (scripts/test-migration-159.mjs compares the rest).
 const LATER_ROLES = ['General Manager', 'Operations Manager', 'Finance Manager', 'Auditor', 'Kitchen Manager'];

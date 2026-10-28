@@ -147,7 +147,7 @@ try {
   await ok('a shop reads product words for the menu / kitchen / table entries; a restaurant reads the catalogue as it is', () => {
     const word = (t, key) => { const p = P.PERMISSIONS.find((x) => x.key === key); return T.permissionWords(t, key, p.label, p.description); };
     assert.equal(word('retail', 'products.view').label, 'See the products');
-    assert.equal(word('retail', 'menu.edit').label, 'Edit the products');
+    assert.equal(word('retail', 'menu.edit').label, 'Add and change the products');   // A595: menu.edit after its split (deleting and bulk changes are parts)
     assert.match(word('retail', 'menu.edit').description, /departments/);
     assert.match(word('other', 'menu.edit').description, /groups/);
     assert.equal(word('restaurant', 'products.view').label, 'See the menu');

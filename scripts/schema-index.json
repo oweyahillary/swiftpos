@@ -352,6 +352,16 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "customer_branch_credit_limits": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "customer_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "credit_limit": "\"numeric\" NOT NULL",
+    "set_by": "\"uuid\"",
+    "set_by_name": "\"text\"",
+    "set_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "customer_credit_transactions": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -381,7 +391,11 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "credit_limit": "\"numeric\" NOT NULL",
-    "credit_balance": "\"numeric\" NOT NULL"
+    "credit_balance": "\"numeric\" NOT NULL",
+    "kra_pin": "\"text\"",
+    "credit_limit_locked": "\"boolean\" NOT NULL",
+    "credit_limit_locked_by": "\"uuid\"",
+    "credit_limit_locked_at": "\"timestamp with time zone\""
   },
   "day_close_instructions": {
     "id": "\"uuid\" NOT NULL",

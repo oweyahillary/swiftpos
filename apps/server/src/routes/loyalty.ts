@@ -4,6 +4,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, requireAnyPermission, branchFilter, byBranch } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { maskContacts, seesCustomerContacts, customerSearchFilter, isMasked, cleanKraPin } from '../lib/personalData';   // A595
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -17,6 +18,19 @@ const canManageCustomers = requirePermission('customers.edit');
 // user — customers.view. GET /customer?phone= (one exact phone number, the POS's Loyalty panel) stays open: it answers
 // only for a number the cashier already has, and a till must find the customer at the counter.
 const canViewCustomers = requirePermission('customers.view');
+// A595 (docs/PERMISSIONS-AUDIT.md F1): what a customer bought is its own part of customers.view (customers.history), and
+// removing a customer of customers.edit (customers.delete) — migration 176 gave both to every holder of the parent.
+const canSeeHistory = requirePermission('customers.history');
+const canDeleteCustomers = requirePermission('customers.delete');
+/** A595 (D1): migration 177 adds customers.kra_pin — until it has run, the reads and writes go on without it. */
+let kraColumn = true;
+const kraMissing = (e: unknown): boolean => {
+  if (e && /kra_pin/.test(String((e as { message?: unknown }).message ?? ''))) { kraColumn = false; return true; }
+  return false;
+};
+const KRA = (): string => (kraColumn ? ', kra_pin' : '');
+/** A595: an answer about customers, phones and e-mails masked unless the caller holds customers.contacts. */
+const shown = <T>(req: Request, body: T, keepPhone?: string | null): T => (seesCustomerContacts(req) ? body : maskContacts(body, { keepPhone }));
 
 // ── Loyalty feature flag guard ────────────────────────────────
 // All routes in this file are blocked if loyalty_enabled = false for the business.
@@ -54,28 +68,37 @@ router.get('/customer', async (req, res) => {
   const { phone } = req.query;
   if (!phone) { res.status(400).json({ error: 'phone is required' }); return; }
 
-  const { data, error } = await supabase
+  const read = () => supabase
     .from('customers')
-    .select('id, name, phone, email, loyalty_points, total_spent, visit_count, notes, status, created_at, updated_at')
+    .select(`id, name, phone, email${KRA()}, loyalty_points, total_spent, visit_count, notes, status, created_at, updated_at`)
     .eq('business_id', req.businessId)
     .eq('phone', phone as string)
     .single();
+  let { data, error } = (await read()) as { data: any; error: any };
+  if (kraMissing(error)) ({ data, error } = (await read()) as { data: any; error: any });
 
   if (error || !data) { res.status(404).json({ error: 'Customer not found' }); return; }
 
-  res.json({ customer: data, tier: getTier(data.loyalty_points) });
+  // A595: the number the cashier typed stays as typed (the POS puts it on the sale); the e-mail is masked without
+  // customers.contacts.
+  res.json(shown(req, { customer: data, tier: getTier(data.loyalty_points) }, String(phone)));
 });
 
 // POST /api/loyalty/customer
 router.post('/customer', requireAnyPermission('customers.edit', 'customers.view'), async (req, res) => {
   const { name, phone, email, notes } = req.body;
   if (!name || !phone) { res.status(400).json({ error: 'name and phone are required' }); return; }
+  // A595 (owner, 2026-10-27, D1): the customer's KRA PIN is taken when they are added (a letter, 9 digits, a letter).
+  const kra = cleanKraPin(req.body?.kra_pin);
+  if (kra.ok === false) { res.status(400).json({ error: kra.error, code: 'BAD_KRA_PIN' }); return; }
 
-  const { data, error } = await supabase
+  const add = () => supabase
     .from('customers')
-    .insert({ business_id: req.businessId, name, phone, email: email ?? null, notes: notes ?? null })
-    .select('id, name, phone, email, loyalty_points, total_spent, visit_count, notes, status, created_at')
+    .insert({ business_id: req.businessId, name, phone, email: email ?? null, notes: notes ?? null, ...(kra.value && kraColumn ? { kra_pin: kra.value } : {}) })
+    .select(`id, name, phone, email${KRA()}, loyalty_points, total_spent, visit_count, notes, status, created_at`)
     .single();
+  let { data, error } = (await add()) as { data: any; error: any };
+  if (kraMissing(error)) ({ data, error } = (await add()) as { data: any; error: any });
 
   if (error) {
     if (error.code === '23505') {
@@ -86,7 +109,7 @@ router.post('/customer', requireAnyPermission('customers.edit', 'customers.view'
     return;
   }
 
-  res.status(201).json({ customer: data, tier: getTier(0) });
+  res.status(201).json(shown(req, { customer: data, tier: getTier(0) }, String(phone)));
 });
 
 // GET /api/loyalty/settings
@@ -103,7 +126,7 @@ router.get('/settings', requireLoyalty, async (req, res) => {
 });
 
 // GET /api/loyalty/customer/:id/transactions
-router.get('/customer/:id/transactions', canViewCustomers, async (req, res) => {
+router.get('/customer/:id/transactions', canSeeHistory, async (req, res) => {
   const { data, error } = await supabase
     .from('loyalty_transactions')
     .select('id, type, points, notes, created_at, order_id')
@@ -120,7 +143,7 @@ router.get('/customer/:id/transactions', canViewCustomers, async (req, res) => {
 // Per-customer purchase analytics: spend summary, most-bought items, and a
 // monthly spend trend. Business-wide (a customer's whole relationship, across
 // branches) — customer analytics is about the person, not one till.
-router.get('/customer/:id/insights', canViewCustomers, async (req, res) => {
+router.get('/customer/:id/insights', canSeeHistory, async (req, res) => {
   let q = supabase
     .from('orders')
     .select('id, total, created_at, order_items ( product_name, quantity, subtotal )')
@@ -193,24 +216,24 @@ router.get('/customers', canViewCustomers, async (req, res) => {
   const limit  = Math.min(50, parseInt(req.query.limit as string) || 20);
   const offset = (page - 1) * limit;
 
-  let query = supabase
+  const listQuery = () => supabase
     .from('customers')
-    .select('id, name, phone, email, loyalty_points, total_spent, visit_count, status, created_at, updated_at', { count: 'exact' })
+    .select(`id, name, phone, email${KRA()}, loyalty_points, total_spent, visit_count, status, created_at, updated_at`, { count: 'exact' })
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
-  if (search) {
-    // Supabase ilike filter — search name OR phone
-    query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%`);
-  }
-
-  const { data, error, count } = await query;
+  // A595: the search is one quoted PostgREST literal (lib/personalData.ts customerSearchFilter) — it was pasted in raw, so a
+  // comma or a bracket added filter terms; and without customers.contacts a phone matches only when typed in full.
+  const filter = customerSearchFilter(search, seesCustomerContacts(req));
+  const run = () => { const q0 = listQuery(); return filter ? q0.or(filter) : q0; };
+  let { data, error, count } = (await run()) as { data: any[] | null; error: any; count: number | null };
+  if (kraMissing(error)) ({ data, error, count } = (await run()) as { data: any[] | null; error: any; count: number | null });
 
   if (error) { sendError(res, error); return; }
 
   const customers = (data ?? []).map(c => ({ ...c, tier: getTier(c.loyalty_points) }));
-  res.json({ customers, total: count ?? 0, page, limit });
+  res.json(shown(req, { customers, total: count ?? 0, page, limit }));
 });
 
 // PATCH /api/loyalty/customer/:id
@@ -221,8 +244,17 @@ router.patch('/customer/:id', canManageCustomers, async (req, res) => {
   // Build only the fields that were actually sent
   const updates: Record<string, unknown> = {};
   if (name  !== undefined) updates.name  = name;
-  if (phone !== undefined) updates.phone = phone;
-  if (email !== undefined) updates.email = email;
+  // A595: a phone number or e-mail is changed only by someone who may see them (customers.contacts) — never over the real
+  // one with what a form was shown (masked), and never by someone who cannot see what they replace.
+  const contactsOk = seesCustomerContacts(req);
+  if (phone !== undefined && contactsOk && !isMasked(phone)) updates.phone = phone;
+  if (email !== undefined && contactsOk && !isMasked(email)) updates.email = email;
+  // A595 D1: the KRA PIN as the phone — with customers.contacts, never a masked value; checked.
+  if (req.body?.kra_pin !== undefined && contactsOk && !isMasked(req.body.kra_pin)) {
+    const kra = cleanKraPin(req.body.kra_pin);
+    if (kra.ok === false) { res.status(400).json({ error: kra.error, code: 'BAD_KRA_PIN' }); return; }
+    updates.kra_pin = kra.value;
+  }
   if (notes !== undefined) updates.notes = notes;
   if (status !== undefined) updates.status = status;
 
@@ -231,13 +263,15 @@ router.patch('/customer/:id', canManageCustomers, async (req, res) => {
     return;
   }
 
-  const { data, error } = await supabase
+  const save = () => supabase
     .from('customers')
     .update(updates)
     .eq('id', req.params.id)
     .eq('business_id', req.businessId)   // scoped to business for safety
-    .select('id, name, phone, email, loyalty_points, total_spent, visit_count, notes, status, created_at')
+    .select(`id, name, phone, email${KRA()}, loyalty_points, total_spent, visit_count, notes, status, created_at`)
     .single();
+  let { data, error } = (await save()) as { data: any; error: any };
+  if (kraMissing(error)) { delete updates.kra_pin; ({ data, error } = (await save()) as { data: any; error: any }); }
 
   if (error) {
     if (error.code === '23505') {
@@ -248,13 +282,13 @@ router.patch('/customer/:id', canManageCustomers, async (req, res) => {
     return;
   }
 
-  res.json({ customer: data, tier: getTier(data.loyalty_points) });
+  res.json(shown(req, { customer: data, tier: getTier(data.loyalty_points) }));
 });
 
 // DELETE /api/loyalty/customer/:id
 // Soft-delete: sets status = 'inactive'. Hard delete is intentionally avoided
 // because customers are referenced by orders (ON DELETE SET NULL) and loyalty_transactions.
-router.delete('/customer/:id', canManageCustomers, async (req, res) => {
+router.delete('/customer/:id', canDeleteCustomers, async (req, res) => {
   const { error } = await supabase
     .from('customers')
     .update({ status: 'inactive' })

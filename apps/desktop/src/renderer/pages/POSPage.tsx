@@ -22,7 +22,9 @@ import type { PaymentResult } from '../components/PaymentModal';
 import PrinterSettingsModal from '../components/PrinterSettingsModal';
 import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
-import VoidModal from '../components/VoidModal';
+// A595: a void / refund is opened rarely — kept out of the main chunk (lazy-load-a517: ≤ 450 kB) to make room for the split
+// rights' catalogue the POS reads (shared/permissions.ts).
+const VoidModal = lazy(() => import('../components/VoidModal'));
 import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
 import { reverseActionFor, isRefunded, ageMinutes, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
 import { can, SELL_REFUSAL } from '../lib/access';   // A490: the one rule
@@ -56,6 +58,8 @@ import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView 
 import { useMenuHours } from '../lib/useMenuHours';   // A578
 // A577: items sold by weight — the keypad loads on its first use (the main chunk's budget, lazy-load-a517).
 const WeightModal = lazy(() => import('../components/WeightModal'));
+// A595 (owner decision D1): add a customer with their KRA PIN — loaded when opened (the main chunk budget).
+const NewCustomerModal = lazy(() => import('../components/NewCustomerModal'));
 import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, weightUnitOf, formatWeight, type ScaleSettings, type WeighedLine } from '../../shared/scaleBarcode';   // A577
 
 interface Props {
@@ -417,6 +421,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // Printing
   const { settings: printerSettings } = usePrinterSettings();
   const [showPrinters, setShowPrinters] = useState(false);
+  const [showNewCustomer, setShowNewCustomer] = useState(false);   // A595 D1
+  const [canAddCustomer, setCanAddCustomer] = useState(false);
 
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
@@ -603,6 +609,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       setCanForceClose(can(ss, 'shifts.force_close'));
       setCanViewStock(can(ss, 'inventory.view'));   // A566: "Check other branches" (A564's key)
       setCanShowAllMenus(can(ss, 'menu.edit'));     // A578: "Show all" menus outside their hours (the menu permission)
+      setCanAddCustomer(can(ss, 'customers.edit') || can(ss, 'customers.view'));   // A595 D1
     }).catch(() => {});
     posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});
     posApi.pos.paymentMethodsEnabled().then((r) => setEnabledMethods(r?.enabled ?? null)).catch(() => {});   // A429
@@ -1678,6 +1685,12 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           >
             History
           </button>
+          {/* A595 D1: add a customer (name, phone, e-mail, KRA PIN) — customers.edit or customers.view, as the cloud */}
+          {canAddCustomer && (
+            <button onClick={() => setShowNewCustomer(true)} className="text-xs text-gray-300 hover:text-white transition-colors" title="Add a customer" data-testid="pos-new-customer">
+              + Customer
+            </button>
+          )}
           {/* Printer settings */}
           <button
             onClick={() => setShowPrinters(true)}
@@ -2250,6 +2263,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         />
       )}
 
+      {showNewCustomer && (
+        <Suspense fallback={null}><NewCustomerModal onClose={() => setShowNewCustomer(false)} /></Suspense>
+      )}
+
       {/* Printer settings */}
       {showPrinters && (
         <PrinterSettingsModal
@@ -2556,7 +2573,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
       {/* ── Void confirmation modal ────────────────────────────────── */}
       {voidTarget && (
-        <VoidModal
+        <Suspense fallback={null}><VoidModal
           order={voidTarget}
           currency={currency}
           windowMin={voidWindowMin}
@@ -2567,7 +2584,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             loadHistory().catch(() => {});
           }}
           onClose={() => setVoidTarget(null)}
-        />
+        /></Suspense>
       )}
     </div>
   );

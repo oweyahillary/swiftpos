@@ -81,9 +81,13 @@ void BIZ_TZ_OFFSET;
 // GET /api/reports/sales
 // Owner: all branches or filtered by ?branch_id=
 // Staff: locked to their branch via branchScope
+// A595 (owner decision D8, 2026-10-27): Overview is today's page — with Overview alone the answer is TODAY's, whatever range
+// is asked; any other range needs Sales reports (reports.sales). Migration 177 gave the roles that relied on it the report.
+const todayOnly = (req: any, key: string): boolean => !can(req, key);
 router.get('/sales', requireAnyPermission('reports.sales', 'reports.overview'), async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
+  const today = todayOnly(req, 'reports.sales');
+  const { start, end } = getDateRange(today ? undefined : from as string, today ? undefined : to as string, (req as any).dayCutoff ?? 0);
   const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
@@ -177,7 +181,8 @@ router.get('/sales', requireAnyPermission('reports.sales', 'reports.overview'), 
 // GET /api/reports/products
 router.get('/products', requireAnyPermission('reports.items', 'reports.overview'), async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
+  const today = todayOnly(req, 'reports.items');   // A595 D8
+  const { start, end } = getDateRange(today ? undefined : from as string, today ? undefined : to as string, (req as any).dayCutoff ?? 0);
   const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let ordersQuery = supabase

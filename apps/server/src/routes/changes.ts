@@ -28,8 +28,17 @@ function partnerChangeScope(req: any): BranchFilter {
   return { kind: 'all' };
 }
 
-/** The owner, or a person holding changes.approve (A490) — never a till's own session (it is no person). */
-const mayDecide = (req: any) => !req.isTill && can(req, 'changes.approve');
+/** The owner, or a person holding changes.approve (A490) — never a till's own session (it is no person). A595: or
+ *  changes.approve_staff, for the staff changes alone. */
+const mayDecide = (req: any) => !req.isTill && can(req, 'changes.approve', 'changes.approve_staff');
+/**
+ * A595 (docs/PERMISSIONS-AUDIT.md F25): staff changes made on a POS (a new person, a PIN) are approved by their own part of
+ * changes.approve (changes.approve_staff — migration 176 gave it to every holder); menu changes stay changes.approve.
+ * Each person is shown, counted and lets decide only the changes they may decide.
+ */
+const STAFF_ENTITIES = new Set(['staff', 'staff_pin']);
+const decidesEntity = (req: any, entity: unknown): boolean =>
+  !req.isTill && can(req, STAFF_ENTITIES.has(String(entity)) ? 'changes.approve_staff' : 'changes.approve');
 
 router.post('/', async (req, res) => {
   const list = Array.isArray(req.body?.changes) ? req.body.changes.slice(0, 50) : [];
@@ -104,11 +113,14 @@ router.get('/count', async (req, res) => {
   // A582: a partner of some branches (in a set, or at one of theirs) — the changes made at their branches (and the
   // business-wide ones), never another branch's
   const f = partnerChangeScope(req);
-  if (f.kind === 'set') {
-    const { data, error } = await supabase.from('change_requests').select('id, branch_id')
+  // A595: someone who decides only one kind counts only that kind.
+  const both = can(req, 'changes.approve') && can(req, 'changes.approve_staff');
+  if (f.kind === 'set' || !both) {
+    const { data, error } = await supabase.from('change_requests').select('id, branch_id, entity')
       .eq('business_id', req.businessId).eq('status', 'awaiting').limit(5000);
     if (error) { sendError(res, error); return; }
-    res.json({ count: ((data ?? []) as Array<{ branch_id: string | null }>).filter((r) => rowInBranches(f, r.branch_id, true)).length });
+    res.json({ count: ((data ?? []) as Array<{ branch_id: string | null; entity?: string }>)
+      .filter((r) => (f.kind !== 'set' || rowInBranches(f, r.branch_id, true)) && decidesEntity(req, r.entity)).length });
     return;
   }
   const { count, error } = await supabase.from('change_requests').select('id', { count: 'exact', head: true })
@@ -125,12 +137,21 @@ router.get('/', async (req, res) => {
     .eq('business_id', req.businessId).eq('status', status).order('received_at', { ascending: false }).limit(200);
   if (error) { sendError(res, error); return; }
   const f = partnerChangeScope(req);   // A582: a partner of some branches — their branches' changes and the business-wide ones
-  res.json((data ?? []).filter((r: any) => f.kind !== 'set' || rowInBranches(f, r.branch_id, true)).map((r: any) => ({ ...r, summary: describeChange({ entity: r.entity, op: r.op, data: r.proposed ?? {} }, r.proposed?.name ?? r.cloud_value?.name) })));
+  res.json((data ?? []).filter((r: any) => (f.kind !== 'set' || rowInBranches(f, r.branch_id, true)) && decidesEntity(req, r.entity)).map((r: any) => ({ ...r, summary: describeChange({ entity: r.entity, op: r.op, data: r.proposed ?? {} }, r.proposed?.name ?? r.cloud_value?.name) })));
 });
 
 router.post('/:id/decide', async (req, res) => {
   if (!mayDecide(req)) { res.status(403).json({ error: 'Only the owner decides changes' }); return; }
   if (typeof req.body?.approve !== 'boolean') { res.status(400).json({ error: 'approve must be true or false' }); return; }
+  // A595: a staff change needs changes.approve_staff, a menu change changes.approve.
+  const { data: which, error: wErr } = await supabase.from('change_requests').select('entity')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (wErr) { sendError(res, wErr); return; }
+  if (!which) { res.status(404).json({ error: 'not found' }); return; }
+  if (!decidesEntity(req, (which as { entity?: string }).entity)) {
+    const key = STAFF_ENTITIES.has(String((which as { entity?: string }).entity)) ? 'changes.approve_staff' : 'changes.approve';
+    res.status(403).json({ error: 'Forbidden', detail: `Missing permission: ${key}` }); return;
+  }
   const { data: me } = req.userId ? await supabase.from('users').select('name').eq('id', req.userId).maybeSingle() : { data: null };
   const r = await decideChange(req.businessId!, req.params.id, req.body.approve, { id: req.userId ?? null, name: (me as any)?.name ?? null });
   if (!r.ok) { res.status(r.error === 'not found' ? 404 : 409).json({ error: r.error }); return; }

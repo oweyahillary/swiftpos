@@ -14,6 +14,8 @@ interface Customer {
   name: string;
   phone: string;
   email: string | null;
+  /** A595 D1: the customer's KRA PIN (A123456789Z) — masked unless the viewer holds customers.contacts. */
+  kra_pin?: string | null;
   loyalty_points: number;
   total_spent: number;
   visit_count: number;
@@ -170,6 +172,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
     phone: customer.phone,
     email: customer.email ?? '',
     notes: customer.notes ?? '',
+    kra_pin: customer.kra_pin ?? '',   // A595 D1
   });
 
   // Load transactions
@@ -197,6 +200,8 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
           phone: form.phone.trim(),
           email: form.email.trim() || null,
           notes: form.notes.trim() || null,
+          // A595 D1: never a masked value (the cloud keeps the real one)
+          ...(form.kra_pin.includes('•') ? {} : { kra_pin: form.kra_pin.trim().toUpperCase() || null }),
         }
       );
       onUpdated({ ...updated, tier });
@@ -255,6 +260,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                   { label: 'Name', key: 'name', type: 'text', placeholder: 'Full name' },
                   { label: 'Phone', key: 'phone', type: 'tel', placeholder: '07xx xxx xxx' },
                   { label: 'Email', key: 'email', type: 'email', placeholder: 'Optional' },
+                  { label: 'KRA PIN', key: 'kra_pin', type: 'text', placeholder: 'Optional, e.g. A123456789Z' },   // A595 D1
                   { label: 'Notes', key: 'notes', type: 'text', placeholder: 'Optional internal notes' },
                 ].map(f => (
                   <div key={f.key}>
@@ -292,6 +298,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                     <p className="text-white text-lg font-semibold">{customer.name}</p>
                     <p className="text-gray-400 text-sm">{customer.phone}</p>
                     {customer.email && <p className="text-gray-500 text-sm">{customer.email}</p>}
+                    {customer.kra_pin && <p className="text-gray-500 text-sm">KRA PIN {customer.kra_pin}</p>}
                   </div>
                   <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                     <TierBadge tier={customer.tier} />
@@ -498,7 +505,7 @@ export default function CustomersPage({ currency }: Props) {
   const [total, setTotal]           = useState(0);
   const [selected, setSelected]     = useState<CustomerWithTier | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: '', phone: '', email: '', notes: '' });
+  const [createForm, setCreateForm] = useState({ name: '', phone: '', email: '', notes: '', kra_pin: '' });   // A595 D1: + KRA PIN
   const [segmentFilter, setSegmentFilter] = useState<Segment | 'all'>('all');
   const [creating, setCreating]     = useState(false);
   const [createError, setCreateError] = useState('');
@@ -570,6 +577,7 @@ export default function CustomersPage({ currency }: Props) {
           phone: createForm.phone.trim(),
           email: createForm.email.trim() || null,
           notes: createForm.notes.trim() || null,
+          ...(createForm.kra_pin.trim() ? { kra_pin: createForm.kra_pin.trim().toUpperCase() } : {}),   // A595 D1
         }
       );
       const newCustomer: CustomerWithTier = { ...customer, tier };
@@ -582,7 +590,7 @@ export default function CustomersPage({ currency }: Props) {
       setCustomers(prev => [newCustomer, ...prev]);
       setTotal(t => t + 1);
       setShowCreate(false);
-      setCreateForm({ name: '', phone: '', email: '', notes: '' });
+      setCreateForm({ name: '', phone: '', email: '', notes: '', kra_pin: '' });
       setCreateLimit('');
       setSelected(newCustomer);
     } catch (e: any) {
@@ -783,6 +791,7 @@ export default function CustomersPage({ currency }: Props) {
                 { label: 'Name *', key: 'name', type: 'text', placeholder: 'Full name' },
                 { label: 'Phone *', key: 'phone', type: 'tel', placeholder: '07xx xxx xxx' },
                 { label: 'Email', key: 'email', type: 'email', placeholder: 'Optional' },
+                { label: 'KRA PIN', key: 'kra_pin', type: 'text', placeholder: 'Optional, e.g. A123456789Z' },   // A595 D1
                 { label: 'Notes', key: 'notes', type: 'text', placeholder: 'Optional internal notes' },
               ].map(f => (
                 <div key={f.key}>

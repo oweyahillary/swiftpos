@@ -35,10 +35,11 @@ ok('A360: any signed-in account of the business reads the types (no key: a cashi
   const get = code.slice(code.indexOf("router.get('/categories'"), code.indexOf("router.post('/categories'"));
   assert.match(get, /\.eq\('business_id', req\.businessId\)/, 'still this business only');
 });
-ok('A360: adding, renaming and deleting a type stay expenses.manage', () => {
-  assert.match(code, /router\.post\('\/categories', requirePermission\('expenses\.manage'\)/);
-  assert.match(code, /router\.patch\('\/categories\/:id', requirePermission\('expenses\.manage'\)/);
-  assert.match(code, /router\.delete\('\/categories\/:id', requirePermission\('expenses\.manage'\)/);
+// A595: expense types are their own part of expenses.manage (expenses.types — every holder got it in migration 176).
+ok('A360: adding, renaming and deleting a type stay a manager\'s (expenses.types, A595)', () => {
+  assert.match(code, /router\.post\('\/categories', requirePermission\('expenses\.types'\)/);
+  assert.match(code, /router\.patch\('\/categories\/:id', requirePermission\('expenses\.types'\)/);
+  assert.match(code, /router\.delete\('\/categories\/:id', requirePermission\('expenses\.types'\)/);
 });
 ok('A360: the till asks this route with the signed-in staff\'s own token', () => {
   const h = ipcHandlersSource();

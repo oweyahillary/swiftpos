@@ -173,11 +173,42 @@ export function foodAreas(raw: string | null | undefined): FoodAreas {
  */
 export function permissionWords(raw: string | null | undefined, key: string, label: string, description: string):
   { label: string; description: string } {
+  // A595: a key that was split into parts now means only what is left of it — its words say so, for every type.
+  const sw = SPLIT_PARENT_WORDS[key];
+  if (sw) { label = sw.label; description = sw.description; }
   if (isFoodService(raw)) return { label: posWording(label), description: posWording(description) };
   const t = businessTerms(raw);
   const w = shopPermissionWords(t)[key];
   return { label: posWording(w?.label ?? label), description: posWording(w?.description ?? description) };
 }
+
+/**
+ * A595 (docs/PERMISSIONS-AUDIT.md section 5.1): the words of each key that was split into parts (shared/permissions.ts
+ * SPLITS) — what the parent still guards on its own, the parts listed under it. Display only: the catalogue's own words
+ * are frozen by migration 134.
+ */
+const SPLIT_PARENT_WORDS: Record<string, { label: string; description: string }> = {
+  'sales.discount': { label: 'Give typed discounts (up to the limit)', description: 'Type a discount amount or percentage on a sale, up to the discount limit of the business' },
+  'shifts.confirm': { label: 'Confirm drawers and see the expected cash', description: 'Confirm the drawers of cashiers at the end of a shift and see the cash each drawer should hold' },
+  'menu.edit': { label: 'Add and change the menu', description: 'Add and change products, categories, variants, choices, extras and combos' },
+  'menu.costs': { label: 'See cost prices', description: 'Cost prices and margins wherever they appear (menu, deliveries, stock) - changing them is its own right' },
+  'inventory.receive': { label: 'Receive deliveries', description: 'Receive deliveries from suppliers and see the suppliers and purchase orders' },
+  'inventory.adjust': { label: 'Change stock figures by hand', description: 'Change a stock figure by hand, close batches and void wastage' },
+  'payables.manage': { label: 'Record supplier bills and returns', description: 'Record what is owed to suppliers, their bills and returns, and void them' },
+  'customers.view': { label: 'See customers (phone numbers masked)', description: 'Customer records, points and credit balances, with phone numbers and e-mails masked' },
+  'customers.edit': { label: 'Add and edit customers', description: 'Add customers and change their details' },
+  'customers.credit': { label: 'Approve sales on account', description: 'Approve a sale on account with their PIN, and see the credit accounts' },
+  'expenses.manage': { label: 'Add back-office expenses', description: 'Record an expense in the back office (not paid from a drawer)' },
+  'expenses.record': { label: 'Record drawer expenses', description: 'Record an expense paid from their drawer - a manager approves every one with their PIN' },
+  'staff.view': { label: 'See staff', description: 'The staff list of their branch: names, roles, branches and status' },
+  'staff.edit': { label: 'Add and edit staff, their branches and role', description: 'Add staff, give them a role and branches, and deactivate them - never with more rights than they hold themselves' },
+  'parking.manage': { label: 'Open and close parking tickets', description: 'Open and close parking tickets and take payment' },
+  'fuel.manage': { label: 'Pumps on and off', description: 'Set pumps active or idle, and see the pumps and tanks' },
+  'settings.business': { label: 'Business profile, hours and receipt rules', description: 'The business profile, opening hours and receipt rules' },
+  'settings.integrations': { label: 'QR ordering', description: 'QR ordering: customers order from their phone at the table or counter' },
+  'devices.approve': { label: 'Approve and rename POS devices', description: 'Approve or refuse a new POS device and rename one' },
+  'changes.approve': { label: 'Approve menu changes made on a POS', description: 'Approve or refuse menu changes made on a POS' },
+};
 
 /** The catalogue's group words (PERMISSION_GROUPS) for this type — see permissionWords. */
 export function permissionGroupWords(raw: string | null | undefined, id: string, label: string, description: string):
@@ -220,16 +251,23 @@ const SHOP_GROUP_WORDS: Record<string, { label?: string; description?: string }>
 function shopPermissionWords(t: BusinessTerms): Record<string, { label?: string; description?: string }> {
   return {
     'orders.create': { description: 'Ring up sales, hold and recall bills and take payment' },
-    'shifts.confirm': { description: 'Approve cash out and expenses, confirm cashiers\' drawers and see the expected cash' },
     'reports.items': { label: 'Item mix' },
     'reports.costs': { description: 'Cost prices, margins, net profit and profit and loss' },
+    'reports.analytics': { description: 'The Analytics pages: trends, item performance, branch comparisons and recommendations (money leaks also need Voids, refunds and exceptions)' },   // A595
     'orders.view_all': { label: 'Orders and shifts pages', description: 'See every order of the branch and its shifts' },
     'products.view': { label: 'See the products', description: 'Read the products and their prices' },
-    'menu.edit': { label: 'Edit the products',
+    'menu.edit': { label: 'Add and change the products',
       description: `Add and change products, categories, ${t.menus.toLowerCase()}, variants, choices and combos` },
-    'menu.costs': { description: 'Cost prices and margins wherever they appear (products, deliveries, stock)' },
+    // A595: the parts of the menu keys, in a shop's words.
+    'menu.delete': { label: `Delete products, categories and ${t.menus.toLowerCase()}`,
+      description: `Delete products, categories, ${t.menus.toLowerCase()}, variants, choices and combos` },
+    'menu.bulk': { label: 'Bulk changes to the products' },
+    'menu.costs_edit': { description: 'Change the cost price of products, one at a time or many at once' },
+    'sales.approve_kitchen_void': { label: 'Approve removing items already sent to print',
+      description: 'Approve with their PIN taking an item off an order after it was sent to a print station' },
+    'menu.costs': { description: 'Cost prices and margins wherever they appear (products, deliveries, stock) - changing them is its own right' },
     'settings.pos': { description: 'How the points of sale work: delivery fee and rider, pay later, sign-in codes and loyalty' },
     'stations.manage': { description: 'Printers, print stations and what prints where' },
-    'changes.approve': { description: 'Approve or refuse product and staff changes made on a POS' },
+    'changes.approve': { label: 'Approve product changes made on a POS', description: 'Approve or refuse product changes made on a POS' },
   };
 }

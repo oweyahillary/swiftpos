@@ -38,7 +38,7 @@ export function StaffMembersRoute() {
   const { isOwner, can } = usePermissions();
   return (
     <div className="p-4 sm:p-6">
-      <StaffTab branches={branches} canResetSignIn={isOwner} webAccess={isOwner} canEdit={can('staff.edit')} />
+      <StaffTab branches={branches} canResetSignIn={isOwner} webAccess={isOwner} canEdit={can('staff.edit')} can={can} />   {/* A595 */}
     </div>
   );
 }

@@ -11,9 +11,13 @@
 import { supabase } from './supabase';
 import { chunkIn } from './pgQuery';
 
-export const LIMIT_ACTIONS = ['customer.credit_limit.granted', 'customer.credit_limit.changed', 'customer.credit_limit.removed'] as const;
+export const LIMIT_ACTIONS = ['customer.credit_limit.granted', 'customer.credit_limit.changed', 'customer.credit_limit.removed',
+  // A595 D4: the owner's lock, and a limit at one branch
+  'customer.credit_limit.locked', 'customer.credit_limit.unlocked', 'customer.branch_credit_limit.set', 'customer.branch_credit_limit.removed'] as const;
 
-export interface LimitChange { at: string; by_name: string | null; action: 'granted' | 'changed' | 'removed'; from: number; to: number;
+export interface LimitChange { at: string; by_name: string | null; action: 'granted' | 'changed' | 'removed' | 'locked' | 'unlocked'; from: number; to: number;
+  /** A595 D4: 'branch' — a limit at one branch (branch_name says which); else the business-wide limit. */
+  scope?: 'business' | 'branch';
   /** A585: the branch the person acted at (a manager), or null (the owner, or before A585). */
   branch_name?: string | null }
 export interface CreditSaleLine {
@@ -28,8 +32,10 @@ export function limitChange(r: { created_at?: string; user_name?: string | null;
   const from = Number(r.before_data?.credit_limit) || 0;
   const to = Number(r.after_data?.credit_limit) || 0;
   const tail = String(r.action ?? '').split('.').pop();
-  const action: LimitChange['action'] = tail === 'granted' ? 'granted' : tail === 'removed' || to === 0 ? 'removed' : 'changed';
-  return { at: String(r.created_at ?? ''), by_name: r.user_name ?? null, action, from, to, branch_name: r.branch_id ? branchName(r.branch_id) : null };
+  const scope: LimitChange['scope'] = String(r.action ?? '').startsWith('customer.branch_credit_limit') ? 'branch' : 'business';
+  const action: LimitChange['action'] = tail === 'locked' ? 'locked' : tail === 'unlocked' ? 'unlocked'
+    : tail === 'granted' ? 'granted' : tail === 'removed' || (scope === 'business' && to === 0) ? 'removed' : 'changed';
+  return { at: String(r.created_at ?? ''), by_name: r.user_name ?? null, action, from, to, scope, branch_name: r.branch_id ? branchName(r.branch_id) : null };
 }
 
 export async function creditHistory(businessId: string, customerId: string, limit = 50):

@@ -186,9 +186,10 @@ try {
     reset();
     const r = await call('PUT', `/api/staff/roles/${R_CASH}/permissions`, T.owner, { keys: ['orders.create', 'customers.manage', '*', 'nope.nope'] });
     assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.deepEqual(roleKeys(R_CASH), ['customers.credit', 'customers.edit', 'orders.create']);
+    // A595: a broad key stood for its fine keys' parts too (customers.delete, the credit parts).
+    assert.deepEqual(roleKeys(R_CASH), ['customers.credit', 'customers.credit_adjust', 'customers.credit_payment', 'customers.delete', 'customers.edit', 'orders.create']);
     const back = await call('GET', '/api/staff/roles', T.owner);
-    assert.deepEqual(back.body.find((x) => x.id === R_CASH).keys.sort(), ['customers.credit', 'customers.edit', 'orders.create']);
+    assert.deepEqual(back.body.find((x) => x.id === R_CASH).keys.sort(), ['customers.credit', 'customers.credit_adjust', 'customers.credit_payment', 'customers.delete', 'customers.edit', 'orders.create']);
   });
   await ok('…the old { permission_ids } still works (a broad id stored as its fine keys)', async () => {
     reset();
@@ -221,7 +222,9 @@ try {
     const r = await call('POST', '/api/staff/roles', T.owner, { name: 'Shift lead', copy_from: R_MGR, keys: ['reports.shifts'] });
     assert.equal(r.status, 201, JSON.stringify(r.body));
     const nid = r.body.id;
-    assert.deepEqual(roleKeys(nid), ['orders.create', 'products.view', 'reports.shifts', 'sales.void', 'staff.edit', 'staff.roles', 'staff.view']);
+    // A595: before migration 176 the copied role's staff.edit / staff.view still bring their parts (what they meant).
+    assert.deepEqual(roleKeys(nid), ['orders.create', 'products.view', 'reports.shifts', 'sales.void', 'staff.access', 'staff.contacts', 'staff.edit', 'staff.pay',
+      'staff.pins', 'staff.roles', 'staff.view']);
     assert.equal((await call('POST', '/api/staff/roles', T.owner, { name: 'admin' })).status, 403);
     assert.equal((await call('POST', '/api/staff/roles', T.mgr, { name: 'Lead', keys: ['settings.business'] })).status, 403, 'ceiling on create');
   });
@@ -242,7 +245,9 @@ try {
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const list = await call('GET', '/api/staff', T.owner);
     const cate = list.body.find((u) => u.id === CASH);
-    assert.deepEqual(cate.override_keys, { 'reports.sales': true, 'customers.edit': false, 'customers.credit': false });
+    // A595: an older screen (no `parts: true`): a parent's override is carried to its parts, given or taken.
+    assert.deepEqual(cate.override_keys, { 'reports.sales': true, 'reports.analytics': true, 'customers.edit': false, 'customers.credit': false,
+      'customers.delete': false, 'customers.credit_payment': false, 'customers.credit_adjust': false });
     await call('PATCH', `/api/staff/${CASH}`, T.owner, { override_keys: {} });
     assert.equal(db.user_permissions.filter((u) => u.user_id === CASH).length, 0, '{} clears');
     await call('PATCH', `/api/staff/${CASH}`, T.owner, { name: 'Cate B' });
@@ -272,7 +277,7 @@ try {
     const all = await call('GET', '/api/controls', T.owner);
     // A493: no `updates` section — ZapTill approves till updates (admin portal), never the client.
     assert.deepEqual(Object.keys(all.body).sort(), ['loyalty', 'payments', 'pos', 'stock']);   // A563: + stock (when stock reaches zero)
-    assert.deepEqual(Object.keys(all.body.pos).sort(), ['delivery_fee', 'login_codes', 'pay_before_kitchen', 'pay_later_tabs']);
+    assert.deepEqual(Object.keys(all.body.pos).sort(), ['approval_pin', 'delivery_fee', 'login_codes', 'pay_before_kitchen', 'pay_later_tabs']);   // A594: + approval_pin (the owner's now)
     assert.deepEqual(Object.keys((await call('GET', '/api/controls', as(['settings.pos']))).body).sort(), ['loyalty', 'pos', 'stock']);
     assert.deepEqual(Object.keys((await call('GET', '/api/controls', as(['settings.payments']))).body), ['payments']);
     assert.deepEqual((await call('GET', '/api/controls', T.cash)).body, {});
@@ -434,7 +439,7 @@ try {
     let r;
     try { r = await call('GET', '/api/devices/fleet', T.till); } finally { console.warn = warn; }
     assert.notEqual(r.status, 403, JSON.stringify(r.body));
-    assert.ok(lines.some((l) => /\[tillScope\] DRY-RUN would refuse: a till's own sign-in \(device dev-T1\) asked for devices\.approve on GET \/api\/devices\/fleet/.test(l)), lines.join('\n'));
+    assert.ok(lines.some((l) => /\[tillScope\] DRY-RUN would refuse: a till's own sign-in \(device dev-T1\) asked for devices\.view on GET \/api\/devices\/fleet/.test(l)), lines.join('\n'));
   });
 } finally {
   server.close();

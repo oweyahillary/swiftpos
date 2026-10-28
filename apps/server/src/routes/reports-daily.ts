@@ -304,7 +304,8 @@ router.get('/hourly', requirePermission('reports.sales'), async (req: any, res) 
 // anywhere. A discount is not suspicious; a pattern of discounts on one PIN at
 // one hour is. The report exists so that pattern can be seen without anyone
 // having to go looking for it.
-router.get('/audit', requirePermission('reports.voids'), async (req: any, res) => {
+// A595: the audit trail download is its own part of reports.voids (reports.audit — migration 176 gave it to every holder).
+router.get('/audit', requirePermission('reports.audit'), async (req: any, res) => {
   try {
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);

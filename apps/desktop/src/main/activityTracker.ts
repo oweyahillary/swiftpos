@@ -101,6 +101,8 @@ export const GATEWAY_PERSON: ReadonlyArray<{ methods: string[]; path: RegExp; wh
   // A545: a manager confirming / disputing a credit sale at a till (the list is a read; the offline replay, sent later by
   // the sync with the till's own sign-in, is background like /api/changes).
   { methods: ['POST'], path: new RegExp(`^credit/sales/${ID}/(confirm|dispute)$`), what: 'a manager confirming a credit sale' },
+  // A595 (owner decision D1): a cashier adding a customer at the POS.
+  { methods: ['POST'], path: /^loyalty\/customer$/, what: 'a customer added at a POS' },
 ];
 /** The smallest /api/sync/push body that can carry a row (an empty push, five empty lists, is about 80 bytes; the A579
  *  heartbeat is `{}`, 2 bytes). */

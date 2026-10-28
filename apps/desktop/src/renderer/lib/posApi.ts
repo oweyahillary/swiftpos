@@ -339,6 +339,8 @@ export interface ShiftMoneyView {
 export interface ShiftMoneyRequest {
   device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
   description?: string; expense_category_id?: string; category_name?: string; payment_method?: string;
+  /** A594: the manager confirmed a cash in that looks like a drawer count is a real cash in. */
+  count_ack?: boolean;
 }
 
 export interface BranchPeerShift {
@@ -437,6 +439,8 @@ export interface WasteRecordingView {
 export interface CreditCustomerView {
   id: string; name: string; phone: string | null; status: string;
   credit_limit: number; cloud_balance: number; pending: number; owed: number; available: number;
+  /** A595 D4: the customer's limit at this branch (null = the business-wide one) and what they owe here. */
+  branch_limit?: number | null; owed_here?: number;
 }
 /** A545: a sale on account and its manager's confirmation (main/creditConfirm.ts). */
 export interface CreditSaleView {
@@ -596,6 +600,8 @@ declare global {
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
         /** A552: On account — offered on this till?, may the person signed in approve it themselves (no PIN)?, the customers. */
         creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; chosenApprovers?: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;
+        /** A595 D1: add a customer on the cloud (name, phone, e-mail, KRA PIN). */
+        createCustomer: (c: { name: string; phone: string; email?: string; kra_pin?: string }) => Promise<{ ok: boolean; customer: unknown }>;
       };
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;
@@ -685,7 +691,7 @@ declare global {
         }>;
         /** A465: a cash in / out or expense on any running shift of the branch — the till records it (server only). */
         shiftMoney: (req: ShiftMoneyRequest) => Promise<{
-          ok: boolean; error?: string; instruction_id?: number; row_id?: string; direct?: boolean;
+          ok: boolean; error?: string; code?: string; instruction_id?: number; row_id?: string; direct?: boolean;   // A594: code
           summary?: { kind: string; amount: number; shift_id: string; expected_cash: number } | null;
           queued_offline?: boolean; message?: string;   // A521
         }>;
@@ -845,7 +851,7 @@ declare global {
         current: (opts?: { includeForeign?: boolean }) => Promise<ZReport | null>;
         open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
         /** 0.6.37 (A388): a pay out needs a manager — signed in, or `pin` (a manager's). */
-        float: (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string) => Promise<ZReport | null>;
+        float: (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string, countAck?: boolean) => Promise<ZReport | null>;   // A594: countAck
         close: (closing_float: number, notes?: string, declared?: Record<string, number>) => Promise<ZReport>;
         /** A365: this till's shifts awaiting a manager's confirmation. */
         awaiting: () => Promise<AwaitingShift[]>;

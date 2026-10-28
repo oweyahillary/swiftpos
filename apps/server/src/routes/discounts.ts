@@ -192,7 +192,9 @@ router.delete('/:id', canManage, async (req, res) => {
 // Body: { code?, discount_id?, order_total }
 // Returns: { discount, discount_amount }
 // A490: giving a discount is sales.discount (everyone held it before migration 134 — OPEN_BEFORE_A490).
-router.post('/apply', requirePermission('sales.discount'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F16): a set-up discount or promo code is its own part of sales.discount
+// (sales.discount_preset — migration 176 gave it to every holder); typing an amount stays sales.discount.
+router.post('/apply', requirePermission('sales.discount_preset'), async (req, res) => {
   const { code, discount_id, order_total } = req.body;
 
   if (!order_total || order_total <= 0) {

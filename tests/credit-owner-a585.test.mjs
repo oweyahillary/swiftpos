@@ -354,7 +354,7 @@ try {
   });
   await ok('the limit is still checked after the approval on both sale paths (no approver sells past it)', () => {
     const o = read('apps/server/src/routes/orders.ts');
-    const n = o.match(/const ca = await creditApproval\(req, req\.body, [^)]+\);[\s\S]{0,900}?if \(creditAmount > available/g) ?? [];
+    const n = o.match(/const ca = await creditApproval\(req, req\.body, [^)]+\);[\s\S]{0,2200}?if \(creditAmount > available/g) ?? [];   // A595 D4: the branch credit checks sit between them
     assert.equal(n.length, 2);
   });
 

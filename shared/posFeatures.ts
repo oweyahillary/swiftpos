@@ -95,7 +95,7 @@ export const POS_FEATURES = [
   // A562 (owner, 2026-10-22: "we remove approval pin and add it as a feature we can turn on or off in the admin panel").
   // Off: the staff forms (web and till) offer no approval PIN and the cloud refuses a new one (APPROVAL_PIN_OFF) — managers
   // approve with their sign-in PIN (A518). An approval PIN set before stays usable (lib/approver.ts reads no switch) until
-  // the owner removes it on the staff form, so no manager's approval breaks when this is off. Set in the admin portal only.
+  // the owner removes it on the staff form, so no manager's approval breaks when this is off. A594: set by the owner now (owner only).
   {
     key: 'approval_pin',
     label: 'Separate approval PIN for managers',
@@ -157,7 +157,8 @@ export function kitchenFontBFrom(features: Partial<Record<string, unknown>> | nu
 /** A563: the owner's "When an item's stock reaches zero" choice — two switches, one setting (shared/stockGate.ts). */
 export const STOCK_ZERO_KEYS = ['stock_zero_sold_out', 'stock_zero_hide'] as const;
 
-/** A562: the staff switches, in the order the admin portal lists them — set by ZapTill, never by the owner. */
+/** A562: the staff switches. A594 (owner, 2026-10-26: "some items can be permissions … I like your proposal"): the OWNER sets
+ *  them now (Settings › Business › POS options, the owner alone); the admin portal shows them read-only. */
 export const STAFF_OPTION_KEYS = ['approval_pin'] as const;
 
 /** A562: may a separate approval PIN be SET for this business (the staff forms show it; the cloud accepts it)? Only a real
@@ -205,6 +206,48 @@ export const MONEY_MOVEMENT_MANAGER_ONLY = 'Expenses and cash in / out are recor
  */
 export function mayRecordMoneyMovement(features: Pick<PosFeatures, 'cashier_no_money_out'>, signedInManager: boolean): boolean {
   return signedInManager || !features.cashier_no_money_out;
+}
+
+// ── A594: cash in / cash out (owner, 2026-10-26: "we need to turn off that option for cashiers by default unless
+// allowed"). A cashier had typed the drawer's counts into Cash in (the day's cash sales, then float + cash sales): no
+// reason, nobody approving, and the expected cash rose by both. The rules below are shared by the desktop POS (main
+// process and screen), the web POS and the cloud, so they cannot drift.
+
+/** Shown when a cash in or a cash out has no reason. Every one needs one now (a cash in was optional before A594). */
+export const CASH_MOVEMENT_REASON_REQUIRED = 'Say why the cash came in or went out (a reason) — e.g. "change from the bank".';
+/** Shown to a person who may not record cash in / out on their own: a manager approves it on the spot. */
+export const CASH_MOVEMENT_ASK_MANAGER = 'A manager approves each cash in and cash out — ask a manager to enter their PIN.';
+/** The same for a drawer expense without "Record expenses" (expenses.record). */
+export const EXPENSE_ASK_MANAGER = 'A manager approves each expense — ask a manager to enter their PIN.';
+/** The second warning: the amount is what the drawer should hold (or its cash sales) — a count typed in the wrong place. */
+export const DRAWER_COUNT_WARNING = 'This looks like a drawer count — did you mean Close shift?';
+/** The refusal's code (cloud: 409) until the person confirms it is a real cash in (`count_ack` / `countAck`). */
+export const DRAWER_COUNT_CODE = 'CASH_IN_LOOKS_LIKE_COUNT';
+
+/** The first confirmation of a cash in, with the amount as the screen shows money ("KES 4,450.00"). */
+export function cashInAddsText(amountLabel: string): string {
+  return `This ADDS ${amountLabel} to the cash expected in the drawer. To count the drawer, use Close shift.`;
+}
+
+/**
+ * Does this cash movement need an approver (a manager signed in, or their PIN on the spot)? A cash out always (A388); a cash
+ * in unless the person holds `shifts.cash_movements` — "Record cash in" since A594 (a manager's role, or given per role /
+ * per person by the owner). A drawer expense always needs one too (A388), so it is not asked here.
+ */
+export function cashMovementNeedsApprover(type: 'float_in' | 'float_out', mayCashIn: boolean): boolean {
+  return type === 'float_out' || !mayCashIn;
+}
+
+/**
+ * Does a cash in of `amount` look like a drawer count — within 1 of the shift's cash sales, of the cash expected now, or of
+ * the opening float + cash sales (what the drawer held before any cash in / out)? Only figures above zero count.
+ */
+export function looksLikeDrawerCount(amount: number, f: { openingFloat?: number | null; cashSales?: number | null; expected?: number | null }): boolean {
+  const a = Number(amount);
+  if (!(a > 0) || !Number.isFinite(a)) return false;
+  const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const candidates = [n(f.cashSales), n(f.expected), n(f.openingFloat) + n(f.cashSales)];
+  return candidates.some((c) => c > 0 && Math.abs(a - c) <= 1);
 }
 
 /**

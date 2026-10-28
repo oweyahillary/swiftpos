@@ -44,7 +44,13 @@ const RECEIPT_SETTING_KEYS = new Set(['receipt_header', 'receipt_footer', 'recei
 
 /** A490: the keys that write business settings — the route admits any of them, then narrows per setting. */
 const SETTING_WRITE_KEYS = ['receipt.manage', 'settings.business', 'settings.payments', 'settings.pos', 'settings.integrations',
-  'settings.reversals', 'inventory.count_freeze'];   // A502
+  'settings.reversals', 'inventory.count_freeze',   // A502
+  'settings.sales_rules', 'settings.report_emails'];   // A595: parts of settings.business / settings.integrations
+/**
+ * A595 (docs/PERMISSIONS-AUDIT.md F20): the selling rules are their own part of settings.business (settings.sales_rules —
+ * migration 176 gave it to every holder): continuous operation and what a cashier's History shows.
+ */
+const SALES_RULE_KEYS: ReadonlySet<string> = new Set(['continuous_operation', CASHIER_HISTORY_METHODS_KEY, 'cashier_sees_shift_sales', 'cashier_history_totals']);
 const LOYALTY_SETTING_KEYS = new Set(['loyalty_enabled', 'loyalty_earn_rate']);
 
 /**
@@ -94,6 +100,18 @@ export const SUPERVISOR_PIN_RETIRED = {
   code:  'SUPERVISOR_PIN_RETIRED',
 } as const;
 
+/**
+ * A595 (owner, 2026-10-27, decision D3: "report emails — owner and partners can set them; managers cannot"): who may read
+ * and set the Report Scheduler (who receives the automatic e-mails) — the owner, a partner (web dashboard access,
+ * lib/webPartners.ts), or someone the owner gave settings.report_emails in Staff. Migration 177 takes the key off every
+ * role (a manager's role no longer opens it); a person's own grant is kept.
+ */
+export function mayReportEmails(req: import('express').Request): boolean {
+  if (req.isTill) return false;
+  return req.isOwner === true || req.webPartner === true || can(req, 'settings.report_emails');
+}
+const REPORT_EMAILS_REFUSED = { error: 'Only the owner or a partner chooses who receives the report e-mails.', code: 'REPORT_EMAILS_OWNER', detail: 'Missing permission: settings.report_emails' } as const;
+
 /** A490: the one key that may write this business setting — null when it is the OWNER's alone (A494). */
 export function settingPermission(key: string): string | null {
   if (ownerOnlySetting(key)) return null;
@@ -102,7 +120,10 @@ export function settingPermission(key: string): string | null {
   if (RECEIPT_SETTING_KEYS.has(key)) return 'receipt.manage';
   if (key === PAYMENT_METHODS_ENABLED_KEY) return 'settings.payments';
   if (LOYALTY_SETTING_KEYS.has(key)) return 'settings.pos';
-  if (key === 'report_schedule') return 'settings.integrations';
+  // A595 (F3): scheduled report e-mails send the business's figures to any address — their own part of
+  // settings.integrations (settings.report_emails).
+  if (key === 'report_schedule') return 'settings.report_emails';
+  if (SALES_RULE_KEYS.has(key)) return 'settings.sales_rules';   // A595 (F20)
   if (BUSINESS_SETTING_KEYS.has(key) || BUSINESS_SETTING_PREFIXES.some((p) => key.startsWith(p))) return 'settings.business';
   return null;   // A494: unknown — the owner's (default-deny, as GET /settings is)
 }
@@ -204,10 +225,17 @@ router.get('/', requireAuth, async (req, res) => {
 // dates etc. stay admin-controlled); currency is locked once any sale exists,
 // because historical amounts are denominated in it; `email` here is the business
 // CONTACT email, not a login credential.
-router.patch('/', requireAuth, requirePermission('settings.business'), async (req, res) => {
+router.patch('/', requireAuth, requireAnyPermission('settings.business', 'settings.tax'), async (req, res) => {
   const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'ctl_rate', 'currency', 'logo_url'] as const;
   const updates: Record<string, unknown> = {};
   for (const k of EDITABLE) if (k in req.body) updates[k] = req.body[k];
+  // A595 (docs/PERMISSIONS-AUDIT.md F20): the VAT and levy rates are their own part of settings.business (settings.tax —
+  // migration 176 gave it to every holder); the rest of the profile stays settings.business.
+  const TAX_FIELDS = ['vat_rate', 'ctl_rate'];
+  const wantsTax = Object.keys(updates).some((k) => TAX_FIELDS.includes(k));
+  const wantsProfile = Object.keys(updates).some((k) => !TAX_FIELDS.includes(k));
+  if (wantsTax && !can(req, 'settings.tax')) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: settings.tax' }); return; }
+  if (wantsProfile && !can(req, 'settings.business')) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: settings.business' }); return; }
 
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: 'No editable fields provided' });
@@ -557,7 +585,9 @@ router.get('/settings', requireAuth, async (req, res) => {
 // (`api.get('/api/business/settings/report-schedule')`) hits nothing, its
 // `.catch(() => {})` swallows the 404, and the toggle silently reverts to the
 // default — "saved" on screen, off on reload (register A54).
-router.get('/settings/report-schedule', requireAuth, async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F3): who the reports go to (e-mail addresses) — read by whoever may change it
+// (settings.report_emails), no longer by every signed-in session.
+router.get('/settings/report-schedule', requireAuth, (req, res, next) => { if (mayReportEmails(req)) next(); else res.status(403).json(REPORT_EMAILS_REFUSED); }, async (req, res) => {
   const DEFAULT = { enabled: false, send_time: '21:00', recipients: [] as string[] };
 
   const { data, error } = await supabase
@@ -584,7 +614,12 @@ router.get('/settings/report-schedule', requireAuth, async (req, res) => {
 // POST /api/business/settings
 // Upserts a single key/value pair for this business.
 // Body: { key: string, value: string }
-router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS), async (req, res) => {
+// A595 (D3): the report schedule is the owner's and the partners' (mayReportEmails) — let a partner in for that key alone.
+const settingsWriteGate = requireAnyPermission(...SETTING_WRITE_KEYS);
+router.post('/settings', requireAuth, (req, res, next) => {
+  if (String(req.body?.key ?? '') === 'report_schedule') { if (mayReportEmails(req)) next(); else res.status(403).json(REPORT_EMAILS_REFUSED); return; }
+  settingsWriteGate(req, res, next);
+}, async (req, res) => {
   const { key, value } = req.body;
 
   if (!key || value === undefined) {
@@ -615,7 +650,9 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // settings.payments, loyalty settings.pos, the report schedule settings.integrations, everything else
   // settings.business. The void/refund rules and the stock-count freeze stay the owner's (below).
   const needed = settingPermission(String(key));
-  if (needed === null) {
+  if (String(key) === 'report_schedule') {
+    // A595 (D3): checked at the gate above (mayReportEmails).
+  } else if (needed === null) {
     // A494: the owner's own settings — the real owner, signed in as themselves (not a till's own sign-in).
     if (!req.isOwner || req.isTill) {
       res.status(403).json({ error: 'Only the owner can change that setting.', code: 'OWNER_ONLY', detail: `"${key}" is the owner's` });
