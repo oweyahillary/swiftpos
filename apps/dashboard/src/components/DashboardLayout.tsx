@@ -12,6 +12,9 @@ import { relative } from '../lib/format';
 import { whenVisible } from '../lib/visiblePoll';   // A591: the badges are not asked while the tab is hidden
 import CloudTrialNotice from './CloudTrialNotice';   // A569: the owner's notice in the trial's last 7 days
 import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '../lib/businessTerms';   // A573
+import { useBrandLook } from './ThemeLayer';   // A597: the shop's logo and colours (themes on)
+import { brandBand } from '../lib/themeVars';
+import { showAttendanceNav } from '../lib/attendanceView';   // A599
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
 // One curated stroke path per nav concept, in place of the mixed emoji the web
@@ -63,6 +66,7 @@ const ICONS: Record<string, string> = {
   summary:   'M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z',
   bell:      'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
   dot:       'M12 12h.01',
+  clock:     'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',   // A599: Attendance
 };
 
 function NavIcon({ name, className, size = 18 }: { name: string; className?: string; size?: number }) {
@@ -119,6 +123,9 @@ const NAV: NavEntry[] = [
   { to: '/dashboard/analytics', label: 'Analytics', icon: 'summary' },
   // A576: loss-prevention alerts — unusual voids, discounts, cash differences … for the owner and managers (never the till).
   { to: '/dashboard/watch-list', label: 'Watch list', icon: 'warning' },
+  // A599: Attendance (premium — the admin portal's 'attendance' switch; OFF, the item is not there at all), punches from the
+  // attendance device. Shown to the owner, partners and holders of attendance.view (showAttendanceNav).
+  { to: '/dashboard/attendance', label: 'Attendance', icon: 'clock' },
   { to: '/dashboard/pos',      label: 'POS',      icon: 'till' },
   // KDS moved out of Settings — it is a live operational screen, not a setting.
   { to: '/kds',                label: 'KDS',      icon: 'kds', verticals: FOOD_VERTICALS },
@@ -297,10 +304,24 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
 export default function DashboardLayout() {
   const { signOut } = useAuth();
   const { business } = useBusiness();
+  // A597: the shop's own look in the chrome — its logo above its name and a band in its colours. null (themes off, or
+  // nothing chosen) → exactly the header as before.
+  const look = useBrandLook();
+  const band = brandBand(look);
   const { activeBranchId } = useBranch();
-  const { can } = usePermissions();   // A550
+  const { can, isOwner, isPartner } = usePermissions();   // A550
+  // A599: the business's 'attendance' flag (ZapTill's, premium) — read once per business; until it is known, off (hidden).
+  const [attendanceOn, setAttendanceOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setAttendanceOn(false);
+    if (business?.id) api.get<Record<string, boolean>>('/api/flags').then((f) => { if (live) setAttendanceOn(f?.attendance === true); }).catch(() => {});
+    return () => { live = false; };
+  }, [business?.id]);
   const mayOpen = (to: string): boolean => {
-    const keys = NAV_KEYS[to.split('?')[0]];
+    const path = to.split('?')[0];
+    if (path === '/dashboard/attendance') return showAttendanceNav({ flagOn: attendanceOn, isOwner, isPartner, can });
+    const keys = NAV_KEYS[path];
     return !keys || keys.some((k) => can(k));
   };
 
@@ -524,9 +545,14 @@ export default function DashboardLayout() {
         className={`fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0
           ${navOpen ? 'translate-x-0' : '-translate-x-full'} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col`}>
 
+        {band && <div aria-hidden className="h-1 flex-shrink-0" style={{ background: band }} data-testid="dashboard-brand-band" />}
         {/* Logo + bell */}
         <div className="px-5 py-5 border-b border-gray-800 flex items-center justify-between">
           <div className="min-w-0">
+            {look?.logo && (
+              <img src={look.logo} alt="" data-testid="dashboard-brand-logo"
+                className="mb-2 max-h-10 max-w-[140px] object-contain rounded-md bg-white p-0.5" />
+            )}
             <p className="text-white font-bold text-lg truncate">{business?.name ?? '…'}</p>
             <BranchSelector />
           </div>
@@ -644,6 +670,7 @@ export default function DashboardLayout() {
             className="p-2 -ml-1 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
+          {look?.logo && <img src={look.logo} alt="" className="h-7 max-w-[56px] object-contain rounded bg-white p-0.5 flex-shrink-0" />}
           <p className="flex-1 min-w-0 truncate text-sm font-semibold text-white">{business?.name ?? 'ZapTill'}</p>
           {unreadCount > 0 && (
             <button onClick={() => { setNavOpen(true); setBellOpen(true); }} aria-label="Notifications"

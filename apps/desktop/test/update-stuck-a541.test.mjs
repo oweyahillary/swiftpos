@@ -113,6 +113,9 @@ console.log('\n1. The gateway: trading only (an allowlist)\n');
     ['POST', 'credit/sales/o-1/confirm', P], ['POST', 'credit/sales/o-1/dispute', P], ['GET', 'credit/sales', B],
     ['GET', 'credit/sales/count', B], ['POST', 'credit/sales/o-1/replay', B],
     ['POST', 'loyalty/customer', P],   // A595 D1: a cashier adds a customer at the POS (somebody is there)
+    // A599: the branch server's attendance job (device config, state, action acks, punches) — background, never trading
+    ['GET', 'attendance/node/config', B], ['POST', 'attendance/node/devices/d-1/state', B], ['POST', 'attendance/node/actions/a-1/ack', B],
+    ['POST', 'attendance/node/punches', B],
   ];
   const wrong = ROUTES.filter(([m, p, k]) => A.classifyGatewayCall(m, `/node/cloud/api/${p}`).kind !== k)
     .map(([m, p, k]) => `${m} ${p}: ${A.classifyGatewayCall(m, `/node/cloud/api/${p}`).kind} (want ${k})`);

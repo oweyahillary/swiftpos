@@ -163,10 +163,10 @@ await ok('36 new rights, every part a catalogue key with exactly one entry, no p
     assert.ok(P.isPermissionKey(parent), parent);
     for (const c of parts) { assert.ok(P.isPermissionKey(c), c); assert.ok(!P.SPLITS[c], `${c} is also a parent`); }
   }
-  assert.equal(P.PERMISSION_KEYS.length, 106);
+  assert.equal(P.PERMISSION_KEYS.length, 109);   // A599: + attendance.view / edit / devices
 });
 await ok('personal data: the badge keys; the built-in Auditor (VIEW_KEYS) holds none of them, and no write key', () => {
-  assert.deepEqual([...P.PERSONAL_KEYS].sort(), ['customers.contacts', 'customers.history', 'staff.contacts', 'staff.pay', 'staff.pins']);
+  assert.deepEqual([...P.PERSONAL_KEYS].sort(), ['attendance.view', 'customers.contacts', 'customers.history', 'staff.contacts', 'staff.pay', 'staff.pins']);   // A599: attendance is personal data
   const aud = P.BUILT_IN_ROLES.find((r) => r.name === 'Auditor').keys;
   for (const k of P.PERSONAL_KEYS) assert.ok(!aud.includes(k), k);
   for (const k of aud) assert.ok(P.PERMISSIONS.find((p) => p.key === k).view, k);
@@ -186,7 +186,7 @@ await ok('new built-in defaults: the audit\'s least-privilege ones, with the own
   for (const k of ['customers.credit_adjust', 'staff.access', 'staff.pay', 'devices.retire', 'expenses.edit', 'expenses.monthly', 'settings.mpesa'])
     assert.ok(!r('Manager').has(k), `D9: Manager ${k}`);
   assert.ok(r('Manager').has('customers.credit_limit'));
-  assert.deepEqual([...r('General Manager')].sort(), P.PERMISSION_KEYS.filter((k) => k !== 'settings.webhooks' && k !== 'settings.report_emails').sort(), 'D3');
+  assert.deepEqual([...r('General Manager')].sort(), P.PERMISSION_KEYS.filter((k) => k !== 'settings.webhooks' && k !== 'settings.report_emails' && k !== 'attendance.devices').sort(), 'D3 (A599: and attendance devices)');
 });
 await ok('a cashier holding every part of their keys is still not back office (the floor takes the parts too)', () => {
   assert.equal(P.isBackOffice(P.withParts(P.defaultKeysFor('cashier'))), false);

@@ -8,6 +8,7 @@ import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
 import { parseReversalRules, REVERSAL_SETTING_KEYS } from '../lib/reversalRules';
 import { parsePosFeatures, POS_FEATURE_KEYS } from '../lib/posFeatures';
+import { ATTENDANCE_FLAG } from '../lib/attendanceRules';   // A599
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -15,7 +16,7 @@ import { isNodeRole } from '../lib/deviceRegistry';
 import { checkDeviceBranch } from '../lib/deviceBinding';   // A446
 import { createHash } from 'crypto';   // A446
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
-import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
+import { themesEnabled, effectiveThemeId, effectiveBrandColours, selectBusinessBranding } from '../lib/themeAccess';   // A597
 import { getWebAccess } from '../lib/webAccess';
 import { worksAtBranch } from '../lib/branchAccess';   // A426
 import { isConfirmedBranchServer } from '../lib/deviceRole';   // A427
@@ -461,11 +462,8 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A304: client branding (accent + base64 logo) for this business, pulled to
     // the till's local `branding` mirror (remote-wins). maybeSingle — the absent
     // row is the norm (branding is optional) and must not fail the pull closed.
-    supabase
-      .from('business_branding')
-      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id')
-      .eq('business_id', req.businessId)
-      .maybeSingle(),
+    // A597: + the owner's brand colours (migration 179; read without them on a database not yet migrated).
+    selectBusinessBranding(req.businessId, 'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, primary_hex, secondary_hex'),
   ]);
   // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
   // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
@@ -611,6 +609,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       // A311: the receipt raster + the client's opt-in toggle ride the same pull.
       logoReceipt: branding.logo_receipt ?? null,
       receiptLogoEnabled: branding.receipt_logo_enabled === true,
+      // A597: the owner's brand colours — null while themes are off (the POS keeps today's look). They win over the
+      // curated theme's action shades; a branch's own theme still wins over them (lib/branchBranding.ts).
+      ...effectiveBrandColours(themesOn, branding),
     } : null,
     themeId,
     // A544: the branch's own override ({ branchId, themeId, accentHex, receiptFooter }), or null. The till and the web POS
@@ -667,11 +668,17 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     scaleBarcodes: scaleSettingsOrDefault(receiptTextRows?.find((r: any) => r.key === SCALE_SETTINGS_KEY)?.value ?? null),
     // 0.6.27: the per-client switches the admin portal sets (feature_flags). Always every key, true or false — an unset
     // switch is off. Older tills ignore it.
-    posFeatures: await (async () => {
+    // A599: the same read carries the 'attendance' flag (premium) — on, the web POS hides its PIN clock-in (the device
+    // records every punch) and the cloud refuses it. Older tills ignore attendanceDevice.
+    ...(await (async () => {
       const { data } = await supabase.from('feature_flags').select('key, enabled')
-        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS]);
-      return parsePosFeatures(data ?? []);
-    })(),
+        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS, ATTENDANCE_FLAG]);
+      const rows = (data ?? []) as Array<{ key: string; enabled: boolean }>;
+      return {
+        posFeatures: parsePosFeatures(rows.filter((r) => r.key !== ATTENDANCE_FLAG)),
+        attendanceDevice: rows.some((r) => r.key === ATTENDANCE_FLAG && r.enabled === true),
+      };
+    })()),
     // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules — always every rule, defaults where
     // unset. Older tills ignore it.
     reversalRules: parseReversalRules((receiptTextRows ?? []) as Array<{ key: string; value: unknown }>),

@@ -20,7 +20,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
 import { notePushOk } from './distributionLag';   // A534 (A23): the branch server's distribution lag
@@ -2067,6 +2067,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setScaleBarcodes(c.scaleBarcodes);
   // 0.6.27: the per-client POS switches. undefined = not said → keep.
   setPosFeatures(c.posFeatures);
+  // A599: the 'attendance' flag (premium) — the branch server pulls the attendance devices only while it is on.
+  setAttendanceFlag(c.attendanceDevice);
   // 0.6.30: the owner's void window and offline void/refund rules. undefined = not said → keep.
   setReversalRules(c.reversalRules);
   // A450: the business's name and currency follow the cloud (owner: "I changed a business name on the web but the till"
@@ -2106,6 +2108,9 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
           // local value is kept rather than cleared — see applyPulledBranding.
           logoReceipt: 'logoReceipt' in _j.branding ? (_j.branding.logoReceipt ?? null) : undefined,
           receiptLogoEnabled: 'receiptLogoEnabled' in _j.branding ? (_j.branding.receiptLogoEnabled === true) : undefined,
+          // A597: the owner's brand colours (null while themes are off); undefined on a cloud before A597 → keep.
+          primaryHex: 'primaryHex' in _j.branding ? (_j.branding.primaryHex ?? null) : undefined,
+          secondaryHex: 'secondaryHex' in _j.branding ? (_j.branding.secondaryHex ?? null) : undefined,
         }
       : null,
     // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
@@ -2117,6 +2122,7 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
     noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
     scaleBarcodes: _j.scaleBarcodes && typeof _j.scaleBarcodes === 'object' ? _j.scaleBarcodes : undefined,   // A577
     posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
+    attendanceDevice: typeof _j.attendanceDevice === 'boolean' ? _j.attendanceDevice : undefined,   // A599: absent → keep
     reversalRules: _j.reversalRules && typeof _j.reversalRules === 'object' ? _j.reversalRules : undefined,   // 0.6.30
     // A450: the business's name and currency (a rename on the web), and the receipt's Buy Goods / Paybill line.
     businessName: identityFromWire(_j).businessName,

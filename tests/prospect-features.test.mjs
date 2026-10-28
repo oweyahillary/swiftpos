@@ -64,7 +64,7 @@ await ok('the switches, all off unless set; the standard ones always on (0.6.29;
   assert.equal(F.parsePosFeatures('not json').delivery_fee, false);
 });
 await ok('pos/init sends every switch (an older till ignores it)', () => {
-  assert.match(read('apps/server/src/routes/pos.ts'), /\n\s+posFeatures: await \(async \(\) => \{\s*const \{ data \} = await supabase\.from\('feature_flags'\)\.select\('key, enabled'\)\s*\.eq\('business_id', req\.businessId\)\.in\('key', \[\.\.\.POS_FEATURE_KEYS\]\);\s*return parsePosFeatures\(data \?\? \[\]\);/);
+  assert.match(read('apps/server/src/routes/pos.ts'), /const \{ data \} = await supabase\.from\('feature_flags'\)\.select\('key, enabled'\)\s*\.eq\('business_id', req\.businessId\)\.in\('key', \[\.\.\.POS_FEATURE_KEYS, ATTENDANCE_FLAG\]\);[\s\S]{0,200}posFeatures: parsePosFeatures\(rows\.filter\(\(r\) => r\.key !== ATTENDANCE_FLAG\)\)/);   // A599: the same read carries the attendance flag
 });
 await ok('the client cannot set a POS switch — only the admin portal (owner\'s decision)', () => {
   assert.match(read('apps/server/src/routes/flags.ts'), /if \(\(POS_FEATURE_KEYS as readonly string\[\]\)\.includes\(req\.params\.key\)\) \{\s*res\.status\(403\)/);

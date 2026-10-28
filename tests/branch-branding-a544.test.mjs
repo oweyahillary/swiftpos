@@ -327,7 +327,7 @@ try {
     assert.match(tab, /const accentErr = accent\.trim\(\) \? accentWriteError\(accent\.trim\(\)\) : null;/);
     assert.match(tab, /const footerErr = footerWriteError\(footer\);/);
     assert.match(tab, /line \{i \+ 1\}: \{l\.length\}\/\{lineMax\}/);
-    assert.match(tab, /<TillPreview theme=\{resolveTheme\(look\.themeId\)\} brandHex=\{look\.accentHex\} \/>/);
+    assert.match(tab, /<TillPreview theme=\{resolveTheme\(look\.themeId\)\} brandHex=\{look\.accentHex\}(?: primaryHex=\{look\.primaryHex\} secondaryHex=\{look\.secondaryHex\})? \/>/);
     assert.match(tab, /client\.patch<BranchBrandingRow>\(`\/api\/business\/branding\/branches\/\$\{row\.branch_id\}`/);
     assert.match(tab, /client\.delete\(`\/api\/business\/branding\/branches\/\$\{row\.branch_id\}`\)/);
     assert.match(tab, /disabled=\{busy \|\| !!accentErr \|\| !!footerErr\}/);

@@ -94,6 +94,21 @@ export type ServerDrawers =
         lastPollAt: string | null; lastPollOk: boolean | null; open: number; awaitingConfirmation: number; peersLastHour: number;
         channel: string; fallback: boolean; fallbackUntil: string | null; fresh: boolean } };
 
+/** A599: what attendance:status answers (main/attendanceSync.ts AttendanceJob.status). Never the comm key. */
+export interface AttendanceDeviceView {
+  id: string; name: string; ip: string; port: number; serial: string | null; model: string | null; firmware: string | null;
+  lastContactAt: string | null; lastError: string | null; lastErrorAt: string | null; driftS: number | null;
+  usersOnDevice: number | null; punchesOnDevice: number | null; sentLastRun: number; lastSentAt: string | null;
+}
+export type AttendanceDevicesStatus =
+  | { visible: false }
+  | { visible: true;
+      status: { lastRunAt: string | null; lastRunOk: boolean | null; lastError: string | null; everyS: number; driftWarnS: number;
+        waitUntil: string | null; utcOffsetMinutes: number | null; devices: AttendanceDeviceView[] } };
+export interface AttendanceDeviceCheck {
+  ok: boolean; error?: string; serial?: string; model?: string; firmware?: string; deviceTime?: string; pcTime?: string; driftS?: number;
+}
+
 export interface TechStatus {
   device: {
     device_id: string | null; device_name: string | null; device_role: DeviceRole;
@@ -543,6 +558,13 @@ declare global {
         /** A542: on a branch server, its copy of the branch's drawers (Tech page). */
         drawersStatus: () => Promise<ServerDrawers>;
       };
+      /** A599: the attendance devices — only on the branch server with the 'attendance' flag on (Tech page). */
+      attendance: {
+        status: () => Promise<AttendanceDevicesStatus>;
+        test: (device_id: string) => Promise<AttendanceDeviceCheck>;
+        setTime: (device_id: string) => Promise<AttendanceDeviceCheck>;
+        pullNow: () => Promise<{ ran: boolean; skipped?: string; error?: string; devices: Array<{ id: string; ok: boolean; error?: string; sent: number; actionsDone: number; actionsFailed: number }> }>;
+      };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
       // tracking can).
@@ -755,7 +777,9 @@ declare global {
         get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null;
                              /** A544: this till's branch's override (null = none) and the look resolved branch → business → default. */
                              branch?: { branchId: string; themeId: string | null; accentHex: string | null; receiptFooter: string | null } | null;
-                             effective?: { themeId: string | null; accentHex: string | null } } | null>;
+                             /** A597: + the owner's brand colours the screens wear (none while themes are off or a branch theme overrides). */
+                             primaryHex?: string | null; secondaryHex?: string | null;
+                             effective?: { themeId: string | null; accentHex: string | null; primaryHex?: string | null; secondaryHex?: string | null } } | null>;
         // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
         // Rejects (throws) on a bad hex, an SVG, a non-raster data-URI, or a logo over 250 KB.
         // A312: logoRgba = the logo's pixels (≤384×240 RGBA); main thresholds them into the receipt

@@ -8,6 +8,7 @@ import TechFindServer from '../components/TechFindServer';   // A502
 import BranchSyncPanel from '../components/BranchSyncPanel';   // A501
 import ServerDistributionPanel from '../components/ServerDistributionPanel';   // A534 (A23)
 import DrawersCopyPanel from '../components/DrawersCopyPanel';   // A542
+import AttendanceDevicesPanel from '../components/AttendanceDevicesPanel';   // A599
 import type { TechSession, TechStatus } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
 
@@ -322,6 +323,8 @@ export default function TechPage({ onExit }: Props) {
           {(dev?.device_role === 'node' || dev?.device_role === 'office') && <ServerDistributionPanel />}
           {/* A542: on the branch server — its copy of the branch's drawers (A535) */}
           {(dev?.device_role === 'node' || dev?.device_role === 'office') && <DrawersCopyPanel />}
+          {/* A599: on the branch server with the 'attendance' flag on — the attendance devices (hidden entirely otherwise) */}
+          {(dev?.device_role === 'node' || dev?.device_role === 'office') && <AttendanceDevicesPanel />}
         </section>
 
         {/* A415: Rejoin this till */}

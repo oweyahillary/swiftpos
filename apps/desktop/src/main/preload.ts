@@ -59,6 +59,13 @@ contextBridge.exposeInMainWorld('swiftpos', {
     distribution: ()                        => ipcRenderer.invoke('node:distribution'),   // A534 (A23)
     drawersStatus: ()                       => ipcRenderer.invoke('node:drawersStatus'),  // A542
   },
+  // A599: the attendance devices — on the branch server, with the 'attendance' flag on (Tech page).
+  attendance: {
+    status:  ()                  => ipcRenderer.invoke('attendance:status'),
+    test:    (device_id: string) => ipcRenderer.invoke('attendance:test', { device_id }),
+    setTime: (device_id: string) => ipcRenderer.invoke('attendance:setTime', { device_id }),
+    pullNow: ()                  => ipcRenderer.invoke('attendance:pullNow'),
+  },
 
   pos: {
     init:         ()                  => ipcRenderer.invoke('pos:init'),

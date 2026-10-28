@@ -16,7 +16,7 @@ import { rulesFromWire } from '../../../lib/reversalRules';
 import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
 import { resolveBranchBranding, branchBrandingFromWire } from '../../../lib/branchBranding';   // A544
-import { setPosBranchTheme, applyDashboardThemeVars, computeDashboardThemeVars, posBrandStrip } from '../../../lib/themeVars';   // A544, A547
+import { setPosBranchTheme, applyDashboardThemeVars, computeDashboardThemeVars, posBrandStrip, posBrandStripColours, BRANDING_SAVED_EVENT } from '../../../lib/themeVars';   // A544, A547, A597
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';
 import { usePOSAuth } from '../../../context/POSAuthContext';
@@ -47,6 +47,8 @@ export interface POSData {
   notePicks:         string[];
   /** 0.6.27: the per-client POS switches (admin portal); all off until pos/init says. */
   posFeatures:       PosFeatures;
+  /** A599: the business records attendance on a device (premium 'attendance' flag) — the PIN clock-in is hidden. */
+  attendanceDevice:  boolean;
   /** 0.6.33: the owner allows free delivery — the shop pays the rider, the customer no fee (pos/init's reversalRules). */
   freeDeliveryAllowed: boolean;
   /** 0.6.33: a delivery whose bill reaches this amount is free automatically; null = off. */
@@ -94,6 +96,7 @@ export function usePOSData(): POSData {
   const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
   const [notePicks, setNotePicks] = useState<string[]>([]);
   const [posFeatures, setPosFeatures] = useState<PosFeatures>(noPosFeatures());
+  const [attendanceDevice, setAttendanceDevice] = useState(false);   // A599
   const [freeDeliveryAllowed, setFreeDeliveryAllowed] = useState(false);   // 0.6.33
   const [freeDeliveryOver, setFreeDeliveryOver] = useState<number | null>(null);   // 0.6.33
   const [receiptHeader,     setReceiptHeader]     = useState('');
@@ -101,6 +104,8 @@ export function usePOSData(): POSData {
   const [receiptFooter,     setReceiptFooter]     = useState('');
   const [branchThemeId,     setBranchThemeId]     = useState<string | null>(null);   // A544: the branch's own theme
   const [brandStrip,        setBrandStrip]        = useState<string | null>(null);   // A547: the till's brand strip, on the web POS
+  // A597: the owner's brand colours this branch wears (none while themes are off or the branch's own theme overrides)
+  const [posColours,        setPosColours]        = useState<{ themeId: string; primary: string | null; secondary: string | null } | null>(null);
   const [receiptPay,        setReceiptPay]        = useState<{ label: string; number: string } | null>(null);   // A450
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
@@ -137,6 +142,7 @@ export function usePOSData(): POSData {
       setNotePicks(parseNotePicks(init.noteQuickPicks ?? null));   // A367 (an older cloud sends none → the defaults)
       setScaleSettings(scaleSettingsOrDefault((init as any).scaleBarcodes ?? null));   // A577 (an older cloud: the default)
       setPosFeatures(parsePosFeatures(init.posFeatures ?? null));   // 0.6.27 (an older cloud sends none → all off)
+      setAttendanceDevice((init as any).attendanceDevice === true);   // A599 (an older cloud sends none → the PIN clock-in stays)
       setWebDayCutoff((init as any).businessDayCutoff);   // 0.6.34: History's "today" follows the business day
       setFreeDeliveryAllowed(rulesFromWire(init.reversalRules ?? null).freeDeliveryAllowed);   // 0.6.33 (none → not offered)
       setFreeDeliveryOver(rulesFromWire(init.reversalRules ?? null).freeDeliveryOver);         // 0.6.33 (none → off)
@@ -154,6 +160,13 @@ export function usePOSData(): POSData {
       setBranchThemeId(look.fromBranch.theme ? look.themeId : null);
       // A547: the brand strip the till draws — the branch's colour, else the business's — only while themes are on.
       setBrandStrip(posBrandStrip(look.themeId, look.accentHex));
+      // A597: the owner's brand colours, resolved by the same rule (a branch's own theme wins; themes off → none). Set, they
+      // colour the POS (the effect below) and the strip: the accent (else the primary), the secondary beside it.
+      const colours = resolveBranchBranding({ themeId: init.themeId ?? null, primaryHex: init.branding?.primaryHex ?? null,
+        secondaryHex: init.branding?.secondaryHex ?? null }, branchBrandingFromWire(init.branchBranding));
+      setPosColours(look.themeId && (colours.primaryHex || colours.secondaryHex)
+        ? { themeId: look.themeId, primary: colours.primaryHex, secondary: colours.secondaryHex } : null);
+      if (colours.primaryHex || colours.secondaryHex) setBrandStrip(posBrandStripColours(look.themeId, look.accentHex, colours.primaryHex, colours.secondaryHex));
       setReceiptPay(init.receiptPayNumber ? { label: init.receiptPayLabel ?? '', number: init.receiptPayNumber } : null);   // A450
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
@@ -228,8 +241,17 @@ export function usePOSData(): POSData {
     return () => { applyDashboardThemeVars(null); setPosBranchTheme(null); };
   }, [branchThemeId]);
 
+  // A597: the owner's brand colours on the web POS — applied here as well, for the same reason (a cashier's POS session
+  // may have no owner sign-in for ThemeLayer); a branch's own theme (above) wins. Leaving gives the dashboard's back.
+  const colourKey = posColours ? `${posColours.themeId}|${posColours.primary ?? ''}|${posColours.secondary ?? ''}` : '';
+  useEffect(() => {
+    if (branchThemeId || !posColours?.primary) return;
+    applyDashboardThemeVars(computeDashboardThemeVars({ themes_enabled: true, theme_id: posColours.themeId, primary_hex: posColours.primary, secondary_hex: posColours.secondary }));
+    return () => { applyDashboardThemeVars(null); try { window.dispatchEvent(new Event(BRANDING_SAVED_EVENT)); } catch { /* no window */ } };
+  }, [branchThemeId, colourKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   return {
-    products, categories, menus, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
+    products, categories, menus, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, attendanceDevice, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
     brandStrip,   // A547
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,

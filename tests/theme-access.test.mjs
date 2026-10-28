@@ -50,14 +50,15 @@ ok('/pos/init computes themeId with effectiveThemeId + the flag',
   /const themesOn = await themesEnabled\(req\.businessId\);\s*const themeId = effectiveThemeId\(themesOn, branding\?\.theme_id\);/.test(pos));
 ok('…served top-level, NOT inside `branding` (a business may have themes without a branding row)',
   /\n    themeId,\n(?:\s*\/\/[^\n]*\n)*\s*branchBranding,\n    receiptHeader:/.test(pos) && !/branding: branding \? \{[^}]*themeId/.test(pos));
-ok('…and theme_id is selected with the branding row', /select\('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id'\)/.test(pos));
+// A597: + primary_hex, secondary_hex (migration 179), read through selectBusinessBranding.
+ok('…and theme_id is selected with the branding row', /'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id(?:, primary_hex, secondary_hex)?'/.test(pos));
 ok('a flag flip moves the catalogue version (tills see it within the 20-s check)',
   /latest\('business_branding', 'business_id', biz\),[\s\S]{0,300}latest\('feature_flags', 'business_id', biz\),/.test(pos));
 const biz = src('apps/server/src/routes/business.ts');
 ok('PUT /branding validates theme_id through themeWriteError and the flag',
   /if \(has\('theme_id'\)\) \{[\s\S]{0,300}themeWriteError\(req\.body\.theme_id, await themesEnabled\(req\.businessId\)\)/.test(biz));
 ok('GET /branding returns theme_id and themes_enabled (the web shows the picker only with the flag)',
-  /theme_id, updated_at'\)/.test(biz) && /themes_enabled: enabled/.test(biz));
+  /theme_id, (?:primary_hex, secondary_hex, )?updated_at'/.test(biz) && /themes_enabled: enabled/.test(biz));
 ok('the cloud\'s themes.ts copy is under the shared-sync gate', /'apps\/server\/src\/lib\/themes\.ts'/.test(src('scripts/check-shared-sync.mjs')));
 // 55 since cross-sync stage 1 (2026-09-27); A325's intent is that a till is on AT LEAST 54 (branding.theme_id).
 ok('the till is required to be on schema 54 or later', Number((/export const REQUIRED_DESKTOP_SCHEMA = (\d+);/.exec(src('apps/server/src/lib/desktopSchema.ts')) || [])[1]) >= 54);

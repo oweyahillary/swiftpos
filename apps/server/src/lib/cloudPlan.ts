@@ -486,14 +486,16 @@ export const gatedBusinessIds = cloudBusinessIds;
 
 /**
  * A593: the facts of every business the billing rules concern (cloudBusinessIds + readCloudFacts: 8 reads), kept up to
- * 10 minutes while nothing is written with no business of its own (an admin portal write, a job's) and nothing forgot a
- * standing (a payment, a plan, web access — forgetStanding). The standing is still worked out at the caller's own time.
- * A591_MEMO=off: read every time, as before.
+ * 30 minutes (A598 — 10 before, the watchdog's own interval, so a run every 10 minutes always found them just expired
+ * and read them again) while nothing is written with no business of its own (an admin portal write, a job's) and
+ * nothing forgot a standing (a payment, a plan, web access — forgetStanding). The standing is still worked out at the
+ * caller's own time. A change made straight in SQL: within 30 minutes. A591_MEMO=off: read every time, as before.
  */
+export const GOVERNED_QUIET_MS = 30 * 60_000;
 let governedKept: { at: number; gen: string; fg: number; facts: Map<string, CloudFactsRow> } | null = null;
 export async function governedFacts(now: number = Date.now()): Promise<Map<string, CloudFactsRow>> {
   const gen = writeGen('*');   // no business is named '*': the generation every business shares
-  if (memoEnabled() && governedKept && governedKept.gen === gen && governedKept.fg === factsGeneration && now - governedKept.at < STANDING_QUIET_MS) {
+  if (memoEnabled() && governedKept && governedKept.gen === gen && governedKept.fg === factsGeneration && now - governedKept.at < GOVERNED_QUIET_MS) {
     return governedKept.facts;
   }
   const fg = factsGeneration;

@@ -19,7 +19,7 @@
  *  theme as null and no branch row (`branchBranding: null`), and this resolver ignores any override it is handed while
  *  the business theme is null — stored, never applied.
  */
-import { isThemeId, resolveBrandLayer } from './themes';
+import { isThemeId, resolveBrandLayer, cleanBrandHex } from './themes';
 
 /** A footer line as the receipt prints it: 48 characters on 80 mm paper (Font A, the receipt's font — A540 / A543). */
 export const FOOTER_LINE_MAX = 48;
@@ -40,11 +40,18 @@ export interface BrandingLevel {
   themeId?: string | null;
   accentHex?: string | null;
   receiptFooter?: string | null;
+  /** A597: the owner's brand colours (business level only — a branch has none of its own). */
+  primaryHex?: string | null;
+  secondaryHex?: string | null;
 }
 export interface ResolvedBranding {
   themeId: string | null;
   accentHex: string | null;
   receiptFooter: string;
+  /** A597: the business's brand colours — null while themes are off, and while a branch's own theme overrides (the branch
+   *  then wears its theme whole). Set, they win over the curated theme's action shades (themes.ts brandTokens). */
+  primaryHex: string | null;
+  secondaryHex: string | null;
   /** Which fields came from the branch (the web and the Tech page can say so). */
   fromBranch: { theme: boolean; accent: boolean; footer: boolean };
 }
@@ -129,7 +136,12 @@ export function resolveBranchBranding(business: BrandingLevel | null | undefined
   const bizAccent = typeof business?.accentHex === 'string' && business.accentHex ? business.accentHex : null;
   const bizFooter = typeof business?.receiptFooter === 'string' ? business.receiptFooter : '';
   const none = { theme: false, accent: false, footer: false };
-  if (!bizTheme || !branch) return { themeId: bizTheme, accentHex: bizAccent, receiptFooter: bizFooter, fromBranch: none };
+  // A597: the brand colours apply only while themes are on (the premium switch) — off, today's look exactly.
+  const bizPrimary = bizTheme ? cleanBrandHex(business?.primaryHex) : null;
+  const bizSecondary = bizTheme ? cleanBrandHex(business?.secondaryHex) : null;
+  if (!bizTheme || !branch) {
+    return { themeId: bizTheme, accentHex: bizAccent, receiptFooter: bizFooter, primaryHex: bizPrimary, secondaryHex: bizSecondary, fromBranch: none };
+  }
   const theme = isThemeId(branch.themeId);
   const hex = normaliseHex(branch.accentHex);
   const accent = !!hex && !!resolveBrandLayer(hex);
@@ -138,6 +150,9 @@ export function resolveBranchBranding(business: BrandingLevel | null | undefined
     themeId: theme ? (branch.themeId as string) : bizTheme,
     accentHex: accent ? hex : bizAccent,
     receiptFooter: footer ? (branch.receiptFooter as string) : bizFooter,
+    // A597: a branch's own theme wins (A544's override "still wins"); otherwise the business's brand colours.
+    primaryHex: theme ? null : bizPrimary,
+    secondaryHex: theme ? null : bizSecondary,
     fromBranch: { theme, accent, footer },
   };
 }

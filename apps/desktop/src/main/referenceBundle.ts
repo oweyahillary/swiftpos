@@ -43,7 +43,9 @@ export function cleanReceiptPay(label: unknown, number: unknown): ReceiptPay | n
   return { label: l || 'Buy Goods', number: n };
 }
 /** A381 / A450: the business's branding as a pull carries it. */
-export interface PulledBranding { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null }
+export interface PulledBranding { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null;
+  /** A597: the owner's brand colours (undefined = not said → the till keeps its own). */
+  primaryHex?: string | null; secondaryHex?: string | null }
 
 // ── Cloud-shaped output ──────────────────────────────────────────────────────
 // Field names and value types match what pullCatalogue destructures, NOT the
@@ -325,6 +327,7 @@ function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config']
   const sess = one(`SELECT business_name, currency FROM session WHERE id = 1`);
   const pay = one(`SELECT value FROM maintenance_state WHERE key = 'receipt_pay'`);
   const b = one(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`);
+  const colours = one(`SELECT primary_hex, secondary_hex FROM branding LIMIT 1`);   // A597: a database without them → not said
   // A544: the server's own branch's override (the server and its tills are one branch). A database before 74 → not said.
   let branchBranding: unknown;
   try {
@@ -339,7 +342,8 @@ function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config']
     currency: typeof sess?.currency === 'string' && sess.currency.trim() ? sess.currency : null,
     receiptPay,
     branding: b ? { accentHex: b.accent_hex ?? null, logoPng: b.logo_png ?? null, logoReceipt: b.logo_receipt ?? null,
-      receiptLogoEnabled: b.receipt_logo_enabled === 1 || b.receipt_logo_enabled === true } : null,
+      receiptLogoEnabled: b.receipt_logo_enabled === 1 || b.receipt_logo_enabled === true,
+      ...(colours ? { primaryHex: colours.primary_hex ?? null, secondaryHex: colours.secondary_hex ?? null } : {}) } : null,   // A597
     themeId: b ? (typeof b.theme_id === 'string' && b.theme_id ? b.theme_id : null) : undefined,   // A544
     branchBranding,                                                                               // A544
   };
@@ -511,6 +515,9 @@ export interface AcquiredReference {
     scaleBarcodes?: unknown;
     /** 0.6.27: the per-client POS switches. undefined = not said (older cloud / older node) → keep. */
     posFeatures?: Record<string, boolean>;
+    /** A599: the business's 'attendance' flag (pos/init attendanceDevice). undefined = not said → keep. Never relayed to a
+     *  till behind a server — only the server pulls the devices. */
+    attendanceDevice?: boolean;
     /** 0.6.30: the owner's void/refund rules. undefined = not said (older cloud / older node) → keep. */
     reversalRules?: ReversalRules;
   };
@@ -586,7 +593,10 @@ export function identityFromWire(pi: any): { businessName?: string; currency?: s
   if (pi?.branding && typeof pi.branding === 'object') {
     out.branding = { accentHex: pi.branding.accentHex ?? null, logoPng: pi.branding.logoPng ?? null,
       logoReceipt: 'logoReceipt' in pi.branding ? (pi.branding.logoReceipt ?? null) : undefined,
-      receiptLogoEnabled: 'receiptLogoEnabled' in pi.branding ? pi.branding.receiptLogoEnabled === true : undefined };
+      receiptLogoEnabled: 'receiptLogoEnabled' in pi.branding ? pi.branding.receiptLogoEnabled === true : undefined,
+      // A597: the owner's brand colours — undefined when the cloud / branch server did not say (keep the till's own).
+      primaryHex: 'primaryHex' in pi.branding ? (pi.branding.primaryHex ?? null) : undefined,
+      secondaryHex: 'secondaryHex' in pi.branding ? (pi.branding.secondaryHex ?? null) : undefined };
   }
   return out;
 }

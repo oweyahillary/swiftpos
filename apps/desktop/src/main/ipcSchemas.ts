@@ -116,6 +116,10 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'node:retryFailed':       NO_PAYLOAD,                                                          // A501
   'node:distribution':      NO_PAYLOAD,                                                          // A534 (A23)
   'node:drawersStatus':     NO_PAYLOAD,                                                          // A542
+  'attendance:status':      NO_PAYLOAD,                                                          // A599
+  'attendance:test':        { device_id: { t: 'string', min: 1 } },                              // A599
+  'attendance:setTime':     { device_id: { t: 'string', min: 1 } },                              // A599
+  'attendance:pullNow':     NO_PAYLOAD,                                                          // A599
   'branding:get':           NO_PAYLOAD,
   // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so

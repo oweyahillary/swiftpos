@@ -71,7 +71,21 @@ const CHECK_KEYS: Record<string, string[]> = {
 const CLIENT_CHECKS = ['pos', 'tills signed out', 'mpesa', 'payment exceptions', 'days', 'etims'];   // till-wording: ok — developer's check labels
 const prefixOf = (key: string) => String(key).split(':')[0];
 
-async function names(): Promise<{ ok: boolean; active: string[]; names: Record<string, string>; approved: Record<string, string | null> }> {
+// A598: the active clients, their names and approved versions — kept 30 minutes (one read every run before). A client
+// approved, suspended or renamed shows in the alerts within 30 minutes; a failed read is never kept.
+type Names = { ok: boolean; active: string[]; names: Record<string, string>; approved: Record<string, string | null> };
+const NAMES_KEEP_MS = 30 * 60_000;
+let namesKept: { at: number; v: Names } | null = null;
+const branchNamesKept = new Map<string, { at: number; name: string }>();   // A598: the days check's branch names
+const SEEN_WRITE_MS = 60 * 60_000;
+const seenWrittenAt = new Map<string, number>();   // A598: open alert id → when this server last wrote its last_seen_at
+async function names(now = Date.now()): Promise<Names> {
+  if (memoEnabled() && namesKept && now >= namesKept.at && now - namesKept.at < NAMES_KEEP_MS) return namesKept.v;
+  const v = await readNames();
+  if (memoEnabled() && v.ok) namesKept = { at: now, v };
+  return v;
+}
+async function readNames(): Promise<Names> {
   const { data, error } = await supabase
     .from('businesses')
     .select('id, name, status, suspended_at, desktop_approved_version')
@@ -214,7 +228,7 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
     return backupMissed(lastOk, any, now);
   });
 
-  const { ok, active, names: nm, approved } = ping.ok ? await names() : { ok: false, active: [], names: {}, approved: {} };
+  const { ok, active, names: nm, approved } = ping.ok ? await names(now.getTime()) : { ok: false, active: [], names: {}, approved: {} };
   const inActive = (r: any) => active.includes(r.business_id);
 
   await step('errors', async () => { const e = recentErrors(); return errorBurst(e.times, now, e.paths); });
@@ -325,10 +339,18 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
     }
     // A589: the branch's name for the admin's table (a failed read: the POS code alone).
     const branchIds = [...new Set(((data ?? []) as any[]).map((d) => d.branch_id).filter(Boolean))];
+    // A598: a name read once is kept 30 minutes (the same open days are asked about every 10 minutes).
     const branchName: Record<string, string> = {};
-    if (branchIds.length) {
-      const { data: br } = await supabase.from('branches').select('id, name').in('id', branchIds.slice(0, 1000));
-      for (const b of (br ?? []) as any[]) branchName[b.id] = b.name;
+    const t = now.getTime();
+    for (const id of branchIds) {
+      const k = branchNamesKept.get(id);
+      if (memoEnabled() && k && t >= k.at && t - k.at < NAMES_KEEP_MS) branchName[id] = k.name;
+    }
+    const unknown = branchIds.filter((id) => !(id in branchName));
+    if (unknown.length) {
+      const { data: br } = await supabase.from('branches').select('id, name').in('id', unknown.slice(0, 1000));
+      for (const b of (br ?? []) as any[]) { branchName[b.id] = b.name; branchNamesKept.set(b.id, { at: t, name: b.name }); }
+      if (branchNamesKept.size > 5000) branchNamesKept.clear();
     }
     const rows: any[] = [];
     // A593: every open day's cut-off in two reads (each day row read one or two before).
@@ -383,7 +405,7 @@ async function openAlerts(): Promise<OpenAlertRow[]> {
 }
 
 /** For tests: forget what the memory holds. */
-export function forgetWatchdogMemory(): void { memo.clear(); lastDbRows = []; }
+export function forgetWatchdogMemory(): void { memo.clear(); lastDbRows = []; namesKept = null; branchNamesKept.clear(); seenWrittenAt.clear(); }
 
 export interface WatchdogRun { opened: number; reminded: number; resolved: number; emailed: number; notified: number; telegram: boolean }
 
@@ -466,10 +488,17 @@ export async function runWatchdog(now = new Date()): Promise<WatchdogRun> {
     const { error } = await supabase.from('watchdog_alerts').update(patch).eq('id', row.id);
     if (error) console.error('[watchdog] could not update alert', row.alert_key, error.message);
   }
-  for (let i = 0; i < seenOnly.length; i += 150) {
-    const { error } = await supabase.from('watchdog_alerts').update({ last_seen_at: iso }).in('id', seenOnly.slice(i, i + 150));
-    if (error) console.error('[watchdog] could not move last_seen_at of', seenOnly.length, 'open alerts:', error.message);
+  // A598: that "still seen" stamp is only shown (the admin's Alerts page) — written at most once an hour per problem, not
+  // every 10 minutes. A row whose stamp this server has not written yet (a restart) is written on the first run.
+  const t = now.getTime();
+  const seenDue = seenOnly.filter((id) => { const w = seenWrittenAt.get(id); return !memoEnabled() || w === undefined || t < w || t - w >= SEEN_WRITE_MS; });
+  for (let i = 0; i < seenDue.length; i += 150) {
+    const part = seenDue.slice(i, i + 150);
+    const { error } = await supabase.from('watchdog_alerts').update({ last_seen_at: iso }).in('id', part);
+    if (error) console.error('[watchdog] could not move last_seen_at of', seenDue.length, 'open alerts:', error.message);
+    else for (const id of part) seenWrittenAt.set(id, t);
   }
+  if (seenWrittenAt.size > 5000) seenWrittenAt.clear();
 
   for (const row of resolved) {
     if (row.id.startsWith('mem:')) { memo.delete(row.alert_key); continue; }

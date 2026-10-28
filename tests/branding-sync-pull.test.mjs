@@ -36,7 +36,8 @@ ok('applyReferenceConfig applies branding (guarded; not while a till upload is p
 ok('cloud path sets branding from the init response', /branding:\s*\(\s*_j\.branding/.test(sync));
 ok('referenceBundle config carries optional branding', /branding\?:\s*PulledBranding/.test(refb) && /interface PulledBranding \{[^}]*accentHex[^}]*logoPng/.test(refb));   // A381: one named shape
 ok('applyPulledBranding is keyed by the session business', /applyPulledBranding/.test(ldb) && /FROM session WHERE id\s*=\s*1/.test(ldb) && /ON CONFLICT\(business_id\)/.test(ldb));
-ok('server /init selects business_branding', /\.from\('business_branding'\)/.test(pos));
+// A597: read through themeAccess.selectBusinessBranding (retried without the migration-179 columns on an older database).
+ok('server /init selects business_branding', /\.from\('business_branding'\)|selectBusinessBranding\(req\.businessId, /.test(pos));
 ok('server /init returns branding in the response', /branding:\s*branding\s*\?/.test(pos));
 ok('server catalogue-version includes branding', /latest\('business_branding'/.test(pos));
 
@@ -78,7 +79,7 @@ if (db) {
 // runtime ("Too few parameter values") — the A167 class. So: extract the statement and the CREATE
 // TABLE from localDb.ts's source text, run them on a real SQLite, and check the semantics.
 // A325 appended theme_id to this select; the A311 intent is that the receipt fields are still selected.
-ok('A311: server /init selects the receipt fields', /select\('accent_hex, logo_png, logo_receipt, receipt_logo_enabled(, [a-z_]+)*'\)/.test(pos));
+ok('A311: server /init selects the receipt fields', /(?:select\(|selectBusinessBranding\(req\.businessId, )'accent_hex, logo_png, logo_receipt, receipt_logo_enabled(, [a-z_]+)*'\)/.test(pos));
 ok('A311: server /init returns receiptLogoEnabled as a strict boolean', /receiptLogoEnabled:\s*branding\.receipt_logo_enabled\s*===\s*true/.test(pos));
 ok('A311: syncEngine distinguishes absent (keep local) from null (clear)', /'logoReceipt'\s+in\s+_j\.branding/.test(sync) && /'receiptLogoEnabled'\s+in\s+_j\.branding/.test(sync));
 // A325 moved the schema to 54; the A311 intent is that the till is at least on 53 (the column exists).

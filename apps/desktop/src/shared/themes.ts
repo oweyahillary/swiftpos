@@ -177,10 +177,92 @@ export function resolveBrandLayer(brand: Hex | null | undefined): BrandLayer | n
   if (!brand || !HEX.test(brand)) return null;
   const visibility = minContrast(brand, SURFACES.darkPanels), onBrand = labelOn(brand);
   if (visibility < RULES.brandVisible || contrast(onBrand, brand) < RULES.text) return null;
-  // Sidebar tint: as much of the brand as the sidebar text can bear (>= 7:1), mixed into the till's gray-950.
+  return { brand: brand.toUpperCase(), onBrand, tint: sidebarTint(brand), visibility };
+}
+
+/** Sidebar tint: as much of the colour as the sidebar text can bear (>= 7:1), mixed into the till's gray-950. */
+export function sidebarTint(brand: Hex): Hex {
   const mixTo = (t: number) => '#' + rgb(brand).map((x, i) => Math.round(x * t + rgb('#030712')[i] * (1 - t))
     .toString(16).padStart(2, '0')).join('');
   let t = 0.28, tint = mixTo(t);
   while (contrast(SURFACES.sidebarText, tint) < RULES.tintText && t > 0.06) { t -= 0.02; tint = mixTo(t); }
-  return { brand: brand.toUpperCase(), onBrand, tint, visibility };
+  return tint;
+}
+
+// ── A597: the owner's brand colours — ANY colour ───────────────────────────────────────────────────────────────
+// Owner, 2026-10-27: the business owner picks a PRIMARY and a SECONDARY colour on Branding, and any colour is accepted —
+// never refused for legibility. Instead every job gets the NEAREST shade of that colour that reads there: the colour
+// itself when it already does, otherwise mixed toward white (lighter jobs) or black (darker jobs) in 2 % steps until it
+// does — pure white / black at the end, which always does. So white, black, yellow and mid-grey all work, in light and
+// dark mode. Premium (the business's `themes` flag); the apps apply them only while the effective theme is not null.
+// Precedence: brand colours set → they replace the curated theme's action shades; none → the curated theme as before.
+
+/** Where each job's shade must read (WCAG 2.x: 4.5 for text and labels, 3 for a fill or a chart mark). */
+export const BRAND_SURFACES = {
+  darkLabels: ['#000000', '#030712', '#0f172a'] as Hex[],   // the dark labels on a fill: black, gray-950, its light-mode slate
+  darkText: ['#030712', '#111827', '#1f2937'] as Hex[],     // where text sits on the dark screens: gray-950 / 900 / 800
+  lightText: ['#ffffff', '#f8fafc', '#f1f5f9'] as Hex[],    // the light dashboard's surfaces
+  chartDark: ['#111827'] as Hex[], chartLight: ['#ffffff'] as Hex[],   // the cards a chart is drawn on
+};
+/** How far a fill must stand out from the page under it (a button's edge; today's teal 500 on white is 2.5). */
+export const BRAND_EDGE = 1.4;
+/** '#RRGGBB' in any case (trimmed) → '#rrggbb'; anything else → null. The Branding page always sends six digits. */
+export function cleanBrandHex(v: unknown): Hex | null {
+  if (typeof v !== 'string') return null;
+  const s = v.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(s) ? s : null;
+}
+/** `hex` mixed with `to` by t (0 = hex itself, 1 = to). */
+export function mixHex(hex: Hex, to: Hex, t: number): Hex {
+  const a = rgb(hex), b = rgb(to);
+  return '#' + a.map((x, i) => Math.round(x * (1 - t) + b[i] * t).toString(16).padStart(2, '0')).join('');
+}
+/** The nearest shade of `hex` toward `to` ('#ffffff' lighter, '#000000' darker) with at least `min` contrast against
+ *  EVERY colour in `against`. Never fails: the last step is `to` itself. */
+export function shadeFor(hex: Hex, to: Hex, against: Hex[], min: number): Hex {
+  for (let i = 0; i <= 50; i++) { const c = mixHex(hex, to, i / 50); if (minContrast(c, against) >= min) return c; }
+  return to;
+}
+
+export interface BrandTokens {
+  base: Hex;                          // the colour as chosen
+  on: Hex;                            // black or white, whichever reads on `base` (a chip, a swatch)
+  fill: Hex; fillHover: Hex;          // fills with DARK labels (the dashboard's bg-swift / action 500, the POS's 500)
+  strong: Hex; strongHover: Hex;      // fills with WHITE labels (bg-swift-strong / action 600, the POS's 600 / 700)
+  textDark: Hex; textDarkHover: Hex;  // links and active labels on the dark screens
+  textLight: Hex; textLightHover: Hex; // links and active labels on the light dashboard
+  layer: Hex; onLayer: Hex;           // seen on the POS's dark screens (3:1): the brand strip, the lock screen
+  tint: Hex;                          // the POS sidebar tint (its text stays 7:1)
+  chartDark: Hex; chartLight: Hex;    // a chart series on the dark / light card (3:1)
+}
+/** Every job's shade of a brand colour, or null when it is not a #rrggbb colour. PURE. */
+export function brandTokens(hex: unknown): BrandTokens | null {
+  const base = cleanBrandHex(hex);
+  if (!base) return null;
+  const W = '#ffffff', K = '#000000';
+  // A fill must also stand out from the page it sits on (BRAND_EDGE): a white fill would vanish on the light dashboard and
+  // a black one on the dark screens. The second step only ever moves a little and keeps its label far above 4.5.
+  const fill = shadeFor(shadeFor(base, W, BRAND_SURFACES.darkLabels, RULES.text), K, BRAND_SURFACES.lightText.slice(0, 1), BRAND_EDGE);
+  const strong = shadeFor(shadeFor(base, K, [W], RULES.text), W, BRAND_SURFACES.darkText, BRAND_EDGE);
+  const textDark = shadeFor(base, W, BRAND_SURFACES.darkText, RULES.text);
+  const textLight = shadeFor(base, K, BRAND_SURFACES.lightText, RULES.text);
+  const layer = shadeFor(base, W, SURFACES.darkPanels, RULES.brandVisible);
+  return {
+    base, on: labelOn(base),
+    fill, fillHover: mixHex(fill, W, 0.2),            // lighter: the dark label reads better still
+    strong, strongHover: mixHex(strong, K, 0.2),      // darker: the white label reads better still
+    textDark, textDarkHover: mixHex(textDark, W, 0.3),
+    textLight, textLightHover: mixHex(textLight, K, 0.3),
+    layer, onLayer: labelOn(layer), tint: sidebarTint(layer),
+    chartDark: shadeFor(base, W, BRAND_SURFACES.chartDark, RULES.fill),
+    chartLight: shadeFor(base, K, BRAND_SURFACES.chartLight, RULES.fill),
+  };
+}
+/** The status colour (paid / warning / void) a brand colour is close enough to be mistaken for, or null. Advice only —
+ *  the Branding page says so; the colour is never refused. */
+export function brandNearStatus(hex: unknown): 'paid' | 'warning' | 'void' | null {
+  const base = cleanBrandHex(hex);
+  if (!base) return null;
+  for (const [name, hs] of Object.entries(STATUS)) if (hs.some((h) => deltaE(base, h) < RULES.statusMin)) return name as 'paid' | 'warning' | 'void';
+  return null;
 }

@@ -95,13 +95,14 @@ ok('opacity modifiers still work on the themed colours (bg-action-500/10)', /\.b
 const src = (p) => fs.readFileSync(path.join(desktop, 'src/renderer', p), 'utf8');
 const app = src('App.tsx');
 ok('App applies the theme on every screen, re-applied on every landed pull',
-  /applyThemeVars\(t\);/.test(app) && /posApi\.pos\.onCatalogueChanged\(load\)/.test(app) && /computeThemeVars\(b \? \{ themeId: b\.effective\?\.themeId \?\? b\.themeId \?\? null, accentHex: b\.effective \? b\.effective\.accentHex : b\.accentHex \} : null\)/.test(app));   // A544: the branch's effective look
+  /applyThemeVars\(t\);/.test(app) && /posApi\.pos\.onCatalogueChanged\(load\)/.test(app) && /computeThemeVars\(b \? \{ themeId: b\.effective\?\.themeId \?\? b\.themeId \?\? null, accentHex: b\.effective \? b\.effective\.accentHex : b\.accentHex(?:,\s*primaryHex: b\.effective\?\.primaryHex \?\? null, secondaryHex: b\.effective\?\.secondaryHex \?\? null)? \} : null\)/.test(app));   // A544: the branch's effective look; A597: + the brand colours
 ok('…and shows the brand strip on the POS and Manager screens', (app.match(/\{strip\}/g) || []).length === 2);
 ok('the Manager sidebar tint falls back to its own gray-900 (OFF unchanged)', /backgroundColor: 'var\(--sidebar-tint, #111827\)'/.test(src('pages/ManagerPage.tsx')));
 ok('the lock curtain\'s Enter text follows the brand colour', /bg-brand-600 text-on-brand/.test(src('components/LockCurtain.tsx')));
 ok('the PIN screen uses the theme when there is no brand colour (and nothing changes when themes are off)',
   // A544: the branch's effective colour / theme (main resolves branch → business → default).
-  /setAccentHex\(accent \?\? \(theme \? resolveTheme\(theme\)\.shades\[500\] : null\)\)/.test(src('pages/PinPage.tsx')));
+  // A597: between the two, the owner's primary at its shade seen on the lock screen.
+  /setAccentHex\(accent \?\? \((?:primary \? primary\.layer : )?theme \? resolveTheme\(theme\)\.shades\[500\] : null\)\)/.test(src('pages/PinPage.tsx')));
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);

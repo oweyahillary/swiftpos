@@ -46,9 +46,12 @@ ok('the picker appears only with themes, listing the registry\'s themes',
   /\{themesEnabled && \(\s*<div className="mt-6">\s*<label[^>]*>App theme<\/label>/.test(tab) && /\{THEMES\.map\(\(t\) => \{/.test(tab));
 ok('the till preview appears only with themes', /\{theme && \(<>\s*<label[^>]*>POS preview<\/label>\s*<TillPreview theme=\{theme\}/.test(tab));
 ok('lock preview wears the theme without a brand colour (the till\'s PinPage rule); otherwise the Phase 1 accent',
-  /const lockAccent = theme && accentHex\.trim\(\) === '' \? theme\.shades\[500\] : shownAccent;/.test(tab) && /<LockPreview accent=\{lockAccent\}/.test(tab));
+  /const lockAccent = theme && accentHex\.trim\(\) === '' \? theme\.shades\[500\] : shownAccent;/.test(tab) && /<LockPreview accent=\{lockShown\}/.test(tab)
+  // A597: with brand colours and no accent, the primary's shade seen on the lock screen; otherwise lockAccent as before.
+  && /const lockShown = theme && accentHex\.trim\(\) === '' && brandTokens\(primaryHex\) \? brandTokens\(primaryHex\)!\.layer : lockAccent;/.test(tab));
 ok('the till preview draws action from the theme tokens and the strip/sidebar from the brand layer',
-  /const k = themeTokens\(theme\);/.test(tab) && /const brand = resolveBrandLayer\(brandHex\);/.test(tab)
+  // A597: a primary brand colour's shades replace the theme tokens; the accent still makes the brand layer.
+  /const k = p \? \{[^}]*\} : themeTokens\(theme\);/.test(tab) && /const accent = resolveBrandLayer\(brandHex\);/.test(tab)
   && /background: brand \? brand\.tint : k\.tint/.test(tab));
 ok('…and keeps money and Paid green in the preview', /\{money\(p\)\}/.test(tab) && /color: '#4ade80'/.test(tab) && />Paid</.test(tab));
 ok('the suggestion comes from the shared pairing rule', /const suggested = themesEnabled \? suggestThemeFor\(accentHex\.trim\(\) \|\| null\) : null;/.test(tab));
@@ -65,8 +68,8 @@ ok('theme names use the dark-first readable text class (text-gray-300, remapped 
 // ── What the page sends ──
 ok('Save sends theme_id only when the business has themes (the cloud refuses it otherwise — A325)',
   /\.\.\.\(themesEnabled \? \{ theme_id: theme\?\.id \?\? null \} : \{\}\),/.test(tab));
-ok('Reset clears the theme too (only when the business has themes)',
-  /receipt_logo_enabled: false, \.\.\.\(themesEnabled \? \{ theme_id: null \} : \{\}\) \}\);/.test(tab) && /setThemeId\(null\);/.test(tab));
+ok('Reset clears the theme too (only when the business has themes)',   // A597: + the colours, when the owner may set them
+  /receipt_logo_enabled: false, \.\.\.\(themesEnabled \? \{ theme_id: null \} : \{\}\),?\s*(?:\.\.\.\(sendColours \? \{ primary_hex: null, secondary_hex: null \} : \{\}\) )?\}\);/.test(tab) && /setThemeId\(null\);/.test(tab));
 
 // ── The rule the page relies on, run from the dashboard's own copy ──
 const T = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/themes.ts')).href);

@@ -21,6 +21,7 @@ import reportsDailyRoutes  from './reports-daily';
 import reportsMonthlyRoutes from './reports-monthly';   // A455
 import reportsRoutes       from './reports';
 import analyticsRoutes     from './analytics';   // A549
+import attendanceRoutes    from './attendance';  // A599
 import lossAlertsRoutes    from './lossAlerts';  // A576
 import loyaltyRoutes       from './loyalty';
 import creditRoutes        from './credit';
@@ -152,6 +153,7 @@ router.use('/reports/export', reportsDailyRoutes);
 router.use('/reports/export', reportsExportRoutes);
 router.use('/reports',        reportsRoutes);
 router.use('/analytics',      analyticsRoutes);   // A549: Analytics v1 (premium, the 'analytics' flag)
+router.use('/attendance',     attendanceRoutes);  // A599: Attendance (premium, the 'attendance' flag) — the web report and the branch server's /node/*
 router.use('/loss-alerts',    lossAlertsRoutes);  // A576: the watch list and the owner's loss-prevention settings
 
 router.use('/admin/version',  adminVersionRouter);   // before /admin, which takes the rest of /admin/*

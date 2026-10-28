@@ -229,7 +229,7 @@ try {
     const r = await partnerLogin({ email: GINA, password: 'gina-pass-12', subdomain: 'pollo' });
     const t = jwt.decode(r.body.accessToken);
     assert.equal(t.isOwner, false); assert.equal(t.webPartner, true); assert.equal(t.userId, GM); assert.equal(t.businessId, B);
-    assert.ok(!t.permissionKeys.includes('*')); assert.deepEqual([...t.permissionKeys].sort(), [...P.PERMISSION_KEYS].sort());
+    assert.ok(!t.permissionKeys.includes('*')); assert.deepEqual([...t.permissionKeys].sort(), P.PERMISSION_KEYS.filter((k) => k !== 'attendance.devices').sort());   // A599: the GM sees and corrects attendance, devices are the owner's / partners' by rule
     assert.equal(t.allBranches, true); assert.deepEqual([...t.partnerBranches].sort(), [BR, BR2].sort()); assert.equal(t.branchId, null);
     assert.equal(t.surface, 'web'); assert.equal(t.ownerLogin, undefined);
     const who = await call('GET', '/api/probe/who', r.body.accessToken);

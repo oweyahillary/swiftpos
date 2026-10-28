@@ -24,6 +24,16 @@
   --swift-text: 45 212 191;     --swift-text-hover: 94 234 212; /* teal 400 · 300 on dark                             */
 }
 :root:not(.dark) { --swift-text: 15 118 110; --swift-text-hover: 17 94 89; }   /* teal 700 · 800 on white */
+/* A597 (owner, 2026-10-27): the owner's PRIMARY brand colour on the back office too — only while src/lib/themeVars.ts marks
+   <html data-brand> (themes on and a primary chosen); otherwise the teal above, unchanged. Each --bp-* is the nearest shade
+   of the colour that reads for the job (shared themes.ts brandTokens): dark labels on swift / swift-light, white labels on
+   swift-strong / swift-deep, text at 4.5:1 on the dark and the light surfaces. The ZapTill wordmark (swift-logo) stays. */
+:root[data-brand] {
+  --swift: var(--bp-fill);              --swift-light: var(--bp-fill-hover);
+  --swift-strong: var(--bp-strong);     --swift-deep: var(--bp-strong-hover);
+  --swift-text: var(--bp-text-d);       --swift-text-hover: var(--bp-text-d-hover);
+}
+:root[data-brand]:not(.dark) { --swift-text: var(--bp-text-l); --swift-text-hover: var(--bp-text-l-hover); }
 
 /* A328 part 2: the web POS's INLINE colours use these aliases as rgb(var(--act-*, <that use's own original r g b>)).
    A329 (2026-09-25): they now DEFAULT to ZapTill teal, so with themes OFF the web POS's green and blue primaries are

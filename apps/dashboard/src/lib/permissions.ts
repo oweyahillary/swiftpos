@@ -254,6 +254,15 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Set staff pay rates', description: 'The hourly pay rate of each person' },
   { key: 'staff.roles',          group: 'staff', surface: 'web',
     label: 'Roles and permissions', description: 'Change what each role may see and do — never beyond what they hold themselves' },
+  // A599 (owner, 2026-10-28): Attendance (premium — the 'attendance' flag; off, none of these opens anything). Owner and
+  // partners all three (partners by the cloud's rule, whatever their role); the built-in Manager and General Manager see
+  // and correct (migration 180); cashiers and waiters none. Pay figures on the report also need staff.pay.
+  { key: 'attendance.view',      group: 'staff', surface: 'web', view: true, personal: true, manager: true,
+    label: 'See attendance', description: 'The Attendance report: who came in and when, hours worked, missed punch-outs and corrections (pay figures also need Set staff pay rates)' },
+  { key: 'attendance.edit',      group: 'staff', surface: 'web', manager: true,
+    label: 'Correct attendance', description: 'Add or fix a punch with a reason (the original is kept) and link punches nobody was matched to' },
+  { key: 'attendance.devices',   group: 'staff', surface: 'web',
+    label: 'Attendance devices', description: 'Add and remove attendance devices, give people their device numbers and match the users found on a device' },
 
   // ── Front of house ───────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'reservations.manage',  group: 'front', surface: 'web', cashier: true, manager: true,
@@ -604,7 +613,8 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
   // ── A550 ──
   { name: 'General Manager', description: 'Runs the whole business day to day - every permission, never the owner',
     // A595 D3 (owner, 2026-10-27): webhooks are the owner's alone; who receives the report e-mails the owner's and partners'.
-    keys: PERMISSION_KEYS.filter((k) => k !== 'settings.webhooks' && k !== 'settings.report_emails') },
+    // A599: attendance devices are the owner's and the partners' (the General Manager sees and corrects attendance).
+    keys: PERMISSION_KEYS.filter((k) => k !== 'settings.webhooks' && k !== 'settings.report_emails' && k !== 'attendance.devices') },
   { name: 'Operations Manager', description: 'Runs operations - menu, stock, kitchen, shifts and the day, staff and the operational reports',
     keys: ['products.view', 'menu.edit', 'menu.prices', 'menu.offers', 'menu.recipes', 'menu.costs',
       'inventory.view', 'inventory.receive', 'inventory.transfer', 'inventory.count', 'inventory.waste', 'inventory.adjust',

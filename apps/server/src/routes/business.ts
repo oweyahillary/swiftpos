@@ -9,7 +9,8 @@ import { BRANCH_BRANDING_COLUMNS, type BranchBrandingRow, servedBranchBranding }
 import { effectiveThemeId } from '../lib/themeRules';   // A547
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
-import { themesEnabled, themeWriteError } from '../lib/themeAccess';
+import { themesEnabled, themeWriteError, brandColourWriteError, BRAND_COLOUR_FIELDS, selectBusinessBranding,
+  isMissingBrandColourColumn, withoutBrandColourColumns } from '../lib/themeAccess';   // A597: brand colours
 import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules';
 import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
@@ -306,21 +307,23 @@ router.get('/cloud-trial', requireAuth, async (req, res) => {
   res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null, plan: null });
 });
 
+// A597: + the owner's brand colours (primary_hex / secondary_hex, migration 179).
+const BRANDING_COLUMNS = 'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, primary_hex, secondary_hex, updated_at';
+
 // GET /api/business/branding
 // The client branding row (accent + logo) for this business, or null when unset (A303).
 // Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
 router.get('/branding', requireAuth, async (req, res) => {
   const [{ data, error }, enabled] = await Promise.all([
-    supabase
-      .from('business_branding')
-      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
-      .eq('business_id', req.businessId)
-      .maybeSingle(),
+    selectBusinessBranding(req.businessId, BRANDING_COLUMNS),   // A597: falls back before migration 179
     themesEnabled(req.businessId),   // A325: the web shows the theme picker only when the business has themes
   ]);
   if (error) { sendError(res, error); return; }
-  // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column.
-  res.json(data ? { ...data, themes_enabled: enabled } : (enabled ? { themes_enabled: true } : null));
+  // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column. A597: + whether
+  // this caller may choose the brand colours (the owner, signed in as themselves — the Branding page shows the fields).
+  const brandColoursEditable = req.isOwner === true && !req.isTill && req.webPartner !== true;
+  res.json(data ? { ...data, themes_enabled: enabled, brand_colours_editable: brandColoursEditable }
+    : (enabled ? { themes_enabled: true, brand_colours_editable: brandColoursEditable } : null));
 });
 
 // PUT /api/business/branding
@@ -395,12 +398,24 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     if (err) { res.status(400).json({ error: err }); return; }
     row.theme_id = req.body.theme_id;
   }
+  // A597 (owner, 2026-10-27): the business's primary and secondary colours — ANY #rrggbb (the apps derive readable shades,
+  // never refuse one), null clears. The OWNER's alone (as the approval PIN option, A594: never a partner, a manager with
+  // receipt.manage / settings.business, or a POS's own session) and premium: the 'themes' flag. Omitted = left as is, so
+  // a manager's or a POS's branding save never touches them.
+  const colourFields = BRAND_COLOUR_FIELDS.filter((f) => has(f));
+  if (colourFields.length) {
+    const who = { owner: req.isOwner === true && !req.isTill && req.webPartner !== true, enabled: await themesEnabled(req.businessId) };
+    for (const f of colourFields) {
+      const refusal = brandColourWriteError(f, req.body[f], who);
+      if (refusal) { res.status(refusal.status).json({ error: refusal.error, code: refusal.code }); return; }
+      row[f] = req.body[f] === null ? null : String(req.body[f]).trim().toLowerCase();
+    }
+  }
 
-  const { data, error } = await supabase
-    .from('business_branding')
-    .upsert(row, { onConflict: 'business_id' })
-    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
-    .single();
+  const upsert = (cols: string) => supabase.from('business_branding').upsert(row, { onConflict: 'business_id' }).select(cols).single();
+  let { data, error } = await upsert(BRANDING_COLUMNS);
+  // A597: a database before migration 179 — the same save without the colour columns (a colour write itself then fails).
+  if (isMissingBrandColourColumn(error) && !colourFields.length) ({ data, error } = await upsert(withoutBrandColourColumns(BRANDING_COLUMNS)));
   if (error) { sendError(res, error); return; }
   res.json(data);
 });

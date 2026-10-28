@@ -15,6 +15,7 @@ import { registerIpcHandlers } from './ipcHandlers';
 import { startLiveSync, liveActive, startupCatalogue } from './liveSync';   // A531
 import { startLogPull } from './logPull';   // A533
 import { startBranchDrawers } from './branchDrawers';   // A535
+import { startAttendanceDevices } from './attendanceDevice';   // A599
 import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet, pullCatalogueNow, refreshTechConfigNow, runRemoteInstructionsNow, testClearsBeforePush, remoteCloseBeat, REMOTE_CLOSE_BEAT_MS, learnCloudCloses } from './syncEngine';   // A523: learnCloudCloses
 import { AT_LOGIN_ARG, LOGIN_WAIT_ARG, LOGIN_WAIT_MS, isAutoLaunch, startsAtSignIn, startsWindowless, runStartupSequence, markStartup, markStartupSettled, startupLine, noteStartupLine, type StartupStep } from './lowImpactStart';   // A513
@@ -397,6 +398,8 @@ app.whenReady().then(async () => {
   // A535: at a branch with a server, the drawer checks below (web sales, web closes, confirmations, the 90 s beat) are
   // answered by the server's ONE branch-level poll — on a till over the shop network (branchDrawers.ts).
   startBranchDrawers();
+  // A599: on the branch server, with the 'attendance' flag on — the attendance devices' punches to the cloud every 3 minutes.
+  startAttendanceDevices();
   setInterval(() => {
     if (!liveActive()) pullIfCatalogueChanged().catch(console.error);
     // Cross-sync stage 1 (2026-09-27): a sale rung on the web as this till reaches it on the same ~20 s beat.

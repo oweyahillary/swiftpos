@@ -346,6 +346,25 @@ export function setPosFeatures(features: Record<string, boolean> | null | undefi
   getLocalDb().prepare(`UPDATE device_config SET pos_features = ? WHERE id = 1`).run(JSON.stringify(parsePosFeatures(features)));
 }
 
+/**
+ * A599: the business's 'attendance' flag (premium, set by ZapTill in the admin portal) as the catalogue pull heard it
+ * (pos/init attendanceDevice). Kept in maintenance_state (the key/value table) — no device_config column, no schema
+ * change. undefined = not said (an older cloud, or a branch server's bundle) → keep. The ONLY writer: a renderer can
+ * never switch it on. Off until told.
+ */
+const ATTENDANCE_FLAG_KEY = 'attendance_flag';
+export function setAttendanceFlag(on: boolean | undefined): void {
+  if (typeof on !== 'boolean') return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(ATTENDANCE_FLAG_KEY, on ? '1' : '0', new Date().toISOString());
+}
+export function getAttendanceFlag(): boolean {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(ATTENDANCE_FLAG_KEY) as { value?: string } | undefined;
+    return row?.value === '1';
+  } catch { return false; }
+}
+
 /** 0.6.27: the switches as the till last heard them (all off until told). */
 export function getPosFeatures(): PosFeatures {
   return parsePosFeatures(getDeviceConfig()?.pos_features ?? null);

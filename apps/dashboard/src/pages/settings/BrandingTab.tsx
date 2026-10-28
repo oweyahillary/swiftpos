@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveBranding, pickButtonText } from '../../lib/contrast';
-import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, type Theme } from '../../lib/themes';
+import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, brandTokens, brandNearStatus, labelOn, BRAND_SURFACES, type Theme } from '../../lib/themes';
 import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
 import { accentWriteError, footerWriteError, normaliseHex, resolveBranchBranding, FOOTER_LINE_MAX, FOOTER_LINE_NARROW } from '../../lib/branchBranding';   // A544
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, RECEIPT_LOGO_PRINT_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
@@ -121,6 +121,11 @@ export default function BrandingTab() {
   // a null stored id means "not chosen" — the cloud then serves Ocean, so the picker shows Ocean selected.
   const [themesEnabled, setThemesEnabled] = useState(false);
   const [themeId, setThemeId] = useState<string | null>(null);
+  // A597 (owner, 2026-10-27): the owner's own primary and secondary colours — any colour. Shown with themes on (premium);
+  // editable by the owner alone (the cloud says who: brand_colours_editable). '' = not chosen.
+  const [primary, setPrimary] = useState('');
+  const [secondary, setSecondary] = useState('');
+  const [coloursEditable, setColoursEditable] = useState(false);
   const receiptRef = useRef<HTMLCanvasElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -129,9 +134,11 @@ export default function BrandingTab() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.get<{ accent_hex?: string | null; logo_png?: string | null; logo_receipt?: string | null; receipt_logo_enabled?: boolean; theme_id?: string | null; themes_enabled?: boolean } | null>('/api/business/branding')
+    api.get<{ accent_hex?: string | null; logo_png?: string | null; logo_receipt?: string | null; receipt_logo_enabled?: boolean; theme_id?: string | null; themes_enabled?: boolean;
+      primary_hex?: string | null; secondary_hex?: string | null; brand_colours_editable?: boolean } | null>('/api/business/branding')
       .then((b) => { setAccentHex(b?.accent_hex ?? ''); setLogoPng(b?.logo_png ?? null); setLogoReceipt(b?.logo_receipt ?? null); setReceiptLogoEnabled(b?.receipt_logo_enabled === true);
-        setThemesEnabled(b?.themes_enabled === true); setThemeId(b?.theme_id ?? null); })
+        setThemesEnabled(b?.themes_enabled === true); setThemeId(b?.theme_id ?? null);
+        setPrimary(b?.primary_hex ?? ''); setSecondary(b?.secondary_hex ?? ''); setColoursEditable(b?.brand_colours_editable === true); })
       .then(() => api.get<{ name?: string }>('/api/business').then((biz) => { if (biz?.name) setBizName(biz.name); }).catch(() => {}))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -147,6 +154,13 @@ export default function BrandingTab() {
   const theme: Theme | null = themesEnabled ? resolveTheme(themeId) : null;
   const lockAccent = theme && accentHex.trim() === '' ? theme.shades[500] : shownAccent;
   const suggested = themesEnabled ? suggestThemeFor(accentHex.trim() || null) : null;
+  // A597: what is saved — #rgb is widened to #rrggbb; '' clears; anything else stops the save and says why.
+  const primaryHex = primary.trim() ? normaliseHex(primary) : null;
+  const secondaryHex = secondary.trim() ? normaliseHex(secondary) : null;
+  const colourErr = (primary.trim() && !primaryHex) || (secondary.trim() && !secondaryHex) ? 'A colour is written #RRGGBB, for example #E11D48.' : '';
+  const sendColours = themesEnabled && coloursEditable;
+  // The lock screen: the accent above when set; otherwise, with brand colours, the primary at its shade seen there.
+  const lockShown = theme && accentHex.trim() === '' && brandTokens(primaryHex) ? brandTokens(primaryHex)!.layer : lockAccent;
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (fileRef.current) fileRef.current.value = '';
@@ -165,6 +179,8 @@ export default function BrandingTab() {
         receipt_logo_enabled: !!logoPng && receiptLogoEnabled,
         // A327: only when the business has themes — the cloud refuses a theme without the flag (A325).
         ...(themesEnabled ? { theme_id: theme?.id ?? null } : {}),
+        // A597: the brand colours — the owner's alone, and only with themes (the cloud refuses anyone else: 403).
+        ...(sendColours ? { primary_hex: primaryHex, secondary_hex: secondaryHex } : {}),
       });
       setMsg('Saved. Points of sale pick up the new branding within about 20 seconds — no restart needed.');
       window.dispatchEvent(new Event(BRANDING_SAVED_EVENT)); // A328: the dashboard re-reads its own theme now
@@ -175,8 +191,10 @@ export default function BrandingTab() {
   const clearAll = async () => {
     setBusy(true); setMsg('');
     try {
-      await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, ...(themesEnabled ? { theme_id: null } : {}) });
+      await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, ...(themesEnabled ? { theme_id: null } : {}),
+        ...(sendColours ? { primary_hex: null, secondary_hex: null } : {}) });
       setAccentHex(''); setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn(''); setThemeId(null);
+      if (sendColours) { setPrimary(''); setSecondary(''); }
       window.dispatchEvent(new Event(BRANDING_SAVED_EVENT));
       setMsg('Reset to the ZapTill default.');
     } catch (err: any) { setMsg(err?.message ?? 'Could not reset branding.'); }
@@ -234,13 +252,18 @@ export default function BrandingTab() {
           <p className="text-xs text-gray-500 ml-6">Off by default. Check the receipt preview first — thermal printers are black-and-white.</p>
 
           <div className="flex gap-2 mt-6">
-            <button onClick={save} disabled={busy} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40">Save branding</button>
+            <button onClick={save} disabled={busy || (sendColours && !!colourErr)} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40">Save branding</button>
             <button onClick={clearAll} disabled={busy} className="border rounded-lg px-4 py-2 text-sm disabled:opacity-40">Reset to default</button>
           </div>
           {themesEnabled && (
+            <BrandColoursField editable={coloursEditable} primary={primary} secondary={secondary}
+              onPrimary={setPrimary} onSecondary={setSecondary} primaryHex={primaryHex} secondaryHex={secondaryHex} error={colourErr} />
+          )}
+          {themesEnabled && (
             <div className="mt-6">
               <label className="block text-sm font-medium text-gray-700 mb-1">App theme</label>
-              <p className="text-xs text-gray-500 mb-2">The colour of buttons and selections on your points of sale. Paid, warnings, voids and prices keep their own colours.</p>
+              <p className="text-xs text-gray-500 mb-2">The colour of buttons and selections on your points of sale. Paid, warnings, voids and prices keep their own colours.
+                {primaryHex ? ' While a primary brand colour is set, it is used instead of the theme.' : ''}</p>
               <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="App theme">
                 {THEMES.map((t) => {
                   const on = theme?.id === t.id;
@@ -273,13 +296,15 @@ export default function BrandingTab() {
         {/* Live lock-screen preview */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Lock-screen preview</label>
-          <LockPreview accent={lockAccent} logo={logoPng} />
+          <LockPreview accent={lockShown} logo={logoPng} />
           <p className="text-xs text-gray-500 mt-2">This is how a till’s lock screen will look.</p>
 
           {theme && (<>
             <label className="block text-sm font-medium text-gray-700 mb-2 mt-6">POS preview</label>
-            <TillPreview theme={theme} brandHex={accentHex.trim() || null} />
-            <p className="text-xs text-gray-500 mt-2">Buttons and selections take the theme; your brand colour marks the top strip and the sidebar. Paid and prices stay green.</p>
+            <TillPreview theme={theme} brandHex={accentHex.trim() || null} primaryHex={primaryHex} secondaryHex={secondaryHex} />
+            <p className="text-xs text-gray-500 mt-2">{primaryHex
+              ? 'Buttons and selections take your primary colour; the strip shows your colours. Paid and prices stay green.'
+              : 'Buttons and selections take the theme; your brand colour marks the top strip and the sidebar. Paid and prices stay green.'}</p>
           </>)}
 
           {/* A313: receipt preview — the exact 1-bit raster a till will print (SCOPE addendum §C) */}
@@ -321,7 +346,7 @@ interface BranchBrandingList {
 
 export function BranchBrandingSection({ client }: { client: BranchBrandingClient }) {
   const [list, setList] = useState<BranchBrandingList | null>(null);
-  const [business, setBusiness] = useState<{ theme_id: string | null; accent_hex: string | null }>({ theme_id: null, accent_hex: null });
+  const [business, setBusiness] = useState<BusinessLook>({ theme_id: null, accent_hex: null });
   const [err, setErr] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const load = () => {
@@ -329,8 +354,8 @@ export function BranchBrandingSection({ client }: { client: BranchBrandingClient
     client.get<BranchBrandingList>('/api/business/branding/branches')
       .then((l) => { setList(l); if (l?.branches?.length === 1) setOpen(l.branches[0].branch_id); })
       .catch((e: any) => setErr(e?.message ?? 'Could not load the branches.'));
-    client.get<{ theme_id?: string | null; accent_hex?: string | null } | null>('/api/business/branding')
-      .then((b) => setBusiness({ theme_id: b?.theme_id ?? null, accent_hex: b?.accent_hex ?? null }))
+    client.get<{ theme_id?: string | null; accent_hex?: string | null; primary_hex?: string | null; secondary_hex?: string | null } | null>('/api/business/branding')
+      .then((b) => setBusiness({ theme_id: b?.theme_id ?? null, accent_hex: b?.accent_hex ?? null, primary_hex: b?.primary_hex ?? null, secondary_hex: b?.secondary_hex ?? null }))
       .catch(() => { /* the preview falls back to the default theme */ });
   };
   useEffect(load, []);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -356,8 +381,11 @@ export function BranchBrandingSection({ client }: { client: BranchBrandingClient
   );
 }
 
+/** The business's look a branch falls back to (A597: + its brand colours, which a branch's own theme overrides). */
+type BusinessLook = { theme_id: string | null; accent_hex: string | null; primary_hex?: string | null; secondary_hex?: string | null };
+
 function BranchBrandingEditor({ row, business, limits, client, open, onToggle, onSaved }: {
-  row: BranchBrandingRow; business: { theme_id: string | null; accent_hex: string | null };
+  row: BranchBrandingRow; business: BusinessLook;
   limits?: BranchBrandingList['limits']; client: BranchBrandingClient; open: boolean; onToggle: () => void;
   onSaved: (r: Partial<BranchBrandingRow> & { branch_id: string }) => void;
 }) {
@@ -375,7 +403,7 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
   const footerErr = footerWriteError(footer);
   // What this branch will wear: branch → business → ZapTill default (the till's own rule).
   const bizTheme = resolveTheme(business.theme_id).id;
-  const look = resolveBranchBranding({ themeId: bizTheme, accentHex: business.accent_hex },
+  const look = resolveBranchBranding({ themeId: bizTheme, accentHex: business.accent_hex, primaryHex: business.primary_hex ?? null, secondaryHex: business.secondary_hex ?? null },
     { branchId: row.branch_id, themeId, accentHex: accentErr ? null : (normaliseHex(accent) ?? null), receiptFooter: footer || null });
   const summary = [row.theme_id ? `theme ${resolveTheme(row.theme_id).name}` : null, row.accent_hex ? `colour ${row.accent_hex}` : null,
     row.receipt_footer ? 'own footer' : null].filter(Boolean).join(' · ') || 'follows the business';
@@ -470,7 +498,7 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{row.name} POS preview</label>
-            <TillPreview theme={resolveTheme(look.themeId)} brandHex={look.accentHex} />
+            <TillPreview theme={resolveTheme(look.themeId)} brandHex={look.accentHex} primaryHex={look.primaryHex} secondaryHex={look.secondaryHex} />
             <p className="text-xs text-gray-500 mt-2">{look.fromBranch.theme || look.fromBranch.accent ? 'This branch’s own look.' : 'The business’s look (no override).'}</p>
             {look.receiptFooter && (<>
               <label className="block text-sm font-medium text-gray-700 mb-2 mt-4">Footer on the receipt</label>
@@ -484,6 +512,73 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── A597: the owner's brand colours ─────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-27: a primary and a secondary colour, ANY colour — never refused. Each place they are used takes the
+// nearest shade that reads there (lib/themes.ts brandTokens), shown here in light and dark so the owner sees exactly that.
+function BrandColoursField({ editable, primary, secondary, onPrimary, onSecondary, primaryHex, secondaryHex, error }: {
+  editable: boolean; primary: string; secondary: string; onPrimary: (v: string) => void; onSecondary: (v: string) => void;
+  primaryHex: string | null; secondaryHex: string | null; error: string;
+}) {
+  const near = brandNearStatus(primaryHex);
+  const NEAR = { paid: 'the green that means paid', warning: 'the amber of warnings', void: 'the red of voids' } as const;
+  const fields: Array<[string, string, (v: string) => void, string | null]> = [
+    ['Primary', primary, onPrimary, primaryHex], ['Secondary', secondary, onSecondary, secondaryHex],
+  ];
+  return (
+    <div className="mt-6" data-testid="brand-colours">
+      <label className="block text-sm font-medium text-gray-700 mb-1">Brand colours</label>
+      <p className="text-xs text-gray-500 mb-3">Your own colours on the web dashboard and every point of sale: buttons, selected items, links and the menu
+        (primary); accents, the colour band and charts (secondary). Any colour works: readable text and lighter or darker shades are worked out for you.</p>
+      {!editable && (
+        <p className="text-xs text-gray-500 mb-2" data-testid="brand-colours-owner-only">Only the owner can change the brand colours.</p>
+      )}
+      {fields.map(([label, value, set, hex]) => (
+        <div key={label} className="flex items-center gap-2 mb-2">
+          <span className="w-20 text-sm text-gray-500">{label}</span>
+          <input type="color" value={hex ?? '#0d9488'} disabled={!editable} onChange={(e) => set(e.target.value)}
+            className="h-9 w-12 rounded border border-gray-700 bg-transparent p-0.5 disabled:opacity-40" aria-label={`${label} colour picker`} />
+          <input type="text" value={value} disabled={!editable} onChange={(e) => set(e.target.value)} placeholder="Not set"
+            className="border rounded-lg px-3 py-2 text-sm font-mono w-32 disabled:opacity-40" aria-label={`${label} colour`} data-testid={`brand-${label.toLowerCase()}`} />
+          {editable && value.trim() !== '' && (
+            <button type="button" onClick={() => set('')} className="text-xs text-gray-500 underline">Clear</button>
+          )}
+        </div>
+      ))}
+      {error && <p className="text-xs text-amber-600 mb-2">{error}</p>}
+      {near && <p className="text-xs text-gray-500 mb-2">Close to {NEAR[near]}. Fine to use; staff may take a button for that status at a glance.</p>}
+      {(primaryHex || secondaryHex) && <BrandColoursPreview primaryHex={primaryHex} secondaryHex={secondaryHex} />}
+    </div>
+  );
+}
+
+/** The shades as the dashboard will draw them, in light AND dark (lib/themeVars.ts brandColourVars, index.css data-brand). */
+function BrandColoursPreview({ primaryHex, secondaryHex }: { primaryHex: string | null; secondaryHex: string | null }) {
+  const p = brandTokens(primaryHex), s = brandTokens(secondaryHex) ?? p;
+  const modes: Array<{ name: string; bg: string; edge: string; muted: string; ink: string; dark: boolean }> = [
+    { name: 'Light', bg: '#ffffff', edge: '#e2e8f0', muted: '#64748b', ink: '#0f172a', dark: false },
+    { name: 'Dark', bg: '#111827', edge: '#1f2937', muted: '#9ca3af', ink: '#f9fafb', dark: true },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2 mt-2" data-testid="brand-colours-preview">
+      {modes.map((m) => (
+        <div key={m.name} className="rounded-lg p-3 space-y-2" style={{ background: m.bg, border: `1px solid ${m.edge}` }}>
+          <div className="text-[10px] uppercase tracking-wider" style={{ color: m.muted }}>{m.name}</div>
+          {p && (<div className="flex flex-wrap gap-1.5">
+            <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: p.fill, color: BRAND_SURFACES.darkLabels[1] }}>Save</span>
+            <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: p.strong, color: '#ffffff' }}>Add item</span>
+          </div>)}
+          {p && <div className="text-[11px] underline" style={{ color: m.dark ? p.textDark : p.textLight }}>A link</div>}
+          {s && (<div className="flex items-center gap-1.5">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium" style={{ background: s.base, color: s.on }}>Chip</span>
+            <span className="h-2 w-10 rounded" style={{ background: m.dark ? s.chartDark : s.chartLight }} aria-hidden />
+            <span className="text-[10px]" style={{ color: m.ink }}>chart</span>
+          </div>)}
+        </div>
+      ))}
     </div>
   );
 }
@@ -525,12 +620,17 @@ function LockPreview({ accent, logo }: { accent: string; logo: string | null }) 
 /** A327: a small, honest mock of the till with the theme applied — the same rules the till uses (themes.ts via
  *  A326's themeVars): action = the theme's 500/400; brand strip + sidebar tint = the brand colour when it can be seen,
  *  otherwise the theme's own tint and no strip; status and money stay green. */
-function TillPreview({ theme, brandHex }: { theme: Theme; brandHex: string | null }) {
-  const k = themeTokens(theme);
-  const brand = resolveBrandLayer(brandHex);
+function TillPreview({ theme, brandHex, primaryHex = null, secondaryHex = null }: { theme: Theme; brandHex: string | null; primaryHex?: string | null; secondaryHex?: string | null }) {
+  // A597: a primary brand colour replaces the theme's shades (the POS's rule, renderer/lib/themeVars.ts brandColourVars).
+  const p = brandTokens(primaryHex);
+  const k = p ? { fillDark: p.fill, onFillDark: labelOn(p.fill), textDark: p.textDark, tint: p.tint } : themeTokens(theme);
+  const accent = resolveBrandLayer(brandHex);
+  const brand = accent ?? (p ? { brand: p.layer, tint: p.tint } : null);
+  const second = brandTokens(secondaryHex)?.layer ?? null;
+  const strip = brand ? (second ? `linear-gradient(90deg, ${brand.brand} 0%, ${brand.brand} 50%, ${second} 50%, ${second} 100%)` : brand.brand) : null;
   return (
     <div className="rounded-xl overflow-hidden border relative" style={{ background: '#030712' }} data-testid="till-preview">
-      {brand && <div className="absolute inset-x-0 top-0 h-[3px]" style={{ background: brand.brand }} aria-hidden data-testid="brand-strip" />}
+      {strip && <div className="absolute inset-x-0 top-0 h-[3px]" style={{ background: strip }} aria-hidden data-testid="brand-strip" />}
       <div className="flex" style={{ minHeight: 170 }}>
         <div className="w-10 flex flex-col items-center gap-2 pt-4" style={{ background: brand ? brand.tint : k.tint }}>
           {[0, 1, 2].map((i) => <span key={i} className="h-5 w-5 rounded" style={{ background: i === 0 ? k.fillDark : '#1f2937' }} />)}

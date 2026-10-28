@@ -26,6 +26,8 @@ import { signInAddress } from '../lib/tenant';   // A550
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A562
 import { approvalPinOn } from '../lib/posFeatures';   // A562
 import { splitsPending } from '../lib/permissionsState';   // A595
+import { attendanceEnabled, attendanceStaffChanged } from '../lib/attendanceStore';   // A599
+import { CLOCK_BY_DEVICE_MESSAGE } from '../lib/attendanceRules';   // A599
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -523,6 +525,9 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
   const rows = await overrideRows(user.id, req.body, callerHeld(req));
   if (rows?.length) await supabase.from('user_permissions').insert(rows);
 
+  // A599: with Attendance on, a new member of staff gets the next free device number and goes onto their branch's devices.
+  await attendanceStaffChanged(req.businessId, { id: user.id, name, status: 'active', branch_id: effectiveBranchIds[0] ?? null }, req.userId ?? null);
+
   res.status(201).json(user);
 });
 
@@ -761,6 +766,11 @@ router.patch('/:id', requireAnyPermission('staff.edit', 'staff.pay'), validate(U
   const roleChanged = !!role_id && role_id !== (existing as any).role_id;
   const deactivated = !!status && status !== 'active';
   if (roleChanged || deactivated || branchesChanged) await revokePersonSessions(req.params.id, req.businessId);
+  // A599: with Attendance on, their device user follows a rename, a move or a deactivation (removed from the devices).
+  if (name || status || branch_ids !== undefined) {
+    await attendanceStaffChanged(req.businessId, { id: req.params.id, name: (data as any)?.name ?? name ?? null, status: (data as any)?.status ?? status ?? null,
+      ...(branch_ids !== undefined ? { branch_id: (branch_ids as string[]).filter(Boolean)[0] ?? null } : {}) }, req.userId ?? null);
+  }
 
   // A550: a new e-mail ends web dashboard access — the sign-in account the owner's grant names is the old address's.
   // The owner gives access again (and the invite goes to the new address).
@@ -824,6 +834,7 @@ router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
 
   if (error) { sendError(res, error); return; }
   await revokePersonSessions(req.params.id, req.businessId);   // A494: no session outlives the deactivation
+  await attendanceStaffChanged(req.businessId, { id: req.params.id, status: 'inactive' }, req.userId ?? null);   // A599: off the devices
   res.json({ success: true });
 });
 
@@ -1130,6 +1141,13 @@ router.delete('/roles/:roleId', requirePermission('staff.roles'), async (req, re
 // failure counts towards the PIN limiter (lib/pinAttempts.ts).
 router.post('/clock', async (req, res) => {
   const { pin, type, branch_id, staff_id } = req.body ?? {};
+
+  // A599: with Attendance on (premium), every punch comes from the attendance device — the PIN clock-in is refused, before
+  // any PIN is looked at (so it is no PIN oracle either). Without the flag it works exactly as before.
+  if (await attendanceEnabled(req.businessId)) {
+    res.status(403).json({ error: CLOCK_BY_DEVICE_MESSAGE, code: 'CLOCK_BY_DEVICE' });
+    return;
+  }
 
   if (!pin)    { res.status(400).json({ error: 'PIN is required' }); return; }
   if (!type || !['in', 'out'].includes(type)) {

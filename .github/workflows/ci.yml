@@ -661,6 +661,12 @@ jobs:
       - name: Supabase calls cut (A593)
         run: TZ=UTC node --no-warnings tests/supabase-calls-a593.test.mjs
 
+      # A598 — "Calls a day" 24,226 of 15,000, job:watchdog the largest source (2,200): its quiet run 14 calls → 7 — the
+      # billing facts kept 30 minutes (10 before: the watchdog's own interval, so always just expired), the clients' and
+      # branches' names 30 minutes, an open problem's "still seen" stamp once an hour. Needs the server build.
+      - name: Watchdog calls cut (A598)
+        run: TZ=UTC node --no-warnings tests/supabase-calls-a598.test.mjs
+
       # A592 — "How can we make these messages look better": every admin Telegram message and email laid out the same —
       # Telegram HTML (a client "A&B <Shop>" escaped, valid), URL buttons ("Close it remotely", "Open run", "Guide"), a 400
       # "can't parse entities" sent again as plain text; "8 days 22 h" not "214 h", "Mon 26 Oct 13:07 EAT"; client problems
@@ -696,6 +702,28 @@ jobs:
           node --no-warnings scripts/test-migration-176.mjs
           node --no-warnings scripts/test-migration-177.mjs
           node --no-warnings scripts/test-migration-178.mjs
+
+      # A597 — brand colours: the OWNER picks a primary and a secondary colour (any colour) on Branding; premium (the
+      # 'themes' flag). Every job's shade derived from the colour (white, black, yellow, mid-grey: labels and links read in
+      # light and dark); themes off → no variables (today's look); a branch's own theme → the colours give way; the cloud:
+      # owner only (a manager, a partner, a POS 403), themes off 403, a bad value 400, /pos/init serves them only with the
+      # flag, a database before migration 179 keeps working. Migration 179 replayed into PGlite.
+      - name: Brand colours (A597) and migration 179
+        run: |
+          TZ=UTC node --no-warnings tests/brand-colours-a597.test.mjs
+          node --no-warnings scripts/test-migration-179.mjs
+
+      # A599 — Attendance (premium, the 'attendance' flag set in the admin portal): punches only from a ZKTeco device
+      # through the branch server, for everyone. The pairing (in / out alternately in time order, a night shift on the day
+      # it started, an odd last punch a missing punch-out not counted, a 16 h gap never paired); flag off → every route
+      # 403 ATTENDANCE_OFF and no menu item; the web POS PIN clock-in refused with the flag on, as before without it; an
+      # attendance-only person never a users row; the branch server's ingest idempotent, its own branch only; "Not
+      # matched" → link assigns retroactively; corrections keep the original; the rights' defaults; pay only with
+      # staff.pay. Migration 180 replayed into PGlite. Needs the server build. In the loop too.
+      - name: Attendance (A599) and migration 180
+        run: |
+          TZ=UTC node --no-warnings tests/attendance-a599.test.mjs
+          node --no-warnings scripts/test-migration-180.mjs
 
       - name: Run offline suites
         run: |
@@ -1395,6 +1423,22 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/lan-tls.test.mjs
 
+      # A599 — attendance from a ZKTeco device (premium; owner 2026-10-27: ZKTeco first, the K90 Pro): the device client
+      # against an in-process simulated device — connect and comm key, users and punches in every record size across
+      # chunked reads, the device clock, user writes (never an admin), timeouts and dropped connections. Mutation-checked.
+      - name: Desktop attendance device client (ZKTeco, simulated)
+        working-directory: apps/desktop
+        run: node --no-warnings test/zkteco.test.mjs
+
+      # A599 — the branch server's attendance job (attendanceSync.ts): ONLY on the branch server, with the 'attendance' flag
+      # on and the cloud reachable (else no cloud call and no device connection at all); the config, each device's state,
+      # its waiting actions (write a user — never an admin — or delete one, each acked), the new punches made UTC with the
+      # config's offset, at most 500 a call, a high-water mark so nothing is re-sent; a silent device posts its error and
+      # the next is done; 409 on punches → state first. Simulated devices and a fake cloud. Mutation-checked.
+      - name: Desktop attendance job (branch server → cloud, simulated devices)
+        working-directory: apps/desktop
+        run: node --no-warnings test/attendance-device-a599.test.mjs
+
       # A496 — tills behind a branch server always get their update: a server holding its own downloaded update still
       # fetches the next one, a stalled download is cancelled and restarted, a till never waits for ever on the server's
       # copy, a copy from before a roll-back is not offered. The Electron half proves the stall and the pinned TLS feed
@@ -1592,6 +1636,15 @@ jobs:
         env:
           TZ: UTC
         run: node --no-warnings test/branch-branding-a544.test.mjs
+
+      # A597 — the owner's brand colours on the till: pulled with the branding (no schema bump), an older cloud leaves them,
+      # none with themes off or under a branch's own theme, a database without the columns reads as none, the branch
+      # server relays them; the screens: a primary's shades on every action colour, the lock screen and the strip.
+      - name: Desktop brand colours (A597)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/brand-colours-a597.test.mjs
 
       # A564 — Manager › Stock › Other branches on the till: the lookup and the requests through the branch server's gateway
       # (A410) with the person's own sign-in; offline "Needs a connection"; a refusal keeps the cloud's words; the keys

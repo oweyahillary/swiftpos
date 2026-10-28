@@ -204,6 +204,7 @@ export default function CashierScreen() {
     kitchenExclusions,
     notePicks,
     posFeatures,   // 0.6.27
+    attendanceDevice,   // A599: punches come from the attendance device — no PIN clock-in here
     freeDeliveryAllowed,   // 0.6.33: the owner allows free delivery (the shop pays the rider)
     freeDeliveryOver,      // 0.6.33: …and automatically from this bill amount (null = off)
     receiptLogo,
@@ -1391,11 +1392,12 @@ export default function CashierScreen() {
           >📊 Z-Report</button>
           {currentShift && (
             <>
-              <button
+              {/* A599: with Attendance on (premium) everyone punches on the attendance device — the PIN clock-in is hidden. */}
+              {!attendanceDevice && <button
                 style={{ ...s.lockBtn, background: 'transparent', color: 'rgb(var(--act-text, 16 185 129))', border: '1px solid rgb(var(--act-fill, 16 185 129))', marginRight: 4 }}
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
-              >⏱ Clock</button>
+              >⏱ Clock</button>}
               {/* A594: for everyone on the drawer — without the right, a manager approves on the spot (ShiftModal). */}
               {(<>
               <button

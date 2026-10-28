@@ -54,6 +54,7 @@ const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').t
 const PosOptionsTab       = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.PosOptionsTab })));     // A491
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
 const AnalyticsPage           = lazy(() => import('./pages/analytics/AnalyticsPage'));   // A549
+const AttendancePage          = lazy(() => import('./pages/attendance/AttendancePage'));   // A599 (premium: the 'attendance' flag)
 const WatchListPage           = lazy(() => import('./pages/WatchListPage'));   // A576
 const LossAlertsTab           = lazy(() => import('./pages/settings/LossAlertsTab'));   // A576
 const CreditApproversTab       = lazy(() => import('./pages/settings/CreditApproversTab'));   // A585
@@ -154,6 +155,7 @@ export default function App() {
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
                       <Route path="analytics"                 element={<AnalyticsPage />} />
+                      <Route path="attendance"                element={<AttendancePage />} />
                       <Route path="watch-list"                element={<WatchListPage />} />
                       <Route path="shift-reports"             element={<ShiftReportsPage />} />
                       <Route path="orders"                    element={<OrdersPage />} />
