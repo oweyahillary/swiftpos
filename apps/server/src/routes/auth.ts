@@ -43,7 +43,7 @@ import { generateDeviceSecret, hashDeviceSecret, verifyDeviceSecret, buildDevice
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, isOwnerPasswordSession } from '../middleware/auth';
 import { findTenant, ownedTenantBusiness } from '../lib/tenant';   // A378: a client's own sign-in address
 import { getWebAccess, webAccessRefusal } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
@@ -65,7 +65,8 @@ import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY, acc
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { notifyAccountLocked } from '../lib/accountLockNotice';   // A507
 import { resolvePartnerSignIn, checkPartner, writePartners, readPartners, partnerLive, type PartnerCheck, type PartnerPerson } from '../lib/webPartners';   // A550
-import { refusesWebPosPin, webPosPinRefusal } from '../lib/webPosSignIn';   // A608
+import { refusesWebPosPin, webPosPinRefusal, dashboardSessionKind, SELL_KEY } from '../lib/webPosSignIn';   // A608
+import { hasPermission } from '../lib/permissions';   // A608
 import { enrolRefusal } from '../lib/cloudPlan';   // A581: no till joins a lapsed business
 
 const router = safeRouter();
@@ -1694,21 +1695,7 @@ router.post('/pos-login', async (req, res) => {
       .is('revoked_at', null);
   }
 
-  const sessionId = newSessionId();
-  const pv = (user as any).permissions_version ?? 1;
-
-  const tokenPayload: TokenPayload = {
-    userId:             (user as any).id,
-    businessId:         (user as any).business_id,
-    branchId:           isOwner ? null : (resolvedBranchId ?? null),
-    roleId:             role?.id ?? null,
-    roleName:           role?.name ?? null,
-    isOwner,
-    permissionKeys:     tokenKeys(heldKeys),   // A490: fine keys (or '*') — the cloud checks these
-    permissionsVersion: pv,
-    sessionId,
-    surface:            effectiveSurface,
-  };
+  const tokenPayload: TokenPayload = webPosTokenPayload(user as any, isOwner, heldKeys, resolvedBranchId, effectiveSurface);
 
   const { accessToken, refreshToken } = issueTokenPair(tokenPayload);
 
@@ -1729,6 +1716,129 @@ router.post('/pos-login', async (req, res) => {
     needsBranchSelection: false,
     ...(posGate.trust ? { otp_trust: posGate.trust } : {}),
     ...(posGate.pass ? { otp_pass: posGate.pass } : {}),
+  });
+});
+
+/**
+ * A608: the web POS session's claims — ONE builder, so /pos-login (a cashier's PIN) and /pos-session (a person signed in
+ * to the web dashboard) issue exactly the same kind of token: the person, their branch (the owner none — they name it per
+ * request), their role, their fine keys (or '*'), their permissions version, a new session, the surface.
+ */
+function webPosTokenPayload(user: { id: string; business_id: string; permissions_version?: number | null; roles?: { id?: string | null; name?: string | null } | null },
+  isOwner: boolean, heldKeys: ReadonlySet<string>, branchId: string | null, surface: 'web' | 'desktop'): TokenPayload {
+  return {
+    userId:             user.id,
+    businessId:         user.business_id,
+    branchId:           isOwner ? null : (branchId ?? null),
+    roleId:             user.roles?.id ?? null,
+    roleName:           user.roles?.name ?? null,
+    isOwner,
+    permissionKeys:     tokenKeys(heldKeys),   // A490: fine keys (or '*') — the cloud checks these
+    permissionsVersion: user.permissions_version ?? 1,
+    sessionId:          newSessionId(),
+    surface,
+  };
+}
+
+// ── POST /api/auth/pos-session ────────────────────────────────────────────────
+// A608 (owner, 2026-10-29: managers sell on the web POS — "is there a reason of two sign ins?" — no): someone signed in to
+// the web dashboard (the owner's password sign-in, or a partner's — anyone the owner gave web access: General Manager,
+// Manager…) opens the web POS as themselves, with no PIN and no second sign-in. Their dashboard session is exchanged for
+// the same web POS session /pos-login issues (webPosTokenPayload), at a branch they may use, only when they may sell
+// (orders.create — the sale's own gate, routes/orders.ts; the owner always). The sign-in code is not asked again: they
+// passed it signing in to the dashboard. Never from a POS session, a till, a kitchen screen or a Supabase-only session;
+// a partner's grant is read afresh (revoked → refused), as is the person (inactive → refused). Cashiers are unchanged
+// (their PIN on /pos); the desktop never comes here.
+router.post('/pos-session', requireAuth, async (req: any, res: any) => {
+  const raw = (() => {
+    try { return jwt.verify(String(req.headers.authorization ?? '').slice(7), JWT_SECRET, { algorithms: ['HS256'] }) as Record<string, unknown>; }
+    catch { return null; }
+  })();
+  const kind = req.isTill ? null : dashboardSessionKind(raw, isOwnerPasswordSession);
+  if (!kind || !req.userId) {
+    res.status(403).json({ error: 'Sign in to the web dashboard first, then use Open POS.', code: 'DASHBOARD_SESSION_ONLY' });
+    return;
+  }
+  const businessId = req.businessId;
+  const webAccess = await getWebAccess(businessId);
+  if (!webAccess.canLogin) { res.status(403).json(webAccessRefusal(webAccess)); return; }
+
+  // The person, read afresh (as /pos-login reads them).
+  const cols: string = 'id, name, email, status, business_id, permissions_version, '
+    + 'roles ( id, name, role_permissions ( permissions ( id, key ) ) ), user_permissions ( granted, permissions ( key ) )';
+  const { data: row, error: uErr } = await supabase.from('users').select(cols)
+    .eq('id', req.userId).eq('business_id', businessId).maybeSingle();
+  if (uErr) { res.status(503).json({ error: 'Could not open the POS right now — please try again' }); return; }
+  const user = row as any;
+  if (!user || user.status !== 'active') {
+    res.status(401).json({ error: 'Please sign in again.', code: 'SIGN_IN_AGAIN', reason: 'ACCOUNT_INACTIVE' });
+    return;
+  }
+
+  const isOwner = kind === 'owner';
+  let heldKeys: ReadonlySet<string>;
+  let branches: Array<{ id: string; name: string; desktop_licensed: boolean }>;
+  const { data: open, error: bErr } = await supabase.from('branches').select('id, name, desktop_licensed')
+    .eq('business_id', businessId).eq('status', 'active').order('name');
+  if (bErr) { res.status(503).json({ error: 'Could not open the POS right now — please try again' }); return; }
+  const openBranches = (open ?? []) as Array<{ id: string; name: string; desktop_licensed: boolean }>;
+  if (isOwner) {
+    heldKeys = new Set(['*']);
+    branches = openBranches;
+  } else {
+    // A550: the owner's grant and the person, read afresh — a revoked grant opens nothing.
+    const c = await checkPartner(businessId, user.id, null);
+    if (c.ok !== true) {
+      if (c.reason === 'DB_ERROR') { res.status(503).json({ error: 'Could not open the POS right now — please try again' }); return; }
+      res.status(401).json({ error: 'Please sign in again.', code: 'SIGN_IN_AGAIN', reason: 'PARTNER_ENDED' });
+      return;
+    }
+    heldKeys = effectiveKeysForRow(user);
+    if (heldKeys.has('*')) { res.status(401).json({ error: 'Please sign in again.', code: 'SIGN_IN_AGAIN', reason: 'PARTNER_ENDED' }); return; }
+    const theirs = new Set(c.branchIds);
+    branches = openBranches.filter((b) => theirs.has(b.id));
+  }
+  if (!isOwner && !hasPermission(heldKeys, SELL_KEY)) {
+    res.status(403).json({ error: 'Your role does not sell at the POS.', code: 'NO_SELL_RIGHT' });
+    return;
+  }
+  if (!branches.length) {
+    res.status(403).json({ error: 'You are not assigned to an open branch. Ask the owner to add you to one.', code: 'NO_BRANCH' });
+    return;
+  }
+  const asked = typeof req.body?.branch_id === 'string' && req.body.branch_id ? req.body.branch_id : null;
+  if (asked && !branches.some((b) => b.id === asked)) {
+    res.status(403).json({ error: 'You are not assigned to this branch', code: 'NOT_YOUR_BRANCH' });
+    return;
+  }
+  const list = branches.map((b) => ({ id: b.id, name: b.name, licensed: b.desktop_licensed }));
+  const branchId = asked ?? (branches.length === 1 ? branches[0].id : null);
+  if (!branchId) {
+    res.json({ needsBranchSelection: true, staff: { id: user.id, name: user.name, role: user.roles?.name ?? null }, branchId: null, branches: list });
+    return;
+  }
+
+  // Device approval as at /pos-login (the owner and back office are exempt).
+  const devCheck = await checkDeviceRegistration(businessId, user.id, req, req.body?.device_hint as string | undefined, isOwner, heldKeys);
+  if (devCheck.result === 'pending') {
+    res.status(403).json({ error: 'This device is not yet approved. Please ask your manager to approve it in Settings → Devices.', code: 'DEVICE_NOT_REGISTERED', deviceId: devCheck.deviceId });
+    return;
+  }
+  if (devCheck.result === 'rejected') { res.status(403).json({ error: 'This device has been blocked. Please contact your manager.', code: 'DEVICE_REJECTED' }); return; }
+
+  const tokenPayload = webPosTokenPayload(user, isOwner, heldKeys, branchId, 'web');
+  const { accessToken, refreshToken } = issueTokenPair(tokenPayload);
+  // Never revokes this person's other sessions on the device (as /pos-login does) — their dashboard session is one of them.
+  await storeRefreshToken(refreshToken, tokenPayload, req.ip ?? undefined, deviceKey(req) ?? undefined);
+  console.log(`[auth] A608: web POS opened from the dashboard (${kind})`, { businessId, userId: user.id, branchId });
+  res.json({
+    accessToken, refreshToken, token: accessToken,
+    staff:       { id: user.id, name: user.name, role: user.roles?.name ?? null },
+    permissions: clientPermissionMap(heldKeys),
+    branchId,
+    branches:    list,
+    needsBranchSelection: false,
+    fromDashboard: true,
   });
 });
 

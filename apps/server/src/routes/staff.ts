@@ -299,6 +299,18 @@ function staffPartRefusal(req: any, wants: { edit?: boolean; pin?: boolean; appr
   return null;
 }
 
+/**
+ * A608: a pay rate as sent — a number of 0 or more, or null (none). One rule for adding someone (POST) and changing it
+ * (PATCH). undefined: not sent. Pure.
+ */
+export function hourlyRateValue(v: unknown): { ok: true; value: number | null | undefined } | { ok: false } {
+  if (v === undefined) return { ok: true, value: undefined };
+  if (v === null || v === '') return { ok: true, value: null };
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? { ok: true, value: n } : { ok: false };
+}
+const BAD_RATE = { error: 'The hourly rate must be a number of 0 or more.', code: 'BAD_HOURLY_RATE' } as const;
+
 // GET /api/staff — list staff for business
 // Whether this user can authorise a void/override, as a boolean.
 //
@@ -502,8 +514,11 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
   if (overRefusal) { res.status(403).json(overRefusal); return; }
   // A595: a person's own rights (staff.access) and an approval PIN (staff.pins) are their own parts of staff.edit. Adding
   // someone needs their first sign-in PIN, so that one comes with adding them.
-  const partRefusal = staffPartRefusal(req, { overrides: sendsOverrides(req.body), approvalPin: typeof req.body?.override_pin === 'string' && req.body.override_pin.length > 0 });
+  const partRefusal = staffPartRefusal(req, { overrides: sendsOverrides(req.body), approvalPin: typeof req.body?.override_pin === 'string' && req.body.override_pin.length > 0,
+    pay: req.body?.hourly_rate !== undefined && req.body?.hourly_rate !== null });   // A608: the rate typed when adding someone is staff.pay
   if (partRefusal) { res.status(403).json(partRefusal); return; }
+  const rate = hourlyRateValue(req.body?.hourly_rate);   // A608: it was never stored
+  if (!rate.ok) { res.status(400).json(BAD_RATE); return; }
 
   // A494: what the new person will hold (role + overrides) — within the caller's keys, and the base of the override-PIN rule.
   let plannedRows: Array<{ permission_id: string; granted: boolean }> | undefined;
@@ -538,6 +553,7 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
       business_id: req.businessId, name, email: email || null, phone: phone || null,
       role_id, pin_hash, status: 'active',
       ...(override_pin_hash !== undefined ? { override_pin_hash } : {}),
+      ...(rate.value != null ? { hourly_rate: rate.value } : {}),   // A608
     })
     .select()
     .single();
@@ -773,7 +789,11 @@ router.patch('/:id', requireAnyPermission('staff.edit', 'staff.pay'), validate(U
   if (email !== undefined) updates.email = email || null;
   if (role_id)            updates.role_id = role_id;
   if (status)             updates.status       = status;
-  if (hourly_rate !== undefined) updates.hourly_rate = hourly_rate !== null ? Number(hourly_rate) : null;
+  if (hourly_rate !== undefined) {
+    const rate = hourlyRateValue(hourly_rate);   // A608: one rule with adding someone (a typed word was stored as NaN)
+    if (!rate.ok) { res.status(400).json(BAD_RATE); return; }
+    updates.hourly_rate = rate.value ?? null;
+  }
   if (pin) {
     if (!/^\d{4,6}$/.test(pin)) { res.status(400).json({ error: 'PIN must be 4–6 digits' }); return; }
     updates.pin_hash = await hashPin(pin);   // A494: bcrypt

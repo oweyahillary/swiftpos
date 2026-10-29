@@ -16,6 +16,15 @@
  *   - refusesWebPosPin returning false                         → "a manager's PIN does not open the web POS" fails
  *   - the /pos-login refusal moved before the PIN check        → "a wrong PIN says nothing about who is a manager" fails
  *   - staffSignIn ignoring the General Manager name            → "the card's rule, role by role" fails
+ *
+ * A608 follow-up (owner, 2026-10-29: managers sell on the web POS from the dashboard — "is there a reason of two sign
+ * ins?" — no): POST /api/auth/pos-session exchanges a web DASHBOARD session for the web POS session /pos-login issues;
+ * the hourly rate typed when adding someone is stored. Mutations (each made, a test failed, put back):
+ *   - dashboardSessionKind taking any session as a partner's    → "only a dashboard session" fails
+ *   - /pos-session without checkPartner()                       → "a revoked grant opens nothing" fails
+ *   - /pos-session without the sell check                       → "no right to sell" fails
+ *   - /pos-session without the branch check                     → "a branch not theirs" fails
+ *   - POST /api/staff not storing hourly_rate                   → "the hourly rate typed when adding" fails
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -53,6 +62,7 @@ mailer.sendEmail = async (o) => { mails.push(o); return true; };
 const authCache = require(path.join(DIST, 'lib/authCache.js'));
 const attempts = require(path.join(DIST, 'lib/pinAttempts.js'));
 const W = require(path.join(DIST, 'lib/webPosSignIn.js'));
+const permState = require(path.join(DIST, 'lib/permissionsState.js'));
 const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
 const S = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/staffSignIn.ts')).href);
 const jwt = require('jsonwebtoken');
@@ -61,9 +71,9 @@ const express = require('express');
 
 // ── The business and its people ──────────────────────────────────────────────────────────────────────────────────────
 const u = (n) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
-const B = u(900), BR = u(901);
-const OWNER = u(1), MGR = u(3), CASH = u(5), SUP = u(6);
-const R_OWNER = u(800), R_GM = u(801), R_MGR = u(803), R_CASH = u(804), R_SUP = u(805);
+const B = u(900), BR = u(901), BR2 = u(902);
+const OWNER = u(1), MGR = u(3), CASH = u(5), SUP = u(6), ACC = u(7);
+const R_OWNER = u(800), R_GM = u(801), R_MGR = u(803), R_CASH = u(804), R_SUP = u(805), R_ACC = u(806);
 const keysOf = (name) => [...P.BUILT_IN_ROLES.find((r) => r.name === name).keys];
 const roles = {
   [R_OWNER]: { id: R_OWNER, business_id: B, name: 'Admin', keys: [] },
@@ -71,9 +81,11 @@ const roles = {
   [R_MGR]: { id: R_MGR, business_id: B, name: 'Manager', keys: keysOf('Manager') },
   [R_CASH]: { id: R_CASH, business_id: B, name: 'Cashier', keys: keysOf('Cashier') },
   [R_SUP]: { id: R_SUP, business_id: B, name: 'Supervisor', keys: keysOf('Supervisor') },
+  [R_ACC]: { id: R_ACC, business_id: B, name: 'Accountant', keys: keysOf('Accountant') },
 };
 const PIN_HASH = await bcrypt.hash('2468', 4);
 const BRANCH = { id: BR, business_id: B, name: 'Westlands', status: 'active', is_main: true, desktop_licensed: true };
+const BRANCH2 = { id: BR2, business_id: B, name: 'Kilimani', status: 'active', is_main: false, desktop_licensed: true };
 const grantsOf = (keys) => keys.map((k) => ({ permissions: { key: k } }));
 const person = (id, name, email, roleId) => ({
   id, business_id: B, name, email, status: 'active', permissions_version: 1, role_id: roleId, must_change_password: false,
@@ -91,11 +103,11 @@ const reset = () => {
   accounts = { 'auth-owner': { id: 'auth-owner', email: 'owner@pollo.test', app_metadata: {} } };
   mem.db = {
     businesses: [{ id: B, owner_id: 'auth-owner', name: 'Pollo', status: 'active', type: 'retail', subdomain: 'pollo', currency: 'KES' }],
-    branches: [BRANCH],
+    branches: [BRANCH, BRANCH2],
     roles: Object.values(roles).map(({ keys, ...r }) => r),
     role_permissions: [], permissions: P.PERMISSION_KEYS.map((k, i) => ({ id: `perm-${i}`, key: k })),
     users: [person(OWNER, 'Owner', 'owner@pollo.test', R_OWNER), person(MGR, 'Mary', MARY, R_MGR),
-      person(CASH, 'Joe', JOE, R_CASH), person(SUP, 'Sue', SUE, R_SUP)],
+      person(CASH, 'Joe', JOE, R_CASH), person(SUP, 'Sue', SUE, R_SUP), person(ACC, 'Ann', 'ann@pollo.test', R_ACC)],
     user_branches: [], user_permissions: [], refresh_tokens: [], login_otp_codes: [], notifications: [], user_devices: [],
     business_settings: [], feature_flags: [{ business_id: B, key: 'web_hosting', enabled: true }],
   };
@@ -194,7 +206,7 @@ try {
   await ok('an email is required for web access: none → 400 NO_EMAIL, nobody added', async () => {
     const r = await call('POST', '/api/staff', ownerToken(), { name: 'Sam', role_id: R_MGR, pin: '1357', web_access: true });
     assert.equal(r.status, 400, JSON.stringify(r.body)); assert.equal(r.body.code, 'NO_EMAIL');
-    assert.equal(mem.db.users.length, 4);
+    assert.equal(mem.db.users.length, 5);
   });
   await ok('a manager may not send the web invitation (403 OWNER_ONLY), nobody added; without it they add staff as before', async () => {
     const r = await call('POST', '/api/staff', managerToken(), { name: 'Sam', email: SAM, role_id: R_CASH, pin: '1357', web_access: true });
@@ -296,6 +308,162 @@ try {
     assert.match(login, /<a href="\/login"/);
     assert.match(login, /if \(dest === '\/manager'\) \{/);
     assert.doesNotMatch(login.slice(login.indexOf('function finishLogin')), /navigate\('\/manager'/);
+  });
+  // ── 6. Open POS from the dashboard: POST /api/auth/pos-session ─────────────────────────────────────────────────
+  console.log('\nA608 follow-up — Open POS from the dashboard\n');
+  const grant = (ids) => (mem.db.business_settings = mem.db.business_settings.filter((r) => r.key !== 'web_partners')).push({ id: 'bs-1', business_id: B, key: 'web_partners',
+    value: Object.fromEntries(ids.map((id) => [id, { auth_user_id: `auth-${id}`, status: 'active', granted_at: '2026-10-29T08:00:00Z', granted_by: OWNER }])) });
+  const partnerToken = (id, roleName) => jwt.sign({ userId: id, businessId: B, branchId: BR, roleId: null, isOwner: false, webPartner: true,
+    partnerBranches: [BR], allBranches: false, permissionKeys: keysOf(roleName), permissionsVersion: 1, sessionId: `s-${id}`, surface: 'web' },
+    process.env.JWT_SECRET, { expiresIn: '5m' });
+  const openPos = (token, body = {}) => call('POST', '/api/auth/pos-session', token, body);
+  const CLAIMS = ['userId', 'businessId', 'branchId', 'roleId', 'roleName', 'isOwner', 'permissionKeys', 'permissionsVersion', 'surface'];
+  const claimsOf = (t) => { const c = jwt.decode(t); return Object.fromEntries(Object.keys(c).filter((k) => !['jti', 'iat', 'exp', 'sessionId'].includes(k)).map((k) => [k, c[k]])); };
+
+  reset();
+  await ok('no session → 401; nothing issued', async () => {
+    const r = await openPos(null, { branch_id: BR });
+    assert.equal(r.status, 401); assert.equal(r.body?.accessToken, undefined);
+  });
+  await ok('only a dashboard session: a web POS session, a till PIN sign-in, a plain staff token → 403 DASHBOARD_SESSION_ONLY', async () => {
+    const pos = await webPos(JOE);
+    assert.equal(pos.status, 200);
+    const a = await openPos(pos.body.accessToken, { branch_id: BR });
+    assert.equal(a.status, 403, JSON.stringify(a.body)); assert.equal(a.body.code, 'DASHBOARD_SESSION_ONLY');
+    const b = await openPos(managerToken(), { branch_id: BR });
+    assert.equal(b.status, 403); assert.equal(b.body.code, 'DASHBOARD_SESSION_ONLY');
+    const pinOnTill = jwt.sign({ userId: MGR, businessId: B, branchId: BR, isOwner: false, permissionKeys: keysOf('Manager'), permissionsVersion: 1,
+      sessionId: 's-t', surface: 'desktop', pinSignIn: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
+    const c = await openPos(pinOnTill, { branch_id: BR });
+    assert.ok(c.status === 403, JSON.stringify(c.body));
+    assert.equal(W.dashboardSessionKind({ isOwner: true, ownerLogin: true }, () => true), 'owner');
+    assert.equal(W.dashboardSessionKind({ isOwner: true, surface: 'web', roleId: 'r' }, () => false), null, 'the owner\'s PIN on the web POS');
+    assert.equal(W.dashboardSessionKind({ webPartner: true, isOwner: false, surface: 'web' }, () => false), 'partner');
+    assert.equal(W.dashboardSessionKind({ webPartner: true, pinSignIn: true }, () => false), null);
+    assert.equal(W.dashboardSessionKind({ till: true, deviceId: 'd' }, () => true), null);
+  });
+  reset();
+  await ok('a manager with web access opens the POS at their branch, as themselves — no PIN, no code; their dashboard session untouched', async () => {
+    grant([MGR]);
+    const before = mem.db.refresh_tokens.length;
+    const r = await openPos(partnerToken(MGR, 'Manager'), { branch_id: BR });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const c = jwt.decode(r.body.accessToken);
+    assert.equal(c.userId, MGR); assert.equal(c.branchId, BR); assert.equal(c.isOwner, false); assert.equal(c.surface, 'web');
+    assert.equal(c.webPartner, undefined, 'a POS session, not a dashboard one'); assert.equal(c.pinSignIn, undefined);
+    assert.equal(r.body.fromDashboard, true); assert.equal(r.body.staff.id, MGR); assert.equal(r.body.permissions['orders.create'], true);
+    assert.equal(mem.db.refresh_tokens.length, before + 1, 'its refresh token stored');
+    assert.ok(mem.db.refresh_tokens.every((t) => !t.revoked_at), 'nothing revoked');
+  });
+  await ok('one branch of theirs and none named → that branch; a branch not theirs → 403 NOT_YOUR_BRANCH', async () => {
+    const r = await openPos(partnerToken(MGR, 'Manager'), {});
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(jwt.decode(r.body.accessToken).branchId, BR);
+    const x = await openPos(partnerToken(MGR, 'Manager'), { branch_id: BR2 });
+    assert.equal(x.status, 403, JSON.stringify(x.body)); assert.equal(x.body.code, 'NOT_YOUR_BRANCH'); assert.equal(x.body.accessToken, undefined);
+  });
+  await ok('the token\'s claims are exactly /pos-login\'s (a cashier given web access, both ways)', async () => {
+    grant([MGR, CASH]);
+    const viaPin = await webPos(JOE);
+    const viaDash = await openPos(partnerToken(CASH, 'Cashier'), { branch_id: BR });
+    assert.equal(viaPin.status, 200); assert.equal(viaDash.status, 200, JSON.stringify(viaDash.body));
+    const a = claimsOf(viaPin.body.accessToken), b = claimsOf(viaDash.body.accessToken);
+    assert.deepEqual(Object.keys(b).sort(), Object.keys(a).sort(), 'the same claims');
+    for (const k of CLAIMS) assert.deepEqual(b[k], a[k], k);
+    assert.deepEqual(viaDash.body.permissions, viaPin.body.permissions);
+  });
+  reset();
+  await ok('a revoked grant opens nothing: 401 SIGN_IN_AGAIN (PARTNER_ENDED)', async () => {
+    mem.db.business_settings.push({ id: 'bs-1', business_id: B, key: 'web_partners',
+      value: { [MGR]: { auth_user_id: 'auth-m', status: 'revoked', granted_at: '2026-10-29T08:00:00Z', granted_by: OWNER, revoked_at: '2026-10-29T09:00:00Z' } } });
+    const r = await openPos(partnerToken(MGR, 'Manager'), { branch_id: BR });
+    assert.equal(r.status, 401, JSON.stringify(r.body)); assert.equal(r.body.code, 'SIGN_IN_AGAIN'); assert.equal(r.body.reason, 'PARTNER_ENDED');
+  });
+  reset();
+  await ok('an inactive person opens nothing (401)', async () => {
+    grant([MGR]);
+    mem.db.users.find((x) => x.id === MGR).status = 'inactive';
+    const r = await openPos(partnerToken(MGR, 'Manager'), { branch_id: BR });
+    assert.equal(r.status, 401, JSON.stringify(r.body)); assert.equal(r.body.accessToken, undefined);
+  });
+  reset();
+  await ok('no right to sell (an Accountant with web access) → 403 NO_SELL_RIGHT', async () => {
+    grant([ACC]);
+    assert.equal(keysOf('Accountant').includes('orders.create'), false);
+    const r = await openPos(partnerToken(ACC, 'Accountant'), { branch_id: BR });
+    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'NO_SELL_RIGHT');
+  });
+  reset();
+  await ok('the owner opens the POS: every branch to choose from, then the one picked — the owner\'s claims as /pos-login gives them', async () => {
+    const pick = await openPos(ownerToken(), {});
+    assert.equal(pick.status, 200, JSON.stringify(pick.body)); assert.equal(pick.body.needsBranchSelection, true);
+    assert.deepEqual(pick.body.branches.map((b) => b.id).sort(), [BR, BR2].sort()); assert.equal(pick.body.accessToken, undefined);
+    const r = await openPos(ownerToken(), { branch_id: BR2 });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.branchId, BR2);
+    const c = jwt.decode(r.body.accessToken);
+    assert.equal(c.isOwner, true); assert.equal(c.branchId, null, 'the owner names the branch per request (X-Branch-Id)');
+    assert.deepEqual(c.permissionKeys, ['*']); assert.equal(c.ownerLogin, undefined, 'never the owner\'s password session');
+  });
+
+  // ── 7. The hourly rate typed when adding someone ─────────────────────────────────────────────────────────────────
+  reset();
+  await ok('the hourly rate typed when adding someone is stored; not a number → 400; without staff.pay → 403', async () => {
+    const r = await call('POST', '/api/staff', ownerToken(), { name: 'Sam', email: SAM, role_id: R_CASH, pin: '1357', hourly_rate: 250 });
+    assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(byEmail(SAM).hourly_rate, 250);
+    const bad = await call('POST', '/api/staff', ownerToken(), { name: 'Al', email: 'al@pollo.test', role_id: R_CASH, pin: '1357', hourly_rate: 'lots' });
+    assert.equal(bad.status, 400, JSON.stringify(bad.body)); assert.equal(bad.body.code, 'BAD_HOURLY_RATE'); assert.equal(byEmail('al@pollo.test'), undefined);
+    const neg = await call('POST', '/api/staff', ownerToken(), { name: 'Al', email: 'al@pollo.test', role_id: R_CASH, pin: '1357', hourly_rate: -5 });
+    assert.equal(neg.status, 400);
+    assert.equal(keysOf('Manager').includes('staff.pay'), false);
+    // A595: a token with the split rights (`parts`) — an older one's staff.edit still brings staff.pay while it renews.
+    const { iat, exp, ...mp } = jwt.decode(managerToken());
+    const managerParts = jwt.sign({ ...mp, parts: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
+    permState._setPermissionsMigrated(true); permState._setSplitsMigrated(true);   // migrations 134 and 176 recorded
+    const noPay = await call('POST', '/api/staff', managerParts, { name: 'Al', email: 'al@pollo.test', role_id: R_CASH, pin: '1357', hourly_rate: 250 });
+    assert.equal(noPay.status, 403, JSON.stringify(noPay.body)); assert.match(noPay.body.detail, /staff\.pay/);
+    const none = await call('POST', '/api/staff', managerToken(), { name: 'Al', email: 'al@pollo.test', role_id: R_CASH, pin: '1357', hourly_rate: null });
+    assert.equal(none.status, 201, 'no rate is no pay right needed');
+    const patchBad = await call('PATCH', `/api/staff/${CASH}`, ownerToken(), { hourly_rate: 'lots' });
+    assert.equal(patchBad.status, 400); assert.equal(patchBad.body.code, 'BAD_HOURLY_RATE');
+    const patch = await call('PATCH', `/api/staff/${CASH}`, ownerToken(), { hourly_rate: '300' });
+    assert.equal(patch.status, 200, JSON.stringify(patch.body)); assert.equal(mem.db.users.find((x) => x.id === CASH).hourly_rate, 300);
+  });
+  await ok('…and the card sends it when adding (only with staff.pay, as an edit does)', () => {
+    assert.match(tab, /const payField: \{ hourly_rate\?: number \| null \} = rights\.pay \? \{ hourly_rate: hourlyRate \? Number\(hourlyRate\) : null \} : \{\};/);
+    assert.match(tab, /role_id: roleId, \.\.\.pinField, \.\.\.branchField, \.\.\.keysField, \.\.\.overrideField, \.\.\.payField \}\);/);
+    assert.match(tab, /\.\.\.\(webOnly \? \{\} : \{ \.\.\.overrideField, \.\.\.payField \}\)/);
+  });
+
+  // ── 8. The web wiring ────────────────────────────────────────────────────────────────────────────────────────────
+  await ok('"Open POS" in the dashboard menu, for people who may sell; it exchanges the session and opens the POS for the branch in view', () => {
+    const layout = read('apps/dashboard/src/components/DashboardLayout.tsx');
+    assert.match(layout, /\{ to: '\/dashboard\/pos',\s+label: 'Open POS'/);
+    assert.match(layout, /'\/dashboard\/pos':\s+\['orders\.create'\]/);
+    const page = read('apps/dashboard/src/pages/pos/POSPage.tsx');
+    assert.match(page, /api\.post<PosSessionAnswer>\('\/api\/auth\/pos-session'/);
+    assert.match(page, /useEffect\(\(\) => \{ void open\(activeBranchId\); \}/);
+    assert.match(page, /fromDashboard: true,/);
+    assert.match(page, /if \(r\.needsBranchSelection \|\| !r\.branchId\) \{ setChoices/);
+    assert.match(page, /const held = dashboardPosSession\(branchId\);\s*if \(held\) \{ navigate\('\/pos\/cashier'\)/, 'a POS already open goes straight back');
+    assert.doesNotMatch(page, /<Navigate to="\/pos"/);
+  });
+  await ok('inside the POS: signing out, locking or closing the drawer returns them to the dashboard; "← Dashboard" instead of the manager portal', () => {
+    const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
+    assert.match(cs, /const exitTo = fromDashboard \? '\/dashboard' : '\/pos';/);
+    assert.doesNotMatch(cs, /clearCashierSession\(\);\s*navigate\('\/pos'\)/);
+    assert.equal((cs.match(/navigate\(exitTo\)/g) ?? []).length, 3);
+    assert.match(cs, /const hasManagerPortal = !fromDashboard && /);
+    assert.match(cs, /← Dashboard/);
+    assert.match(cs, /if \(dest === '\/' && !session\.fromDashboard\) navigate/);
+    const ctx = read('apps/dashboard/src/context/POSAuthContext.tsx');
+    assert.match(ctx, /if \(session\?\.fromDashboard && session\.branchId\) headers\['X-Branch-Id'\] = session\.branchId;/);
+    const login = read('apps/dashboard/src/pages/pos/POSLoginScreen.tsx');
+    assert.match(login, /then use Open POS/);
+    assert.match(login, /if \(session\.fromDashboard\) \{ navigate\('\/pos\/cashier'/);
+    assert.match(W.webPosPinRefusal(true).error, /then use Open POS/);
+  });
+  await ok('the desktop is untouched: /verify-pin and the branch server never call /pos-session', () => {
+    const desktop = ['apps/desktop/src/main/ipc/signIn.ts', 'apps/desktop/src/main/ipc/shared.ts'].map(read).join('\n');
+    assert.doesNotMatch(desktop, /pos-session/);
   });
 } finally {
   server.close();

@@ -20,7 +20,7 @@ import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../../lib/otpTrust';  
 import OtpCodeStep, { type OtpPrompt } from '../../components/OtpCodeStep';
 const BASE_URL = API_URL;
 /** A608: said when the cloud gives no words of its own. */
-const DASHBOARD_NOTE = 'Managers sign in to the web dashboard with their email and password, not a PIN. Your PIN still works on the desktop POS.';
+const DASHBOARD_NOTE = 'Managers sign in to the web dashboard with their email and password, then use Open POS — no PIN on the web. Your PIN still works on the desktop POS.';
 const PIN_MIN = 4;
 const PIN_MAX = 6;
 
@@ -66,6 +66,7 @@ export default function POSLoginScreen() {
   // ── If already logged in, route immediately based on role ─────────────────
   useEffect(() => {
     if (!session) return;
+    if (session.fromDashboard) { navigate('/pos/cashier', { replace: true }); return; }   // A608: opened from the dashboard
     const dest = resolveRoute(session.permissions, session.role);
     if (dest === '/') {
       // Owner needs Supabase — clear POS session and go to dashboard login
@@ -338,7 +339,7 @@ export default function POSLoginScreen() {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
         <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-sm w-full text-center space-y-4" data-testid="pos-use-dashboard">
-          <h2 className="text-white font-bold text-lg">Sign in to the web dashboard</h2>
+          <h2 className="text-white font-bold text-lg">Sign in to the web dashboard, then Open POS</h2>
           <p className="text-gray-400 text-sm">{useDashboard}</p>
           <a href="/login" className="block w-full bg-swift hover:bg-swift-light text-gray-950 rounded-xl py-2.5 text-sm font-semibold">
             Go to the dashboard sign-in

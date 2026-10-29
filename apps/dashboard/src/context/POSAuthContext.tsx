@@ -27,6 +27,9 @@ export interface CashierSession {
   businessType: BusinessMode;
   currency:     string;
   permissions:  Record<string, boolean>;
+  /** A608: opened from the web dashboard ("Open POS", POST /api/auth/pos-session) — no PIN; signing out or locking
+   *  returns them to the dashboard, and the owner is not sent away from the POS screen. */
+  fromDashboard?: boolean;
 }
 
 // Exported so consumers can type the prop instead of falling back to `any`.
@@ -60,6 +63,25 @@ const BASE_KEY = 'swiftpos_cashier_session';
 
 function sessionKey(userId: string): string {
   return `${BASE_KEY}_${userId}`;
+}
+
+/**
+ * A608: start a web POS session opened from the dashboard (the cloud's /api/auth/pos-session answer) — the only one in
+ * this tab (any other is dropped, so the provider loads this one), its tokens where the POS surface reads them (api.ts).
+ */
+export function storeCashierSession(s: CashierSession): void {
+  const drop: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i++) { const k = sessionStorage.key(i); if (k?.startsWith(BASE_KEY)) drop.push(k); }
+  drop.forEach((k) => sessionStorage.removeItem(k));
+  sessionStorage.setItem(sessionKey(s.staffId), JSON.stringify(s));
+  localStorage.setItem('swiftpos_pos_token', s.token);
+  if (s.refreshToken) localStorage.setItem('swiftpos_pos_refresh_token', s.refreshToken);
+}
+
+/** A608: a POS session this tab opened from the dashboard for this branch, still held — "Open POS" goes straight back. */
+export function dashboardPosSession(branchId: string | null | undefined): CashierSession | null {
+  const s = loadAnySession();
+  return s && s.fromDashboard === true && !!branchId && s.branchId === branchId ? s : null;
 }
 
 // On boot, try to load any existing session (any userId)
@@ -177,6 +199,9 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
       // drawer to that till (device_id) instead of the shared web:<branch> one.
       const covered = getCoveredTerminal();
       if (covered?.device_id) headers['x-device-id'] = covered.device_id;
+      // A608: the owner's POS session names no branch (as their dashboard's) — the branch they sell at goes with each
+      // request, as the dashboard sends the branch picked. Anyone else's session is its branch (the cloud ignores this).
+      if (session?.fromDashboard && session.branchId) headers['X-Branch-Id'] = session.branchId;
 
       const res = await fetch(`${BASE_URL}${path}`, {
         method,
@@ -205,6 +230,7 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
                   // A273: the retry must carry the same covered-till identity as
                   // the original request, or the drawer key would change on refresh.
                   ...(getCoveredTerminal()?.device_id ? { 'x-device-id': getCoveredTerminal()!.device_id } : {}),
+                  ...(session?.fromDashboard && session.branchId ? { 'X-Branch-Id': session.branchId } : {}),   // A608
                 },
                 body: body !== undefined ? JSON.stringify(body) : undefined,
               });

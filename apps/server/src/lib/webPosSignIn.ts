@@ -22,11 +22,27 @@ export function refusesWebPosPin(held: ReadonlySet<string> | readonly string[], 
 /** The answer (403): where they sign in instead — with web access given, the dashboard; without, ask the owner. */
 export function webPosPinRefusal(hasWebAccess: boolean): { error: string; code: string; web_access: boolean; login: string } {
   return {
+    // A608 (owner, 2026-10-29, managers sell on the web POS from the dashboard): "Open POS" there, no PIN.
     error: hasWebAccess
-      ? 'Managers sign in to the web dashboard with their email and password, not a PIN. Your PIN still works on the desktop POS.'
-      : 'Managers sign in to the web dashboard with their email and password, not a PIN. Ask the owner to give you web dashboard access. Your PIN still works on the desktop POS.',
+      ? 'Managers sign in to the web dashboard with their email and password, then use Open POS — no PIN on the web. Your PIN still works on the desktop POS.'
+      : 'Managers sign in to the web dashboard with their email and password, then use Open POS — no PIN on the web. Ask the owner to give you web dashboard access. Your PIN still works on the desktop POS.',
     code: USE_WEB_DASHBOARD,
     web_access: hasWebAccess,
     login: '/login',
   };
+}
+
+/** A608: the right that makes a sale (routes/orders.ts `sells`) — who may open the web POS from the dashboard. */
+export const SELL_KEY = 'orders.create';
+
+/**
+ * A608: is this (verified) token a web DASHBOARD session — the owner's password sign-in ('owner') or a partner's, i.e.
+ * anyone the owner gave web access ('partner')? Anything else — a web POS session from /pos-login, a till, a person's PIN
+ * sign-in on a till, a kitchen screen — is null: only a dashboard session is exchanged for a web POS one (/pos-session).
+ */
+export function dashboardSessionKind(p: Record<string, unknown> | null | undefined,
+  isOwnerPasswordSession: (p: Record<string, unknown>) => boolean): 'owner' | 'partner' | null {
+  if (!p || p.till === true || p.deviceId || p.pinSignIn === true || p.surface === 'kds' || p.surface === 'desktop') return null;
+  if (p.isOwner === true) return p.webPartner !== true && isOwnerPasswordSession(p) ? 'owner' : null;
+  return p.webPartner === true ? 'partner' : null;
 }

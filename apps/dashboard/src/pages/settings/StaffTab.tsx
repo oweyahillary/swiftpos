@@ -604,11 +604,11 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, approvalPin
       } else if (sendsInvite) {
         // A608: one call — the person and web dashboard access, or nothing (as for a partner, A603).
         const r = await api.post<{ warning?: string }>('/api/staff', { name, email: email.trim(), phone: phone || undefined, role_id: roleId,
-          web_access: true, ...pinField, ...branchField, ...keysField, ...(webOnly ? {} : overrideField) });
+          web_access: true, ...pinField, ...branchField, ...keysField, ...(webOnly ? {} : { ...overrideField, ...payField }) });   // A608: the rate typed is saved
         onSaved(r?.warning ?? `${name} was added. Invitation to the web dashboard sent to ${email.trim()}.`);
         return;
       } else {
-        await api.post('/api/staff', { name, email: email.trim() || undefined, phone: phone || undefined, role_id: roleId, ...pinField, ...branchField, ...keysField, ...overrideField });
+        await api.post('/api/staff', { name, email: email.trim() || undefined, phone: phone || undefined, role_id: roleId, ...pinField, ...branchField, ...keysField, ...overrideField, ...payField });   // A608: the rate typed is saved
       }
       onSaved();
     } catch (err: any) {

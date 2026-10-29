@@ -174,7 +174,10 @@ export default function CashierScreen() {
   // them a way back (parity with the desktop app). Cashiers have no portal, so this
   // is hidden for them. resolveRoute is the same signal that sends them to /manager
   // (A490: by permission — isBackOffice of their keys — never by the role's name).
-  const hasManagerPortal = !!session && resolveRoute(session.permissions, session.role) === '/manager';
+  // A608: opened from the web dashboard ("Open POS") — back to the dashboard, never the manager portal or the PIN pad.
+  const fromDashboard = session?.fromDashboard === true;
+  const hasManagerPortal = !fromDashboard && !!session && resolveRoute(session.permissions, session.role) === '/manager';
+  const exitTo = fromDashboard ? '/dashboard' : '/pos';
 
   // Guard — only the OWNER is redirected off the cashier screen (they use the full
   // web dashboard, not the POS terminal). Managers and cashiers both belong here:
@@ -185,7 +188,7 @@ export default function CashierScreen() {
   useEffect(() => {
     if (!session) return;
     const dest = resolveRoute(session.permissions, session.role);
-    if (dest === '/') navigate(dest, { replace: true });
+    if (dest === '/' && !session.fromDashboard) navigate(dest, { replace: true });   // A608: the owner sells from the dashboard
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Data (usePOSData hook) ────────────────────────────────────────────────
@@ -1350,6 +1353,16 @@ export default function CashierScreen() {
             <div style={s.branchLabel}>{session?.branchName}</div>
             <div style={s.staffLabel}>{session?.staffName} · {session?.role}</div>
           </div>
+          {fromDashboard && (
+            <button
+              onClick={() => navigate('/dashboard')}
+              title="Back to the dashboard (the POS stays open)"
+              data-testid="pos-back-dashboard"
+              style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginLeft: 8 }}
+            >
+              ← Dashboard
+            </button>
+          )}
           {hasManagerPortal && (
             <button
               onClick={() => navigate('/manager')}
@@ -2965,7 +2978,7 @@ Signature: _______________`;
             setCurrentShift(shift);
             setShiftModal(null);
             clearCashierSession();
-            navigate('/pos');
+            navigate(exitTo);   // A608
           }}
           onFloatRecorded={() => setShiftModal(null)}
           mayCashIn={mayCashIn}   // A594
@@ -2973,7 +2986,7 @@ Signature: _______________`;
           onClose={() => {
             if (shiftModal === 'open' && !currentShift) {
               clearCashierSession();
-              navigate('/pos');
+              navigate(exitTo);   // A608
             } else {
               setShiftModal(null);
             }
@@ -3004,7 +3017,7 @@ Signature: _______________`;
               <button style={s.modalCancel} onClick={() => setShowLockConfirm(false)}>Cancel</button>
               <button
                 style={{ ...s.modalConfirm, background: '#ef4444' }}
-                onClick={() => { clearCashierSession(); navigate('/pos'); }}
+                onClick={() => { clearCashierSession(); navigate(exitTo); }}   /* A608 */
               >Lock</button>
             </div>
           </div>

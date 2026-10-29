@@ -127,7 +127,7 @@ const NAV: NavEntry[] = [
   // A599: Attendance (premium — the admin portal's 'attendance' switch; OFF, the item is not there at all), punches from the
   // attendance device. Shown to the owner, partners and holders of attendance.view (showAttendanceNav).
   { to: '/dashboard/attendance', label: 'Attendance', icon: 'clock' },
-  { to: '/dashboard/pos',      label: 'POS',      icon: 'till' },
+  { to: '/dashboard/pos',      label: 'Open POS', icon: 'till' },   // A608: opens the web POS as the signed-in person
   // KDS moved out of Settings — it is a live operational screen, not a setting.
   { to: '/kds',                label: 'KDS',      icon: 'kds', verticals: FOOD_VERTICALS },
   { to: '/dashboard/inventory',    label: 'Inventory',   icon: 'inventory', badgeKey: 'inventory' },

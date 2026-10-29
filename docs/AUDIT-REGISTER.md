@@ -162,8 +162,46 @@ in a PIN on the web POS; PIN on the web strictly remains for cashiers. On the de
   '/login'`), no token, no code. A wrong PIN still gets the same 401 as anyone. POSLoginScreen.tsx shows it with "Go to the
   dashboard sign-in" (/login), and never navigates to /manager from a PIN.
 - **/manager kept reachable** (App.tsx unchanged): nobody new reaches it from a PIN; a session already open runs to its
-  expiry. Gaps it still covers that the dashboard does not: the web POS for a manager ("Open POS" — /dashboard/pos sends
-  to the PIN sign-in), the parking bays live overview, and a manager without the owner's web-access grant.
+  expiry. Gaps it still covers that the dashboard does not: the parking bays live overview, and a manager without the
+  owner's web-access grant (the web POS for a manager — the follow-up below).
+
+**Decision (owner, 2026-10-29), follow-up built the same day.** Managers MUST sell on the web POS — option (b): someone
+signed in to the web dashboard opens the web POS as themselves, no PIN, no second sign-in ("is there a reason of two sign
+ins?" — no).
+- **POST /api/auth/pos-session** (routes/auth.ts, behind requireAuth): a web DASHBOARD session only
+  (`dashboardSessionKind`, lib/webPosSignIn.ts — the owner's password sign-in, or a partner's: anyone the owner gave web
+  access; never a web POS session, a till, a PIN sign-in on a till, a kitchen screen → 403 DASHBOARD_SESSION_ONLY "Sign in
+  to the web dashboard first, then use Open POS."). The business's web access as at /login; the person read afresh
+  (inactive → 401 SIGN_IN_AGAIN); a partner's grant read afresh (`checkPartner` — revoked → 401 SIGN_IN_AGAIN
+  PARTNER_ENDED); the right to sell (`orders.create`, the sale's own gate — 403 NO_SELL_RIGHT; the owner always); a branch
+  of theirs (the owner: every open branch; a partner: their branches — 403 NOT_YOUR_BRANCH; several and none named →
+  `needsBranchSelection` with the list, no token); device approval as /pos-login. Then the SAME session /pos-login issues:
+  one builder, `webPosTokenPayload()`, used by both (the person, the branch — the owner none, they name it per request —
+  the role, the fine keys or '*', the permissions version, surface web; never `ownerLogin`, never `webPartner`). The sign-in
+  code is not asked again (they passed it at the dashboard). Logged "[auth] A608: web POS opened from the dashboard";
+  never revokes the person's other sessions on the device (their dashboard session is one). Revoking web access later
+  ends it with the rest (endPartnerAccess revokes every session of the person).
+- **The web.** The dashboard menu's "POS" is now **"Open POS"** (shown to holders of orders.create, as before):
+  /dashboard/pos (POSPage.tsx) exchanges the session for the branch in view, or offers the branches, stores the POS
+  session (`storeCashierSession`, POSAuthContext.tsx — `fromDashboard: true`) and opens /pos/cashier; a POS this tab
+  already opened for that branch is opened again as it is. Inside the POS: "← Dashboard" in place of "← Manager
+  portal"; Lock, closing the drawer and leaving the open-drawer step go back to /dashboard, not the PIN pad; the owner is
+  not sent away from the POS screen; the owner's requests carry the branch they sell at (X-Branch-Id). The /pos PIN refusal
+  now says "…sign in to the web dashboard with their email and password, then use Open POS — no PIN on the web…", the
+  link to /login. Approvals with a manager's PIN on a cashier's web POS screen are unchanged. Cashiers: PIN on /pos.
+  Desktop: untouched (/verify-pin).
+- **The hourly rate typed when adding someone is stored** (it never was: the card did not send it, POST /api/staff did not
+  insert it). The card sends it with staff.pay only, as an edit does; the cloud checks staff.pay for a rate on adding
+  (403) and one rule for adding and changing it (`hourlyRateValue`: a number of 0 or more, or none — 400 BAD_HOURLY_RATE;
+  a typed word on PATCH was stored as NaN).
+- **Tests** (the same file, now 32): no session → 401; a web POS / till PIN / plain staff session refused; a manager with web
+  access opens the POS at their branch (claims, no PIN, nothing revoked); one branch chosen for them, a branch not theirs
+  refused; the claims equal /pos-login's (a cashier with web access, both ways); a revoked grant, an inactive person, no
+  right to sell refused; the owner offered every branch, then the one picked; the hourly rate on adding (stored, 400, 403
+  without staff.pay, PATCH the same rule); the wiring (menu, POSPage, CashierScreen exits, X-Branch-Id, the refusal's
+  words); the desktop never calls it. **Mutations** (each failed, put back): dashboardSessionKind taking anything → 2;
+  no checkPartner → 1; no sell check → 1; no branch check → 1; the rate not inserted → 1. auth-surface's reader of the
+  minted surface follows the builder.
 
 **Tests.** `tests/staff-signin-by-role-a608.test.mjs` (18, ci.yml "Staff sign-in by role (A608)"; the compiled auth and
 staff routers over HTTP, lib-memdb, Supabase Auth and the mailer stand-ins; lib/staffSignIn.ts run): the rule role by role;
@@ -179,9 +217,11 @@ login-otp, auth-surface, tenant-signin, till-own-signin.
 
 **Owner check (after the cloud and dashboard deploy).** + Add Staff › Role General Manager: only name, email, phone and
 branches; Add and send invite → the invitation arrives. Role Manager: email and "PIN for the desktop POS"; the invitation
-arrives; that manager's email and PIN on /pos says to sign in to the web dashboard; the same PIN signs in on the desktop
-POS. A cashier signs in on /pos as before. **Before the deploy: give web access to every manager who uses the web today**
-(their PIN stops opening the web POS).
+arrives; that manager's email and PIN on /pos says to sign in to the web dashboard and use Open POS; the same PIN signs in
+on the desktop POS. Signed in to the dashboard as that manager: Open POS → the POS of their branch, no PIN; make a sale;
+"← Dashboard" goes back, Lock goes back to the dashboard. The owner: Open POS → pick a branch → sell. Add a cashier with an
+hourly rate → the rate shows on their card. A cashier signs in on /pos as before. **Before the deploy: give web access to
+every manager who uses the web today** (their PIN stops opening the web POS).
 
 ### A607 · P2 · FEATURE BUILT 2026-10-28 (desktop + cloud + web; migration 181 — orders.buyer_kra_pin and mpesa_stk_requests; local schema 77 → 78, REQUIRED_DESKTOP_SCHEMA with it; no new permission key; the desktop part needs the next desktop release) · Customer details at the counter, on both screens: the cashier's and the customer screen; the M-Pesa prompt from the desktop POS; the buyer's KRA PIN to eTIMS
 
