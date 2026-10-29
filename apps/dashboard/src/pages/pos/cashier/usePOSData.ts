@@ -8,6 +8,7 @@
  * The hook returns stable references — only re-fetches when `session` changes.
  */
 
+import { gateDisplayContent, slidesFromWire, type DisplayContent } from '../../../lib/customerScreen';   // A606
 import { cleanOffer, type Offer } from '../../../lib/offers';   // A445
 import { parseNotePicks } from '../../../lib/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
@@ -49,6 +50,8 @@ export interface POSData {
   posFeatures:       PosFeatures;
   /** A599: the business records attendance on a device (premium 'attendance' flag) — the PIN clock-in is hidden. */
   attendanceDevice:  boolean;
+  /** A607: KRA eTIMS is on for the business — ask for the buyer's KRA PIN with the customer's details. */
+  etimsEnabled:      boolean;
   /** 0.6.33: the owner allows free delivery — the shop pays the rider, the customer no fee (pos/init's reversalRules). */
   freeDeliveryAllowed: boolean;
   /** 0.6.33: a delivery whose bill reaches this amount is free automatically; null = off. */
@@ -60,6 +63,8 @@ export interface POSData {
   receiptPay:        { label: string; number: string } | null;   // A450
   /** A547: the brand strip's colour (the till's A326 strip) — the branch's colour, else the business's; null with themes off. */
   brandStrip:        string | null;
+  /** A606: what the customer screen may wear (customerScreen.ts gateDisplayContent: brand with themes, slides / M-Pesa with the licence). */
+  customerContent:   DisplayContent | null;
   tables:            Table[];
   pumps:             Pump[];
   setPumps:          Dispatch<SetStateAction<Pump[]>>;
@@ -97,6 +102,7 @@ export function usePOSData(): POSData {
   const [notePicks, setNotePicks] = useState<string[]>([]);
   const [posFeatures, setPosFeatures] = useState<PosFeatures>(noPosFeatures());
   const [attendanceDevice, setAttendanceDevice] = useState(false);   // A599
+  const [etimsEnabled, setEtimsEnabled] = useState(false);   // A607
   const [freeDeliveryAllowed, setFreeDeliveryAllowed] = useState(false);   // 0.6.33
   const [freeDeliveryOver, setFreeDeliveryOver] = useState<number | null>(null);   // 0.6.33
   const [receiptHeader,     setReceiptHeader]     = useState('');
@@ -107,6 +113,7 @@ export function usePOSData(): POSData {
   // A597: the owner's brand colours this branch wears (none while themes are off or the branch's own theme overrides)
   const [posColours,        setPosColours]        = useState<{ themeId: string; primary: string | null; secondary: string | null } | null>(null);
   const [receiptPay,        setReceiptPay]        = useState<{ label: string; number: string } | null>(null);   // A450
+  const [customerContent,   setCustomerContent]   = useState<DisplayContent | null>(null);   // A606
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
   const [branchPrinters,    setBranchPrinters]    = useState<BranchPrinter[]>([]);
@@ -143,6 +150,7 @@ export function usePOSData(): POSData {
       setScaleSettings(scaleSettingsOrDefault((init as any).scaleBarcodes ?? null));   // A577 (an older cloud: the default)
       setPosFeatures(parsePosFeatures(init.posFeatures ?? null));   // 0.6.27 (an older cloud sends none → all off)
       setAttendanceDevice((init as any).attendanceDevice === true);   // A599 (an older cloud sends none → the PIN clock-in stays)
+      setEtimsEnabled((init as any).etimsEnabled === true);   // A607 (an older cloud sends none → no PIN asked)
       setWebDayCutoff((init as any).businessDayCutoff);   // 0.6.34: History's "today" follows the business day
       setFreeDeliveryAllowed(rulesFromWire(init.reversalRules ?? null).freeDeliveryAllowed);   // 0.6.33 (none → not offered)
       setFreeDeliveryOver(rulesFromWire(init.reversalRules ?? null).freeDeliveryOver);         // 0.6.33 (none → off)
@@ -168,6 +176,10 @@ export function usePOSData(): POSData {
         ? { themeId: look.themeId, primary: colours.primaryHex, secondary: colours.secondaryHex } : null);
       if (colours.primaryHex || colours.secondaryHex) setBrandStrip(posBrandStripColours(look.themeId, look.accentHex, colours.primaryHex, colours.secondaryHex));
       setReceiptPay(init.receiptPayNumber ? { label: init.receiptPayLabel ?? '', number: init.receiptPayNumber } : null);   // A450
+      // A606: the customer screen's look and premium parts — the same gate as the desktop's (lib/customerScreen.ts).
+      setCustomerContent(gateDisplayContent({ businessName: (init as any).businessName ?? null, themeId: look.themeId ?? null,
+        logo: init.branding?.logoPng ?? null, primaryHex: colours.primaryHex, secondaryHex: colours.secondaryHex, accentHex: look.accentHex ?? null,
+        licensed: (init as any).webPosEnabled === true, slides: slidesFromWire((init as any).customerScreen ?? null), mpesa: (init as any).mpesa ?? null }));
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
       // Clamp the web POS to the server's discount ceiling. Falls back to the
@@ -251,8 +263,9 @@ export function usePOSData(): POSData {
   }, [branchThemeId, colourKey]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    products, categories, menus, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, attendanceDevice, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
+    products, categories, menus, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, attendanceDevice, etimsEnabled, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
     brandStrip,   // A547
+    customerContent,   // A606
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
     scaleSettings,   // A577

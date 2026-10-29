@@ -6,6 +6,7 @@ import { app } from 'electron';
 import { monoRasterFromRGBA, monoRasterToString } from '@swiftpos/printing';
 import { validateBrandingWrite } from './brandingGuard';
 import { branchBrandingFromWire, resolveBranchBranding, type BranchBranding } from './branchBranding';   // A544
+import { applyPendingRestore } from './restoreSwap';   // A600
 
 // Resolved lazily, NOT at import time.
 //
@@ -29,6 +30,8 @@ export function closeLocalDb(): void {
 export function getLocalDb(): Database.Database {
   if (_db) return _db;
 
+  // A600: a restore chosen on Manager › Settings › Backup is swapped in here, before the file is opened.
+  applyPendingRestore(getDbPath());
   _db = new Database(getDbPath());
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
@@ -1288,6 +1291,11 @@ function initSchema(db: Database.Database) {
     ['sold_by', 'TEXT'],
     ['unit_label', 'TEXT'],
   ]);
+  // A607 (78): the buyer's KRA PIN on this sale (customer details at the counter) — in the order payload (POST /api/orders
+  // buyer_kra_pin → the receipt and KRA eTIMS); migration 181. NULL = none.
+  migrateColumns(db, 'orders', [
+    ['buyer_kra_pin', 'TEXT'],
+  ]);
 }
 
 // Adds columns that don't yet exist on a table (SQLite has no ADD COLUMN IF NOT EXISTS).
@@ -1363,7 +1371,8 @@ function initSchema(db: Database.Database) {
 // 76 adds A578: menus.availability (pulled — a menu's hours, days and time windows; migration 165). REQUIRED moves.
 // 77 adds A577: products.sold_by + products.unit_label (pulled — items sold by weight) and device_config.scale_barcodes
 // (pulled — the scale label layout). REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 77;
+// 78 adds A607: orders.buyer_kra_pin (the order payload — the buyer's KRA PIN for this sale; migration 181). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 78;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

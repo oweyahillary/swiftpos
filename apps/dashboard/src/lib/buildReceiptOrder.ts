@@ -39,6 +39,8 @@ export interface ReceiptOrder {
   kotCount: number;
   /** A367: the note on the whole order. */
   note?: string;
+  /** A607: the buyer's KRA PIN for this sale ("Buyer PIN: …"). */
+  buyerPin?: string;
 }
 export interface ReceiptBusinessConfig {
   name: string;
@@ -93,6 +95,8 @@ export function buildReceiptOrder(a: {
   comboItems?: Record<string, ComboComponent[]>;   // A248: combo_id -> components
   /** A367: the note on the whole order. */
   orderNote?: string | null;
+  /** A607: the buyer's KRA PIN for this sale. */
+  buyerPin?: string | null;
 }): ReceiptOrder {
   return {
     billNumber:  a.orderNumber,
@@ -143,6 +147,7 @@ export function buildReceiptOrder(a: {
     deliveryFree: a.deliveryFree === true,      // 0.6.33
     kotCount:    0,
     note:        a.orderNote || undefined,   // A367
+    ...(a.buyerPin && /^[AP][0-9]{9}[A-Z]$/.test(a.buyerPin) ? { buyerPin: a.buyerPin } : {}),   // A607
   };
 }
 

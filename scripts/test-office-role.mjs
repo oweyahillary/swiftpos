@@ -66,7 +66,10 @@ console.log('\n2. An office machine serves the branch');
      /pendingAcks\]\) \{[\s\S]{0,120}/.test(IX) ? /isNodeRole\(cfg\.device_role\)\) return;[\s\S]{0,900}pollNodeInstructions/.test(IX) : false);
   ok('distribution pull excludes ALL serving roles',
      /isNodeRole\(cfg\.device_role\)\) return;[\s\S]{0,600}pullNodeDistribution/.test(IX));
-  ok('snapshots run on any serving role', /isNodeRole\(getDeviceConfig\(\)\?\.device_role\)\) return null;/.test(MT));
+  // A600: every PC backs itself up now (a POS on its own too) — so a serving role certainly does: no role gate at all.
+  ok('snapshots run on any serving role (A600: on every role)',
+     // A600 follow-up: the function's own body only (standalonePos below it reads isNodeRole, for the shift-close copy).
+     /export async function snapshotIfDue\(/.test(MT) && !/isNodeRole/.test(MT.slice(MT.indexOf('export async function snapshotIfDue('), MT.indexOf('\n}\n', MT.indexOf('export async function snapshotIfDue(')))));
   ok('pruning skips any serving role — it is the archive', /isNodeRole\(cfg\?\.device_role\)\) \{[\s\S]{0,150}archive/.test(MT));
   ok('branch-wide reports for any serving role',
      MR.includes("isNodeRole(cfg?.device_role) ? 'node'") && DR.includes('isNodeRole(cfg?.device_role)'));

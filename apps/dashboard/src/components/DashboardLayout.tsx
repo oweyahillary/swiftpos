@@ -283,7 +283,7 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
                 || group.items.some(s => s.to !== item.to && s.to.startsWith(item.to + '/')))}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                  isActive ? 'bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  isActive ? 'nav-active bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
                 }`
               }>
               <NavIcon name={item.icon} className="flex-shrink-0" />
@@ -308,6 +308,8 @@ export default function DashboardLayout() {
   // nothing chosen) → exactly the header as before.
   const look = useBrandLook();
   const band = brandBand(look);
+  // A605: the logo on the surface that suits it — a light logo (on a transparent background) on a dark chip, else white.
+  const logoChip = look?.logoChip === 'dark' ? 'logo-chip-dark' : 'logo-chip-light';
   const { activeBranchId } = useBranch();
   const { can, isOwner, isPartner } = usePermissions();   // A550
   // A599: the business's 'attendance' flag (ZapTill's, premium) — read once per business; until it is known, off (hidden).
@@ -543,7 +545,7 @@ export default function DashboardLayout() {
       {navOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden animate-fade-in" onClick={() => setNavOpen(false)} aria-hidden />}
       <aside data-testid="dashboard-sidebar"
         className={`fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0
-          ${navOpen ? 'translate-x-0' : '-translate-x-full'} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col`}>
+          ${navOpen ? 'translate-x-0' : '-translate-x-full'} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col${look?.primary ? ' brand-sidebar' : ''}`}>
 
         {band && <div aria-hidden className="h-1 flex-shrink-0" style={{ background: band }} data-testid="dashboard-brand-band" />}
         {/* Logo + bell */}
@@ -551,7 +553,7 @@ export default function DashboardLayout() {
           <div className="min-w-0">
             {look?.logo && (
               <img src={look.logo} alt="" data-testid="dashboard-brand-logo"
-                className="mb-2 max-h-10 max-w-[140px] object-contain rounded-md bg-white p-0.5" />
+                className={`mb-2 max-h-10 max-w-[140px] object-contain rounded-md p-1 ${logoChip}`} />
             )}
             <p className="text-white font-bold text-lg truncate">{business?.name ?? '…'}</p>
             <BranchSelector />
@@ -622,7 +624,7 @@ export default function DashboardLayout() {
               <NavLink key={entry.to} to={entry.to} title={entry.hint} end={entry.end ?? entry.to === '/dashboard'}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isActive ? 'bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    isActive ? 'nav-active bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
                   }`
                 }>
                 <NavIcon name={entry.icon} className="flex-shrink-0" />
@@ -670,7 +672,7 @@ export default function DashboardLayout() {
             className="p-2 -ml-1 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          {look?.logo && <img src={look.logo} alt="" className="h-7 max-w-[56px] object-contain rounded bg-white p-0.5 flex-shrink-0" />}
+          {look?.logo && <img src={look.logo} alt="" className={`h-7 max-w-[56px] object-contain rounded p-0.5 flex-shrink-0 ${logoChip}`} />}
           <p className="flex-1 min-w-0 truncate text-sm font-semibold text-white">{business?.name ?? 'ZapTill'}</p>
           {unreadCount > 0 && (
             <button onClick={() => { setNavOpen(true); setBellOpen(true); }} aria-label="Notifications"

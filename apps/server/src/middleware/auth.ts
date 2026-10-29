@@ -433,7 +433,8 @@ async function cloudLapseBlocked(req: Request, res: Response): Promise<boolean> 
   catch { return false; }
   if (!refusal) return false;
   res.locals.cloudLapsed = true;   // index.ts: not a server error, not a refused till for the watchdog
-  if (refusal.status === 503) res.set('Retry-After', '900');
+  // A601: a desktop-only POS's backup (CLOUD_BACKUP_OFF) is off until ZapTill says otherwise — an hour, not 15 minutes.
+  if (refusal.status === 503) res.set('Retry-After', refusal.body.code === 'CLOUD_BACKUP_OFF' ? '3600' : '900');
   res.status(refusal.status).json(refusal.body);
   return true;
 }

@@ -203,7 +203,7 @@ try {
     const { businessPosFeatures } = require(path.join(DIST, 'lib/posFeatureFlags.js'));
     const f = await businessPosFeatures(B);
     assert.equal(f.stock_zero_sold_out, true); assert.equal(f.stock_zero_hide, false);
-    assert.match(read('apps/server/src/routes/pos.ts'), /const \{ data \} = await supabase\.from\('feature_flags'\)\.select\('key, enabled'\)\n\s+\.eq\('business_id', req\.businessId\)\.in\('key', \[\.\.\.POS_FEATURE_KEYS, ATTENDANCE_FLAG\]\);[\s\S]{0,200}posFeatures: parsePosFeatures\(rows\.filter\(\(r\) => r\.key !== ATTENDANCE_FLAG\)\)/);   // A599: the same read carries the attendance flag
+    assert.match(read('apps/server/src/routes/pos.ts'), /const \{ data \} = await supabase\.from\('feature_flags'\)\.select\('key, enabled'\)\n\s+\.eq\('business_id', req\.businessId\)\.in\('key', \[\.\.\.POS_FEATURE_KEYS, ATTENDANCE_FLAG, 'etims_enabled'\]\);[\s\S]{0,200}posFeatures: parsePosFeatures\(rows\.filter\(\(r\) => r\.key !== ATTENDANCE_FLAG && r\.key !== 'etims_enabled'\)\)/);   // A599 / A607: the same read carries the attendance and eTIMS flags
   });
 
   log('\nW — a live web sale\n');

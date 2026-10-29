@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { api } from '../lib/api';
+import { logoColoursFromDataUri } from '../lib/logoColours';   // A605
 import { useBusiness } from '../context/BusinessContext';
 import { computeDashboardThemeVars, applyDashboardThemeVars, BRANDING_SAVED_EVENT, withBranchTheme, posBranchTheme, type BrandingForTheme,
   brandLookFor, setBrandLook, brandLook, subscribeBrandLook, type BrandLook } from '../lib/themeVars';
@@ -19,7 +20,18 @@ export default function ThemeLayer() {
     const load = () => {
       api.get<BrandingForTheme | null>('/api/business/branding')
         // A544: the web POS's branch theme, when it overrides the business's (and themes are on).
-        .then((b) => { if (!cancelled) { applyDashboardThemeVars(computeDashboardThemeVars(withBranchTheme(b, posBranchTheme()))); setBrandLook(brandLookFor(b)); } })
+        .then((b) => {
+          if (cancelled) return;
+          applyDashboardThemeVars(computeDashboardThemeVars(withBranchTheme(b, posBranchTheme())));
+          const look = brandLookFor(b);
+          setBrandLook(look);
+          // A605: which chip the logo reads best on (a white logo on a dark one) — read from its pixels, once per logo.
+          if (look?.logo) {
+            logoColoursFromDataUri(look.logo, 1)
+              .then((c) => { if (!cancelled) setBrandLook({ ...look, logoChip: c.chip }); })
+              .catch(() => { /* keep the white chip */ });
+          }
+        })
         .catch(() => { /* keep what is applied; the defaults are today's look */ });
     };
     load();

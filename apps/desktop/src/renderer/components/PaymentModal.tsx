@@ -1,12 +1,13 @@
 import MethodDot from './MethodDot';
 import { methodColour, methodSolid, methodTint } from '../../shared/paymentColours';
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
 import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
 import { enabledFromSetting, paymentButtons } from '../../shared/paymentCatalogue';   // A429
 import type { AppliedOffer } from '../../shared/offers';   // A445
 import { posApi, type CreditCustomerView } from '../lib/posApi';   // A552
+const MpesaStk = lazy(() => import('./MpesaStkPanel'));   // A607: the M-Pesa prompt, loaded when an M-Pesa leg shows
 
 // Payment modal — split tender + discount + tip.
 //
@@ -75,6 +76,12 @@ interface Props {
   onAccount?: { offered: boolean; selfApproves: boolean; chosen?: boolean } | null;   // A585: chosen = the owner chose the approvers
   onConfirm: (result: PaymentResult) => void;
   onClose: () => void;
+  /** A606: what the customer screen shows while paying — the discount, the amount due and the legs (the customer screen's
+   *  feed, lib/customerDisplayFeed.ts payFigures, works out the cash given, the change and the method). */
+  onDisplay?: (v: { discount: number; amountDue: number; legs: DraftLeg[]; view: Array<{ method: string; resolvedTendered: number; change: number }> }) => void;
+  /** A607: the number the customer gave for the M-Pesa prompt (masked: shown masked to this person). */
+  stkPhone?: string | null;
+  stkMasked?: boolean;
 }
 
 // A429: the buttons are the branch's switched-on methods from shared/paymentCatalogue.ts (Cash, M-Pesa, Card, Glovo
@@ -82,7 +89,7 @@ interface Props {
 // business's own methods (A96). Delivery apps (Glovo …) collect from the customer and settle later, so nothing enters
 // the drawer: cash reconciliation filters on method = 'cash' specifically, so no other method can inflate expected cash.
 
-export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers = [], onAccount = null, onConfirm, onClose }: Props) {
+export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers = [], onAccount = null, onConfirm, onClose, onDisplay, stkPhone, stkMasked }: Props) {
   const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);
   // A552: On account only where this till offers it (a credit customer held; main/creditSale.ts decides again at the sale).
   const methods = useMemo(() => buttons.filter((b) => b.code !== 'credit' || onAccount?.offered), [buttons, onAccount?.offered]);
@@ -147,6 +154,8 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
   const creditOk = !creditProblem;
 
   const canConfirm = balanced && allPositive && !cashShort && creditOk && !placing;
+  // A606: the customer screen follows the payment (main cleans it; only these figures cross).
+  useEffect(() => { onDisplay?.({ discount: discountAmount, amountDue, legs, view: legView }); }, [discountAmount, amountDue, legView, legs]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const setLeg = (i: number, patch: Partial<DraftLeg>) =>
     setLegs(prev => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -357,6 +366,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                   </div>
                 )}
               </div>
+              {leg.method === 'mpesa' && <Suspense fallback={null}><MpesaStk amount={leg.resolvedAmount} currency={currency} phone={stkPhone} masked={stkMasked} onPaid={(r) => setLeg(i, { reference: r })} /></Suspense>}
 
               {/* A552: On account — the customer (search by name or phone), what they owe and have left, the PIN */}
               {leg.method === 'credit' && (

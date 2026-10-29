@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+import { useCustomerScreenPublisher, openCustomerScreenWindow } from '../../lib/customerScreenChannel';   // A606
 import { applyOffers, type AppliedOffer } from '../../lib/offers';   // A445
 import { POSLoadingSkeleton } from './cashier/POSSkeletons';
 import { usePOSData }         from './cashier/usePOSData';
@@ -13,6 +14,8 @@ import { cartSubtotal, extractTaxes, generateOrderNumber } from '../../lib/cart'
 import type { CartItem } from '../../lib/cart';
 import type { Product, Category, VariantGroup, VariantOption, SelectedVariant, OrderType } from '../../types';
 import PaymentModal from './PaymentModal';
+// A607: the customer's details for this sale — typed by the cashier, by the customer here or on the customer screen.
+const SaleCustomerPanel = lazy(() => import('./SaleCustomerPanel'));
 import DiscountPanel from './DiscountPanel';
 import type { DiscountState } from './DiscountPanel';
 import LoyaltyPanel from './LoyaltyPanel';
@@ -205,6 +208,7 @@ export default function CashierScreen() {
     notePicks,
     posFeatures,   // 0.6.27
     attendanceDevice,   // A599: punches come from the attendance device — no PIN clock-in here
+    etimsEnabled,   // A607: ask for the buyer's KRA PIN
     freeDeliveryAllowed,   // 0.6.33: the owner allows free delivery (the shop pays the rider)
     freeDeliveryOver,      // 0.6.33: …and automatically from this bill amount (null = off)
     receiptLogo,
@@ -212,6 +216,7 @@ export default function CashierScreen() {
     receiptFooter,
     receiptPay,   // A450
     brandStrip,   // A547
+    customerContent,   // A606: what the customer screen may wear
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
@@ -456,6 +461,8 @@ export default function CashierScreen() {
   // box — the desktop TablesView guards this the same way (hasLayout → grid).
   const hasLayout = tables.some((t: Table) => t.pos_x != null && t.pos_y != null);
   const [loyaltyState, setLoyaltyState] = useState<LoyaltyState | null>(null);
+  const [buyer, setBuyer] = useState<any>(null);   // A607: the customer's details for this sale (SaleCustomerPanel)
+  const [showBuyer, setShowBuyer] = useState(false);
 
   // ── Theme — light is default for POS ──────────────────────────────────────
   const [posTheme, setPosTheme] = useState<'light' | 'dark'>(() =>
@@ -1195,6 +1202,28 @@ export default function CashierScreen() {
   const ctlRate = Number(business?.ctl_rate ?? 0) || 0;
   const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(orderTotal, vatRate, ctlRate);
 
+  // A606: the customer screen (a second browser window on the customer's monitor) follows the sale over a
+  // BroadcastChannel — the items (or the parking time and fee), the discounts, the total, the amount to pay, "Thank you".
+  // Only these fields cross; they are cleaned on the way (lib/customerScreen.ts sanitiseDisplayState).
+  const [displayThanks, setDisplayThanks] = useState<{ paid: number } | null>(null);
+  useEffect(() => { if (cart.length > 0) setDisplayThanks(null); }, [cart.length]);
+  const displayStage = showPayment ? 'payment' : displayThanks && cart.length === 0 ? 'thanks'
+    : (cart.length > 0 || (isParking && parkingBill)) ? 'sale' : 'idle';
+  const displayTable = isRestaurant && activeKey ? (openOrders[activeKey]?.tableName ?? null) : null;
+  useCustomerScreenPublisher(displayStage === 'idle' ? { stage: 'idle', mode: businessMode, currency }
+    : displayStage === 'thanks' ? { stage: 'thanks', mode: businessMode, currency, total: displayThanks!.paid, amountDue: displayThanks!.paid }
+    : {
+      stage: displayStage, mode: businessMode, currency, table: displayTable,
+      lines: isParking && parkingBill
+        ? [{ name: activeKey && openOrders[activeKey]?.tableName ? `Parking — ${openOrders[activeKey].tableName}` : 'Parking',
+            detail: `${parkingBill.hours} hour${parkingBill.hours === 1 ? '' : 's'}`, qty: parkingBill.hours,
+            unitPrice: activeKey ? openOrders[activeKey]?.ratePerHour ?? 0 : 0, lineTotal: parkingBill.amount }]
+        : cart.map((i, n) => ({ name: i.product?.name, qty: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal,
+            unit: i.isFuel ? 'L' : ((i as any).measureUnit ?? null), discount: offerResult.byLine[String(n)] ?? 0,
+            detail: [...(i.selectedVariants ?? []), ...(i.selectedModifiers ?? [])].map((o: any) => o.optionName ?? o.name).filter(Boolean).join(', ') })),
+      subtotal, discount: totalDiscount, total: orderTotal, amountDue: orderTotal,
+    }, customerContent);
+
   // A588: the business's fuel grades (sold from the pumps and the nozzles strip, never as shop tiles).
   const fuelGrades = useMemo(() => products.filter((p) => (p as any).is_fuel && p.status === 'active'), [products]);
   const fuelById = useMemo(() => new Map(fuelGrades.map((g) => [g.id, g])), [fuelGrades]);
@@ -1263,7 +1292,7 @@ export default function CashierScreen() {
         <div className="max-w-md text-sm text-slate-400">{posDataError}</div>
         <button
           onClick={() => reloadPOSData()}
-          className="rounded-lg bg-[rgb(var(--act-strong,37_99_235))] px-4 py-2 text-sm font-medium text-white hover:bg-[rgb(var(--act-strong,59_130_246))]"
+          className="rounded-lg bg-[rgb(var(--act-strong,37_99_235))] px-4 py-2 text-sm font-medium text-[rgb(var(--act-on,255_255_255))] hover:bg-[rgb(var(--act-strong,59_130_246))]"
         >
           Retry
         </button>
@@ -1378,6 +1407,20 @@ export default function CashierScreen() {
               title="Printer settings"
             >🖨</button>
           )}
+          {/* A606: the customer screen — a second window the cashier drags to the customer's monitor */}
+          {!isPhone && (
+            <button
+              style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
+              onClick={() => { openCustomerScreenWindow(); }}
+              title="Open customer screen — drag the new window to the customer's screen, then press F11"
+              data-testid="open-customer-screen"
+            >🖥 Customer screen</button>
+          )}
+          {/* A607: the customer for this sale — name, phone, KRA PIN (eTIMS); typed by the cashier or the customer */}
+          <button
+            style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
+            onClick={() => setShowBuyer(true)} title="The customer's details for this sale" data-testid="web-sale-customer-btn"
+          >{buyer ? `👤 ${buyer.label}` : '👤 Customer'}</button>
           {/* Menu drawer — shown only if cashier has extra permissions */}
           <button
             style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
@@ -2546,6 +2589,13 @@ export default function CashierScreen() {
         />
       )}
 
+      {showBuyer && (
+        <Suspense fallback={null}><SaleCustomerPanel total={orderTotal} currency={currency} etimsEnabled={etimsEnabled}
+          seesContacts={hasPermission('customers.contacts')} value={buyer}
+          onDone={(b) => { setBuyer(b); if (b?.loyalty) setLoyaltyState(b.loyalty as LoyaltyState); setShowBuyer(false); }}
+          onClose={() => setShowBuyer(false)} /></Suspense>
+      )}
+
       {showPayment && session && (
         <PaymentModal
           cart={cart}
@@ -2577,6 +2627,7 @@ export default function CashierScreen() {
           deliveryFee={activeFree ? 0 : activeRiderFee}
           deliveryFree={activeFree}   // 0.6.33
           riderFee={activeRiderFee}
+          buyer={buyer}   // A607
           initialEvenSplit={paymentEvenSplit}
           onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {
@@ -2588,6 +2639,7 @@ export default function CashierScreen() {
             }
           }}
           onSuccess={(orderNumber) => {
+            setDisplayThanks({ paid: orderTotal });   // A606: "Thank you" on the customer screen
             // In pay-first mode, print KOT now — UNLESS it was already fired via the
             // Send to Kitchen button (A264 surfaced that in pay-first too). Re-firing
             // here printed a second kitchen + dispatcher ticket, confusing the line (A268).
@@ -2640,6 +2692,7 @@ export default function CashierScreen() {
             setCart([]);
             setDiscountState(null);
             setLoyaltyState(null);
+            setBuyer(null);   // A607: the next sale starts with no customer details
             if (activeKey) {
               setOpenOrders(prev => {
                 const next = { ...prev };
@@ -2728,7 +2781,7 @@ export default function CashierScreen() {
                   setShowTransfer(false);
                   setTransferTarget(null);
                 }}
-                style={{ flex: 1, padding: '11px 0', background: transferTarget ? 'rgb(var(--act-strong, 59 130 246))' : '#334155', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: transferTarget ? 'pointer' : 'default', opacity: transferTarget ? 1 : 0.5 }}>
+                style={{ flex: 1, padding: '11px 0', background: transferTarget ? 'rgb(var(--act-strong, 59 130 246))' : '#334155', border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontSize: 13, fontWeight: 700, cursor: transferTarget ? 'pointer' : 'default', opacity: transferTarget ? 1 : 0.5 }}>
                 Transfer →
               </button>
             </div>
@@ -3116,7 +3169,7 @@ const s: Record<string, React.CSSProperties> = {
   productCardActive: { border: '1px solid rgb(var(--act-fill, 34 197 94) / 0.5)', background: 'rgb(var(--act-fill, 34 197 94) / 0.06)' },
   cartBadge: {
     position: 'absolute' as const, top: 6, right: 6, background: 'rgb(var(--act-fill, 34 197 94))',
-    color: '#030712', fontSize: 10, fontWeight: 700, width: 18, height: 18,
+    color: 'rgb(var(--act-on, 3 7 18))', fontSize: 10, fontWeight: 700, width: 18, height: 18,
     borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   variantBadge: {
@@ -3196,7 +3249,7 @@ const s: Record<string, React.CSSProperties> = {
   totalValue: { fontSize: 13, color: 'var(--pos-text3)' },
   chargeBtn: {
     width: '100%', padding: '13px 0', background: 'rgb(var(--act-fill, 34 197 94))', border: 'none',
-    borderRadius: 10, color: '#0f172a', fontWeight: 700, fontSize: 15, cursor: 'pointer', marginTop: 6,
+    borderRadius: 10, color: 'rgb(var(--act-on, 15 23 42))', fontWeight: 700, fontSize: 15, cursor: 'pointer', marginTop: 6,
   },
   // Modals
   overlay: {
@@ -3239,7 +3292,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   modalConfirm: {
     flex: 1, padding: '11px 0', background: 'rgb(var(--act-strong, 59 130 246))', border: 'none',
-    borderRadius: 10, color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer',
+    borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontWeight: 600, fontSize: 14, cursor: 'pointer',
   },
   // Variant modal
   variantModalHeader: {

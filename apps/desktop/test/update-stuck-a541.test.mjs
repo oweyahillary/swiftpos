@@ -116,6 +116,8 @@ console.log('\n1. The gateway: trading only (an allowlist)\n');
     // A599: the branch server's attendance job (device config, state, action acks, punches) — background, never trading
     ['GET', 'attendance/node/config', B], ['POST', 'attendance/node/devices/d-1/state', B], ['POST', 'attendance/node/actions/a-1/ack', B],
     ['POST', 'attendance/node/punches', B],
+    // A607: the desktop POS's M-Pesa prompt (config, the push, its status) — background: the sale itself marks trading
+    ['GET', 'mpesa/config', B], ['POST', 'mpesa/stk-push-pos', B], ['GET', 'mpesa/status/ws_CO_1', B],
   ];
   const wrong = ROUTES.filter(([m, p, k]) => A.classifyGatewayCall(m, `/node/cloud/api/${p}`).kind !== k)
     .map(([m, p, k]) => `${m} ${p}: ${A.classifyGatewayCall(m, `/node/cloud/api/${p}`).kind} (want ${k})`);

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { cashierHistoryView } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { getHistoryMethods } from '../lib/historyMethods';
 import { cashierHistoryTotals, historyTotal } from '../lib/cashierShiftSales';   // A418
@@ -52,6 +52,8 @@ import { isSoldByWeight, weighedAmountAccepted } from '../lib/scaleBarcode';   /
 import { loadCreditRule, onApproverList, type CreditApprovalRule } from '../lib/creditApprovers';   // A585
 import { isMasked, seesCustomerContacts, maskPhone } from '../lib/personalData';   // A595
 import { branchCreditEnabled, branchLimitOf, owedAtBranch, creditAvailable, CREDIT_OFF_HERE } from '../lib/branchCredit';   // A595 D4
+import { backfillQuiet } from '../lib/backfill';   // A602
+import { saleBuyerPin } from '../lib/customerDetails';   // A607
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -92,7 +94,7 @@ function logTillMadeSale(req: any, what: string): void {
 }
 
 /** A494 + A505: POST / — orders.create, except a till's own sale sent under a person's till sign-in (tillMadeSale). */
-const sellsOrTillSale = (req: any, res: any, next: any): void => {
+export const sellsOrTillSale = (req: any, res: any, next: any): void => {   // A602: exported for the backfill
   if (tillMadeSale(req) && !can(req, 'orders.create')) { logTillMadeSale(req, 'orders.create'); next(); return; }
   sells(req, res, next);
 };
@@ -700,13 +702,21 @@ async function awardLoyaltyPoints(
 // POST /api/orders
 // Creates order, order_items, order_item_variants, order_item_modifiers, payment,
 // deducts stock, creates kitchen ticket, and handles loyalty earn/redeem.
-router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own sale is never refused for its person's keys
+/**
+ * POST /api/orders — the sale itself. A602: a named, exported handler (was inline) so the bulk history backfill
+ * (routes/backfill.ts, POST /api/sync/backfill) runs EXACTLY this for each sale it carries — the same validation, the same
+ * idempotency (X-Idempotency-Key = the POS's order id), the same writes and effects. No second copy of the rules.
+ */
+export async function createOrder(req: Request, res: Response): Promise<void> {
   // Idempotency — the desktop sync engine (and any retrying client) sends
   // X-Idempotency-Key. If we've already created an order for this key, return
   // the existing one with 200 instead of creating a duplicate. This makes a
   // lost-response retry safe.
   const idempotencyKey = (req.header('X-Idempotency-Key') || req.body?.idempotency_key || '').trim();
-  if (idempotencyKey) {
+  // A602: the backfill looked up its whole batch's keys in ONE read first (lib/backfill.ts) — a sale it found new skips this
+  // per-sale read. A race (two copies at once) is still caught below: create_order_atomic's 23505 on the key → duplicate.
+  const quiet = backfillQuiet(req);
+  if (idempotencyKey && !quiet?.knownNew) {
     const { data: existing } = await supabase
       .from('orders')
       .select('id, order_number')
@@ -749,6 +759,14 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
   } = req.body;
   const deliveryFee = order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
   const deliveryFree = isFreeDelivery(order_type, deliveryFee, deliveryFreeRaw);
+  // A607: the buyer's KRA PIN for THIS sale (orders.buyer_kra_pin → the receipt and KRA eTIMS); none when not sent. A POS
+  // checks it before it sends, so a malformed one is refused (400 BAD_BUYER_PIN) — but the history backfill drops it
+  // instead: an old sale is never refused over its PIN (and the backfill never fiscalises anyway).
+  const buyerPin = saleBuyerPin(req.body?.buyer_kra_pin);
+  if (buyerPin === 'bad' && !quiet) {
+    res.status(400).json({ error: "The buyer's KRA PIN is not a KRA PIN (A or P, 9 digits and a letter — A123456789Z).", code: 'BAD_BUYER_PIN' });
+    return;
+  }
 
   // Normalise to array — support both old single `payment` and new `payments` array
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -898,7 +916,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     // stored total remains the authoritative re-priced figure — but now the
     // discrepancy is visible instead of silent, and can be reviewed.
     const clientTotal = Number(total);
-    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01) {
+    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01 && quiet) quiet.repriced++;   // A602: counted, one line per batch
+    else if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01) {
       const isOffline = !!(req.body?.created_at || req.body?.client_created_at);
       console.warn(
         `[reprice-divergence]${isOffline ? ' OFFLINE' : ''} order ${order_number}: ` +
@@ -1092,7 +1111,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         // Empty access = all branches (same rule verify-pin applies).
         claimValid = access.length === 0 || access.some(b => b.branch_id === branch_id);
       }
-      if (!claimValid) {
+      if (!claimValid && quiet) quiet.cashierClaims++;   // A602: counted, one line per batch
+      else if (!claimValid) {
         console.warn(`[orders] rejected cashier claim ${claimedCashier} on branch ${branch_id} — not an active branch cashier; crediting ${req.userId ?? 'no one (the till\'s own session)'}`);
       }
     }
@@ -1229,6 +1249,13 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         .eq('id', createdRow.order_id).eq('business_id', req.businessId);
       if (noteErr) console.error('[order-create] the order note was not saved:', noteErr.message);
     }
+    // A607: the sale's buyer KRA PIN — written before the invoice is sent to KRA below (create_order_atomic does not carry
+    // it, as the note). A failure is logged, never the sale's.
+    if (buyerPin && buyerPin !== 'bad') {
+      const { error: pinErr } = await supabase.from('orders').update({ buyer_kra_pin: buyerPin })
+        .eq('id', createdRow.order_id).eq('business_id', req.businessId);
+      if (pinErr) console.error('[order-create] the buyer KRA PIN was not saved (is migration 181 applied?):', pinErr.message);
+    }
     const order = {
       id: createdRow.order_id,
       order_number: createdRow.order_number,
@@ -1278,10 +1305,11 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     }
 
 
-    // 7. Kitchen ticket
+    // 7. Kitchen ticket. A602: a sale from the history backfill (weeks or months old) is recorded as already collected —
+    //    never a new ticket on today's kitchen screen.
     const { error: ktErr } = await supabase
       .from('kitchen_tickets')
-      .insert({ order_id: order.id, branch_id, status: 'new' });
+      .insert({ order_id: order.id, branch_id, status: quiet ? 'collected' : 'new' });
     if (ktErr) console.error('Failed to create kitchen ticket:', ktErr.message);
 
     // 7b. Low-stock alerts now fire inside applyStockEffects, so the dine-in
@@ -1359,8 +1387,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       await supabase.rpc('increment_discount_usage', { discount_uuid: discount_id });
     }
 
-    // 10. Fire webhook — non-blocking
-    fireWebhook(req.businessId, 'order.completed', {
+    // 10. Fire webhook — non-blocking. A602: not for the history backfill (old sales are not "order completed" news).
+    if (!quiet) fireWebhook(req.businessId, 'order.completed', {
       order_id: order.id, order_number: order.order_number,
       order_type, total: authTotal, branch_id, cashier_id: resolvedCashierId,
     }).catch(() => {});
@@ -1392,14 +1420,16 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       });
     }
 
-    // 11. Fiscalise with KRA eTIMS — non-blocking; never fails the sale.
-    fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));
+    // 11. Fiscalise with KRA eTIMS — non-blocking; never fails the sale. A602: never for the history backfill — old sales
+    //     are not sent to KRA as new invoices by an upload the owner did not mean as fiscalisation.
+    if (!quiet) fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));
 
     res.status(201).json({ orderId: order.id, orderNumber: order.order_number });
   } catch (err) {
     sendError(res, err, { message: 'Failed to create order' });
   }
-});
+}
+router.post('/', sellsOrTillSale, createOrder);   // A505: a till's own sale is never refused for its person's keys
 
 // GET /api/orders
 router.get('/', async (req, res) => {
@@ -2422,6 +2452,12 @@ router.post('/:id/pay', sells, async (req, res) => {
     res.status(400).json({ error: 'At least one payment leg is required' });
     return;
   }
+  // A607: the buyer's KRA PIN, given at payment of an order already open (a restaurant's bill) — as POST /orders.
+  const payBuyerPin = saleBuyerPin(req.body?.buyer_kra_pin);
+  if (payBuyerPin === 'bad') {
+    res.status(400).json({ error: "The buyer's KRA PIN is not a KRA PIN (A or P, 9 digits and a letter — A123456789Z).", code: 'BAD_BUYER_PIN' });
+    return;
+  }
 
   try {
     // 1. Load the open order
@@ -2877,6 +2913,13 @@ router.post('/:id/pay', sells, async (req, res) => {
       order_type: order.order_type, total: payTotal,
       branch_id: order.branch_id, cashier_id: req.userId,
     }).catch(() => {});
+
+    // A607: the buyer's KRA PIN, before the invoice goes to KRA. A failure is logged, never the payment's.
+    if (payBuyerPin) {
+      const { error: pinErr } = await supabase.from('orders').update({ buyer_kra_pin: payBuyerPin })
+        .eq('id', order.id).eq('business_id', req.businessId);
+      if (pinErr) console.error('[order-pay] the buyer KRA PIN was not saved (is migration 181 applied?):', pinErr.message);
+    }
 
     // 8. Fiscalise with KRA eTIMS — non-blocking; never fails the sale.
     fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));

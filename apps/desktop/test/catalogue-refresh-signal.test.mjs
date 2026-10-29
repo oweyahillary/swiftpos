@@ -90,7 +90,7 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      // A346: the pull stores the cloud's web POS answer through this.
                      setWebPosEnabled: () => {},
                      // A367: the pull caches the owner's quick picks for order notes through this.
-                     setOrderNotePicks: () => {}, setPosFeatures: () => {}, setAttendanceFlag: () => {}, setReversalRules: () => {},   // 0.6.30, A599
+                     setOrderNotePicks: () => {}, setPosFeatures: () => {}, setAttendanceFlag: () => {}, setEtimsFlag: () => {}, setReversalRules: () => {},   // 0.6.30, A599
                      setBusinessDayCutoff: () => {}, setSupportContact: () => {},   // 0.6.34, 0.6.35
                      setCashierHistoryMethods: () => {},   // 0.6.37
                      setStockCountFreeze: () => {}, setCashierSeesShiftSales: () => {}, setCashierHistoryTotals: () => {},   // A394

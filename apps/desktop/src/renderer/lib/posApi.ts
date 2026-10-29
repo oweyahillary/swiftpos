@@ -57,6 +57,41 @@ export interface Forecourt {
 
 export type DeviceRole = 'till' | 'node' | 'office';
 
+/** A606: the customer screen's setup (main/customerDisplay.ts DisplayStatus). */
+export interface CustomerDisplayStatus {
+  choice: { enabled: boolean; displayId: number | null };
+  screens: Array<{ id: number; n: number; width: number; height: number; primary: boolean }>;
+  open: boolean;
+  on: number | null;
+  note: string | null;
+}
+
+/** A602: the history upload — going online later (main/historyUpload.ts historyUploadStatus). */
+export interface HistoryUploadStatus {
+  active: boolean; fromCut: boolean; window: '3m' | '12m' | 'all'; windowLabel: string; quietFrom: string; quietTo: string;
+  done: number; remaining: number; percent: number; progress: string; why: string | null; running: boolean; localOnly: number;
+  startedAt: string | null; finishedAt: string | null; lastBatchAt: string | null; lastResult: string | null;
+}
+
+/** A600: the Backup panel (main/maintenance.ts backupStatus + backupService). */
+export interface BackupStatus {
+  last_backup_at: string | null; last_backup_path: string | null; last_backup_bytes: number | null;
+  last_backup_status: string | null; failed: boolean; warn: boolean;
+  /** A600 follow-up: why the last copy was made; hours since it; the space the copies take; a copy skipped for space. */
+  last_backup_reason: 'scheduled' | 'manual' | 'folder' | 'day_close' | 'shift_close' | null; hours_since: number | null;
+  copies_bytes: number; space_short: { drive: string; free: number; need: number; message: string } | null;
+  dir: string; default_dir: string; custom_dir: boolean; same_disk: boolean; keep: number; copies: number; running: boolean;
+  can_restore: boolean;
+  last_restore: { at: string; applied: boolean; source: string; by: string; error: string | null } | null;
+}
+/** A600: what a chosen backup file is, and whether it may be restored here (main/backupService.ts inspectBackup). */
+export interface BackupCheck {
+  ok: boolean; refusal: string | null; warnings: string[]; needs_tech: boolean; takes_over_device: string | null;
+  backup: { file: string; bytes: number; taken_at: string | null; business_name: string | null; pos_name: string | null;
+            orders: number; last_sale_at: string | null } | null;
+  token: string | null;
+}
+
 export interface TechSession {
   techId: string; techName: string; branchId: string;
   startedAt: number; expiresAt: number; tokenHash: string;
@@ -848,6 +883,57 @@ declare global {
         sendLogs: () => Promise<{ ok: true; reference: string } | { ok: false; offline: boolean; message: string }>;
         /** A519: the same text saved where the technician chooses. */
         saveLog: () => Promise<{ ok: boolean; canceled?: boolean; path?: string }>;
+      };
+      /** A600: Manager › Settings › Backup — the owner, a manager or a technician (restore: the owner or a technician). */
+      backup: {
+        status: () => Promise<BackupStatus>;
+        now: () => Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
+        /** The folder dialog (null = cancelled). */
+        chooseDir: () => Promise<string | null>;
+        /** null = the default folder. A backup is written there at once; on failure the old folder stays. */
+        setDir: (dir: string | null) => Promise<{ ok: boolean; path?: string; error?: string; dir: string; same_disk: boolean }>;
+        /** The file dialog and the checks (null = cancelled). */
+        chooseRestoreFile: () => Promise<BackupCheck | null>;
+        /** The checked file's token and the typed word RESTORE; ZapTill restarts when ok. */
+        restore: (token: string, confirm: string) => Promise<{ ok: boolean; error?: string; safety_copy?: string; restart?: boolean }>;
+      };
+      /** A602: going online later — the history upload (the Backup panel's people). */
+      historyUpload: {
+        status: () => Promise<HistoryUploadStatus>;
+        setSettings: (s: { window?: '3m' | '12m' | 'all'; quietFrom?: string; quietTo?: string }) => Promise<HistoryUploadStatus>;
+      };
+      /** A606: the customer screen (main/customerDisplay.ts). The state's shape is shared/customerScreen.ts DisplayState. */
+      customerDisplay: {
+        update: (state: Record<string, unknown>) => Promise<{ ok: boolean }>;
+        current: () => Promise<any>;
+        content: () => Promise<any>;
+        slide: (key: string) => Promise<string | null>;
+        status: () => Promise<CustomerDisplayStatus>;
+        set: (c: { enabled: boolean; displayId?: number | null }) => Promise<CustomerDisplayStatus>;
+        test: () => Promise<CustomerDisplayStatus>;
+        identify: () => Promise<{ screens: number }>;
+        onState: (cb: (s: any) => void) => () => void;
+        /** A607: the customer types their details on the customer screen (main/ipc/customerDetails.ts). */
+        askable: () => Promise<{ allowed: boolean; why: string | null; touch: boolean; licensed: boolean }>;
+        ask: (a: Record<string, unknown>) => Promise<{ ok: true; ask: any } | { ok: false; why: string }>;
+        cancelAsk: (id?: string) => Promise<{ ok: boolean }>;
+        answer: (a: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; errors: Record<string, string> }>;
+        setTouch: (on: boolean) => Promise<{ touch: boolean }>;
+        onAsk: (cb: (a: any) => void) => () => void;
+        onStk: (cb: (s: any) => void) => () => void;
+        onAnswered: (cb: (a: { id: string; answer?: any; skipped?: boolean; cancelled?: boolean }) => void) => () => void;
+      };
+      /** A607: customer details at the counter — is KRA eTIMS on, may this person see customers' numbers in full. */
+      customerDetails: {
+        saleInfo: () => Promise<{ etimsEnabled: boolean; seesContacts: boolean }>;
+      };
+      /** A607: the M-Pesa prompt from this POS (main/mpesaStk.ts StkState). */
+      mpesa: {
+        stkOffered: () => Promise<{ offered: boolean }>;
+        stkStart: (p: { phone: string; amount: number; ref: string; currency?: string }) => Promise<any>;
+        stkReset: () => Promise<any>;
+        stkState: () => Promise<any>;
+        onStk: (cb: (s: any) => void) => () => void;
       };
       /** 0.6.28: what went to the kitchen, and kitchen voids. */
       kitchen: {

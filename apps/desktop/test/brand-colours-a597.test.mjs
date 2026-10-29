@@ -21,7 +21,7 @@
 //   - localDb getBranding effective without the colours                            → 3 "the colours while themes are on" fails
 //   - getBrandColours without its try/catch                                        → 4 fails
 //   - referenceBundle nodeIdentity without the colours                             → 5 "relays" fails
-//   - themeVars computeThemeVars ignoring primaryHex                               → 6 "a primary → its shades" fails
+//   - themeVars computeThemeVars ignoring primaryHex                               → 6 "a primary → its palette" fails
 //   - themeVars brandColourVars using the primary even when an accent is set       → 6 "the accent keeps the lock screen" fails
 import fs from 'node:fs';
 import os from 'node:os';
@@ -99,8 +99,9 @@ try {
   // ── 1 ──
   const cols = db.prepare(`PRAGMA table_info(branding)`).all().map((c) => c.name);
   const required = Number((fs.readFileSync(path.join(desktop, '..', 'server', 'src', 'lib', 'desktopSchema.ts'), 'utf8').match(/REQUIRED_DESKTOP_SCHEMA = (\d+)/) || [])[1]);
-  ok('branding.primary_hex / secondary_hex exist; no schema bump (still 77, REQUIRED with it)',
-    cols.includes('primary_hex') && cols.includes('secondary_hex') && L.LOCAL_SCHEMA_VERSION === 77 && required === 77, JSON.stringify({ cols, v: L.LOCAL_SCHEMA_VERSION, required }));
+  // A607 moved the local schema to 78 (orders.buyer_kra_pin); A597 itself bumped nothing (77 when it shipped).
+  ok('branding.primary_hex / secondary_hex exist; no schema bump for A597 (77 when it shipped — A607 made it 78 — REQUIRED with it)',
+    cols.includes('primary_hex') && cols.includes('secondary_hex') && L.LOCAL_SCHEMA_VERSION >= 77 && required === L.LOCAL_SCHEMA_VERSION, JSON.stringify({ cols, v: L.LOCAL_SCHEMA_VERSION, required }));
 
   // ── 2 ──
   const r = await E.pullCatalogueNow();
@@ -151,25 +152,26 @@ try {
   const ch = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(' ');
   const lum = (c) => { const [r, g, bl] = c.split(' ').map((v) => { const x = Number(v) / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * bl; };
   const con = (a, c) => { const x = lum(a), y = lum(c); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-  let worst = { dark500: 99, white600: 99, link: 99 };
-  for (const hex of ['#ffffff', '#000000', '#ffff00', '#808080', '#000080', '#e11d48']) {
+  // A605: the key action is the palette's dark-screen primary (500 = 600), with ONE label (on-action) that reads on it,
+  // its hover and its pressed shade; links on 400; the label swap itself is index.css :root[data-brand].
+  let worst = { label: 99, link: 99 };
+  for (const hex of ['#ffffff', '#000000', '#ffff00', '#808080', '#000080', '#e11d48', '#facc15', '#0b1f3a', '#16a34a']) {
     const t = TV.computeThemeVars({ themeId: 'violet', primaryHex: hex });
-    const k = T.brandTokens(hex);
-    if (t.vars['action-500'] !== ch(k.fill) || t.vars['action-600'] !== ch(k.strong) || t.vars['action-400'] !== ch(k.textDark)) { worst = null; break; }
-    worst.dark500 = Math.min(worst.dark500, con('3 7 18', t.vars['action-500']));
-    worst.white600 = Math.min(worst.white600, con('255 255 255', t.vars['action-600']), con('255 255 255', t.vars['action-700']));
-    worst.link = Math.min(worst.link, con(t.vars['action-400'], '17 24 39'), con(t.vars['action-400'], '31 41 55'));
+    const d = T.brandPalette(hex).dark;
+    if (t.vars['action-500'] !== ch(d.primary) || t.vars['action-600'] !== ch(d.primary) || t.vars['action-400'] !== ch(d.text) || t.vars['on-action'] !== ch(d.onPrimary)) { worst = null; break; }
+    for (const f of ['action-500', 'action-700', 'action-hover']) worst.label = Math.min(worst.label, con(t.vars['on-action'], t.vars[f]));
+    worst.link = Math.min(worst.link, con(t.vars['action-400'], '17 24 39'), con(t.vars['action-400'], '31 41 55'), con(t.vars['action-300'], '17 24 39'));
   }
-  ok(`a primary → its shades on the action colours, labels readable for white, black, yellow, mid-grey, navy, red (${worst && Object.values(worst).map((x) => x.toFixed(2)).join(' / ')})`,
-    worst && worst.dark500 >= 4.5 && worst.white600 >= 4.5 && worst.link >= 4.5, JSON.stringify(worst));
+  ok(`a primary → its palette on the action colours, one label readable on fill / pressed / hover, links readable (${worst && Object.values(worst).map((x) => x.toFixed(2)).join(' / ')})`,
+    worst && worst.label >= 4.5 && worst.link >= 4.5, JSON.stringify(worst));
   const full = TV.computeThemeVars({ themeId: 'violet', primaryHex: '#000080', secondaryHex: '#ffff00' });
-  ok('…every till variable is set (switching off removes them all)', TV.THEME_VAR_NAMES.every((n) => typeof full.vars[n] === 'string'));
-  ok('no accent: the lock screen and strip wear the primary at its shade seen on the dark screens; the secondary beside it',
-    full.vars['brand-600'] === ch(T.brandTokens('#000080').layer) && full.strip === T.brandTokens('#000080').layer && full.strip2 === '#ffff00'
-    && TV.stripBackground(full) === `linear-gradient(90deg, ${full.strip} 0%, ${full.strip} 50%, #ffff00 50%, #ffff00 100%)`, JSON.stringify(full));
+  ok('…every POS variable is set (switching off removes them all)', TV.THEME_VAR_NAMES.every((n) => typeof full.vars[n] === 'string'));
+  ok('no accent: the lock screen and strip wear the primary at its shade seen on the dark screens — one colour (A605)',
+    full.vars['brand-600'] === ch(T.brandPalette('#000080').layer) && full.strip === T.brandPalette('#000080').layer && full.brand === true
+    && TV.stripBackground(full) === full.strip, JSON.stringify(full));
   const acc = TV.computeThemeVars({ themeId: 'violet', accentHex: '#F5B800', primaryHex: '#000080' });
   ok('the lock-screen accent, when set, keeps the lock screen and strip (the primary still drives the buttons)',
-    acc.vars['brand-600'] === '245 184 0' && acc.strip === '#F5B800' && acc.strip2 === null && acc.vars['action-600'] === ch(T.brandTokens('#000080').strong)
+    acc.vars['brand-600'] === '245 184 0' && acc.strip === '#F5B800' && acc.vars['action-600'] === ch(T.brandPalette('#000080').dark.primary)
     && TV.stripBackground(acc) === '#F5B800');
   const theme = TV.computeThemeVars({ themeId: 'violet', accentHex: null });
   ok('no colours → the curated theme exactly as before (Violet 500, no strip)', theme.vars['action-500'] === '139 92 246' && theme.strip === null && !theme.strip2);

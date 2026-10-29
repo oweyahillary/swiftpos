@@ -22,6 +22,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../../lib/api';
+// A607: the customer's number from this sale's details, typed by the customer (here or on the customer screen), and the
+// prompt's progress on the customer screen too ("Waiting for M-Pesa… (check your phone)" — never the phone number).
+import CustomerAskForm from '../../lib/CustomerAskForm';
+import { cleanAnswer, newAskId, maskTypedPhone, secondScreenAsk, type StkStage } from '../../lib/customerDetails';
+import { customerScreenPublisher, customerScreenTouch } from '../../lib/customerScreenChannel';
+import { usePOSAuth } from '../../context/POSAuthContext';
 
 type Mode = 'input' | 'waiting' | 'success' | 'failed' | 'manual';
 
@@ -31,14 +37,25 @@ interface Props {
   orderId: string;
   onSuccess: (mpesaRef: string) => void;
   onCancel: () => void;
+  /** A607: the number the customer gave for this sale (2547XXXXXXXX); masked = shown masked to this person. */
+  phone?: string | null;
+  masked?: boolean;
 }
+
+/** 2547XXXXXXXX / 07XX… → the 0-prefixed form this panel keeps. */
+const localForm = (p: string | null | undefined) => { const d = String(p ?? '').replace(/\D/g, ''); return /^254\d{9}$/.test(d) ? `0${d.slice(3)}` : /^0\d{9}$/.test(d) ? d : ''; };
+const STAGE: Record<Mode, StkStage> = { input: 'idle', manual: 'idle', waiting: 'waiting', success: 'paid', failed: 'failed' };
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_WAIT_SECS    = 60;
 
-export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onCancel }: Props) {
+export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onCancel, phone: given, masked: givenMasked = false }: Props) {
   const [mode, setMode]         = useState<Mode>('input');
-  const [phone, setPhone]       = useState('');
+  const [phone, setPhone]       = useState(localForm(given));
+  const [masked, setMasked]     = useState(!!localForm(given) && givenMasked);   // A607
+  const [typesIt, setTypesIt]   = useState(false);
+  const [asking, setAsking]     = useState<string | null>(null);
+  const sees = usePOSAuth().hasPermission('customers.contacts');   // A607: a number the customer typed is masked without it
   const [manualRef, setManualRef] = useState('');
   const [checkoutId, setCheckoutId] = useState('');
   const [secondsLeft, setSecondsLeft] = useState(MAX_WAIT_SECS);
@@ -61,6 +78,25 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
   }
 
   useEffect(() => () => cleanup(), []);
+
+  // A607: the prompt's progress on the customer screen as well (the stage and the amount only), and back on close.
+  useEffect(() => {
+    customerScreenPublisher()?.stk({ stage: STAGE[mode], amount: total, currency, reason: mode === 'failed' ? error : null });
+  }, [mode, error, total, currency]);
+  useEffect(() => () => { customerScreenPublisher()?.stk(null); }, []);
+  // A607: the customer types their M-Pesa number on the customer screen (a touch screen, showing).
+  useEffect(() => {
+    const pub = customerScreenPublisher();
+    if (!pub) return;
+    const off = pub.onAnswer((a) => {
+      if (a.id !== asking) return;
+      setAsking(null);
+      if (a.answer?.phone) { setPhone(localForm(a.answer.phone)); setMasked(!sees); }
+    });
+    return () => { off(); };
+  }, [asking]);
+  useEffect(() => () => { if (asking) customerScreenPublisher()?.cancelAsk(asking); }, [asking]);
+  const askOnScreen = secondScreenAsk({ touch: customerScreenTouch(), licensed: true, open: !!customerScreenPublisher()?.showing() }).allowed;
 
   async function initiatePush() {
     if (!phone.trim()) { setError('Enter the customer phone number'); return; }
@@ -163,6 +199,19 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
     );
   }
 
+  // ── A607: "Customer types it" — this screen turned to the customer, the M-Pesa number only ───────────────
+  if (mode === 'input' && typesIt) {
+    const ask = { id: 'ask-mpesa-local', purpose: 'mpesa' as const, needPin: false, amount: total, currency };
+    return <CustomerAskForm ask={ask} skipLabel="Back to the cashier" style={{ zIndex: 9999 }}
+      onSubmit={(v) => {
+        const c = cleanAnswer(v, ask);
+        if ('errors' in c) return c.errors;
+        setPhone(localForm(c.value.phone)); setMasked(!sees); setTypesIt(false);
+        return null;
+      }}
+      onSkip={() => setTypesIt(false)} />;
+  }
+
   // ── STK push input ─────────────────────────────────────────────────────────
   if (mode === 'input') {
     return (
@@ -175,6 +224,12 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
 
         <div style={s.field}>
           <label style={s.fieldLabel}>Customer phone number</label>
+          {masked ? (
+            <div style={s.phoneWrap} data-testid="web-stk-masked">
+              <span style={{ ...s.phoneInput, display: 'flex', alignItems: 'center' }}>{maskTypedPhone(`254${phone.slice(1)}`)}</span>
+              <button style={s.manualLink} onClick={() => { setPhone(''); setMasked(false); }}>Change</button>
+            </div>
+          ) : (
           <div style={s.phoneWrap}>
             <span style={s.phonePrefix}>+254</span>
             <input
@@ -187,7 +242,18 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
               onKeyDown={e => e.key === 'Enter' && initiatePush()}
             />
           </div>
+          )}
           <div style={s.fieldHint}>Customer will receive a payment prompt on their phone</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button style={s.manualLink} onClick={() => setTypesIt(true)} data-testid="web-stk-types">Customer types it</button>
+            {askOnScreen && !asking && (
+              <button style={s.manualLink} data-testid="web-stk-ask" onClick={() => {
+                const a = customerScreenPublisher()?.ask({ id: newAskId(), purpose: 'mpesa', needPin: false, amount: total, currency });
+                if (a) setAsking(a.id);
+              }}>Ask the customer</button>
+            )}
+            {asking && <span style={s.fieldHint}>The customer is typing their number on the customer screen…</span>}
+          </div>
         </div>
 
         {error && <div style={s.errorBox}>{error}</div>}
@@ -216,7 +282,7 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
           </div>
           <div style={s.waitingTitle}>Waiting for payment</div>
           <div style={s.waitingAmount}>{fmt(total)}</div>
-          <div style={s.waitingPhone}>Prompt sent to {phone}</div>
+          <div style={s.waitingPhone}>Prompt sent to {masked ? maskTypedPhone(`254${phone.slice(1)}`) : phone}</div>
 
           {/* Countdown bar */}
           <div style={s.countdownBar}>

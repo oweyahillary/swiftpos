@@ -24,7 +24,7 @@
 //      may edit; /pos/init serves them only with themes on; a database before migration 179 keeps working.
 //
 // MUTATIONS TO CONFIRM BITE (checked by hand, 2026-10-28):
-//   - themes.ts brandTokens: fill = the colour as chosen (no shadeFor)          → S "dark labels on the fill" fails (black, navy)
+//   - themes.ts brandTokens: fill = the colour as chosen (no nearestTone)      → S "dark labels on the fill" fails (black, navy)
 //   - themes.ts brandTokens without the BRAND_EDGE step                          → S "a white fill stands out on white" fails
 //   - branchBranding.ts resolver without the business-theme gate on the colours  → P "themes off → no colours" fails
 //   - branchBranding.ts resolver keeping the colours under a branch theme        → P "a branch's own theme wins" fails
@@ -217,19 +217,19 @@ try {
     const ch = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(' ');
     assert.deepEqual(v, { 'action-t-500': ch(k.fillDark), 'action-t-600': ch(k.pressedLight), 'action-d-400': ch(k.textDark), 'action-l-400': ch(k.textLight) });
   });
-  await ok('a primary → it wins over the theme: action-* AND the back office\'s bp-* from its shades', async () => {
+  await ok('a primary → it wins over the theme: its palette\'s bp-* light and dark (A605: index.css maps action-* and swift-* onto them)', async () => {
     const v = TV.computeDashboardThemeVars({ themes_enabled: true, theme_id: 'violet', primary_hex: '#ffff00' });
-    const k = T.brandTokens('#ffff00');
+    const p = T.brandPalette('#ffff00');
     const ch = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(' ');
-    assert.equal(v['action-t-500'], ch(k.fill)); assert.equal(v['action-t-600'], ch(k.strong));
-    assert.equal(v['action-d-400'], ch(k.textDark)); assert.equal(v['action-l-400'], ch(k.textLight));
-    assert.equal(v['bp-strong'], ch(k.strong)); assert.equal(v['bp-text-l-hover'], ch(k.textLightHover));
-    assert.deepEqual(Object.keys(v).sort(), [...TV.DASHBOARD_THEME_VARS].sort(), 'every variable the layer clears');
+    assert.equal(v['action-t-500'], undefined, 'no curated-theme shades under a primary');
+    assert.equal(v['bp-primary-l'], ch(p.light.primary)); assert.equal(v['bp-primary-d'], ch(p.dark.primary));
+    assert.equal(v['bp-text-d'], ch(p.dark.text)); assert.equal(v['bp-text-l-hover'], ch(p.light.textHover));
+    for (const k of Object.keys(v)) assert.ok(TV.DASHBOARD_THEME_VARS.includes(k), `${k}: every variable the layer clears`);
   });
   await ok('the web POS\'s branch theme wins over the business\'s colours (withBranchTheme)', async () => {
     const b = { themes_enabled: true, theme_id: 'violet', primary_hex: '#e11d48', secondary_hex: '#ffff00' };
     const v = TV.computeDashboardThemeVars(TV.withBranchTheme(b, 'teal'));
-    assert.equal(v['bp-fill'], undefined);
+    assert.equal(v['bp-primary-l'], undefined);
     assert.equal(v['action-t-500'], TV.computeDashboardThemeVars({ themes_enabled: true, theme_id: 'teal' })['action-t-500']);
     assert.equal(TV.withBranchTheme(b, null), b, 'no branch theme → the business as is');
   });
@@ -238,39 +238,43 @@ try {
     const root = { style: { setProperty: (k, v) => props.set(k, v), removeProperty: (k) => props.delete(k) },
       setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k) };
     TV.applyDashboardThemeVars(TV.computeDashboardThemeVars({ themes_enabled: true, primary_hex: '#000000' }), root);
-    assert.ok(attrs.has('data-brand') && props.get('--bp-fill'));
+    assert.ok(attrs.has('data-brand') && props.get('--bp-primary-l'));
     TV.applyDashboardThemeVars(TV.computeDashboardThemeVars({ themes_enabled: true, theme_id: 'ocean' }), root);
-    assert.ok(!attrs.has('data-brand') && !props.has('--bp-fill') && props.has('--action-t-500'));
+    assert.ok(!attrs.has('data-brand') && !props.has('--bp-primary-l') && props.has('--action-t-500'));
     TV.applyDashboardThemeVars(null, root);
     assert.equal(props.size + attrs.size, 0);
   });
   await ok('index.css: swift-* follow the brand only under :root[data-brand] (teal untouched otherwise); the wordmark stays', async () => {
     const css = read('apps/dashboard/src/index.css');
-    const block = css.match(/:root\[data-brand\] \{([^}]*)\}/)?.[1] ?? '';
-    for (const [tok, v] of [['swift', 'bp-fill'], ['swift-light', 'bp-fill-hover'], ['swift-strong', 'bp-strong'], ['swift-deep', 'bp-strong-hover'], ['swift-text', 'bp-text-d']]) {
-      assert.match(block, new RegExp(`--${tok}: var\\(--${v}\\);`), tok);
+    const block = css.slice(css.indexOf('A597 / A605'));
+    // A605: one key-action shade for both fills, its hover, the text shade — by mode through --bp-* (tests/brand-palette-a605)
+    for (const [tok, v] of [['swift', 'bp-primary'], ['swift-light', 'bp-hover'], ['swift-strong', 'bp-primary'], ['swift-deep', 'bp-hover'], ['swift-text', 'bp-text']]) {
+      assert.match(block, new RegExp(`--${tok}: +var\\(--${v}\\);`), tok);
     }
-    assert.ok(!/swift-logo/.test(block));
-    assert.match(css, /:root\[data-brand\]:not\(\.dark\) \{ --swift-text: var\(--bp-text-l\); --swift-text-hover: var\(--bp-text-l-hover\); \}/);
+    assert.ok(block.length > 500 && !/swift-logo/.test(block));
+    assert.match(block, /:root\[data-brand\]:not\(\.dark\), :root\[data-brand\] \[data-pos-theme="light"\] \{\s*--bp-primary: var\(--bp-primary-l\);/);
     assert.match(css, /:root \{\n  --swift: 20 184 166;/, 'the teal defaults stay as they were');
   });
   await ok('the chrome: logo + colour band + chart accent with themes on; nothing chosen → null (the header as before)', async () => {
     const look = TV.brandLookFor({ themes_enabled: true, primary_hex: '#E11D48', secondary_hex: '#ffff00', logo_png: 'data:image/png;base64,AAAA' });
     assert.deepEqual(look, { logo: 'data:image/png;base64,AAAA', primary: '#e11d48', secondary: '#ffff00' });
-    assert.match(TV.brandBand(look), /#e11d48 50%, #ffff00 50%/);
-    assert.equal(TV.brandBand({ logo: null, primary: '#e11d48', secondary: null }), '#e11d48');
-    assert.equal(TV.brandChartAccent(look, 'light'), T.brandTokens('#ffff00').chartLight, 'the secondary on charts');
-    assert.equal(TV.brandChartAccent({ logo: null, primary: '#000000', secondary: null }, 'dark'), T.brandTokens('#000000').chartDark, 'else the primary');
+    // A605: the band is ONE colour, the primary exactly; the primary is the first chart series, the secondary the second
+    assert.equal(TV.brandBand(look), '#e11d48');
+    assert.equal(TV.brandBand({ logo: null, primary: null, secondary: '#ffff00' }), '#ffff00');
+    assert.equal(TV.brandChartAccent(look, 'light'), T.brandPalette('#e11d48').light.chart, 'the primary on charts');
+    assert.equal(TV.brandChartSecond(look, 'dark'), T.brandPalette('#ffff00').dark.chart, 'the secondary second');
+    assert.equal(TV.brandChartAccent({ logo: null, primary: '#000000', secondary: null }, 'dark'), T.brandPalette('#000000').dark.chart);
     assert.equal(TV.brandLookFor({ themes_enabled: true }), null);
     assert.equal(TV.brandLookFor({ themes_enabled: true, logo_png: 'data:image/svg+xml;base64,AAAA' }), null, 'only the PNG / JPEG logo');
     const layout = read('apps/dashboard/src/components/DashboardLayout.tsx');
     assert.match(layout, /\{band && <div aria-hidden className="h-1 flex-shrink-0" style=\{\{ background: band \}\} data-testid="dashboard-brand-band" \/>\}/);
     assert.match(layout, /\{look\?\.logo && \(\s*<img src=\{look\.logo\}/);
+    assert.match(layout, /const logoChip = look\?\.logoChip === 'dark' \? 'logo-chip-dark' : 'logo-chip-light';/);
     assert.match(read('apps/dashboard/src/pages/analytics/AnalyticsPage.tsx'), /brandAccent \? \{ \.\.\.base, accent: brandAccent/);
   });
-  await ok('the web POS: its strip shows the accent (else the primary) and the secondary; the POS applies the colours itself', async () => {
-    assert.equal(TV.posBrandStripColours('violet', null, '#000080', null), T.brandTokens('#000080').layer, 'navy at its shade seen on the dark screens');
-    assert.match(TV.posBrandStripColours('violet', '#f5b800', '#000080', '#ffff00'), /#F5B800 50%, #ffff00 50%/);
+  await ok('the web POS: its strip shows the accent (else the primary) — one colour; the POS applies the colours itself', async () => {
+    assert.equal(TV.posBrandStripColours('violet', null, '#000080', null), T.brandPalette('#000080').layer, 'navy at its shade seen on the dark screens');
+    assert.equal(TV.posBrandStripColours('violet', '#f5b800', '#000080', '#ffff00'), '#F5B800', 'A605: one colour, the accent first');
     const pos = read('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
     assert.match(pos, /primaryHex: init\.branding\?\.primaryHex \?\? null/);
     assert.match(pos, /if \(branchThemeId \|\| !posColours\?\.primary\) return;/);

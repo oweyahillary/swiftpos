@@ -33,6 +33,7 @@ import { cleanShowDays } from './productDays';
 import { supportWire } from './support';   // 0.6.35 (A384)
 import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
 import { parseStockCountFreeze, type StockCountFreeze } from './stockCountFreeze';   // A394
+import { cleanCloudBackup, type CloudBackup } from './cloudBackupWire';   // A601
 
 /** A450: the receipt's "Buy Goods: 123456" line. A number is what makes it print; the label defaults to Buy Goods. */
 export interface ReceiptPay { label: string; number: string }
@@ -88,6 +89,12 @@ export interface ReferenceBundle {
     paymentMethodsEnabled?: string[];
     /** A346: the node's copy of the cloud's answer — does the business have the web POS? null = not known. */
     webPosEnabled?: boolean | null;
+    /** A601: the node's copy of the desktop-only cut-off (cloudBackup.ts); null = not known. */
+    cloudBackup?: { on: boolean; phase: string; cutoffAt: string | null } | null;
+    /** A606: the node's copy of the customer screen's slideshow list (customerScreen.ts); null = none or not known. */
+    customerScreen?: unknown;
+    /** A607: the node's copy of "KRA eTIMS is on"; null = not known. */
+    etimsEnabled?: boolean | null;
     /** A367: the owner's quick picks for order notes; null = the node has not been told. */
     noteQuickPicks?: string[] | null;
     /** A577: the scale label layout (shared/scaleBarcode.ts); null = the node has not been told. */
@@ -160,6 +167,9 @@ export interface ReferenceRows {
     cashierHistoryTotals?: boolean;       // A418
     paymentMethodsEnabled?: string[];     // A429
     webPosEnabled?: boolean | null;   // A346
+    cloudBackup?: { on: boolean; phase: string; cutoffAt: string | null } | null;   // A601
+    customerScreen?: unknown;   // A606
+    etimsEnabled?: boolean | null;   // A607
     noteQuickPicks?: string[] | null; // A367
     scaleBarcodes?: unknown;          // A577
     posFeatures?: Record<string, boolean> | null; // 0.6.27
@@ -289,6 +299,10 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       cashierHistoryTotals: rows.config.cashierHistoryTotals,     // A418: relayed likewise
       paymentMethodsEnabled: rows.config.paymentMethodsEnabled,   // A429: relayed so a peer shows the branch's methods
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
+      // A601: relayed so a POS behind the server stops (and resumes) its cloud backup with the server; null = not known.
+      cloudBackup: rows.config.cloudBackup ?? null,
+      customerScreen: rows.config.customerScreen ?? null,   // A606: relayed so a peer shows the same slideshow
+      etimsEnabled: rows.config.etimsEnabled ?? null,   // A607: relayed so a peer asks for the buyer's KRA PIN too
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       scaleBarcodes: rows.config.scaleBarcodes ?? null,   // A577: relayed so a peer reads the same scale labels
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
@@ -420,6 +434,27 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         try { return supportWire(JSON.parse(cfg.support_contact)); } catch { return undefined; }
       })(),
       webPosEnabled: typeof cfg?.web_pos_enabled === 'boolean' ? cfg.web_pos_enabled : null,
+      // A601: null until the node itself has heard from the cloud (a peer then keeps its own value).
+      // A606: the slideshow list as the node holds it (customerSlides.ts); null = none.
+      customerScreen: (() => {
+        try {
+          const raw = all(`SELECT value FROM maintenance_state WHERE key = 'customer_screen'`)[0]?.value;
+          return typeof raw === 'string' && raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+      })(),
+      // A607: null until the node itself has heard from the cloud (a peer then keeps its own value).
+      etimsEnabled: (() => {
+        try {
+          const raw = all(`SELECT value FROM maintenance_state WHERE key = 'etims_flag'`)[0]?.value;
+          return raw === '1' ? true : raw === '0' ? false : null;
+        } catch { return null; }
+      })(),
+      cloudBackup: (() => {
+        try {
+          const raw = all(`SELECT value FROM maintenance_state WHERE key = 'cloud_backup'`)[0]?.value;
+          return typeof raw === 'string' && raw ? (cleanCloudBackup(JSON.parse(raw)) ?? null) : null;
+        } catch { return null; }
+      })(),
       noteQuickPicks: (() => {   // A367
         if (typeof cfg?.order_note_picks !== 'string') return null;
         try { const p = JSON.parse(cfg.order_note_picks); return Array.isArray(p) ? p.map(String) : null; } catch { return null; }
@@ -515,6 +550,12 @@ export interface AcquiredReference {
     scaleBarcodes?: unknown;
     /** 0.6.27: the per-client POS switches. undefined = not said (older cloud / older node) → keep. */
     posFeatures?: Record<string, boolean>;
+    /** A601: the desktop-only cut-off (cloudBackup.ts). undefined = not said (older cloud / older node) → keep. */
+    cloudBackup?: CloudBackup;
+    /** A606: the customer screen's slideshow list. undefined = not said (older cloud / older node) → keep; null = none. */
+    customerScreen?: unknown;
+    /** A607: KRA eTIMS is on (pos/init etimsEnabled). undefined = not said (older cloud / older node) → keep. */
+    etimsEnabled?: boolean;
     /** A599: the business's 'attendance' flag (pos/init attendanceDevice). undefined = not said → keep. Never relayed to a
      *  till behind a server — only the server pulls the devices. */
     attendanceDevice?: boolean;
@@ -571,6 +612,9 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       paymentMethodsEnabled: Array.isArray(pi.paymentMethodsEnabled) ? pi.paymentMethodsEnabled.map(String) : undefined,   // A429
       // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
+      cloudBackup: cleanCloudBackup(pi.cloudBackup),   // A601: a node that has not heard (null) or an older node says nothing
+      customerScreen: pi && typeof pi === 'object' && 'customerScreen' in pi ? (pi.customerScreen ?? null) : undefined,   // A606
+      etimsEnabled: typeof pi.etimsEnabled === 'boolean' ? pi.etimsEnabled : undefined,   // A607: a node that has not heard says nothing
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
       scaleBarcodes: pi.scaleBarcodes && typeof pi.scaleBarcodes === 'object' ? pi.scaleBarcodes : undefined,   // A577
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27

@@ -42,13 +42,15 @@ ok('the theme resolves through the registry only when the business has themes',
   /const theme: Theme \| null = themesEnabled \? resolveTheme\(themeId\) : null;/.test(tab));
 
 // ── What the page shows ──
-ok('the picker appears only with themes, listing the registry\'s themes',
-  /\{themesEnabled && \(\s*<div className="mt-6">\s*<label[^>]*>App theme<\/label>/.test(tab) && /\{THEMES\.map\(\(t\) => \{/.test(tab));
-ok('the till preview appears only with themes', /\{theme && \(<>\s*<label[^>]*>POS preview<\/label>\s*<TillPreview theme=\{theme\}/.test(tab));
-ok('lock preview wears the theme without a brand colour (the till\'s PinPage rule); otherwise the Phase 1 accent',
+ok('the picker appears only with themes, listing the registry themes',
+  // A605: the page is in sections now — the App theme section, only with themes.
+  /\{themesEnabled && \(\s*<Section title="App theme"/.test(tab) && /\{THEMES\.map\(\(t\) => \{/.test(tab));
+ok('the till preview appears only with themes (A605: in the App theme section, while no primary colour replaces the theme)',
+  /\{theme && !primaryHex && \(<div>\s*<TillPreview theme=\{theme\}/.test(tab));
+ok('lock preview wears the theme without a brand colour (the PinPage rule of the POS); otherwise the Phase 1 accent',
   /const lockAccent = theme && accentHex\.trim\(\) === '' \? theme\.shades\[500\] : shownAccent;/.test(tab) && /<LockPreview accent=\{lockShown\}/.test(tab)
-  // A597: with brand colours and no accent, the primary's shade seen on the lock screen; otherwise lockAccent as before.
-  && /const lockShown = theme && accentHex\.trim\(\) === '' && brandTokens\(primaryHex\) \? brandTokens\(primaryHex\)!\.layer : lockAccent;/.test(tab));
+  // A597 / A605: with brand colours and no accent, the primary's shade seen on the lock screen; otherwise lockAccent as before.
+  && /const lockShown = theme && accentHex\.trim\(\) === '' && brandPalette\(primaryHex\) \? brandPalette\(primaryHex\)!\.layer : lockAccent;/.test(tab));
 ok('the till preview draws action from the theme tokens and the strip/sidebar from the brand layer',
   // A597: a primary brand colour's shades replace the theme tokens; the accent still makes the brand layer.
   /const k = p \? \{[^}]*\} : themeTokens\(theme\);/.test(tab) && /const accent = resolveBrandLayer\(brandHex\);/.test(tab)

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveBranding, pickButtonText } from '../../lib/contrast';
-import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, brandTokens, brandNearStatus, labelOn, BRAND_SURFACES, type Theme } from '../../lib/themes';
+import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, brandPalette, brandNotes, STATUS_SHADES, type Theme } from '../../lib/themes';
+import { logoColoursFromDataUri, type LogoColours } from '../../lib/logoColours';   // A605
 import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
 import { accentWriteError, footerWriteError, normaliseHex, resolveBranchBranding, FOOTER_LINE_MAX, FOOTER_LINE_NARROW } from '../../lib/branchBranding';   // A544
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, RECEIPT_LOGO_PRINT_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
+import CustomerScreenSection from './CustomerScreenSection';   // A606
 import { money } from '../../lib/format';
 
 /**
@@ -111,6 +113,12 @@ function paintRaster(r: MonoRaster, c: HTMLCanvasElement): void {
   ctx.putImageData(img, 0, 0);
 }
 
+/** A605: what the page's form holds — compared with what was last loaded or saved, so the save bar shows only on a change. */
+interface BrandingDraft {
+  accentHex: string; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean;
+  themeId: string | null; primary: string; secondary: string;
+}
+
 export default function BrandingTab() {
   const [accentHex, setAccentHex] = useState<string>('');     // '' = default
   const [logoPng, setLogoPng] = useState<string | null>(null);
@@ -130,19 +138,34 @@ export default function BrandingTab() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [msgIsError, setMsgIsError] = useState(false);
   const [warn, setWarn] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  // A605: the form as last loaded / saved (null until loaded) — the save bar at the bottom shows only when it differs.
+  const [saved, setSaved] = useState<BrandingDraft | null>(null);
+  // A605: the logo's own colours ("Use colours from my logo") and which colour a click sets.
+  const [logoColours, setLogoColours] = useState<LogoColours | null>(null);
 
   useEffect(() => {
     api.get<{ accent_hex?: string | null; logo_png?: string | null; logo_receipt?: string | null; receipt_logo_enabled?: boolean; theme_id?: string | null; themes_enabled?: boolean;
       primary_hex?: string | null; secondary_hex?: string | null; brand_colours_editable?: boolean } | null>('/api/business/branding')
       .then((b) => { setAccentHex(b?.accent_hex ?? ''); setLogoPng(b?.logo_png ?? null); setLogoReceipt(b?.logo_receipt ?? null); setReceiptLogoEnabled(b?.receipt_logo_enabled === true);
         setThemesEnabled(b?.themes_enabled === true); setThemeId(b?.theme_id ?? null);
-        setPrimary(b?.primary_hex ?? ''); setSecondary(b?.secondary_hex ?? ''); setColoursEditable(b?.brand_colours_editable === true); })
+        setPrimary(b?.primary_hex ?? ''); setSecondary(b?.secondary_hex ?? ''); setColoursEditable(b?.brand_colours_editable === true);
+        setSaved({ accentHex: b?.accent_hex ?? '', logoPng: b?.logo_png ?? null, logoReceipt: b?.logo_receipt ?? null, receiptLogoEnabled: b?.receipt_logo_enabled === true,
+          themeId: b?.theme_id ?? null, primary: b?.primary_hex ?? '', secondary: b?.secondary_hex ?? '' }); })
       .then(() => api.get<{ name?: string }>('/api/business').then((biz) => { if (biz?.name) setBizName(biz.name); }).catch(() => {}))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // A605: the logo's colours, read in the browser from its pixels (lib/logoColours.ts) — again whenever the logo changes.
+  useEffect(() => {
+    if (!logoPng) { setLogoColours(null); return; }
+    let live = true;
+    logoColoursFromDataUri(logoPng, 5).then((c) => { if (live) setLogoColours(c); }).catch(() => { if (live) setLogoColours(null); });
+    return () => { live = false; };
+  }, [logoPng]);
 
   const custom = accentHex.trim() !== '' && !PALETTE.some((p) => p.hex.toLowerCase() === accentHex.trim().toLowerCase());
   // Exactly what a till will do with this value: its accent, or the default when it falls back.
@@ -160,17 +183,27 @@ export default function BrandingTab() {
   const colourErr = (primary.trim() && !primaryHex) || (secondary.trim() && !secondaryHex) ? 'A colour is written #RRGGBB, for example #E11D48.' : '';
   const sendColours = themesEnabled && coloursEditable;
   // The lock screen: the accent above when set; otherwise, with brand colours, the primary at its shade seen there.
-  const lockShown = theme && accentHex.trim() === '' && brandTokens(primaryHex) ? brandTokens(primaryHex)!.layer : lockAccent;
+  const lockShown = theme && accentHex.trim() === '' && brandPalette(primaryHex) ? brandPalette(primaryHex)!.layer : lockAccent;
+
+  const draft: BrandingDraft = { accentHex, logoPng, logoReceipt, receiptLogoEnabled, themeId, primary, secondary };
+  const dirty = !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
+  // A saved message stays in the bar a few seconds, then the bar goes (it shows again on the next change).
+  useEffect(() => {
+    if (!msg || msgIsError || dirty) return;
+    const t = setTimeout(() => setMsg(''), 6000);
+    return () => clearTimeout(t);
+  }, [msg, msgIsError, dirty]);
+  const say = (text: string, error = false) => { setMsg(text); setMsgIsError(error); };
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (fileRef.current) fileRef.current.value = '';
-    if (!f) return; setMsg(''); setWarn('');
+    if (!f) return; say(''); setWarn('');
     try { const { dataUri, warning } = await prepareLogo(f); setLogoPng(dataUri); if (warning) setWarn(warning); setLogoReceipt(await receiptRasterFor(dataUri)); }
-    catch (err: any) { setMsg(String(err?.message ?? err)); }
+    catch (err: any) { say(String(err?.message ?? err), true); }
   };
 
   const save = async () => {
-    setBusy(true); setMsg('');
+    setBusy(true); say('');
     try {
       await api.put('/api/business/branding', {
         accent_hex: accentHex.trim() || null,
@@ -182,142 +215,210 @@ export default function BrandingTab() {
         // A597: the brand colours — the owner's alone, and only with themes (the cloud refuses anyone else: 403).
         ...(sendColours ? { primary_hex: primaryHex, secondary_hex: secondaryHex } : {}),
       });
-      setMsg('Saved. Points of sale pick up the new branding within about 20 seconds — no restart needed.');
+      setSaved(draft);
+      say('Saved. Points of sale pick up the new branding within about 20 seconds — no restart needed.');
       window.dispatchEvent(new Event(BRANDING_SAVED_EVENT)); // A328: the dashboard re-reads its own theme now
-    } catch (err: any) { setMsg(err?.message ?? 'Could not save branding.'); }
+    } catch (err: any) { say(err?.message ?? 'Could not save branding.', true); }
     finally { setBusy(false); }
+  };
+  const discard = () => {
+    if (!saved) return;
+    setAccentHex(saved.accentHex); setLogoPng(saved.logoPng); setLogoReceipt(saved.logoReceipt); setReceiptLogoEnabled(saved.receiptLogoEnabled);
+    setThemeId(saved.themeId); setPrimary(saved.primary); setSecondary(saved.secondary); setWarn(''); say('');
   };
 
   const clearAll = async () => {
-    setBusy(true); setMsg('');
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+      && !window.confirm('Reset all branding to the ZapTill default? Your logo, colours and theme are removed.')) return;
+    setBusy(true); say('');
     try {
       await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, ...(themesEnabled ? { theme_id: null } : {}),
         ...(sendColours ? { primary_hex: null, secondary_hex: null } : {}) });
       setAccentHex(''); setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn(''); setThemeId(null);
       if (sendColours) { setPrimary(''); setSecondary(''); }
+      setSaved({ accentHex: '', logoPng: null, logoReceipt: null, receiptLogoEnabled: false, themeId: null,
+        primary: sendColours ? '' : primary, secondary: sendColours ? '' : secondary });
       window.dispatchEvent(new Event(BRANDING_SAVED_EVENT));
-      setMsg('Reset to the ZapTill default.');
-    } catch (err: any) { setMsg(err?.message ?? 'Could not reset branding.'); }
+      say('Reset to the ZapTill default.');
+    } catch (err: any) { say(err?.message ?? 'Could not reset branding.', true); }
     finally { setBusy(false); }
   };
 
   if (loading) return <div className="p-4 sm:p-6 text-gray-500">Loading branding…</div>;
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl">
-      <h2 className="text-lg font-semibold mb-1">Branding</h2>
-      <p className="text-sm text-gray-500 mb-6">Your logo and accent colour on the POS lock screen. Changes reach points of sale automatically.</p>
+    <div className="p-4 sm:p-6 max-w-5xl" data-testid="branding-page">
+      <h2 className="text-lg font-semibold text-white mb-1">Branding</h2>
+      <p className="text-sm text-gray-400 mb-6">Your logo and colours on the web dashboard, the web POS and every point of sale. Changes reach points of sale automatically.</p>
 
-      <div className="grid md:grid-cols-2 gap-8">
-        {/* Controls */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Accent colour</label>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {PALETTE.map((p) => (
-              <button key={p.hex} title={p.name} onClick={() => setAccentHex(p.hex)}
-                className={`h-8 w-8 rounded-full border-2 ${accentHex.trim().toLowerCase() === p.hex.toLowerCase() ? 'border-gray-900' : 'border-transparent'}`}
-                style={{ background: p.hex }} aria-label={p.name} />
-            ))}
-            <button title="ZapTill default" onClick={() => setAccentHex('')}
-              className={`h-8 px-3 rounded-full border text-xs ${accentHex.trim() === '' ? 'border-gray-900' : 'border-gray-300'} text-gray-700`}>
-              Default
-            </button>
-          </div>
-          <div className="flex items-center gap-2 mb-1">
-            <input type="text" value={accentHex} onChange={(e) => setAccentHex(e.target.value)} placeholder="#0d9488"
-              className="border rounded-lg px-3 py-2 text-sm font-mono w-36" />
-            <span className="text-xs text-gray-500">or a custom hex</span>
-          </div>
-          {custom && !legible && (
-            <p className="text-xs text-amber-600 mb-4">That colour isn’t legible on the lock screen — tills will fall back to the default. Pick a stronger shade or use the palette.</p>
-          )}
-          {custom && legible && <p className="text-xs text-green-600 mb-4">Legible ✓</p>}
-
-          <label className="block text-sm font-medium text-gray-700 mb-2 mt-2">Logo</label>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="h-16 w-16 rounded-lg bg-white border flex items-center justify-center overflow-hidden shrink-0">
-              {logoPng ? <img src={logoPng} alt="logo" className="max-h-full max-w-full object-contain" /> : <span className="text-[10px] text-gray-400">none</span>}
+      <div className="space-y-6">
+        {/* ── Logo ── */}
+        <Section title="Logo" hint="Shown on the dashboard menu, the POS lock screen and, if you choose, printed receipts.">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="h-20 w-20 rounded-xl logo-chip-light flex items-center justify-center overflow-hidden shrink-0">
+              {logoPng ? <img src={logoPng} alt="logo" className="max-h-full max-w-full object-contain" /> : <span className="text-[11px] text-gray-500">No logo</span>}
             </div>
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={onPick} className="text-sm" />
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="cursor-pointer rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800">
+                  {logoPng ? 'Change logo' : 'Upload logo'}
+                  <input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={onPick} className="sr-only" />
+                </label>
+                {logoPng && <button type="button" onClick={() => { setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); }} className="text-sm text-gray-400 hover:text-gray-200 underline">Remove logo</button>}
+              </div>
+              <p className="text-xs text-gray-500">PNG or JPEG. Shrunk to fit automatically (≤250 KB). SVG isn’t supported yet.</p>
+              {warn && <p className="text-xs text-amber-600">{warn}</p>}
+            </div>
           </div>
-          <p className="text-xs text-gray-500">PNG or JPEG. Shrunk to fit automatically (≤250 KB). SVG isn’t supported yet.</p>
-          {logoPng && <button onClick={() => { setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); }} className="text-xs text-gray-500 underline mt-1">Remove logo</button>}
-          {warn && <p className="text-xs text-amber-600 mt-1">{warn}</p>}
-
           {/* A313: opt-in receipt logo */}
-          <label className="flex items-center gap-2 mt-4 text-sm text-gray-700">
+          <label className="flex items-center gap-2 mt-4 text-sm text-gray-300">
             <input type="checkbox" checked={receiptLogoEnabled} disabled={!logoPng} onChange={(e) => setReceiptLogoEnabled(e.target.checked)} />
             Print logo on customer receipts
           </label>
           <p className="text-xs text-gray-500 ml-6">Off by default. Check the receipt preview first — thermal printers are black-and-white.</p>
+        </Section>
 
-          <div className="flex gap-2 mt-6">
-            <button onClick={save} disabled={busy || (sendColours && !!colourErr)} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40">Save branding</button>
-            <button onClick={clearAll} disabled={busy} className="border rounded-lg px-4 py-2 text-sm disabled:opacity-40">Reset to default</button>
-          </div>
-          {themesEnabled && (
-            <BrandColoursField editable={coloursEditable} primary={primary} secondary={secondary}
-              onPrimary={setPrimary} onSecondary={setSecondary} primaryHex={primaryHex} secondaryHex={secondaryHex} error={colourErr} />
-          )}
-          {themesEnabled && (
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-gray-700 mb-1">App theme</label>
-              <p className="text-xs text-gray-500 mb-2">The colour of buttons and selections on your points of sale. Paid, warnings, voids and prices keep their own colours.
-                {primaryHex ? ' While a primary brand colour is set, it is used instead of the theme.' : ''}</p>
-              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="App theme">
-                {THEMES.map((t) => {
-                  const on = theme?.id === t.id;
-                  return (
-                    // Selected = the theme's OWN colour as border + ring, and a tick — readable in dark AND light mode.
-                    // (The dashboard is dark-first: gray-900/200 invert between modes, which made the selected tile the
-                    // faintest one in dark mode — owner's screenshots, 2026-09-24.)
-                    <button key={t.id} type="button" role="radio" aria-checked={on} onClick={() => setThemeId(t.id)}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${on ? '' : 'border-gray-700 hover:border-gray-500'}`}
-                      style={on ? { borderColor: t.shades[500], boxShadow: `0 0 0 2px ${t.shades[500]}` } : undefined}>
-                      <span className="h-5 w-5 rounded" style={{ background: t.shades[500] }} aria-hidden />
-                      <span className="font-medium text-gray-300">{t.name}</span>
-                      {suggested === t.id && <span className="text-[10px] font-semibold text-gray-400">Suggested</span>}
-                      {on && <span className="ml-auto text-sm font-bold" style={{ color: t.shades[500] }} aria-hidden>✓</span>}
-                    </button>
-                  );
-                })}
+        {/* ── Brand colours (A597 / A605) ── */}
+        {themesEnabled && (
+          <BrandColoursField editable={coloursEditable} primary={primary} secondary={secondary}
+            onPrimary={setPrimary} onSecondary={setSecondary} primaryHex={primaryHex} secondaryHex={secondaryHex} error={colourErr}
+            logoColours={logoPng ? logoColours : null} logo={logoPng} bizName={bizName} />
+        )}
+
+        {/* ── Lock screen ── */}
+        <Section title="Lock-screen colour" hint={themesEnabled && primaryHex
+          ? 'The colour of the POS lock screen. Leave it on Default to use your primary colour.'
+          : 'The colour of the POS lock screen, beside your logo.'}>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {PALETTE.map((p) => (
+                  <button key={p.hex} title={p.name} onClick={() => setAccentHex(p.hex)}
+                    className={`h-8 w-8 rounded-full border-2 ${accentHex.trim().toLowerCase() === p.hex.toLowerCase() ? 'border-gray-300' : 'border-transparent'}`}
+                    style={{ background: p.hex }} aria-label={p.name} />
+                ))}
+                <button title="ZapTill default" onClick={() => setAccentHex('')}
+                  className={`h-8 px-3 rounded-full border text-xs ${accentHex.trim() === '' ? 'border-gray-300' : 'border-gray-700'} text-gray-300`}>
+                  Default
+                </button>
               </div>
-              {suggested && theme?.id !== suggested && (
-                <p className="text-xs text-gray-400 mt-2">Suggested beside your brand colour: <b>{resolveTheme(suggested).name}</b>. <button type="button" className="underline" onClick={() => setThemeId(suggested)}>Use it</button></p>
+              <div className="flex items-center gap-2 mb-1">
+                <input type="text" value={accentHex} onChange={(e) => setAccentHex(e.target.value)} placeholder="#0d9488"
+                  className="border border-gray-700 bg-gray-800 rounded-lg px-3 py-2 text-sm font-mono w-36" aria-label="Lock-screen colour" />
+                <span className="text-xs text-gray-500">or a custom hex</span>
+              </div>
+              {custom && !legible && (
+                <p className="text-xs text-amber-600 mb-4">That colour isn’t legible on the lock screen — points of sale will fall back to the default. Pick a stronger shade or use the palette.</p>
               )}
             </div>
-          )}
-          {msg && <p className="text-xs text-gray-600 mt-3">{msg}</p>}
-          {!themesEnabled && (
-            <p className="text-xs text-gray-500 mt-6" data-testid="branch-branding-premium-note">Per-branch branding (a branch’s own theme, colour and receipt footer) is part of Themes — ask ZapTill.</p>
-          )}
-        </div>
+            <div>
+              <LockPreview accent={lockShown} logo={logoPng} />
+              <p className="text-xs text-gray-500 mt-2">This is how the POS lock screen will look.</p>
+            </div>
+          </div>
+        </Section>
 
-        {/* Live lock-screen preview */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Lock-screen preview</label>
-          <LockPreview accent={lockShown} logo={logoPng} />
-          <p className="text-xs text-gray-500 mt-2">This is how a till’s lock screen will look.</p>
+        {/* ── App theme (A327) — the colours of buttons when no primary colour is chosen ── */}
+        {themesEnabled && (
+          <Section title="App theme" hint={primaryHex
+            ? 'Your primary colour is used for buttons and selections, so the theme below only applies if you clear it.'
+            : 'The colour of buttons and selections on your points of sale. Paid, warnings, voids and prices keep their own colours.'}>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className={primaryHex ? 'opacity-60' : ''}>
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="App theme">
+                  {THEMES.map((t) => {
+                    const on = theme?.id === t.id;
+                    return (
+                      // Selected = the theme's OWN colour as border + ring, and a tick — readable in dark AND light mode.
+                      // (The dashboard is dark-first: gray-900/200 invert between modes, which made the selected tile the
+                      // faintest one in dark mode — owner's screenshots, 2026-09-24.)
+                      <button key={t.id} type="button" role="radio" aria-checked={on} onClick={() => setThemeId(t.id)}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${on ? '' : 'border-gray-700 hover:border-gray-500'}`}
+                        style={on ? { borderColor: t.shades[500], boxShadow: `0 0 0 2px ${t.shades[500]}` } : undefined}>
+                        <span className="h-5 w-5 rounded" style={{ background: t.shades[500] }} aria-hidden />
+                        <span className="font-medium text-gray-300">{t.name}</span>
+                        {suggested === t.id && <span className="text-[10px] font-semibold text-gray-400">Suggested</span>}
+                        {on && <span className="ml-auto text-sm font-bold" style={{ color: t.shades[500] }} aria-hidden>✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                {suggested && theme?.id !== suggested && (
+                  <p className="text-xs text-gray-400 mt-2">Suggested beside your lock-screen colour: <b>{resolveTheme(suggested).name}</b>. <button type="button" className="underline" onClick={() => setThemeId(suggested)}>Use it</button></p>
+                )}
+              </div>
+              {theme && !primaryHex && (<div>
+                <TillPreview theme={theme} brandHex={accentHex.trim() || null} primaryHex={primaryHex} secondaryHex={secondaryHex} />
+                <p className="text-xs text-gray-500 mt-2">Buttons and selections take the theme; your lock-screen colour marks the top strip and the sidebar. Paid and prices stay green.</p>
+              </div>)}
+            </div>
+          </Section>
+        )}
 
-          {theme && (<>
-            <label className="block text-sm font-medium text-gray-700 mb-2 mt-6">POS preview</label>
-            <TillPreview theme={theme} brandHex={accentHex.trim() || null} primaryHex={primaryHex} secondaryHex={secondaryHex} />
-            <p className="text-xs text-gray-500 mt-2">{primaryHex
-              ? 'Buttons and selections take your primary colour; the strip shows your colours. Paid and prices stay green.'
-              : 'Buttons and selections take the theme; your brand colour marks the top strip and the sidebar. Paid and prices stay green.'}</p>
-          </>)}
-
-          {/* A313: receipt preview — the exact 1-bit raster a till will print (SCOPE addendum §C) */}
-          <label className="block text-sm font-medium text-gray-700 mb-2 mt-6">Receipt preview</label>
+        {/* ── Receipt (A313) ── */}
+        <Section title="Receipt preview" hint="The exact black-and-white image a receipt printer prints.">
           {/* A530: the logo is stored up to 36 mm and shown at the 15 mm the receipt prints it (full size with the switch). */}
           <ReceiptPreview raster={logoPng && receiptLogoEnabled ? fitStoredLogo(monoRasterFromString(logoReceipt)) : null} name={bizName} canvasRef={receiptRef} />
           <p className="text-xs text-gray-500 mt-2">{logoPng && receiptLogoEnabled
             ? 'Prints up to 15 mm tall (full size if ZapTill turns on Full-size logo). Solid marks print crisply; gradients and colour wash out. If it looks wrong, upload a cleaner mark or leave the toggle off.'
             : 'Turn on "Print logo on customer receipts" to see the logo here.'}</p>
-        </div>
+        </Section>
+
+        {!themesEnabled && (
+          <p className="text-xs text-gray-500" data-testid="branch-branding-premium-note">Per-branch branding (a branch’s own theme, colour and receipt footer) is part of Themes — ask ZapTill.</p>
+        )}
       </div>
+
       {/* A544: a branch's own theme, colour and receipt footer — only with themes (the premium switch, A325). */}
       {themesEnabled && <BranchBrandingSection client={api} />}
+
+      {/* A606: the customer screen's slideshow (the owner's; the online licence) — its own save. */}
+      <CustomerScreenSection />
+
+      <div className="mt-10 border-t border-gray-800 pt-4">
+        <button type="button" onClick={clearAll} disabled={busy} className="text-sm text-gray-400 hover:text-red-400 underline disabled:opacity-40">Reset all branding to the ZapTill default</button>
+      </div>
+
+      {/* A605 (owner, 2026-10-28: "the save button … move it at the bottom"): ONE save for this page's form, in a bar pinned
+          to the bottom of the screen — shown only when something has changed, and briefly with the saved message. */}
+      <SaveBar show={dirty || !!msg} dirty={dirty} busy={busy} canSave={!(sendColours && !!colourErr)} message={msg} error={msgIsError}
+        hint={sendColours && colourErr ? colourErr : ''} onSave={save} onDiscard={discard} label="Save" />
+    </div>
+  );
+}
+
+/** A605: a section of the Branding page — one card, a title and a line saying what it is for. */
+function Section({ title, hint, children, testId }: { title: string; hint?: string; children: React.ReactNode; testId?: string }) {
+  return (
+    <section className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5" data-testid={testId}>
+      <h3 className="text-sm font-semibold text-white">{title}</h3>
+      {hint && <p className="text-xs text-gray-400 mt-0.5 mb-4">{hint}</p>}
+      {!hint && <div className="mb-3" />}
+      {children}
+    </section>
+  );
+}
+
+/** A605: the save bar — pinned to the bottom of the screen while something has changed: what is wrong or what happened on
+ *  the left, Discard changes and Save on the right. The same bar for the page and (inside its own panel) each branch. */
+function SaveBar({ show, dirty, busy, canSave, message, error, hint, onSave, onDiscard, label, sticky = true }: {
+  show: boolean; dirty: boolean; busy: boolean; canSave: boolean; message: string; error: boolean; hint?: string;
+  onSave: () => void; onDiscard: () => void; label: string; sticky?: boolean;
+}) {
+  if (!show) return null;
+  const text = hint || message || (dirty ? 'You have unsaved changes.' : '');
+  return (
+    <div data-testid={sticky ? 'branding-save-bar' : 'branch-save-bar'}
+      className={`${sticky ? 'sticky bottom-0 z-20 -mx-4 sm:-mx-6 mt-8 px-4 sm:px-6 shadow-[0_-8px_24px_rgba(0,0,0,0.25)]' : 'mt-5 -mx-4 px-4 rounded-b-lg'} border-t border-gray-800 bg-gray-900 py-3 flex flex-wrap items-center gap-3`}>
+      <p className={`flex-1 min-w-[12rem] text-sm ${error || hint ? 'text-amber-600' : 'text-gray-400'}`} role="status" aria-live="polite">{text}</p>
+      {dirty && (<>
+        <button type="button" onClick={onDiscard} disabled={busy}
+          className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 disabled:opacity-40">Discard changes</button>
+        <button type="button" onClick={onSave} disabled={busy || !canSave}
+          className="rounded-lg bg-swift-strong hover:bg-swift-deep text-white px-5 py-2 text-sm font-semibold disabled:opacity-40">
+          {busy ? <><span className="spin-dot" aria-hidden />Saving…</> : label}
+        </button>
+      </>)}
     </div>
   );
 }
@@ -394,7 +495,11 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
   const [footer, setFooter] = useState<string>(row.receipt_footer ?? '');  // '' = the business's
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [msgErr, setMsgErr] = useState(false);
   const lineMax = limits?.line_max ?? FOOTER_LINE_MAX;
+  // A605: changed from what is stored → the panel's save bar offers Save and Discard changes.
+  const changed = themeId !== row.theme_id || accent.trim() !== (row.accent_hex ?? '') || footer !== (row.receipt_footer ?? '');
+  const discard = () => { setThemeId(row.theme_id); setAccent(row.accent_hex ?? ''); setFooter(row.receipt_footer ?? ''); setMsg(''); setMsgErr(false); };
   const lineNarrow = limits?.line_narrow ?? FOOTER_LINE_NARROW;
 
   // The same checks the cloud runs (lib/branchBranding.ts): a colour seen on the dark till (3:1), a plain-text footer
@@ -409,14 +514,14 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
     row.receipt_footer ? 'own footer' : null].filter(Boolean).join(' · ') || 'follows the business';
 
   const save = async () => {
-    setBusy(true); setMsg('');
+    setBusy(true); setMsg(''); setMsgErr(false);
     try {
       const r = await client.patch<BranchBrandingRow>(`/api/business/branding/branches/${row.branch_id}`, {
         theme_id: themeId, accent_hex: accent.trim() ? accent.trim() : null, receipt_footer: footer.trim() ? footer : null,
       });
       onSaved({ branch_id: row.branch_id, theme_id: r?.theme_id ?? null, accent_hex: r?.accent_hex ?? null, receipt_footer: r?.receipt_footer ?? null });
       setMsg('Saved. This branch’s points of sale pick it up within about 30 minutes, or when they are idle.');
-    } catch (e: any) { setMsg(e?.message ?? 'Could not save.'); }
+    } catch (e: any) { setMsg(e?.message ?? 'Could not save.'); setMsgErr(true); }
     finally { setBusy(false); }
   };
   const clear = async () => {
@@ -426,7 +531,7 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
       setThemeId(null); setAccent(''); setFooter('');
       onSaved({ branch_id: row.branch_id, theme_id: null, accent_hex: null, receipt_footer: null });
       setMsg('Cleared — this branch follows the business again.');
-    } catch (e: any) { setMsg(e?.message ?? 'Could not clear.'); }
+    } catch (e: any) { setMsg(e?.message ?? 'Could not clear.'); setMsgErr(true); }
     finally { setBusy(false); }
   };
 
@@ -439,7 +544,7 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
       {open && (
         <div className="grid md:grid-cols-2 gap-6 px-4 pb-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">App theme</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">App theme</label>
             <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={`${row.name} app theme`}>
               <button type="button" role="radio" aria-checked={themeId === null} onClick={() => setThemeId(null)}
                 className={`rounded-lg border px-3 py-2 text-left text-sm ${themeId === null ? 'border-gray-400' : 'border-gray-700 hover:border-gray-500'}`}>
@@ -459,7 +564,7 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
               })}
             </div>
 
-            <label className="block text-sm font-medium text-gray-700 mb-2 mt-5">Brand colour</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2 mt-5">Brand colour</label>
             <div className="flex flex-wrap gap-2 mb-2">
               {PALETTE.map((p) => (
                 <button key={p.hex} type="button" title={p.name} onClick={() => setAccent(p.hex)}
@@ -470,13 +575,13 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
                 className={`h-7 px-3 rounded-full border text-xs ${accent.trim() === '' ? 'border-gray-300' : 'border-gray-700'} text-gray-400`}>Use the business’s</button>
             </div>
             <input type="text" value={accent} onChange={(e) => setAccent(e.target.value)} placeholder={business.accent_hex ?? '#0d9488'}
-              className="border rounded-lg px-3 py-2 text-sm font-mono w-36" aria-label={`${row.name} brand colour`} />
+              className="border border-gray-700 bg-gray-800 rounded-lg px-3 py-2 text-sm font-mono w-36" aria-label={`${row.name} brand colour`} />
             {accentErr && <p className="text-xs text-amber-600 mt-1">{accentErr}</p>}
 
-            <label className="block text-sm font-medium text-gray-700 mb-1 mt-5">Receipt footer</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1 mt-5">Receipt footer</label>
             <p className="text-xs text-gray-500 mb-2">Printed in the footer box instead of the business’s. Plain text; your line breaks are kept. Up to {lineMax} characters a line on 80 mm paper ({lineNarrow} on 58 mm — longer lines wrap there). The thank-you, TAX RECEIPT and “Powered by ZapTill” lines always print.</p>
             <textarea value={footer} onChange={(e) => setFooter(e.target.value)} rows={4} placeholder="Empty = the business’s footer"
-              className="border rounded-lg px-3 py-2 text-sm font-mono w-full" aria-label={`${row.name} receipt footer`} />
+              className="border border-gray-700 bg-gray-800 rounded-lg px-3 py-2 text-sm font-mono w-full" aria-label={`${row.name} receipt footer`} />
             {footer && (
               <div className="text-[11px] font-mono text-gray-500 mt-1" data-testid="footer-line-widths">
                 {footer.replace(/\r\n?/g, '\n').split('\n').map((l, i) => (
@@ -487,21 +592,13 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
               </div>
             )}
             {footerErr && <p className="text-xs text-amber-600 mt-1">{footerErr}</p>}
-
-            <div className="flex gap-2 mt-5">
-              <button type="button" onClick={save} disabled={busy || !!accentErr || !!footerErr}
-                className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40">Save {row.name}</button>
-              <button type="button" onClick={clear} disabled={busy}
-                className="border rounded-lg px-4 py-2 text-sm disabled:opacity-40">Clear override</button>
-            </div>
-            {msg && <p className="text-xs text-gray-500 mt-2">{msg}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{row.name} POS preview</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">{row.name} POS preview</label>
             <TillPreview theme={resolveTheme(look.themeId)} brandHex={look.accentHex} primaryHex={look.primaryHex} secondaryHex={look.secondaryHex} />
             <p className="text-xs text-gray-500 mt-2">{look.fromBranch.theme || look.fromBranch.accent ? 'This branch’s own look.' : 'The business’s look (no override).'}</p>
             {look.receiptFooter && (<>
-              <label className="block text-sm font-medium text-gray-700 mb-2 mt-4">Footer on the receipt</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2 mt-4">Footer on the receipt</label>
               <div className="bg-white border rounded-lg p-3 w-[280px] font-mono text-[11px] text-gray-900 whitespace-pre-wrap text-center" data-testid="footer-preview">
                 {look.receiptFooter}
                 <div className="text-gray-400">------------------------</div>
@@ -510,75 +607,204 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
               </div>
             </>)}
           </div>
+          {/* A605: this branch's save at the bottom of its own panel — Clear override on the left; Discard changes and
+              Save on the right, shown when something changed. */}
+          <div className="md:col-span-2 -mx-4 -mb-4 px-4 py-3 border-t border-gray-800 flex flex-wrap items-center gap-3" data-testid="branch-save-bar">
+            <button type="button" onClick={clear} disabled={busy || (!row.theme_id && !row.accent_hex && !row.receipt_footer)}
+              className="text-sm text-gray-400 hover:text-gray-200 underline disabled:opacity-40 disabled:no-underline">Clear override</button>
+            <p className={`flex-1 min-w-[10rem] text-xs ${msgErr ? 'text-amber-600' : 'text-gray-400'}`} role="status" aria-live="polite">{msg || (changed ? 'Unsaved changes for this branch.' : '')}</p>
+            {changed && (<>
+              <button type="button" onClick={discard} disabled={busy}
+                className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 disabled:opacity-40">Discard changes</button>
+              <button type="button" onClick={save} disabled={busy || !!accentErr || !!footerErr}
+                className="rounded-lg bg-swift-strong hover:bg-swift-deep text-white px-5 py-2 text-sm font-semibold disabled:opacity-40">Save {row.name}</button>
+            </>)}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ── A597: the owner's brand colours ─────────────────────────────────────────────────────────────────────────────────
-// Owner, 2026-10-27: a primary and a secondary colour, ANY colour — never refused. Each place they are used takes the
-// nearest shade that reads there (lib/themes.ts brandTokens), shown here in light and dark so the owner sees exactly that.
-function BrandColoursField({ editable, primary, secondary, onPrimary, onSecondary, primaryHex, secondaryHex, error }: {
+// ── A597 / A605: the owner's brand colours ──────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-27: a primary and a secondary colour, ANY colour — never refused. Owner, 2026-10-28 (A605): "professional
+// and clean, not just branding for the sake … match colors perfectly". The colours can come straight from the logo; the
+// live preview draws the dashboard and the POS with the SAME palette the apps use (lib/themes.ts brandPalette: each job the
+// nearest shade on the colour's own scale that reads there); a note appears only when a colour needed help, in plain words.
+function BrandColoursField({ editable, primary, secondary, onPrimary, onSecondary, primaryHex, secondaryHex, error, logoColours, logo, bizName }: {
   editable: boolean; primary: string; secondary: string; onPrimary: (v: string) => void; onSecondary: (v: string) => void;
   primaryHex: string | null; secondaryHex: string | null; error: string;
+  logoColours: LogoColours | null; logo: string | null; bizName: string;
 }) {
-  const near = brandNearStatus(primaryHex);
-  const NEAR = { paid: 'the green that means paid', warning: 'the amber of warnings', void: 'the red of voids' } as const;
-  const fields: Array<[string, string, (v: string) => void, string | null]> = [
-    ['Primary', primary, onPrimary, primaryHex], ['Secondary', secondary, onSecondary, secondaryHex],
+  const [target, setTarget] = useState<'primary' | 'secondary'>('primary');
+  const notes = [...brandNotes(primaryHex), ...brandNotes(secondaryHex).map((n) => n.replace(/^Your /, 'Your secondary '))];
+  const fields: Array<[string, string, (v: string) => void, string | null, string]> = [
+    ['Primary', primary, onPrimary, primaryHex, 'Buttons, the pay button, selected items, links and the menu.'],
+    ['Secondary', secondary, onSecondary, secondaryHex, 'Used sparingly: accents and the second series on charts.'],
   ];
+  const fromLogo = logoColours?.colours ?? [];
+  const pick = (hex: string) => {
+    if (target === 'primary') { onPrimary(hex); setTarget('secondary'); } else onSecondary(hex);
+  };
   return (
-    <div className="mt-6" data-testid="brand-colours">
-      <label className="block text-sm font-medium text-gray-700 mb-1">Brand colours</label>
-      <p className="text-xs text-gray-500 mb-3">Your own colours on the web dashboard and every point of sale: buttons, selected items, links and the menu
-        (primary); accents, the colour band and charts (secondary). Any colour works: readable text and lighter or darker shades are worked out for you.</p>
+    <Section title="Brand colours" testId="brand-colours"
+      hint="Your own colours on the web dashboard and every point of sale. Any colour works: readable text and lighter or darker shades are worked out for you.">
       {!editable && (
-        <p className="text-xs text-gray-500 mb-2" data-testid="brand-colours-owner-only">Only the owner can change the brand colours.</p>
+        <p className="text-xs text-gray-400 mb-3" data-testid="brand-colours-owner-only">Only the owner can change the brand colours.</p>
       )}
-      {fields.map(([label, value, set, hex]) => (
-        <div key={label} className="flex items-center gap-2 mb-2">
-          <span className="w-20 text-sm text-gray-500">{label}</span>
-          <input type="color" value={hex ?? '#0d9488'} disabled={!editable} onChange={(e) => set(e.target.value)}
-            className="h-9 w-12 rounded border border-gray-700 bg-transparent p-0.5 disabled:opacity-40" aria-label={`${label} colour picker`} />
-          <input type="text" value={value} disabled={!editable} onChange={(e) => set(e.target.value)} placeholder="Not set"
-            className="border rounded-lg px-3 py-2 text-sm font-mono w-32 disabled:opacity-40" aria-label={`${label} colour`} data-testid={`brand-${label.toLowerCase()}`} />
-          {editable && value.trim() !== '' && (
-            <button type="button" onClick={() => set('')} className="text-xs text-gray-500 underline">Clear</button>
+      <div className="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-6">
+        <div>
+          {fields.map(([label, value, set, hex, what]) => (
+            <div key={label} className="mb-4">
+              <div className="flex items-center gap-2">
+                <span className="w-20 text-sm font-medium text-gray-300">{label}</span>
+                <input type="color" value={hex ?? '#0d9488'} disabled={!editable} onChange={(e) => set(e.target.value)}
+                  className="h-9 w-11 cursor-pointer rounded-md border border-gray-700 bg-transparent p-0.5 disabled:opacity-40" aria-label={`${label} colour picker`} />
+                <input type="text" value={value} disabled={!editable} onChange={(e) => set(e.target.value)} placeholder="Not set"
+                  className="border border-gray-700 bg-gray-800 rounded-lg px-3 py-2 text-sm font-mono w-28 disabled:opacity-40" aria-label={`${label} colour`} data-testid={`brand-${label.toLowerCase()}`} />
+                {editable && value.trim() !== '' && (
+                  <button type="button" onClick={() => set('')} className="text-xs text-gray-400 hover:text-gray-200 underline">Clear</button>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1 ml-[5.5rem]">{what}</p>
+            </div>
+          ))}
+          {error && <p className="text-xs text-amber-600 mb-3">{error}</p>}
+
+          {/* "Use colours from my logo": the logo's own colours, one click each */}
+          {editable && logo && (
+            <div className="rounded-lg border border-gray-800 p-3 mb-3" data-testid="logo-colours">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-medium text-gray-300">Use colours from my logo</p>
+                <div className="inline-flex rounded-md border border-gray-700 p-0.5 text-[11px]" role="radiogroup" aria-label="Set which colour">
+                  {(['primary', 'secondary'] as const).map((t) => (
+                    <button key={t} type="button" role="radio" aria-checked={target === t} onClick={() => setTarget(t)}
+                      className={`rounded px-2 py-0.5 ${target === t ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
+                      {t === 'primary' ? 'Set primary' : 'Set secondary'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {fromLogo.length === 0
+                ? <p className="text-xs text-gray-500">{logoColours ? 'No clear colours found in your logo. Pick them above.' : 'Reading your logo…'}</p>
+                : (<div className="flex flex-wrap gap-2">
+                    {fromLogo.map((hex) => {
+                      const used = hex === primaryHex || hex === secondaryHex;
+                      return (
+                        <button key={hex} type="button" onClick={() => pick(hex)} title={`Use ${hex.toUpperCase()} as the ${target} colour`}
+                          className="group flex items-center gap-1.5 rounded-full border border-gray-700 py-1 pl-1 pr-2.5 hover:border-gray-500" data-testid="logo-colour">
+                          <span className="h-6 w-6 rounded-full" style={{ background: hex, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.12)' }} aria-hidden />
+                          <span className="font-mono text-[11px] text-gray-300">{hex.toUpperCase()}</span>
+                          {used && <span className="text-[10px] text-gray-500">{hex === primaryHex ? 'primary' : 'secondary'}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>)}
+            </div>
+          )}
+
+          {notes.length > 0 && (
+            <div className="rounded-lg border border-gray-800 bg-gray-800 p-3 space-y-1.5" data-testid="brand-colour-notes">
+              {notes.map((n) => <p key={n} className="text-xs text-gray-300">{n}</p>)}
+            </div>
           )}
         </div>
-      ))}
-      {error && <p className="text-xs text-amber-600 mb-2">{error}</p>}
-      {near && <p className="text-xs text-gray-500 mb-2">Close to {NEAR[near]}. Fine to use; staff may take a button for that status at a glance.</p>}
-      {(primaryHex || secondaryHex) && <BrandColoursPreview primaryHex={primaryHex} secondaryHex={secondaryHex} />}
-    </div>
+        <BrandLivePreview primaryHex={primaryHex} secondaryHex={secondaryHex} logo={logo} bizName={bizName} />
+      </div>
+    </Section>
   );
 }
 
-/** The shades as the dashboard will draw them, in light AND dark (lib/themeVars.ts brandColourVars, index.css data-brand). */
-function BrandColoursPreview({ primaryHex, secondaryHex }: { primaryHex: string | null; secondaryHex: string | null }) {
-  const p = brandTokens(primaryHex), s = brandTokens(secondaryHex) ?? p;
-  const modes: Array<{ name: string; bg: string; edge: string; muted: string; ink: string; dark: boolean }> = [
-    { name: 'Light', bg: '#ffffff', edge: '#e2e8f0', muted: '#64748b', ink: '#0f172a', dark: false },
-    { name: 'Dark', bg: '#111827', edge: '#1f2937', muted: '#9ca3af', ink: '#f9fafb', dark: true },
-  ];
+/** A605: the live preview — a small dashboard (menu, a card, a primary button, a chart) and a small POS (header, product
+ *  tiles, the pay button), in light or dark, drawn with exactly the shades the apps will use (brandPalette). */
+function BrandLivePreview({ primaryHex, secondaryHex, logo, bizName }: { primaryHex: string | null; secondaryHex: string | null; logo: string | null; bizName: string }) {
+  const [mode, setMode] = useState<'light' | 'dark'>('light');
+  const p = brandPalette(primaryHex), s = brandPalette(secondaryHex);
+  if (!p) {
+    return (
+      <div className="rounded-lg border border-dashed border-gray-700 p-6 text-center text-xs text-gray-500" data-testid="brand-colours-preview">
+        Choose a primary colour to see your dashboard and POS here.
+      </div>
+    );
+  }
+  const k = p[mode], s2 = s ? s[mode] : null;
+  const S = mode === 'light'
+    ? { page: '#f8fafc', card: '#ffffff', edge: '#e2e8f0', ink: '#0f172a', muted: '#64748b', soft: '#f1f5f9', neutral: '#94a3b8' }
+    : { page: '#030712', card: '#111827', edge: '#1f2937', ink: '#f9fafb', muted: '#9ca3af', soft: '#1f2937', neutral: '#4b5563' };
+  const bars = [42, 64, 50, 78, 58, 88, 70];
+  const paid = STATUS_SHADES.paid[mode === 'light' ? 3 : 1];
   return (
-    <div className="grid grid-cols-2 gap-2 mt-2" data-testid="brand-colours-preview">
-      {modes.map((m) => (
-        <div key={m.name} className="rounded-lg p-3 space-y-2" style={{ background: m.bg, border: `1px solid ${m.edge}` }}>
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: m.muted }}>{m.name}</div>
-          {p && (<div className="flex flex-wrap gap-1.5">
-            <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: p.fill, color: BRAND_SURFACES.darkLabels[1] }}>Save</span>
-            <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: p.strong, color: '#ffffff' }}>Add item</span>
-          </div>)}
-          {p && <div className="text-[11px] underline" style={{ color: m.dark ? p.textDark : p.textLight }}>A link</div>}
-          {s && (<div className="flex items-center gap-1.5">
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium" style={{ background: s.base, color: s.on }}>Chip</span>
-            <span className="h-2 w-10 rounded" style={{ background: m.dark ? s.chartDark : s.chartLight }} aria-hidden />
-            <span className="text-[10px]" style={{ color: m.ink }}>chart</span>
-          </div>)}
+    <div data-testid="brand-colours-preview">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium text-gray-300">Live preview</p>
+        <div className="inline-flex rounded-md border border-gray-700 p-0.5 text-[11px]" role="radiogroup" aria-label="Preview mode">
+          {(['light', 'dark'] as const).map((m) => (
+            <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)}
+              className={`rounded px-2 py-0.5 ${mode === m ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}>{m === 'light' ? 'Light' : 'Dark'}</button>
+          ))}
         </div>
-      ))}
+      </div>
+      {/* The web dashboard */}
+      <div className="rounded-lg overflow-hidden flex" style={{ background: S.page, border: `1px solid ${S.edge}`, minHeight: 168 }} data-testid="preview-dashboard">
+        <div className="w-[34%] flex flex-col" style={{ background: k.tint, borderRight: `1px solid ${S.edge}` }}>
+          <div className="h-1" style={{ background: p.base }} aria-hidden data-testid="preview-band" />
+          <div className="px-2.5 py-2 flex items-center gap-1.5" style={{ borderBottom: `1px solid ${S.edge}` }}>
+            {logo && <img src={logo} alt="" className="h-5 max-w-[28px] object-contain rounded logo-chip-light p-0.5" />}
+            <span className="text-[10px] font-bold truncate" style={{ color: S.ink }}>{bizName}</span>
+          </div>
+          <div className="p-1.5 space-y-0.5 text-[10px]">
+            <div className="rounded px-2 py-1 font-medium" style={{ background: k.subtle, color: k.text, boxShadow: `inset 2px 0 0 ${k.primary}` }}>Overview</div>
+            {['Sales', 'Products', 'Settings'].map((n) => <div key={n} className="px-2 py-1" style={{ color: S.muted }}>{n}</div>)}
+          </div>
+        </div>
+        <div className="flex-1 p-2.5 space-y-2 min-w-0">
+          <div className="rounded-md p-2" style={{ background: S.card, border: `1px solid ${S.edge}` }}>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[9px]" style={{ color: S.muted }}>Sales today</div>
+                <div className="text-[13px] font-bold" style={{ color: S.ink }}>{money(48250)}</div>
+              </div>
+              <span className="rounded-md px-2 py-1 text-[10px] font-semibold" style={{ background: k.primary, color: k.onPrimary }}>New sale</span>
+            </div>
+            <div className="mt-2 flex items-end gap-1 h-12" aria-hidden>
+              {bars.map((h, i) => (
+                <div key={i} className="flex-1 flex items-end gap-px">
+                  <div className="flex-1 rounded-t-sm" style={{ height: `${h}%`, background: k.chart }} />
+                  <div className="flex-1 rounded-t-sm" style={{ height: `${Math.round(h * 0.7)}%`, background: s2 ? s2.chart : S.neutral }} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="text-[10px]" style={{ color: S.muted }}>A <span className="underline" style={{ color: k.text }}>link</span> · a focused field:
+            <span className="inline-block align-middle ml-1 h-3.5 w-12 rounded" style={{ background: S.card, outline: `2px solid ${k.ring}`, outlineOffset: 1 }} /></div>
+        </div>
+      </div>
+      {/* The POS */}
+      <div className="rounded-lg overflow-hidden mt-2" style={{ background: S.page, border: `1px solid ${S.edge}` }} data-testid="preview-pos">
+        <div className="h-[3px]" style={{ background: mode === 'dark' ? p.layer : p.base }} aria-hidden />
+        <div className="flex">
+          <div className="flex-1 p-2.5 min-w-0">
+            <div className="flex gap-1 mb-2 text-[10px]">
+              <span className="rounded-full px-2 py-0.5 font-medium" style={{ background: k.primary, color: k.onPrimary }}>All</span>
+              {['Drinks', 'Snacks'].map((n) => <span key={n} className="rounded-full px-2 py-0.5" style={{ background: S.soft, color: S.muted }}>{n}</span>)}
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[['Chicken wrap', 550], ['Soda 500 ml', 120], ['Chips', 200]].map(([n, v], i) => (
+                <div key={n as string} className="rounded-md p-1.5" style={{ background: i === 0 ? k.subtle : S.card, border: `1px solid ${i === 0 ? k.ring : S.edge}` }}>
+                  <div className="text-[10px] truncate" style={{ color: S.ink }}>{n}</div>
+                  <div className="text-[10px] font-semibold" style={{ color: S.muted }}>{money(v as number)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="w-[34%] p-2.5 flex flex-col gap-1.5" style={{ background: S.card, borderLeft: `1px solid ${S.edge}` }}>
+            <div className="text-[10px]" style={{ color: S.ink }}>Order 104 <span className="ml-1 rounded px-1 text-[9px] font-semibold" style={{ color: paid, border: `1px solid ${paid}` }}>Paid</span></div>
+            <div className="text-[10px]" style={{ color: k.text }}>Add a note</div>
+            <div className="mt-auto rounded-md py-1.5 text-center text-[11px] font-bold" style={{ background: k.primary, color: k.onPrimary }} data-testid="preview-pay">Pay {money(670)}</div>
+          </div>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-500 mt-2">Pages, cards and tables stay neutral; Paid, warnings and voids keep their own colours.</p>
     </div>
   );
 }
@@ -621,13 +847,14 @@ function LockPreview({ accent, logo }: { accent: string; logo: string | null }) 
  *  A326's themeVars): action = the theme's 500/400; brand strip + sidebar tint = the brand colour when it can be seen,
  *  otherwise the theme's own tint and no strip; status and money stay green. */
 function TillPreview({ theme, brandHex, primaryHex = null, secondaryHex = null }: { theme: Theme; brandHex: string | null; primaryHex?: string | null; secondaryHex?: string | null }) {
-  // A597: a primary brand colour replaces the theme's shades (the POS's rule, renderer/lib/themeVars.ts brandColourVars).
-  const p = brandTokens(primaryHex);
-  const k = p ? { fillDark: p.fill, onFillDark: labelOn(p.fill), textDark: p.textDark, tint: p.tint } : themeTokens(theme);
+  // A597 / A605: a primary brand colour replaces the theme's shades — the POS's dark-screen palette (renderer/lib/themeVars.ts
+  // brandColourVars): the key action with its one readable label, the text shade, the faint sidebar tint. One-colour strip.
+  const p = brandPalette(primaryHex);
+  const k = p ? { fillDark: p.dark.primary, onFillDark: p.dark.onPrimary, textDark: p.dark.text, tint: p.tint } : themeTokens(theme);
   const accent = resolveBrandLayer(brandHex);
   const brand = accent ?? (p ? { brand: p.layer, tint: p.tint } : null);
-  const second = brandTokens(secondaryHex)?.layer ?? null;
-  const strip = brand ? (second ? `linear-gradient(90deg, ${brand.brand} 0%, ${brand.brand} 50%, ${second} 50%, ${second} 100%)` : brand.brand) : null;
+  void secondaryHex;   // the secondary is for accents and charts, not the POS strip (A605)
+  const strip = brand ? brand.brand : null;
   return (
     <div className="rounded-xl overflow-hidden border relative" style={{ background: '#030712' }} data-testid="till-preview">
       {strip && <div className="absolute inset-x-0 top-0 h-[3px]" style={{ background: strip }} aria-hidden data-testid="brand-strip" />}

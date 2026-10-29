@@ -2,7 +2,7 @@
 // a launch after a quit by hand) ends inside this import, before anything below loads. See startGate.ts.
 import './startGate';
 import { gpuLine, gateNote } from './startGate';
-import { app, BrowserWindow, Menu, shell } from 'electron';
+import { app, BrowserWindow, Menu, shell, powerMonitor } from 'electron';
 import { sendTillChangesNow } from './changeQueue';   // A448
 import { tillBranchId } from './deviceConfig';   // A446
 import { configureStaffRoster, startStaffRosterTimer, refreshStaffRosterNow } from './staffRoster';   // A446
@@ -16,6 +16,7 @@ import { startLiveSync, liveActive, startupCatalogue } from './liveSync';   // A
 import { startLogPull } from './logPull';   // A533
 import { startBranchDrawers } from './branchDrawers';   // A535
 import { startAttendanceDevices } from './attendanceDevice';   // A599
+import { startCustomerDisplay, stopCustomerDisplay } from './customerDisplayWire';   // A606
 import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet, pullCatalogueNow, refreshTechConfigNow, runRemoteInstructionsNow, testClearsBeforePush, remoteCloseBeat, REMOTE_CLOSE_BEAT_MS, learnCloudCloses } from './syncEngine';   // A523: learnCloudCloses
 import { AT_LOGIN_ARG, LOGIN_WAIT_ARG, LOGIN_WAIT_MS, isAutoLaunch, startsAtSignIn, startsWindowless, runStartupSequence, markStartup, markStartupSettled, startupLine, noteStartupLine, type StartupStep } from './lowImpactStart';   // A513
@@ -32,7 +33,8 @@ import { ensureNodeTls } from './lanTls';   // A489
 import { reportDayState, executeCloseDay, executeConfirmShift, executeShiftMoney } from './branchClose';   // A520: reportDayState — never skips the poll
 import { applyDistribution, distributionCursors, retryPeerQuarantine } from './nodeIngest';   // A501: the quarantine
 import { nodeReplicationTick } from './syncEngine';   // F10: branch replication on its own beat
-import { pruneIfDue, snapshotIfDue } from './maintenance';
+import { pruneIfDue, snapshotIfDue, wireCloseBackups } from './maintenance';
+import { noteRestoreDone } from './backupService';   // A600
 import { initAutoUpdate } from './autoUpdate';
 import { installAtStartIfDue } from './autoUpdate';   // A541
 import { getBuildInfo } from './buildInfo';
@@ -154,7 +156,7 @@ function createWindow(): BrowserWindow {
     },
   });
   mainWin = win;
-  win.on('closed', () => { if (mainWin === win) mainWin = null; });
+  win.on('closed', () => { if (mainWin === win) mainWin = null; stopCustomerDisplay(); });   // A606: the customer screen goes with it
   win.once('ready-to-show', () => { markStartup('window'); windowShown(); });   // A513: measured once per start
   // A494: developer tools opened any other way on an installed till without a technician's session are closed at once.
   win.webContents.on('devtools-opened', () => {
@@ -186,6 +188,8 @@ function createWindow(): BrowserWindow {
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+  // A606: the customer screen on its own monitor, when it is on and that monitor is connected (customerDisplayWire.ts).
+  win.once('ready-to-show', () => { try { startCustomerDisplay(); } catch (e) { console.error('[startup] customer screen:', e); } });
   return win;
 }
 
@@ -271,8 +275,10 @@ app.whenReady().then(async () => {
 
     installMenu();
 
-    // Init DB schema (runs additive migrations on older local DBs)
+    // Init DB schema (runs additive migrations on older local DBs). A600: a restore waiting is swapped in first (inside
+    // getLocalDb, restoreSwap.ts); once open, it is recorded in the restored database.
     getLocalDb();
+    try { noteRestoreDone(); } catch (err) { console.error('[backup] restore note:', err); }
 
     // A546 (owner, 2026-10-21, on a till installing a waiting update: "yes, but what if it auto starts like a server — what
     // happens?"): a till's sign-in launch reaches here only when the gate saw an approved, newer update waiting. It
@@ -551,15 +557,22 @@ app.whenReady().then(async () => {
   // its nightly snapshot. Neither belongs on a tight timer, and both must
   // survive the app never being open at a specific hour — "due since
   // yesterday" runs on the next boot.
+  // A600: the backup on EVERY PC (not only the branch server) — every 6 hours (slots 03:00, 09:00, 15:00, 21:00), caught
+  // up after a start once nobody has touched the PC for 2 minutes (or after 30 minutes' wait); checked every 5 minutes
+  // (a state read). A600 follow-up: and right after a day close on this PC (a shift close too on a standalone POS) —
+  // dayService / shiftService say so through closeHooks.ts.
+  wireCloseBackups();
+  const idleSeconds = (): number | null => { try { return powerMonitor.getSystemIdleTime(); } catch { return null; } };
+  const backupIfDue = () => snapshotIfDue(new Date(), idleSeconds()).catch(err => console.error('[maintenance] snapshot:', err));
   setInterval(() => {
     try { pruneIfDue(); } catch (err) { console.error('[maintenance] prune:', err); }
-    snapshotIfDue().catch(err => console.error('[maintenance] snapshot:', err));
   }, 3_600_000);
+  setInterval(backupIfDue, 5 * 60_000);
   // And once shortly after boot, for the till that is only on during service. A513: 90 s after the start-up sequence
   // (not after launch — on a slow PC a server's snapshot then ran while the sequence was still going).
   const startMaintenanceSoon = () => setTimeout(() => {
     try { pruneIfDue(); } catch (err) { console.error('[maintenance] prune:', err); }
-    snapshotIfDue().catch(err => console.error('[maintenance] snapshot:', err));
+    backupIfDue();
   }, 90_000);
 
   // ── A513: the start-up sequence ─────────────────────────────────────────────────────────────────────────────────

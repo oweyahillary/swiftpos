@@ -272,7 +272,8 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
       .is('retired_at', null);
     if (error) throw error;
     // A581: a business whose cloud plan lapsed past its grace has its tills' sync refused on purpose — not "not syncing".
-    const lapsed = await lapsedBusinessIds(now.getTime());
+    // A601: and from the desktop-only cut-off, a desktop-only business's POSs (they send no backup on purpose).
+    const lapsed = await lapsedBusinessIds(now.getTime(), ((data ?? []) as any[]).map((d) => d.business_id));
     const devices = ((data ?? []) as any[]).filter(inActive).filter((d) => !lapsed.has(d.business_id));
     // A579: the queue each 1.0.20 till reported, and — for an older till that is on and quiet — whether it traded.
     const queues = syncQueueReports();

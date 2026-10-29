@@ -438,13 +438,30 @@ router.get('/authorizers', async (req, res) => {
 
 // POST /api/staff — create staff member with PIN
 router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), async (req, res) => {
-  const { name, email, phone, role_id, pin, branch_ids } = req.body;
+  const { name, email, phone, pin, branch_ids } = req.body;
+  let role_id: string | undefined = req.body.role_id;
 
-  if (!name || !role_id || !pin) {
+  // A603: "Partner" in the Role list — the OWNER's alone (never a partner, never a manager): the General Manager role
+  // (every permission) and web dashboard access in this one step, the same grant as "Give web access".
+  const partner = req.body.partner === true;
+  let partnerRoleName: string | null = null;
+  if (partner) {
+    if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_PARTNER); return; }
+    if (!String(email ?? '').includes('@')) {
+      res.status(400).json({ error: 'A partner needs an email address — it is how they sign in to the web dashboard.', code: 'NO_EMAIL' });
+      return;
+    }
+    let gm: { id: string; name: string } | null;
+    try { gm = await partnerRole(req.businessId); } catch { res.status(503).json({ error: 'Could not read the roles — please try again.' }); return; }
+    if (!gm) { res.status(400).json(NO_PARTNER_ROLE); return; }
+    role_id = gm.id; partnerRoleName = gm.name;
+  }
+
+  if (!name || !role_id || (!pin && !partner)) {
     res.status(400).json({ error: 'name, role_id and pin are required' });
     return;
   }
-  if (!/^\d{4,6}$/.test(pin)) {
+  if (pin && !/^\d{4,6}$/.test(pin)) {
     res.status(400).json({ error: 'PIN must be 4–6 digits' });
     return;
   }
@@ -487,7 +504,7 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
     if (missing.length) { res.status(403).json({ error: 'You cannot give someone permissions you do not hold', missing }); return; }
   }
 
-  const pin_hash = await hashPin(pin);
+  const pin_hash = pin ? await hashPin(pin) : null;   // A603: a partner may be added without a POS PIN
 
   // Optional per-user override PIN (manager authority for voids/overrides).
   const overridePin = req.body.override_pin;
@@ -525,9 +542,32 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
   const rows = await overrideRows(user.id, req.body, callerHeld(req));
   if (rows?.length) await supabase.from('user_permissions').insert(rows);
 
+  // A603: a partner — web dashboard access now, or the person is taken off again (never half made: on the staff list
+  // with no sign-in). The invitation e-mail alone failing is not a half-made partner: access is given, "Resend invite".
+  let webAccess: { status: string; emailed: boolean } | null = null;
+  if (partner) {
+    const grant = await giveWebAccess(req, { id: user.id, name, email: String(email).trim().toLowerCase(), status: 'active', roles: { name: partnerRoleName } });
+    if (!grant.ok) {
+      const undone = await undoNewStaff(req.businessId, user.id);
+      if (!undone) {
+        res.status(500).json({ code: 'PARTNER_HALF_MADE', user,
+          error: `${name} was added as ${partnerRoleName} but without web dashboard access, and could not be taken off the staff list. Use "Give web access" on their row, or deactivate them.` });
+        return;
+      }
+      res.status(grant.code).json({ ...grant.body, error: `The partner was not added. ${grant.body.error}`, not_added: true });
+      return;
+    }
+    webAccess = { status: grant.status!, emailed: grant.emailed === true };
+  }
+
   // A599: with Attendance on, a new member of staff gets the next free device number and goes onto their branch's devices.
   await attendanceStaffChanged(req.businessId, { id: user.id, name, status: 'active', branch_id: effectiveBranchIds[0] ?? null }, req.userId ?? null);
 
+  if (webAccess) {
+    res.status(webAccess.emailed ? 201 : 207).json({ ...user, web_access: webAccess,
+      ...(webAccess.emailed ? {} : { warning: 'The partner was added, but the invitation email could not be sent — use "Resend invite".' }) });
+    return;
+  }
   res.status(201).json(user);
 });
 
@@ -847,6 +887,9 @@ router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
 /** The owner, signed in as themselves (not a till, not a PIN sign-in on one, never a partner — who is never isOwner). */
 const ownerOnly = (req: any): boolean => req.isOwner === true && !req.isTill && !req.pinSignIn && req.webPartner !== true;
 const OWNER_ONLY_ACCESS = { error: 'Only the owner gives or takes away web dashboard access.', code: 'OWNER_ONLY' } as const;
+/** A603: a partner is made by the owner alone — a partner never makes another, a manager never makes one. */
+const OWNER_ONLY_PARTNER = { error: 'Only the owner can add a partner.', code: 'OWNER_ONLY' } as const;
+const NO_PARTNER_ROLE = { error: 'A partner is given the General Manager role, and this business has none. Add a role named General Manager with every permission, then add the partner.', code: 'NO_PARTNER_ROLE' } as const;
 
 // GET /api/staff/web-access — each person's web dashboard access: invited (not signed in yet), active, revoked.
 router.get('/web-access', async (req, res) => {
@@ -904,44 +947,88 @@ router.post('/:id/web-access', async (req, res) => {
     .select('id, name, email, status, business_id, roles ( name )').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (tErr) { sendError(res, tErr); return; }
   if (!target) { res.status(404).json({ error: 'Staff member not found' }); return; }
-  const t = target as { id: string; name: string | null; email: string | null; status: string; roles?: { name?: string | null } | null };
-  if (isOwnerRoleName(t.roles?.name)) {
-    res.status(400).json({ error: 'The owner\'s role signs in as the owner. Give them another role (for example General Manager) first.', code: 'OWNER_ROLE' });
-    return;
+  const g = await giveWebAccess(req, target as WebAccessTarget);
+  if (!g.ok) {
+    if (g.dbError) { sendError(res, g.dbError as Error); return; }
+    res.status(g.code).json(g.body); return;
   }
-  if (t.status !== 'active') { res.status(400).json({ error: 'Activate this staff member first.', code: 'INACTIVE' }); return; }
+  res.status(g.emailed ? 200 : 207).json({ status: g.status, emailed: g.emailed,
+    ...(g.emailed ? {} : { warning: 'Access was given, but the invitation email could not be sent — use "Resend invite".' }) });
+});
+
+type WebAccessTarget = { id: string; name: string | null; email: string | null; status: string; roles?: { name?: string | null } | null };
+/** ok: given (status, emailed); not ok: the answer to send (code, body) — dbError: a read or write that failed. */
+type WebAccessGrant = { ok: boolean; status?: 'active' | 'invited'; emailed?: boolean; code?: number; body?: { error: string; code?: string }; dbError?: unknown };
+
+/**
+ * A550 (A603: one function, so "Give web access" and adding a Partner make exactly the same grant): the person must be an
+ * active member of the staff with an e-mail address, and never on the owner's role. The sign-in account, its link to
+ * this person, the owner's grant, then the invitation. A first grant that cannot be saved after the link was made takes
+ * the link off the account again (best effort — the link alone opens nothing).
+ */
+async function giveWebAccess(req: any, t: WebAccessTarget): Promise<WebAccessGrant> {
+  const no = (code: number, error: string, c?: string, dbError?: unknown): WebAccessGrant =>
+    ({ ok: false, code, body: { error, ...(c ? { code: c } : {}) }, ...(dbError ? { dbError } : {}) });
+  if (isOwnerRoleName(t.roles?.name)) return no(400, 'The owner\'s role signs in as the owner. Give them another role (for example General Manager) first.', 'OWNER_ROLE');
+  if (t.status !== 'active') return no(400, 'Activate this staff member first.', 'INACTIVE');
   const email = String(t.email ?? '').trim().toLowerCase();
-  if (!email.includes('@')) { res.status(400).json({ error: 'Add an email address for this staff member first.', code: 'NO_EMAIL' }); return; }
+  if (!email.includes('@')) return no(400, 'Add an email address for this staff member first.', 'NO_EMAIL');
 
   const { data: biz, error: bErr } = await supabase.from('businesses').select('id, name, owner_id, subdomain').eq('id', req.businessId).maybeSingle();
-  if (bErr || !biz) { sendError(res, bErr ?? new Error('business not found')); return; }
+  if (bErr || !biz) return no(500, 'Could not read the business. Try again in a minute.', undefined, bErr ?? new Error('business not found'));
   const acct = await partnerSignInAccount(email);
-  if (!acct) { res.status(502).json({ error: 'Could not set up a sign-in for this email. Try again in a minute.' }); return; }
-  if (acct.id === (biz as { owner_id?: string | null }).owner_id) {
-    res.status(400).json({ error: 'That email is the owner\'s own sign-in.', code: 'OWNER_ACCOUNT' });
-    return;
-  }
+  if (!acct) return no(502, 'Could not set up a sign-in for this email. Try again in a minute.');
+  if (acct.id === (biz as { owner_id?: string | null }).owner_id) return no(400, 'That email is the owner\'s own sign-in.', 'OWNER_ACCOUNT');
 
   const { map, error: rErr } = await readPartners(req.businessId);
-  if (rErr) { sendError(res, rErr as Error); return; }
+  if (rErr) return no(500, 'Could not read web dashboard access. Try again in a minute.', undefined, rErr);
   const prior = map[t.id];
   const keepActive = !!prior && partnerLive(prior, acct.id) && prior.status === 'active';
   const { error: mErr } = await supabase.auth.admin.updateUserById(acct.id, { app_metadata: withMetaLink(acct.app_metadata, req.businessId, t.id) });
-  if (mErr) { res.status(502).json({ error: 'Could not link the sign-in. Try again in a minute.' }); return; }
+  if (mErr) return no(502, 'Could not link the sign-in. Try again in a minute.');
   const now = new Date().toISOString();
   const wErr = await writePartners(req.businessId, { ...map, [t.id]: {
     auth_user_id: acct.id, status: keepActive ? 'active' : 'invited',
     granted_at: prior && partnerLive(prior, acct.id) ? prior.granted_at : now, granted_by: req.userId ?? null,
     activated_at: keepActive ? (prior?.activated_at ?? null) : null, revoked_at: null, revoked_reason: null,
   } });
-  if (wErr) { sendError(res, wErr as Error); return; }
+  if (wErr) {
+    if (!prior) {   // A603: nothing names this link now — take it off the account again
+      try {
+        const { data: a } = await supabase.auth.admin.getUserById(acct.id);
+        if (a?.user) await supabase.auth.admin.updateUserById(acct.id, { app_metadata: withMetaLink(a.user.app_metadata, req.businessId, null) });
+      } catch { /* the link alone opens nothing */ }
+    }
+    return no(500, 'Could not save web dashboard access. Try again in a minute.', undefined, wErr);
+  }
 
   const address = signInAddress((biz as { subdomain?: string | null }).subdomain) ?? (process.env.DASHBOARD_URL ?? 'https://app.zaptill.co.ke');
   const emailed = await sendPartnerInvite(email, t.name, (biz as { name?: string }).name ?? 'your business', address);
   console.log(`[staff] A550: web dashboard access given${prior ? ' (again)' : ''}`, { businessId: req.businessId, userId: t.id });
-  res.status(emailed ? 200 : 207).json({ status: keepActive ? 'active' : 'invited', emailed,
-    ...(emailed ? {} : { warning: 'Access was given, but the invitation email could not be sent — use "Resend invite".' }) });
-});
+  return { ok: true, status: keepActive ? 'active' : 'invited', emailed };
+}
+
+/** A603: the role a partner is given — the business's General Manager (every permission; migration 159 and sign-up give
+ *  every business one), by name with case and spaces aside, the built-in one first. Null: the owner deleted it. */
+async function partnerRole(businessId: string): Promise<{ id: string; name: string } | null> {
+  const { data, error } = await supabase.from('roles').select('id, name, is_default').eq('business_id', businessId);
+  if (error) throw error;
+  const norm = (n: unknown) => String(n ?? '').trim().replace(/[\s_]+/g, ' ').toLowerCase();
+  const gms = ((data ?? []) as Array<{ id: string; name: string; is_default?: boolean | null }>).filter((r) => norm(r.name) === 'general manager');
+  const pick = gms.find((r) => r.is_default) ?? gms[0];
+  return pick ? { id: pick.id, name: pick.name } : null;
+}
+
+/** A603: take a person just added off again (a partner whose web access could not be given). True when they are gone. */
+async function undoNewStaff(businessId: string, userId: string): Promise<boolean> {
+  try {
+    await supabase.from('user_permissions').delete().eq('user_id', userId);
+    await supabase.from('user_branches').delete().eq('user_id', userId);
+    const { error } = await supabase.from('users').delete().eq('id', userId).eq('business_id', businessId);
+    if (error) { console.error('[staff] A603: could not take the half-added partner off', { businessId, userId }, error.message); return false; }
+    return true;
+  } catch (e) { console.error('[staff] A603: could not take the half-added partner off', { businessId, userId }, (e as Error)?.message); return false; }
+}
 
 // DELETE /api/staff/:id/web-access — take web dashboard access away: they are signed out everywhere at once.
 router.delete('/:id/web-access', async (req, res) => {

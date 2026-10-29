@@ -62,6 +62,7 @@ const ScaleLabelsTab          = lazy(() => import('./pages/settings/ScaleLabelsT
 const ShiftReportsPage        = lazy(() => import('./pages/ShiftReportsPage'));
 const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
 const KDSPage                 = lazy(() => import('./pages/kds/KDSPage'));
+const CustomerDisplayWebPage = lazy(() => import('./pages/pos/CustomerDisplayWebPage'));   // A606
 const CustomersPage           = lazy(() => import('./pages/crm/CustomersPage'));
 const CreditAccountsPage      = lazy(() => import('./pages/customers/CreditAccountsPage'));
 const TableTurnoverPage       = lazy(() => import('./pages/pos/TableTurnoverPage'));
@@ -114,6 +115,8 @@ export default function App() {
 
               {/* ── Public routes (no auth) ─────────────────────────── */}
               <Route path="/kds"         element={<KDSPage />} />
+              {/* A606: the web POS's customer screen — it only listens to the POS window (BroadcastChannel), fetches nothing. */}
+              <Route path="/customer-display" element={<CustomerDisplayWebPage />} />
               <Route path="/menu/:slug"  element={<QRMenuPage />} />
               {/* 0.6.35 (A384): "What to do when" — open to anyone (a locked-out cashier needs it most). */}
               <Route path="/help"        element={<HelpPage />} />

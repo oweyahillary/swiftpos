@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { sendError } from '../lib/sendError';
 import { partitionByValidId, isUuid } from '../lib/syncPush';
 import { cleanVoidReason, cleanVoidNote } from '../lib/kitchenLines';
@@ -72,7 +72,9 @@ export function duplicateDayCode(err: PgErr & { details?: string }): { code: str
 // Desktop schema expectations live in lib/desktopSchema.ts — shared with
 // /api/devices/fleet so the warning and the screen can never disagree.
 
-router.post('/push', async (req, res) => {
+// A602: a named, exported handler (was inline) so the bulk history backfill (routes/backfill.ts) writes a batch's drawers,
+// days, floats, expenses and kitchen voids through EXACTLY this — the same checks, the same answer.
+export async function syncPushHandler(req: Request, res: Response): Promise<void> {
   const businessId = req.businessId;
   // A494: a till's push — its own session, or a person's PIN sign-in on it (the till pushes with whoever is signed in,
   // syncEngine pushAuthHeaders). A browser session (the dashboard, the web POS) never writes drawers and days here.
@@ -707,6 +709,7 @@ router.post('/push', async (req, res) => {
     // A read that failed (chunkIn throws) is just as transient: 503, never a 200 that marks rows synced.
     sendError(res, err, { status: 503, message: 'sync push failed — it will be sent again', code: 'SYNC_RETRY' });
   }
-});
+}
+router.post('/push', syncPushHandler);
 
 export default router;

@@ -26,6 +26,8 @@ import { CREDIT_APPROVERS_KEY } from '../lib/creditApprovers';         // A585
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
 import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
+import { CUSTOMER_SCREEN_KEY, cleanCustomerScreen, slidesFromWire, customerScreenWriteError } from '../lib/customerScreen';   // A606
+import { getWebAccess } from '../lib/webAccess';   // A606: the slideshow is part of the online licence
 
 const router = safeRouter();
 
@@ -569,6 +571,45 @@ router.delete('/branding/branches/:branchId', requireAuth, requireAnyPermission(
   res.json({ branch_id: branch.id, cleared: true });
 });
 
+// ── A606: the customer screen's slideshow ─────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-28: a dual-screen POS shows the customer what is rung up; while idle, premium clients show a slideshow of
+// their own offers or pictures. The images are uploaded like product pictures (the dashboard's image store) and the list
+// (in order, and how many seconds each shows) is kept in business_settings under 'customer_screen' — served to every POS
+// with /api/pos/init (customerScreen). The OWNER's alone, signed in as themselves (never a partner, a manager or a POS's
+// own session), and part of the online licence (lib/webAccess fullAccess, the POS's webPosEnabled). Emptying the list
+// needs no licence, so an owner can always take the images down. Rules: lib/customerScreen.ts (up to 10, uploaded JPEG /
+// PNG / WebP only, 3–60 seconds).
+const customerScreenWho = async (req: any) => ({
+  owner: req.isOwner === true && !req.isTill && req.webPartner !== true,
+  licensed: (await getWebAccess(req.businessId)).fullAccess === true,
+});
+
+// GET /api/business/customer-screen — the list, whether this caller may change it, and whether the licence is there.
+router.get('/customer-screen', requireAuth, async (req, res) => {
+  const { data, error } = await supabase.from('business_settings').select('value')
+    .eq('business_id', req.businessId).eq('key', CUSTOMER_SCREEN_KEY).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  const who = await customerScreenWho(req);
+  const list = slidesFromWire(data?.value ?? null) ?? { slides: [], seconds: 8 };
+  res.json({ ...list, editable: who.owner, licensed: who.licensed });
+});
+
+// PUT /api/business/customer-screen — { slides: [{ url }], seconds } replaces the list (an empty list takes it down).
+router.put('/customer-screen', requireAuth, async (req, res) => {
+  const c = cleanCustomerScreen(req.body);
+  if ('error' in c) { res.status(400).json({ error: c.error, code: 'INVALID_VALUE' }); return; }
+  const refusal = customerScreenWriteError(await customerScreenWho(req), c.value.slides.length === 0);
+  if (refusal) { res.status(refusal.status).json({ error: refusal.error, code: refusal.code }); return; }
+  const value = JSON.stringify(c.value);
+  const { data: existing } = await supabase
+    .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', CUSTOMER_SCREEN_KEY).maybeSingle();
+  const { error } = existing
+    ? await supabase.from('business_settings').update({ value, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    : await supabase.from('business_settings').insert({ business_id: req.businessId, key: CUSTOMER_SCREEN_KEY, value });
+  if (error) { sendError(res, error); return; }
+  res.json(c.value);
+});
+
 // GET /api/business/settings
 // Returns all key/value settings for this business.
 router.get('/settings', requireAuth, async (req, res) => {
@@ -644,6 +685,11 @@ router.post('/settings', requireAuth, (req, res, next) => {
   // A514: the business-wide supervisor PIN is retired — refused for everyone, before any other check or write.
   if (isRetiredSupervisorPinKey(String(key))) {
     res.status(410).json({ ...SUPERVISOR_PIN_RETIRED });
+    return;
+  }
+  // A606: the customer screen's slideshow has its own rules (owner, online licence, uploaded images) — its own route.
+  if (String(key) === CUSTOMER_SCREEN_KEY) {
+    res.status(400).json({ error: 'The customer screen images are saved on Settings › Branding › Customer screen.', code: 'USE_CUSTOMER_SCREEN' });
     return;
   }
   // A492: the M-Pesa number is per branch, set on the branch's till by its manager — not business-wide.

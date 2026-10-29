@@ -365,6 +365,24 @@ export function getAttendanceFlag(): boolean {
   } catch { return false; }
 }
 
+/**
+ * A607: is KRA eTIMS on for the business (pos/init etimsEnabled)? On, the POS asks for the buyer's KRA PIN with the
+ * customer's details and sends it with the sale. Kept in maintenance_state like the attendance flag — no device_config
+ * column. undefined = not said (an older cloud or branch server) → keep. The ONLY writer; off until told.
+ */
+const ETIMS_FLAG_KEY = 'etims_flag';
+export function setEtimsFlag(on: boolean | undefined): void {
+  if (typeof on !== 'boolean') return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(ETIMS_FLAG_KEY, on ? '1' : '0', new Date().toISOString());
+}
+export function getEtimsFlag(): boolean {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(ETIMS_FLAG_KEY) as { value?: string } | undefined;
+    return row?.value === '1';
+  } catch { return false; }
+}
+
 /** 0.6.27: the switches as the till last heard them (all off until told). */
 export function getPosFeatures(): PosFeatures {
   return parsePosFeatures(getDeviceConfig()?.pos_features ?? null);

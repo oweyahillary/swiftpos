@@ -87,7 +87,7 @@ ok('the web callers pass the BILL with the discount and tip beside it (never bil
   assert.match(pm, /cart, total: chargedTotal, discount: allDiscount, offers: offerOff > 0 \? offers : undefined, tip: tipAmount, deliveryFee, deliveryFree: free, change: completedOrder\.change,/);   // 0.6.33 + free
   assert.ok(!/cart, total: grandTotal/.test(pm));
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-  assert.equal((cs.match(/discount: totalDiscount/g) || []).length, 3, 'Print Bill + both kitchen fires');
+  assert.equal((cs.match(/discount: totalDiscount/g) || []).length, 4, 'Print Bill + both kitchen fires + the customer screen (A606)');
   assert.match(read('apps/dashboard/src/lib/reprintReceipt.ts'), /discount:\s+cents\(o\.discount_amount \?\? 0\)/);
 });
 ok('the web cart and receipt show VAT and CTL at the business\'s rates, after the discount', () => {

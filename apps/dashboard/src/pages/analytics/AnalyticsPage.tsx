@@ -47,7 +47,7 @@ import { DESK } from '../../components/RowMore';
 import * as fmt from '../../lib/format';
 import { chartPalette, CLASS_ORDER, CLASS_SHAPE, type ChartPalette, type PayKey } from './chartPalette';
 import { useBrandLook } from '../../components/ThemeLayer';   // A597
-import { brandChartAccent } from '../../lib/themeVars';
+import { brandChartAccent, brandChartSecond } from '../../lib/themeVars';
 import { capRows, compareWords, per100, visibleAreas, areaFromQuery, AREA_ORDER, type AreaKey, type AreaHook } from './chartMath';
 import {
   AreaTiles, StockSection, CustomersSection, CostsSection, NoCostBanner, BranchesSection, transferLink,
@@ -260,13 +260,14 @@ export function Analytics({ client, ownerView, currency, branchName, businessTyp
   const words = analyticsWords(businessType);
   const branchCtx = useBranch();
   const mode = useTheme().theme === 'light' ? 'light' : 'dark';
-  // A597: the shop's secondary colour (else its primary) as the single-series accent, at a shade seen on the card — only
-  // with themes on and a colour chosen; otherwise the palette exactly as before.
-  const brandAccent = brandChartAccent(useBrandLook(), mode);
+  // A597 / A605: the shop's primary colour (else its secondary) as the first series, and its secondary as the comparison
+  // line, each at a shade seen on the card — only with themes on and a colour chosen; otherwise the palette as before.
+  const look = useBrandLook();
+  const brandAccent = brandChartAccent(look, mode), brandSecond = brandChartSecond(look, mode);
   const p = useMemo(() => {
     const base = chartPalette(mode);
-    return brandAccent ? { ...base, accent: brandAccent, severity: { ...base.severity, low: brandAccent } } : base;
-  }, [mode, brandAccent]);
+    return brandAccent ? { ...base, accent: brandAccent, ...(brandSecond ? { compare: brandSecond } : {}), severity: { ...base.severity, low: brandAccent } } : base;
+  }, [mode, brandAccent, brandSecond]);
   const [preset, setPreset] = useState<PresetKey>('30d');
   const [range, setRange] = useState(() => presetRange('30d'));
   const [draft, setDraft] = useState(range);

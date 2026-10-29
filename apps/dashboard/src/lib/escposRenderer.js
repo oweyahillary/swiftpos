@@ -627,6 +627,7 @@ function renderReceipt(ctx) {
     else d.lines(wrap(voided, cols));
   }
   if (full && business.kitchenTickets !== false) info(`Kots: ${order.kotCount}`);
+  if (order.buyerPin) info(`Buyer PIN: ${order.buyerPin}`);
   for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, void 0, 0));
   minorRule();
   d.line("Item".padEnd(c.name) + "Qty".padStart(c.qty) + "Amt".padStart(c.amt));

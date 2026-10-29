@@ -57,6 +57,7 @@ import etimsRoutes         from './etims';
 import adminRoutes         from './admin';
 import techRoutes          from './tech';
 import syncRoutes          from './sync';
+import backfillRoutes      from './backfill';   // A602
 import devicesRoutes       from './devices';
 import parkingRoutes       from './parking';
 import controlsRoutes      from './controls';   // A490: the owner's business options
@@ -165,6 +166,7 @@ router.use('/admin/ops',      opsAdminRoutes);   // A525: before /admin, which t
 router.use('/admin/desktop',  adminInstallerRoutes);   // A570: before /admin, which takes the rest of /admin/*
 router.use('/admin',          adminRoutes);
 router.use('/tech',           techRoutes);
+router.use('/sync/backfill',  backfillRoutes);   // A602: before /sync (its own requireAuth, its own body limit — index.ts)
 router.use('/sync',           syncRoutes);
 router.use('/devices',        devicesRoutes);
 router.use('/parking-sessions', parkingRoutes);

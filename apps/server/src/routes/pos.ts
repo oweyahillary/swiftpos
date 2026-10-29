@@ -41,8 +41,10 @@ import { assertBranchAccess, can } from '../middleware/rbac';                   
 import { maskPhone, seesCustomerContacts } from '../lib/personalData';           // A595
 import { branchCreditEnabled, branchLimitsAt, owedByCustomerAt } from '../lib/branchCredit';   // A595 D4
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
+import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '../lib/customerScreen';   // A606
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
+import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601
 /** A593: GET /test-data-clears per (business, the POS's last applied clear) — lib/quietMemo.ts. */
 const clearsMemo = quietMemo<unknown[]>('pos.test_clears');
 
@@ -418,6 +420,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       // same shape of thing: owner-authored, per business, cached on every till.
       .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
         SCALE_SETTINGS_KEY,   // A577: the business's scale label layout
+        CUSTOMER_SCREEN_KEY,   // A606: the customer screen's slideshow (the owner's images)
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -637,6 +640,10 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     support: await getSupportContact(req.businessId),
     // A346: the till shows its Stock screen only when this is true (cached on the till; older tills ignore it).
     webPosEnabled,
+    // A601: the desktop-only cut-off — on: the cloud takes this POS's backup; phase 'notice' / 'cut' and the date for the
+    // manager's notice ('none': nothing to say). The standing is remembered (lib/cloudPlan.ts standingFor); a failed read
+    // sends no key, so the POS keeps what it had. Older POSs ignore it.
+    ...(!req.businessId ? {} : await standingFor(req.businessId).then((s) => (s ? { cloudBackup: cloudBackupWire(s) } : {})).catch(() => ({}))),
     receiptFooter: receiptText.receipt_footer ?? '',
     // A450: how a customer pays the business by M-Pesa, printed under the payments ("Buy Goods: 123456", "Paybill: …").
     // '' = not set (the receipt prints no such line). The branch's own value wins, as for the header and footer.
@@ -666,17 +673,23 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A577: how this business's weighing scales print their labels (shared/scaleBarcode.ts) — always sent, the default
     // when unset or unreadable, so the till and the web POS read scale labels offline. Older tills ignore it.
     scaleBarcodes: scaleSettingsOrDefault(receiptTextRows?.find((r: any) => r.key === SCALE_SETTINGS_KEY)?.value ?? null),
+    // A606: the customer screen's slideshow — the owner's images in order and the seconds each shows; null = none. The POS
+    // shows it (and fetches each image, once) only with the online licence (webPosEnabled). Older POSs ignore it.
+    customerScreen: slidesFromWire(receiptTextRows?.find((r: any) => r.key === CUSTOMER_SCREEN_KEY)?.value ?? null),
     // 0.6.27: the per-client switches the admin portal sets (feature_flags). Always every key, true or false — an unset
     // switch is off. Older tills ignore it.
     // A599: the same read carries the 'attendance' flag (premium) — on, the web POS hides its PIN clock-in (the device
     // records every punch) and the cloud refuses it. Older tills ignore attendanceDevice.
     ...(await (async () => {
       const { data } = await supabase.from('feature_flags').select('key, enabled')
-        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS, ATTENDANCE_FLAG]);
+        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS, ATTENDANCE_FLAG, 'etims_enabled']);
       const rows = (data ?? []) as Array<{ key: string; enabled: boolean }>;
       return {
-        posFeatures: parsePosFeatures(rows.filter((r) => r.key !== ATTENDANCE_FLAG)),
+        posFeatures: parsePosFeatures(rows.filter((r) => r.key !== ATTENDANCE_FLAG && r.key !== 'etims_enabled')),
         attendanceDevice: rows.some((r) => r.key === ATTENDANCE_FLAG && r.enabled === true),
+        // A607: KRA eTIMS is on for the business — the POS then asks for the buyer's KRA PIN (customer details at the
+        // counter) and sends it with the sale. Older POSs ignore it.
+        etimsEnabled: rows.some((r) => r.key === 'etims_enabled' && r.enabled === true),
       };
     })()),
     // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules — always every rule, defaults where

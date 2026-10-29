@@ -948,7 +948,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   primaryBtn: {
     flex: 1, padding: '11px 0', background: 'rgb(var(--act-strong, 59 130 246))', border: 'none',
-    borderRadius: 10, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+    borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontWeight: 700, fontSize: 14, cursor: 'pointer',
   },
   toggle: { display: 'flex', gap: 8, marginBottom: 16 },
   toggleBtn: {

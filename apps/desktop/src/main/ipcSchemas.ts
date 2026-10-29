@@ -401,7 +401,17 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'monthly:addMovement':      { movement_date: { t: 'string', min: 10 }, method: { t: 'string', min: 1 }, kind: { t: 'string', min: 1 },
                                 amount: { t: 'number' }, note: { t: 'string', optional: true }, branch_id: { t: 'string', optional: true } },
   'monthly:removeMovement': { id: { t: 'string', min: 1 } },
-  'tech:setBackupDir': { dir: { t: 'any' } },          // A380: a folder, or null for the default
+  'tech:setBackupDir': { dir: { t: 'any', optional: true } },   // A380: a folder, or null for the default (A600: null was refused as missing)
+  // A600: Manager › Settings › Backup (owner / manager / technician; restore the owner or a technician).
+  'backup:status':            NO_PAYLOAD,
+  'backup:now':               NO_PAYLOAD,
+  'backup:chooseDir':         NO_PAYLOAD,
+  'backup:setDir':            { dir: { t: 'any', optional: true } },   // a folder, or null for the default
+  'backup:chooseRestoreFile': NO_PAYLOAD,
+  'backup:restore':           { token: { t: 'string', min: 1 }, confirm: { t: 'string' } },
+  // A602: the history upload's progress and the owner's choices (how far back, quiet hours) — the Backup panel's people.
+  'historyUpload:status':      NO_PAYLOAD,
+  'historyUpload:setSettings': { window: { t: 'string', optional: true }, quietFrom: { t: 'string', optional: true }, quietTo: { t: 'string', optional: true } },
   'tech:query':         { sql: { t: 'string' } },
   'tech:status':        NO_PAYLOAD,
   'tech:testConnection':NO_PAYLOAD,
@@ -409,4 +419,25 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'tech:sendLogs':      NO_PAYLOAD,   // A519
   'tech:saveLog':       NO_PAYLOAD,   // A519
   'install:checkTerminalCode': { code: { t: 'string', min: 1 }, branch_id: { t: 'string', optional: true } },   // A519
+  // A606: the customer screen — the POS's sale as the customer sees it (cleaned in main), the page's reads, the setup.
+  'customerDisplay:update':   { kind: 'object' },
+  'customerDisplay:current':  NO_PAYLOAD,
+  'customerDisplay:content':  NO_PAYLOAD,
+  'customerDisplay:slide':    { key: { t: 'string', min: 1 } },
+  'customerDisplay:status':   NO_PAYLOAD,
+  'customerDisplay:set':      { enabled: { t: 'boolean' }, displayId: { t: 'any', optional: true } },
+  'customerDisplay:test':     NO_PAYLOAD,
+  'customerDisplay:identify': NO_PAYLOAD,
+  // A607: customer details at the counter (main/ipc/customerDetails.ts) — the request and the answer are cleaned in main
+  // (customerDetails.ts sanitiseAsk / cleanAnswer); the answer is accepted only from the customer screen's own page.
+  'customer:saleInfo':          NO_PAYLOAD,
+  'customerDisplay:askable':    NO_PAYLOAD,
+  'customerDisplay:ask':        { id: { t: 'string', min: 4 }, purpose: { t: 'string' } },
+  'customerDisplay:cancelAsk':  { id: { t: 'string', optional: true } },
+  'customerDisplay:answer':     { id: { t: 'string', min: 1 } },
+  'customerDisplay:setTouch':   { on: { t: 'boolean' } },
+  'mpesa:stkOffered':           NO_PAYLOAD,
+  'mpesa:stkStart':             { phone: { t: 'string', min: 1 }, amount: { t: 'number' }, ref: { t: 'string', min: 1 } },
+  'mpesa:stkReset':             NO_PAYLOAD,
+  'mpesa:stkState':             NO_PAYLOAD,
 };

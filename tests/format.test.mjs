@@ -188,6 +188,11 @@ const ALLOW = {
   // A588: a copy of shared/forecourt.ts (kept identical by check-shared-sync) — the desktop POS's pumps screen formats the
   // price per litre with it (the desktop has no lib/format); the web screens use lib/format.
   'lib/forecourt.ts': [['moneyText', 'the shared forecourt copy, for the desktop pumps screen']],
+  // A606 / A607: copies of shared/customerScreen.ts and the shared customer-screen views (kept identical with the desktop's
+  // by check-shared-sync) — the desktop renderer has no lib/format, so the shared copies carry their own formatter.
+  'lib/customerScreen.ts': [['fmtN', 'the shared customer-screen copy, for the desktop customer screen too']],
+  'lib/CustomerScreenView.tsx': [['money', 'the shared customer-screen view, for the desktop customer screen too']],
+  'lib/CustomerAskForm.tsx': [['money', 'the shared customer details form, for the desktop customer screen too']],
   'pages/ReportsPage.tsx': [['fmtShiftTime', 'a weekday + date + time label ("Tue 13 Oct, 14:05") for the shift list; lib/format has no weekday form']],
 };
 const files = [];
@@ -231,7 +236,7 @@ await ok('no screen builds "<code> <number>" by hand (KES ${…}, ${currency} ${
 });
 await ok('the allow-list is still needed (a kept formatter that is gone must leave the list)', () => {
   for (const [f, defs] of Object.entries(ALLOW)) for (const [name] of defs) {
-    assert(new RegExp(`function ${name}\\(`).test(read(f)), `${f}: ${name} is gone — drop it from ALLOW`);
+    assert(new RegExp(`(?:function ${name}\\(|const ${name}\\s*=)`).test(read(f)), `${f}: ${name} is gone — drop it from ALLOW`);
   }
 });
 await ok('the screens that had their own formatter now use lib/format', () => {

@@ -485,6 +485,11 @@ jobs:
           node --no-warnings tests/partner-login-a550.test.mjs
           node --no-warnings tests/partner-roles-a550.test.mjs
 
+      # A603: "Partner" in the Role list of + Add Staff — the owner's alone: the General Manager role and web dashboard
+      # access in one step (the same grant as "Give web access"), all or nothing; the dashboard's list RUN from source.
+      - name: Partner from the Role list (A603)
+        run: node --no-warnings tests/partner-add-a603.test.mjs
+
       # A582 — "All my branches": a partner of SOME branches (two or more) reads them combined, never another branch. The
       # whole cloud (routes/index.js behind the real requireAuth) over HTTP: X-Branch-Id 'mine' → exactly their list (never
       # null / every branch), forged values (another branch, 'all', '', NO_BRANCH) never reach it; ~120 reads (reports and
@@ -713,6 +718,34 @@ jobs:
           TZ=UTC node --no-warnings tests/brand-colours-a597.test.mjs
           node --no-warnings scripts/test-migration-179.mjs
 
+      # A605 — the brand palette, professional and clean: one engine (shared/themes.ts brandPalette) for the web dashboard,
+      # the web POS and the desktop POS. A sweep of 476 colours: the base step IS the owner's hex; every label ≥ 4.5, rings
+      # and chart marks ≥ 3, light AND dark; status shades never taken; the four sample colours (yellow, navy, rose, a
+      # green near paid) and their plain-words notes; the copies agree; logo colours from synthetic pixels; the colour map
+      # (both index.css files, the web POS's labels); the Branding page's save bar at the bottom. Runs in the loop too.
+      - name: Brand palette (A605)
+        run: node --no-warnings tests/brand-palette-a605.test.mjs
+
+      # A606 — the customer screen (a dual-screen POS): the owner's slideshow (up to 10 uploaded JPEG / PNG / WebP images,
+      # 3–60 s each), the owner's alone and part of the online licence (a manager, a POS 403; no licence 403, emptying
+      # allowed), served with /pos/init and the 'setup' change; the generic settings write refuses the key; the web POS's
+      # customer screen: the publisher posts only the CLEANED state over the BroadcastChannel and answers hello; the shared
+      # view draws idle / sale / payment / thank you, premium parts only when the gate lets them through. Needs the server build.
+      - name: Customer screen - cloud and web (A606)
+        run: TZ=UTC node --no-warnings tests/customer-screen-a606.test.mjs
+
+      # A607 — customer details at the counter, on both screens: the sale's buyer KRA PIN stored (POST /api/orders and /pay),
+      # a malformed one 400 BAD_BUYER_PIN, the history backfill dropping one and never fiscalising; KRA eTIMS custTin = the
+      # sale's PIN, else the customer's kra_pin, else null (end to end to a stand-in KRA; a database before 181 still
+      # fiscalises); no customer record without "save"; the desktop POS's M-Pesa prompt (POST /api/mpesa/stk-push-pos, a
+      # POS's own session, kept before Safaricom is asked; callback, shortfall, replay, decline; /status masked; 400 / 422 /
+      # 403; the web's /stk-push unchanged); pos/init etimsEnabled; the web POS's form round trip and prompt over the
+      # BroadcastChannel. Migration 181 replayed into PGlite. Needs the server build.
+      - name: Customer details at the counter (A607) and migration 181
+        run: |
+          TZ=UTC node --no-warnings tests/customer-details-a607.test.mjs
+          node --no-warnings scripts/test-migration-181.mjs
+
       # A599 — Attendance (premium, the 'attendance' flag set in the admin portal): punches only from a ZKTeco device
       # through the branch server, for everyone. The pairing (in / out alternately in time order, a night shift on the day
       # it started, an odd last punch a missing punch-out not counted, a 16 h gap never paired); flag off → every route
@@ -724,6 +757,29 @@ jobs:
         run: |
           TZ=UTC node --no-warnings tests/attendance-a599.test.mjs
           node --no-warnings scripts/test-migration-180.mjs
+
+      # A601 — the desktop-only cut-off (DESKTOP_ONLY_CUTOFF_AT): unset or before the date nothing is refused; from it a
+      # desktop-only POS's backup writes 503 CLOUD_BACKUP_OFF while sign-in, joining a POS, the catalogue / staff changes,
+      # support logs and reads stay; paying, trial, exempt (cloud_backup) and A581-locked clients untouched; pos/init's
+      # cloudBackup; no update offer unless released (desktop_updates); the admin filter and super-admin switches; the
+      # watchdog skip. Needs the server build. In the loop too.
+      - name: Desktop-only cut-off, cloud side (A601)
+        run: TZ=UTC node --no-warnings tests/desktop-only-cutoff-a601.test.mjs
+
+      # A602 — going online later, the cloud's side: POST /api/sync/backfill takes up to 500 sales a call (gzip'd, 12 MB
+      # inflated) with their drawers and days, writes them through the /api/sync/push and /api/orders handlers themselves
+      # (each sale answered exactly as the normal push), idempotent on the POS's order id, refused at the A601 cut and under
+      # A581's lock, one log line a call. Needs the server build. In the loop too.
+      - name: History backfill, cloud side (A602)
+        run: TZ=UTC node --no-warnings tests/history-backfill-a602.test.mjs
+
+      # A604 — "why cant we move this switches to the owners side": the admin portal's Features tab shows the owner's POS
+      # options as plain "On" / "Off" under "POS options (set by the owner)"; the three cashier switches retired into role
+      # permissions are one line, not rows; the three STANDARD keys (always on) one line, never raw toggles, and the cloud
+      # refuses their write (409 ALWAYS_ON); themes, analytics, attendance and the A601 switches stay. Needs the server
+      # build. In the loop too.
+      - name: Admin portal POS options (A604)
+        run: node --no-warnings tests/admin-pos-options-a604.test.mjs
 
       - name: Run offline suites
         run: |
@@ -1646,6 +1702,28 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/brand-colours-a597.test.mjs
 
+      # A606 — the customer screen on a dual-screen POS: the second window on the chosen monitor (never the cashier's),
+      # following screens plugged in and out without a crash; the state CLEANED in main (no cost price, staff, PIN or
+      # customer); premium gated (themes: logo and colours; the online licence: the slideshow and M-Pesa) on real SQLite;
+      # the slideshow cache (each image once, by hash; nothing without the licence); idle → sale → payment → thank you →
+      # idle; the words by business type; the page a lazy chunk (main chunk ≤ 452 kB).
+      - name: Desktop customer screen (A606)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/customer-display-a606.test.mjs
+
+      # A607 — customer details on both screens: the phone / KRA PIN / consent rules; the customer screen's form round trip
+      # through main (asked only when allowed, the request cleaned, an answer only from the customer screen's page, only the
+      # typed fields, checked in main, nothing attached until the cashier accepts); "Customer types it" showing only the
+      # form; the M-Pesa prompt with a fake cloud on both screens; premium gating; local schema 78 (orders.buyer_kra_pin) on
+      # real SQLite, the sale and its payload, the receipt's "Buyer PIN"; the eTIMS flag pulled and relayed; the main chunk.
+      - name: Desktop customer details (A607)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/customer-details-a607.test.mjs
+
       # A564 — Manager › Stock › Other branches on the till: the lookup and the requests through the branch server's gateway
       # (A410) with the person's own sign-in; offline "Needs a connection"; a refusal keeps the cloud's words; the keys
       # (inventory.view to look, inventory.transfer to ask and answer) and the online licence; the tab and its count.
@@ -1772,6 +1850,25 @@ jobs:
       - name: Desktop backup folder
         working-directory: apps/desktop
         run: node --no-warnings test/backup-folder.test.mjs
+
+      # A600 — the nightly backup on every PC (a POS on its own too), the Backup panel's rights, and a safe restore.
+      - name: Desktop backup on every PC and restore (A600)
+        working-directory: apps/desktop
+        run: node --no-warnings test/backup-every-pc-a600.test.mjs
+
+      # A601 — the desktop-only cut-off on the POS: told by the catalogue pull, it stops the backup pushes and the polls
+      # that only serve them quietly (queue kept, no probing), keeps the catalogue pull and the changes push, resumes when
+      # told, shows the manager the notice, and takes "released by ZapTill support" as a plain update hold.
+      - name: Desktop-only cut-off on the POS (A601)
+        working-directory: apps/desktop
+        run: node --no-warnings test/desktop-only-cutoff-a601.test.mjs
+
+      # A602 — going online later on the POS: new sales first (with their drawers and days), the history in bulk in quiet
+      # hours (paused by a sale), at most 500 a call, marked synced as the normal push marks a sale, the owner's window
+      # (older sales local_only, never "waiting"), an interrupted run resuming, 100,000 sales in about 200 calls.
+      - name: History upload on the POS (A602)
+        working-directory: apps/desktop
+        run: node --no-warnings test/history-upload-a602.test.mjs
 
       # A465 — a manager on the branch server records cash in / out or an expense on any running shift; the till that
       # holds the drawer records it on its own books.

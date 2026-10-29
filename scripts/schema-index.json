@@ -846,6 +846,23 @@
     "recorded_by_name": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "mpesa_stk_requests": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "device_id": "\"text\"",
+    "requested_by": "\"uuid\"",
+    "client_ref": "\"text\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "mpesa_phone": "\"text\" NOT NULL",
+    "mpesa_checkout_id": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "reference": "\"text\"",
+    "paid_amount": "\"numeric\"",
+    "mpesa_result_desc": "\"text\"",
+    "mpesa_requested_at": "\"timestamp with time zone\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "notifications": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -1014,7 +1031,8 @@
     "delivery_fee": "\"numeric\" NOT NULL",
     "delivery_free": "\"boolean\" NOT NULL",
     "offer_discount": "\"numeric\" NOT NULL",
-    "offers": "\"jsonb\""
+    "offers": "\"jsonb\"",
+    "buyer_kra_pin": "\"text\""
   },
   "parking_sessions": {
     "id": "\"uuid\" NOT NULL",

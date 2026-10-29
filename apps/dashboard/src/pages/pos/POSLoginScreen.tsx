@@ -434,7 +434,7 @@ const st: Record<string, React.CSSProperties> = {
   dot: { width: 14, height: 14, borderRadius: '50%', border: '2px solid #334155', background: 'transparent', transition: 'all 0.15s ease' },
   dotFilled: { background: 'rgb(var(--act-fill, 59 130 246))', borderColor: 'rgb(var(--act-fill, 59 130 246))', boxShadow: '0 0 8px rgb(var(--act-fill, 59 130 246) / 0.5)' },
   dotSuccess: { background: '#22c55e', borderColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.5)' },
-  confirmBtn: { marginBottom: 8, padding: '8px 24px', background: 'rgb(var(--act-strong, 29 78 216))', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
+  confirmBtn: { marginBottom: 8, padding: '8px 24px', background: 'rgb(var(--act-strong, 29 78 216))', border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
   errorText: { fontSize: 12, color: '#f87171', marginBottom: 4, height: 16, transition: 'opacity 0.2s', textAlign: 'center' },
   successText: { fontSize: 14, color: '#4ade80', marginBottom: 8, fontWeight: 600, textAlign: 'center' },
   keypad: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'clamp(6px, 1vh, 8px)', marginTop: 'clamp(6px, 1.2vh, 12px)', width: '100%', transition: 'opacity 0.2s' },

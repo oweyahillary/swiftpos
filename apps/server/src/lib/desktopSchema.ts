@@ -81,7 +81,9 @@
  *  every menu all day, as before. */
 /** 77 = A577: products.sold_by / unit_label and device_config.scale_barcodes (all pulled). A till on 76 keeps syncing; it
  *  simply sells every item each (no weight keypad) and reads no scale labels. */
-export const REQUIRED_DESKTOP_SCHEMA = 77;
+/** 78 = A607: orders.buyer_kra_pin (the order payload; migration 181). A till on 77 keeps syncing; its sales simply carry
+ *  no buyer KRA PIN (eTIMS then uses the attached customer's PIN, if any). */
+export const REQUIRED_DESKTOP_SCHEMA = 78;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

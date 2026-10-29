@@ -62,7 +62,7 @@ const reset = () => {
     businesses: [{ id: B, name: 'Krunch & Co', status: 'active' }],
     branches: [{ id: BR, business_id: B, name: 'Westlands' }],
     user_devices: [1, 2, 3].map((n) => ({ id: `u${n}`, business_id: B, branch_id: BR, device_id: `d${n}`, status: 'approved', retired_at: null,
-      last_seen_at: iso(T0 - 60_000), last_sync_at: iso(T0 - 60_000), app_version: '1.0.22', schema_version: 77 })),
+      last_seen_at: iso(T0 - 60_000), last_sync_at: iso(T0 - 60_000), app_version: '1.0.22', schema_version: 78 })),   // A607: the current local schema (REQUIRED_DESKTOP_SCHEMA)
     // a day left open a week ago: one problem that stays open across the runs
     business_days: [{ id: 'bd1', business_id: B, branch_id: BR, device_id: 'd1', terminal_code: 'T1', business_date: '2026-10-20', status: 'open' }],
     ops_events: [{ id: 'o1', kind: 'backup', status: 'ok', created_at: iso(T0 - 3_600_000) }],

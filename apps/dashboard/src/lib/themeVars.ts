@@ -8,25 +8,30 @@
  *    (400) in dark mode, textLight (700) in light mode. An unknown or unchosen theme id resolves to the default.
  *  computeDashboardThemeVars is PURE; applyDashboardThemeVars is the only DOM write.
  */
-import { resolveTheme, themeTokens, resolveBrandLayer, brandTokens, cleanBrandHex, type Hex } from './themes';
+import { resolveTheme, themeTokens, resolveBrandLayer, brandPalette, cleanBrandHex, type Hex, type BrandPalette } from './themes';
 
 /** A597: + the owner's brand colours and the logo (GET /api/business/branding). */
 export interface BrandingForTheme {
   theme_id?: string | null; themes_enabled?: boolean;
   primary_hex?: string | null; secondary_hex?: string | null; logo_png?: string | null;
 }
-/** A597: the back office's brand shades (index.css `:root[data-brand]` maps the swift-* tokens onto them). */
-export const DASHBOARD_BRAND_VARS = ['bp-fill', 'bp-fill-hover', 'bp-strong', 'bp-strong-hover', 'bp-text-d', 'bp-text-d-hover', 'bp-text-l', 'bp-text-l-hover'] as const;
+/** A597 / A605: the brand layer's variables — the primary's palette (shared themes.ts brandPalette) by mode (-l light, -d
+ *  dark), its identity band, and the secondary's few. index.css `:root[data-brand]` maps the back office's swift-*, the
+ *  web POS's action-* / act-* and the labels on them onto these (A605's colour map, docs/AUDIT-REGISTER.md). */
+const MODE_VARS = (pre: string, m: 'l' | 'd') => [`${pre}-primary-${m}`, `${pre}-on-primary-${m}`, `${pre}-primary-hover-${m}`,
+  `${pre}-primary-pressed-${m}`, `${pre}-text-${m}`, `${pre}-text-${m}-hover`, `${pre}-ring-${m}`, `${pre}-subtle-${m}`, `${pre}-tint-${m}`, `${pre}-chart-${m}`];
+export const DASHBOARD_BRAND_VARS = [...MODE_VARS('bp', 'l'), ...MODE_VARS('bp', 'd'), 'bp-band', 'bp-on-band',
+  ...MODE_VARS('bs', 'l'), ...MODE_VARS('bs', 'd')] as const;
 export const DASHBOARD_THEME_VARS = ['action-t-500', 'action-t-600', 'action-d-400', 'action-l-400', ...DASHBOARD_BRAND_VARS] as const;
 
 const channels = (hex: Hex): string => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(' ');
 
 export function computeDashboardThemeVars(b: BrandingForTheme | null | undefined): Record<string, string> | null {
   if (!b || b.themes_enabled !== true) return null;
-  // A597: the owner's primary colour wins over the curated theme — the web POS's action shades AND the back office's
-  // swift-* (until A597 a fixed ZapTill teal), each the nearest shade of that colour that reads for its job.
-  const p = brandTokens(b.primary_hex);
-  if (p) return brandColourVars(p);
+  // A597 / A605: the owner's primary colour wins over the curated theme — its palette on the back office AND the web POS
+  // (index.css data-brand), each job the nearest shade on the colour's own scale that reads there.
+  const p = brandPalette(b.primary_hex);
+  if (p) return brandColourVars(p, brandPalette(b.secondary_hex));
   const k = themeTokens(resolveTheme(b.theme_id ?? null));
   return {
     'action-t-500': channels(k.fillDark),       // 500: dark-text fills — dark text reads on every theme's 500
@@ -36,23 +41,27 @@ export function computeDashboardThemeVars(b: BrandingForTheme | null | undefined
   };
 }
 
-/** A597: the primary's shade per job. Same jobs and labels as a theme's (above), so every existing label stays readable:
- *  500 fills carry dark labels, 600 fills white ones, links switch shade with the mode. PURE. */
-function brandColourVars(p: NonNullable<ReturnType<typeof brandTokens>>): Record<string, string> {
-  return {
-    'action-t-500': channels(p.fill), 'action-t-600': channels(p.strong),
-    'action-d-400': channels(p.textDark), 'action-l-400': channels(p.textLight),
-    'bp-fill': channels(p.fill), 'bp-fill-hover': channels(p.fillHover),
-    'bp-strong': channels(p.strong), 'bp-strong-hover': channels(p.strongHover),
-    'bp-text-d': channels(p.textDark), 'bp-text-d-hover': channels(p.textDarkHover),
-    'bp-text-l': channels(p.textLight), 'bp-text-l-hover': channels(p.textLightHover),
+/** A605: a palette's variables, light and dark (channels "r g b"). The secondary's only when one is chosen. PURE. */
+export function brandColourVars(p: BrandPalette, s: BrandPalette | null = null): Record<string, string> {
+  const v: Record<string, string> = { 'bp-band': channels(p.base), 'bp-on-band': channels(p.on) };
+  const put = (pre: string, pal: BrandPalette) => {
+    for (const [m, k] of [['l', pal.light], ['d', pal.dark]] as const) {
+      v[`${pre}-primary-${m}`] = channels(k.primary); v[`${pre}-on-primary-${m}`] = channels(k.onPrimary);
+      v[`${pre}-primary-hover-${m}`] = channels(k.primaryHover); v[`${pre}-primary-pressed-${m}`] = channels(k.primaryPressed);
+      v[`${pre}-text-${m}`] = channels(k.text); v[`${pre}-text-${m}-hover`] = channels(k.textHover);
+      v[`${pre}-ring-${m}`] = channels(k.ring); v[`${pre}-subtle-${m}`] = channels(k.subtle);
+      v[`${pre}-tint-${m}`] = channels(k.tint); v[`${pre}-chart-${m}`] = channels(k.chart);
+    }
   };
+  put('bp', p);
+  if (s) put('bs', s);
+  return v;
 }
 
 export function applyDashboardThemeVars(v: Record<string, string> | null, root: HTMLElement = document.documentElement): void {
   for (const n of DASHBOARD_THEME_VARS) root.style.removeProperty(`--${n}`);
   // A597: the marker index.css keys the back office's brand colours on — only while the brand shades are set.
-  if (v && v['bp-fill']) root.setAttribute?.('data-brand', ''); else root.removeAttribute?.('data-brand');
+  if (v && v['bp-primary-l']) root.setAttribute?.('data-brand', ''); else root.removeAttribute?.('data-brand');
   if (!v) return;
   for (const [n, val] of Object.entries(v)) root.style.setProperty(`--${n}`, val);
 }
@@ -94,21 +103,23 @@ export function posBrandStrip(themeId: string | null | undefined, accentHex: str
   return resolveBrandLayer(/^#[0-9a-f]{6}$/.test(hex) ? hex : null)?.brand ?? null;
 }
 
-/** A597: the web POS's strip with the owner's brand colours — the lock-screen accent (or else the primary, at its shade
- *  seen on the dark screens), the secondary beside it. A CSS background, or null (themes off / no colour). PURE. */
+/** A597 / A605: the web POS's strip — ONE colour, the brand's identity line: the lock-screen accent, or else the primary
+ *  at its shade seen on the dark screens (the secondary is kept for accents and charts, not the strip). A CSS background,
+ *  or null (themes off / no colour). PURE. */
 export function posBrandStripColours(themeId: string | null | undefined, accentHex: string | null | undefined,
-  primaryHex: string | null | undefined, secondaryHex: string | null | undefined): string | null {
+  primaryHex: string | null | undefined, _secondaryHex?: string | null | undefined): string | null {
   if (!themeId) return null;
-  const first = posBrandStrip(themeId, accentHex) ?? brandTokens(primaryHex)?.layer ?? null;
-  const second = brandTokens(secondaryHex)?.layer ?? null;
-  if (!first) return second;
-  return second ? `linear-gradient(90deg, ${first} 0%, ${first} 50%, ${second} 50%, ${second} 100%)` : first;
+  return posBrandStrip(themeId, accentHex) ?? brandPalette(primaryHex)?.layer ?? null;
 }
 
 // ── A597: the shop's own look in the dashboard's chrome ─────────────────────────────────────────────────────────────
 // Owner, 2026-10-27: "the web portal must adopt the shop branding" — the shop's logo at the top of the menu, its colours
 // as a band under it, and the secondary colour on the charts' single-series accent. Premium: nothing without themes.
-export interface BrandLook { logo: string | null; primary: Hex | null; secondary: Hex | null }
+export interface BrandLook {
+  logo: string | null; primary: Hex | null; secondary: Hex | null;
+  /** A605: the surface the logo reads best on (lib/logoColours.ts — a white logo on a dark chip); undefined = not yet read. */
+  logoChip?: 'light' | 'dark';
+}
 /** What the chrome shows, or null (themes off, or nothing chosen) — then the dashboard is exactly as before. PURE. */
 export function brandLookFor(b: BrandingForTheme | null | undefined): BrandLook | null {
   if (!b || b.themes_enabled !== true) return null;
@@ -116,16 +127,19 @@ export function brandLookFor(b: BrandingForTheme | null | undefined): BrandLook 
   const logo = typeof b.logo_png === 'string' && /^data:image\/(?:png|jpeg);base64,/i.test(b.logo_png) ? b.logo_png : null;
   return primary || secondary || logo ? { logo, primary, secondary } : null;
 }
-/** The band's CSS background: the primary and the secondary side by side (either alone fills it), or null. PURE. */
+/** A605: the identity band at the top of the menu — the primary exactly as chosen (else the secondary), ONE colour. PURE. */
 export function brandBand(l: BrandLook | null | undefined): string | null {
-  const a = l?.primary ?? l?.secondary ?? null, b = l?.secondary ?? l?.primary ?? null;
-  if (!a || !b) return null;
-  return a === b ? a : `linear-gradient(90deg, ${a} 0%, ${a} 50%, ${b} 50%, ${b} 100%)`;
+  return l?.primary ?? l?.secondary ?? null;
 }
-/** A chart's single-series accent in the brand: the secondary (else the primary) at a shade seen on the card (3:1). */
+/** A605: the FIRST chart series in the brand — the primary (else the secondary) at a shade seen on the card (3:1). */
 export function brandChartAccent(l: BrandLook | null | undefined, mode: 'light' | 'dark'): Hex | null {
-  const t = brandTokens(l?.secondary ?? l?.primary ?? null);
-  return t ? (mode === 'light' ? t.chartLight : t.chartDark) : null;
+  const p = brandPalette(l?.primary ?? l?.secondary ?? null);
+  return p ? p[mode].chart : null;
+}
+/** A605: the SECOND chart series — the secondary at its chart shade, only when both colours are chosen. */
+export function brandChartSecond(l: BrandLook | null | undefined, mode: 'light' | 'dark'): Hex | null {
+  const s = l?.primary ? brandPalette(l?.secondary ?? null) : null;
+  return s ? s[mode].chart : null;
 }
 let currentLook: BrandLook | null = null;
 const lookListeners = new Set<() => void>();

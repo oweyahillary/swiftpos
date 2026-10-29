@@ -234,6 +234,73 @@ contextBridge.exposeInMainWorld('swiftpos', {
     promoteToNode:()              => ipcRenderer.invoke('tech:promoteToNode'),
   },
 
+  // A600: Manager › Settings › Backup — the nightly backup on every PC, "Back up now", the folder, and restore.
+  backup: {
+    status:            ()                  => ipcRenderer.invoke('backup:status'),
+    now:               ()                  => ipcRenderer.invoke('backup:now'),
+    chooseDir:         ()                  => ipcRenderer.invoke('backup:chooseDir'),
+    setDir:            (dir: string | null) => ipcRenderer.invoke('backup:setDir', { dir }),
+    chooseRestoreFile: ()                  => ipcRenderer.invoke('backup:chooseRestoreFile'),
+    restore:           (token: string, confirm: string) => ipcRenderer.invoke('backup:restore', { token, confirm }),
+  },
+  // A602: going online later — the history upload's progress, how far back it goes and its quiet hours.
+  historyUpload: {
+    status:      ()                                                              => ipcRenderer.invoke('historyUpload:status'),
+    setSettings: (s: { window?: string; quietFrom?: string; quietTo?: string }) => ipcRenderer.invoke('historyUpload:setSettings', s),
+  },
+  // A606: the customer screen — the POS sends its sale (main cleans it); the customer screen page reads and listens.
+  customerDisplay: {
+    update:   (state: Record<string, unknown>) => ipcRenderer.invoke('customerDisplay:update', state),
+    current:  ()                                => ipcRenderer.invoke('customerDisplay:current'),
+    content:  ()                                => ipcRenderer.invoke('customerDisplay:content'),
+    slide:    (key: string)                     => ipcRenderer.invoke('customerDisplay:slide', { key }),
+    status:   ()                                => ipcRenderer.invoke('customerDisplay:status'),
+    set:      (c: { enabled: boolean; displayId?: number | null }) => ipcRenderer.invoke('customerDisplay:set', c),
+    test:     ()                                => ipcRenderer.invoke('customerDisplay:test'),
+    identify: ()                                => ipcRenderer.invoke('customerDisplay:identify'),
+    onState:  (cb: (s: any) => void) => {
+      const h = (_e: unknown, s: any) => cb(s);
+      ipcRenderer.on('customerDisplay:state', h);
+      return () => { ipcRenderer.removeListener('customerDisplay:state', h); };
+    },
+    // A607: the customer types their details on the customer screen (premium, a touch screen); main checks the answer.
+    askable:   ()                               => ipcRenderer.invoke('customerDisplay:askable'),
+    ask:       (a: Record<string, unknown>)     => ipcRenderer.invoke('customerDisplay:ask', a),
+    cancelAsk: (id?: string)                    => ipcRenderer.invoke('customerDisplay:cancelAsk', id ? { id } : {}),
+    answer:    (a: Record<string, unknown>)     => ipcRenderer.invoke('customerDisplay:answer', a),
+    setTouch:  (on: boolean)                    => ipcRenderer.invoke('customerDisplay:setTouch', { on }),
+    onAsk: (cb: (v: any) => void) => {
+      const h = (_e: unknown, v: any) => cb(v);
+      ipcRenderer.on('customerDisplay:ask', h);
+      return () => { ipcRenderer.removeListener('customerDisplay:ask', h); };
+    },
+    onStk: (cb: (v: any) => void) => {
+      const h = (_e: unknown, v: any) => cb(v);
+      ipcRenderer.on('customerDisplay:stk', h);
+      return () => { ipcRenderer.removeListener('customerDisplay:stk', h); };
+    },
+    onAnswered: (cb: (v: any) => void) => {
+      const h = (_e: unknown, v: any) => cb(v);
+      ipcRenderer.on('customerDisplay:answered', h);
+      return () => { ipcRenderer.removeListener('customerDisplay:answered', h); };
+    },
+  },
+  // A607: customer details at the counter, and the M-Pesa prompt (main/mpesaStk.ts) — its progress on both screens.
+  customerDetails: {
+    saleInfo: () => ipcRenderer.invoke('customer:saleInfo'),
+  },
+  mpesa: {
+    stkOffered: ()                                                   => ipcRenderer.invoke('mpesa:stkOffered'),
+    stkStart:   (p: { phone: string; amount: number; ref: string; currency?: string }) => ipcRenderer.invoke('mpesa:stkStart', p),
+    stkReset:   ()                                                   => ipcRenderer.invoke('mpesa:stkReset'),
+    stkState:   ()                                                   => ipcRenderer.invoke('mpesa:stkState'),
+    onStk: (cb: (v: any) => void) => {
+      const h = (_e: unknown, v: any) => cb(v);
+      ipcRenderer.on('mpesa:stk', h);
+      return () => { ipcRenderer.removeListener('mpesa:stk', h); };
+    },
+  },
+
   // Held orders (restaurant tabs). Backed by SQLite in the main process since
   // 2026-08-08 — previously renderer localStorage, where a truncated write
   // silently reported zero open tables.
