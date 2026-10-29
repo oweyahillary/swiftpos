@@ -4,6 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>ZapTill — Dashboard</title>
+    <!-- A609 (owner, 2026-10-29: "we show the default theme for ~4 seconds before theirs — it should be automatic"): before
+         the bundle downloads, put back the light / dark choice and the shop's cached brand colours (src/lib/themeBoot.ts
+         writes them; ThemeLayer refreshes or clears them). Inline, no external script; only "r g b" values of known names. -->
+    <script>
+      (function () {
+        try {
+          var ls = window.localStorage, root = document.documentElement;
+          if (ls.getItem('swiftpos-theme') !== 'light') root.classList.add('dark');
+          var signed = ['swiftpos_access_token', 'swiftpos_refresh_token', 'swiftpos_pos_token', 'swiftpos_pos_refresh_token']
+            .some(function (k) { return !!ls.getItem(k); });
+          for (var i = 0; !signed && i < ls.length; i++) signed = /^sb-.+-auth-token$/.test(ls.key(i) || '');
+          var bid = signed && ls.getItem('zaptill-brand:last');
+          var c = bid && JSON.parse(ls.getItem('zaptill-brand:' + bid) || 'null');
+          if (!c || c.bid !== bid || !c.vars) return;
+          for (var k in c.vars) {
+            if (/^(?:bp|bs|action)-[a-z0-9-]+$/.test(k) && /^\d{1,3} \d{1,3} \d{1,3}$/.test(c.vars[k])) root.style.setProperty('--' + k, c.vars[k]);
+          }
+          if (c.vars['bp-primary-l']) root.setAttribute('data-brand', '');
+          if (c.vars['bp-primary-l'] && c.vars['bs-ring-l']) root.setAttribute('data-brand-2', '');
+        } catch (e) { /* storage blocked: today's start */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

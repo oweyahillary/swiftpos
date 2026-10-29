@@ -26,6 +26,10 @@
 :root[data-brand] :is(.text-action-500, .text-action-600) { color: rgb(var(--action-400)) !important; }
 :root[data-brand] :is(.border-action-500, .border-action-600) { border-color: rgb(var(--action-ring)) !important; }
 :root[data-brand] :is(.ring-action-500, .focus\:ring-action-500:focus, .focus-visible\:ring-action-500:focus-visible) { --tw-ring-color: rgb(var(--action-ring)) !important; }
+/* A609 (owner, 2026-10-29: "the secondary colour does not take effect … don't overdo it, remember premium is the goal"): the
+   web's secondary map — the active tab's underline (Shift, Printers) in the secondary's ring shade (--action-accent, set only
+   when a secondary is chosen; otherwise the primary's ring, exactly as before). Buttons, links, focus stay the primary. */
+:root[data-brand] .border-b-2:is(.border-action-500, .border-action-600) { border-color: rgb(var(--action-accent, var(--action-ring))) !important; }
 
 /* 0.6.23 (owner: "remove the feature were scroll up or down reduces or increases the value"): no spinner arrows on
    number fields; the wheel is stopped in shared/numberInputs.ts. */

@@ -160,9 +160,11 @@ export const CreateStaffSchema = z.object({
   // A603: "Partner" in the Role list — the owner's alone (routes/staff.ts POST /): the General Manager role and web
   // dashboard access in one step.
   partner: z.boolean().optional(),
+  // A608: a General Manager or Manager added by the owner — web dashboard access in the same step (all or nothing).
+  web_access: z.boolean().optional(),
 });
 
-export const UpdateStaffSchema = CreateStaffSchema.omit({ partner: true }).partial().extend({
+export const UpdateStaffSchema = CreateStaffSchema.omit({ partner: true, web_access: true }).partial().extend({
   status: z.enum(['active', 'inactive']).optional(),
   // A459: NO default here. .partial() kept CreateStaffSchema's `.default([])`, so an edit that did not mention branches
   // (a rename, a role, Deactivate) arrived as branch_ids: [] — and PATCH /api/staff/:id deleted every branch the person

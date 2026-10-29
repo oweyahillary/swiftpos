@@ -31,6 +31,8 @@ export const THEME_VAR_NAMES = [
   'brand-400', 'brand-500', 'brand-600', 'brand-700', 'on-brand', 'sidebar-tint',
   // A605: the brand palette's label, hover, focus ring and selected background (index.css :root[data-brand])
   'on-action', 'action-hover', 'action-ring', 'action-subtle',
+  // A609: the secondary colour's accent (index.css: the active tab's underline) — only with a secondary chosen
+  'action-accent',
 ] as const;
 
 const channels = (hex: Hex): string =>
@@ -41,7 +43,7 @@ const darken = (hex: Hex, by: number): Hex =>
 export function computeThemeVars(b: ThemeInput | null | undefined): ThemeVars | null {
   if (!b || !b.themeId) return null;                       // themes OFF → today's look, untouched
   const p = brandPalette(b.primaryHex);                    // A597 / A605: the owner's primary (any colour), or null
-  if (p) return brandColourVars(b, p);
+  if (p) return brandColourVars(b, p, brandPalette(b.secondaryHex));
   const s = resolveTheme(b.themeId).shades;                // unknown id → the default theme, never nothing
   const brand = resolveBrandLayer(b.accentHex ?? null);    // null when unset, invalid, or too dark to be seen
   const base = brand ? brand.brand : s[500];
@@ -70,7 +72,7 @@ export function computeThemeVars(b: ThemeInput | null | undefined): ThemeVars | 
  * (lock curtain, strip, sidebar tint): the lock-screen accent when one is set and can be seen (as before), otherwise the
  * primary's shade seen on the dark screens. The strip is ONE colour (the secondary is for accents, not the strip).
  */
-function brandColourVars(b: ThemeInput, p: BrandPalette): ThemeVars {
+function brandColourVars(b: ThemeInput, p: BrandPalette, s: BrandPalette | null = null): ThemeVars {
   const accent = resolveBrandLayer(b.accentHex ?? null);
   const layer = accent ? accent.brand : p.layer;
   const d = p.dark;
@@ -84,6 +86,9 @@ function brandColourVars(b: ThemeInput, p: BrandPalette): ThemeVars {
       'sidebar-tint': accent ? accent.tint : p.tint,
       'on-action': channels(d.onPrimary), 'action-hover': channels(d.primaryHover),
       'action-ring': channels(d.ring), 'action-subtle': channels(d.subtle),
+      // A609 (owner, 2026-10-29: "the secondary colour does not take effect"): its ring shade (3:1 on the dark screens)
+      // for the same accents as the web; none chosen → not set, and index.css falls back to the primary's ring (as before).
+      ...(s ? { 'action-accent': channels(s.dark.ring) } : {}),
     },
     strip: layer,
     brand: true,

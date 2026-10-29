@@ -44,7 +44,8 @@ ok('A420: the version badge shows nothing in production', () => {
 ok('A423: every email on the staff form is autoComplete="off"', () => {
   const s = read('apps/dashboard/src/pages/settings/StaffTab.tsx');
   const emails = s.match(/<input type="email"[\s\S]*?\/>/g) ?? [];
-  assert.equal(emails.length, 3, `expected 3 email inputs, found ${emails.length}`);
+  // A608: one e-mail field when adding (the PIN / invite tabs are gone — the role decides), one when editing.
+  assert.equal(emails.length, 2, `expected 2 email inputs, found ${emails.length}`);
   for (const e of emails) assert.match(e, /autoComplete="off"/);
 });
 ok('A423: every PIN on the staff form is autoComplete="new-password"', () => {

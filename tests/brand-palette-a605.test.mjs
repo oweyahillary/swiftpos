@@ -60,7 +60,7 @@ for (let i = 0; i < 120; i++) SWEEP.add('#' + [0, 1, 2].map(() => Math.floor(rnd
 const ALL = [...SWEEP];
 const MODES = { light: T.BRAND_SURFACES.lightText, dark: T.BRAND_SURFACES.darkText };
 const CARD = { light: '#ffffff', dark: '#111827' };
-const SIDE = { light: '#64748b', dark: '#9ca3af' };
+const SIDE = { light: '#4f5d73', dark: '#9ca3af' };   // A609 (2026-10-29): light gray-400 moved #64748b → #4f5d73 (index.css), pin updated on purpose
 
 console.log(`\nE. the engine (${ALL.length} colours)\n`);
 ok('nothing refused; junk → null', () => {

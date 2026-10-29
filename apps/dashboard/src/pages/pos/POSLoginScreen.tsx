@@ -19,6 +19,8 @@ import { TenantBrand, UnknownTenantAddress } from '../../components/TenantBrand'
 import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../../lib/otpTrust';   // A391
 import OtpCodeStep, { type OtpPrompt } from '../../components/OtpCodeStep';
 const BASE_URL = API_URL;
+/** A608: said when the cloud gives no words of its own. */
+const DASHBOARD_NOTE = 'Managers sign in to the web dashboard with their email and password, not a PIN. Your PIN still works on the desktop POS.';
 const PIN_MIN = 4;
 const PIN_MAX = 6;
 
@@ -48,6 +50,9 @@ export default function POSLoginScreen() {
   const [otpCode, setOtpCode]   = useState('');
   const [remember, setRemember] = useState(true);
   const [otpPass, setOtpPass]   = useState('');   // lets the branch choice that follows sign in without a second code
+  // A608 (owner, 2026-10-29: "they don't key in a PIN on the web POS; PIN on the web strictly remains for cashiers"): a
+  // manager's PIN is refused here (the cloud's USE_WEB_DASHBOARD) — they are told to sign in to the web dashboard.
+  const [useDashboard, setUseDashboard] = useState('');
 
   // If the terminal was kicked back here by a token expiry, tell the cashier why
   // (set by POSAuthContext on the 'swiftpos:session-expired' signal).
@@ -115,6 +120,7 @@ export default function POSLoginScreen() {
         // Server signals device gating via `code` (not `device_status`).
         if (data.code === 'DEVICE_REJECTED')       { setDeviceRejected(true); return; }
         if (data.code === 'DEVICE_NOT_REGISTERED')  { setDevicePending(true);  return; }
+        if (data.code === 'USE_WEB_DASHBOARD')      { setPin(''); setUseDashboard(data.error ?? DASHBOARD_NOTE); return; }   // A608
         triggerError(data.error ?? 'Login failed');
         return;
       }
@@ -156,6 +162,13 @@ export default function POSLoginScreen() {
     // Owner goes to full dashboard — no POS session needed
     if (dest === '/') {
       navigate('/');
+      return;
+    }
+    // A608: never the web manager portal from a PIN — managers sign in to the web dashboard (the cloud refuses their PIN
+    // here; this is for a cloud that does not yet).
+    if (dest === '/manager') {
+      localStorage.removeItem('swiftpos_pos_token'); localStorage.removeItem('swiftpos_pos_refresh_token');
+      setStep('login'); setSuccessName(''); setPin(''); setUseDashboard(DASHBOARD_NOTE);
       return;
     }
 
@@ -314,6 +327,25 @@ export default function POSLoginScreen() {
             className="text-sm text-gray-500 hover:text-gray-300 transition-colors mt-2"
           >
             Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // A608: a manager — the web dashboard, by email and password.
+  if (useDashboard) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
+        <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-sm w-full text-center space-y-4" data-testid="pos-use-dashboard">
+          <h2 className="text-white font-bold text-lg">Sign in to the web dashboard</h2>
+          <p className="text-gray-400 text-sm">{useDashboard}</p>
+          <a href="/login" className="block w-full bg-swift hover:bg-swift-light text-gray-950 rounded-xl py-2.5 text-sm font-semibold">
+            Go to the dashboard sign-in
+          </a>
+          <button onClick={() => { setUseDashboard(''); setError(''); }}
+            className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
+            Back
           </button>
         </div>
       </div>

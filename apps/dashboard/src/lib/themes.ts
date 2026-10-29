@@ -391,7 +391,7 @@ export interface BrandPalette {
   /** what had to move, for the plain-words note on the Branding page */
   adjusted: { lightText: boolean; darkLift: boolean; status: boolean };
 }
-const SIDEBAR_TEXT = { light: '#64748b', dark: '#9ca3af' };   // the menu's own grey text (index.css gray-400 by mode)
+const SIDEBAR_TEXT = { light: '#4f5d73', dark: '#9ca3af' };   // the menu's own grey text (index.css gray-400 by mode; A609, 2026-10-29: light #64748b → #4f5d73)
 
 function modeTokens(t: Tone, ink: Hex, mode: 'light' | 'dark', moved: { status: boolean }): BrandModeTokens {
   const S = mode === 'light' ? BRAND_SURFACES.lightText : BRAND_SURFACES.darkText;

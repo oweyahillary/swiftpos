@@ -456,8 +456,19 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
     if (!gm) { res.status(400).json(NO_PARTNER_ROLE); return; }
     role_id = gm.id; partnerRoleName = gm.name;
   }
+  // A608 (owner, 2026-10-29: "For top management let it be email only, they access the dashboard. Change the shop manager
+  // to use email on web"): a General Manager or Manager added on the owner's dashboard gets web dashboard access in this
+  // same step — the same grant as "Give web access", all or nothing as for a partner. The owner's alone (A550).
+  const withWeb = !partner && req.body.web_access === true;
+  if (withWeb) {
+    if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+    if (!String(email ?? '').includes('@')) {
+      res.status(400).json({ error: 'An email address is required — it is how they sign in to the web dashboard.', code: 'NO_EMAIL' });
+      return;
+    }
+  }
 
-  if (!name || !role_id || (!pin && !partner)) {
+  if (!name || !role_id || (!pin && !partner && !withWeb)) {
     res.status(400).json({ error: 'name, role_id and pin are required' });
     return;
   }
@@ -544,17 +555,23 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
 
   // A603: a partner — web dashboard access now, or the person is taken off again (never half made: on the staff list
   // with no sign-in). The invitation e-mail alone failing is not a half-made partner: access is given, "Resend invite".
+  // A608: the same for a General Manager or Manager added with web_access (STAFF_HALF_MADE, "… was not added.").
   let webAccess: { status: string; emailed: boolean } | null = null;
-  if (partner) {
-    const grant = await giveWebAccess(req, { id: user.id, name, email: String(email).trim().toLowerCase(), status: 'active', roles: { name: partnerRoleName } });
+  if (partner || withWeb) {
+    let roleName: string | null = partnerRoleName;
+    if (withWeb) {
+      const { data: r } = await supabase.from('roles').select('name').eq('id', role_id).eq('business_id', req.businessId).maybeSingle();
+      roleName = (r as { name?: string } | null)?.name ?? null;
+    }
+    const grant = await giveWebAccess(req, { id: user.id, name, email: String(email).trim().toLowerCase(), status: 'active', roles: { name: roleName } });
     if (!grant.ok) {
       const undone = await undoNewStaff(req.businessId, user.id);
       if (!undone) {
-        res.status(500).json({ code: 'PARTNER_HALF_MADE', user,
-          error: `${name} was added as ${partnerRoleName} but without web dashboard access, and could not be taken off the staff list. Use "Give web access" on their row, or deactivate them.` });
+        res.status(500).json({ code: partner ? 'PARTNER_HALF_MADE' : 'STAFF_HALF_MADE', user,
+          error: `${name} was added as ${roleName ?? 'staff'} but without web dashboard access, and could not be taken off the staff list. Use "Give web access" on their row, or deactivate them.` });
         return;
       }
-      res.status(grant.code).json({ ...grant.body, error: `The partner was not added. ${grant.body.error}`, not_added: true });
+      res.status(grant.code).json({ ...grant.body, error: `${partner ? 'The partner' : name} was not added. ${grant.body.error}`, not_added: true });
       return;
     }
     webAccess = { status: grant.status!, emailed: grant.emailed === true };
@@ -565,7 +582,7 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
 
   if (webAccess) {
     res.status(webAccess.emailed ? 201 : 207).json({ ...user, web_access: webAccess,
-      ...(webAccess.emailed ? {} : { warning: 'The partner was added, but the invitation email could not be sent — use "Resend invite".' }) });
+      ...(webAccess.emailed ? {} : { warning: `${partner ? 'The partner' : name} was added, but the invitation email could not be sent — use "Resend invite".` }) });
     return;
   }
   res.status(201).json(user);
@@ -1019,7 +1036,8 @@ async function partnerRole(businessId: string): Promise<{ id: string; name: stri
   return pick ? { id: pick.id, name: pick.name } : null;
 }
 
-/** A603: take a person just added off again (a partner whose web access could not be given). True when they are gone. */
+/** A603: take a person just added off again (a partner whose web access could not be given — A608: or a General Manager
+ *  or Manager added with web access). True when they are gone. */
 async function undoNewStaff(businessId: string, userId: string): Promise<boolean> {
   try {
     await supabase.from('user_permissions').delete().eq('user_id', userId);

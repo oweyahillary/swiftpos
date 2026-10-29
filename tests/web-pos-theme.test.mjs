@@ -71,7 +71,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   // ── Wiring ──
   const layer = D('src/components/ThemeLayer.tsx');
   ok('the theme layer reads the business\'s branding, re-reads on business change and after a Branding save',
-    /api\.get<BrandingForTheme \| null>\('\/api\/business\/branding'\)/.test(layer) && /\}, \[businessId\]\);/.test(layer)
+    /api\.get<BrandingForTheme \| null>\('\/api\/business\/branding'\)/.test(layer) && /\}, \[businessId, signedOut\]\);/.test(layer)   // A609 (2026-10-29): + signedOut — the cached look is kept while signing in
     && /window\.addEventListener\(BRANDING_SAVED_EVENT, load\);/.test(layer));
   ok('…and is mounted once, inside BusinessProvider', /<BusinessProvider>\s*<ThemeLayer \/>/.test(D('src/App.tsx')));
   ok('Branding fires the saved event after Save and after Reset', (D('src/pages/settings/BrandingTab.tsx').match(/window\.dispatchEvent\(new Event\(BRANDING_SAVED_EVENT\)\)/g) || []).length === 2);

@@ -267,9 +267,11 @@ try {
     const r = await call('POST', '/api/auth/refresh', null, { refreshToken: s.refreshToken });
     assert.equal(r.status, 401); assert.equal(r.body.code, 'SIGN_IN_AGAIN');
   });
+  reset();   // A608: the person above was deactivated
   await ok('a deleted person cannot renew', async () => {
-    const s = await signIn('mary@pollo.test', '2222');
-    mem.db.users = mem.db.users.filter((x) => x.id !== MGR);
+    // A608: a cashier — a manager's PIN no longer opens the web POS (USE_WEB_DASHBOARD).
+    const s = await signIn('joe@pollo.test', '3333');
+    mem.db.users = mem.db.users.filter((x) => x.id !== CASH);
     const r = await call('POST', '/api/auth/refresh', null, { refreshToken: s.refreshToken });
     assert.equal(r.status, 401); assert.equal(r.body.code, 'SIGN_IN_AGAIN');
   });
@@ -392,11 +394,16 @@ try {
     assert.equal(r.status, 403); assert.equal(r.body.code, 'NO_BRANCH');
   });
   reset();
-  await ok('the sign-in code applies whatever surface is claimed (a manager claiming "desktop")', async () => {
+  await ok('the sign-in code applies whatever surface is claimed (the owner\'s role claiming "desktop"); a manager gets no session at all', async () => {
     mem.db.feature_flags.push({ business_id: B, key: 'login_codes', enabled: true });
-    userRow(MGR).otp_method = 'totp'; userRow(MGR).otp_totp_secret = 'JBSWY3DPEHPK3PXP';
-    const r = await call('POST', '/api/auth/pos-login', null, { email: 'mary@pollo.test', pin: '2222', surface: 'desktop', branch_id: BR });
+    userRow(ADMINP).otp_method = 'totp'; userRow(ADMINP).otp_totp_secret = 'JBSWY3DPEHPK3PXP';
+    const r = await call('POST', '/api/auth/pos-login', null, { email: 'ada@pollo.test', pin: '6666', surface: 'desktop', branch_id: BR });
     assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'OTP_REQUIRED');
+    // A608: /pos-login is the web POS's — a manager's PIN is refused there whatever surface is claimed, before any code
+    // or token (the desktop signs in with /verify-pin).
+    const mgr = await call('POST', '/api/auth/pos-login', null, { email: 'mary@pollo.test', pin: '2222', surface: 'desktop', branch_id: BR });
+    assert.equal(mgr.status, 403, JSON.stringify(mgr.body)); assert.equal(mgr.body.code, 'USE_WEB_DASHBOARD');
+    assert.equal(mgr.body.accessToken, undefined);
     const cashier = await call('POST', '/api/auth/pos-login', null, { email: 'joe@pollo.test', pin: '3333', surface: 'desktop', branch_id: BR });
     assert.equal(cashier.status, 200, 'a cashier enters no code');
     assert.equal(jwt.decode(cashier.body.accessToken).branchId, BR);

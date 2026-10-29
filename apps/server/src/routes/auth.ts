@@ -64,7 +64,8 @@ import { permissionsOpenBefore, splitsPending } from '../lib/permissionsState'; 
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY, accountLocked, noteAccountFailure, noteAccountSuccess, ACCOUNT_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { notifyAccountLocked } from '../lib/accountLockNotice';   // A507
-import { resolvePartnerSignIn, checkPartner, writePartners, type PartnerCheck, type PartnerPerson } from '../lib/webPartners';   // A550
+import { resolvePartnerSignIn, checkPartner, writePartners, readPartners, partnerLive, type PartnerCheck, type PartnerPerson } from '../lib/webPartners';   // A550
+import { refusesWebPosPin, webPosPinRefusal } from '../lib/webPosSignIn';   // A608
 import { enrolRefusal } from '../lib/cloudPlan';   // A581: no till joins a lapsed business
 
 const router = safeRouter();
@@ -1552,6 +1553,16 @@ router.post('/pos-login', async (req, res) => {
 
   const role    = (user as any).roles;
   const isOwner = isOwnerRoleName(role?.name);   // A490: the one place a role name decides (lib/ownerRole)
+
+  // A608 (owner, 2026-10-29: "they don't key in a PIN on the web POS; PIN on the web strictly remains for cashiers"): this
+  // is the web POS's sign-in (the desktop signs in with /verify-pin) — back office signs in to the web dashboard instead,
+  // by email and password. After the PIN check, so the answer tells nothing to someone without the right PIN.
+  if (refusesWebPosPin(effectiveKeysForRow(user as any), isOwner)) {
+    const { map } = await readPartners((user as any).business_id);
+    const rec = map[(user as any).id];
+    res.status(403).json(webPosPinRefusal(partnerLive(rec, rec?.auth_user_id)));
+    return;
+  }
 
   // A37 — the surface that EXEMPTS a caller from the per-branch desktop licence
   // must be earned, not asserted. /pos-login serves the web POS AND, from a

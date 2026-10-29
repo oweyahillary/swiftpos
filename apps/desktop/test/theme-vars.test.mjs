@@ -68,8 +68,8 @@ const store = new Map();
 const root = { style: { setProperty: (k, v) => store.set(k, v), removeProperty: (k) => store.delete(k) } };
 T.applyThemeVars(oy, root);
 // A605: + four brand-only variables (on-action, action-hover, action-ring, action-subtle) — set only with brand colours.
-const BRAND_ONLY = ['on-action', 'action-hover', 'action-ring', 'action-subtle'];
-ok('applying a theme sets every theme variable on <html> (the brand-only four stay unset)', store.size === T.THEME_VAR_NAMES.length - BRAND_ONLY.length
+const BRAND_ONLY = ['on-action', 'action-hover', 'action-ring', 'action-subtle', 'action-accent'];   // A609 (2026-10-29): + the secondary's accent (only with a secondary)
+ok('applying a theme sets every theme variable on <html> (the brand-only five stay unset)', store.size === T.THEME_VAR_NAMES.length - BRAND_ONLY.length
   && T.THEME_VAR_NAMES.filter((n) => !BRAND_ONLY.includes(n)).every((n) => store.has(`--${n}`)) && store.get('--action-500') === '59 130 246');
 T.applyThemeVars(null, root);
 ok('switching themes OFF removes them all (the defaults take over again)', store.size === 0);

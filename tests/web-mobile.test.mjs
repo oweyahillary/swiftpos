@@ -34,7 +34,10 @@ ok('☰ opens it; a page change closes it',
   /data-testid="nav-open"/.test(layout) && /setNavOpen\(true\)/.test(layout) && /setNavOpen\(false\); \}, \[navLocation\.pathname\]/.test(layout));
 ok('the phone\'s top bar shows only below md', /md:hidden sticky top-0/.test(layout));
 ok('the shell uses the dynamic viewport height', /h-\[100dvh\]/.test(layout) && !/h-screen/.test(layout));
-ok('the notifications panel fits a phone', /fixed left-3 right-3 top-16 md:absolute/.test(layout));
+// A609 (owner, 2026-10-29: the notification unreadable on a phone): the panel moved out of the drawer (a portal) — full width
+// with a 12-px gutter, its list scrolling inside the screen; the old in-drawer classes are gone on purpose.
+ok('the notifications panel fits a phone', /'fixed inset-x-3 top-3 z-\[70\] max-h-\[calc\(100dvh-24px\)\]'/.test(layout)
+  && /isPhone \? createPortal\(bellPanel, document\.body\) : bellPanel/.test(layout) && /flex-1 min-h-0 overflow-y-auto/.test(layout));
 
 // ── the manager's dashboard ──
 ok('the manager\'s sidebar is a drawer on a phone',

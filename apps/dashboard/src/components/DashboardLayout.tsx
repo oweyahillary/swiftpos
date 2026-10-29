@@ -3,6 +3,7 @@ import { useAuth }     from '../context/AuthContext';
 import { useBusiness } from '../context/BusinessContext';
 import { useTheme }    from '../context/ThemeContext';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import BranchSelector from './BranchSelector';
 import ReleaseBadge from './ReleaseBadge';
@@ -453,6 +454,18 @@ export default function DashboardLayout() {
   const [unreadCount, setUnreadCount]     = useState(0);
   const [bellOpen, setBellOpen]           = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
+  // A609 (owner, 2026-10-29: the notification "unreadable on a mobile browser"): on a phone the panel was drawn inside the
+  // drawer (its transform made `fixed` mean the 256-px drawer) — now it is placed on the page itself, full width with a
+  // 12-px gutter, its list scrolling inside the screen; from md up it stays the dropdown under the bell.
+  const bellPanelRef = useRef<HTMLDivElement>(null);
+  const [isPhone, setIsPhone] = useState(() => { try { return window.matchMedia('(max-width: 767px)').matches; } catch { return false; } });
+  useEffect(() => {
+    let mq: MediaQueryList;
+    try { mq = window.matchMedia('(max-width: 767px)'); } catch { return; }
+    const on = () => setIsPhone(mq.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -472,7 +485,7 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node) && !bellPanelRef.current?.contains(e.target as Node)) {
         setBellOpen(false);
       }
     }
@@ -540,6 +553,59 @@ export default function DashboardLayout() {
     } catch { /* silent */ }
   };
 
+  // A609: the notification panel — a dropdown under the bell from md up; on a phone a sheet across the top of the screen
+  // (12-px gutter, never wider than the screen, the list scrolls inside it), with larger type and readable greys.
+  const bellPanel = (
+    <div ref={bellPanelRef} data-testid="notification-panel" role="dialog" aria-label="Notifications"
+      className={`${isPhone
+        ? 'fixed inset-x-3 top-3 z-[70] max-h-[calc(100dvh-24px)]'
+        : 'absolute left-0 top-full mt-2 w-80 z-50 max-h-[min(28rem,calc(100dvh-6rem))]'} flex flex-col bg-gray-900 border border-gray-800 rounded-xl shadow-2xl overflow-hidden animate-pop-in`}>
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-800 flex-shrink-0">
+        <p className="text-white text-sm font-semibold">Notifications</p>
+        <div className="flex items-center gap-3">
+          {unreadCount > 0 && (
+            <button onClick={markAllRead} className="text-sm md:text-xs font-medium text-swift-text hover:text-swift-text-hover transition-colors">
+              Mark all read
+            </button>
+          )}
+          {isPhone && (
+            <button onClick={() => setBellOpen(false)} aria-label="Close notifications"
+              className="-mr-1 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        {notifications.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <div className="flex justify-center mb-2 text-gray-500"><NavIcon name="bell" size={28} /></div>
+            <p className="text-gray-400 text-sm">No notifications yet</p>
+          </div>
+        ) : notifications.map(n => (
+          <div key={n.id} onClick={() => { if (!n.read_at) markRead(n.id); }}
+            className={`flex gap-3 px-4 py-3 border-b border-gray-800/50 cursor-pointer hover:bg-gray-800/40 ${!n.read_at ? 'bg-action-500/5' : ''}`}>
+            <NavIcon name={TYPE_ICON[n.type] ?? TYPE_ICON.default} className="flex-shrink-0 mt-0.5 text-gray-400" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <p className={`text-sm md:text-xs font-medium leading-snug break-words ${n.read_at ? 'text-gray-300' : 'text-white'}`}>{n.title}</p>
+                {!n.read_at && <span className="flex-shrink-0 w-2 h-2 rounded-full bg-action-500 mt-1.5 md:mt-1" />}
+              </div>
+              {n.message && <p className="text-gray-400 text-[13px] md:text-xs leading-snug mt-0.5 line-clamp-3 md:line-clamp-2 break-words">{n.message}</p>}
+              <p className="text-gray-500 text-xs mt-1">{relative(n.created_at)}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="px-4 py-2.5 border-t border-gray-800 flex-shrink-0">
+        <button onClick={() => { setBellOpen(false); fetchNotifications(); }}
+          className="text-sm md:text-xs text-gray-400 hover:text-white transition-colors">
+          Refresh
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-[100dvh] bg-gray-950 text-white overflow-hidden">
       {navOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden animate-fade-in" onClick={() => setNavOpen(false)} aria-hidden />}
@@ -549,7 +615,7 @@ export default function DashboardLayout() {
 
         {band && <div aria-hidden className="h-1 flex-shrink-0" style={{ background: band }} data-testid="dashboard-brand-band" />}
         {/* Logo + bell */}
-        <div className="px-5 py-5 border-b border-gray-800 flex items-center justify-between">
+        <div className="px-5 py-5 border-b border-gray-800 brand-divider flex items-center justify-between">
           <div className="min-w-0">
             {look?.logo && (
               <img src={look.logo} alt="" data-testid="dashboard-brand-logo"
@@ -571,45 +637,8 @@ export default function DashboardLayout() {
                 </span>
               )}
             </button>
-            {bellOpen && (
-              <div className="fixed left-3 right-3 top-16 md:absolute md:left-0 md:right-auto md:top-full md:mt-2 md:w-80 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-pop-in">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-                  <p className="text-white text-sm font-semibold">Notifications</p>
-                  {unreadCount > 0 && (
-                    <button onClick={markAllRead} className="text-xs text-action-500 hover:text-action-400 transition-colors">
-                      Mark all read
-                    </button>
-                  )}
-                </div>
-                <div className="max-h-80 overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <div className="px-4 py-8 text-center">
-                      <div className="flex justify-center mb-2 text-gray-600"><NavIcon name="bell" size={28} /></div>
-                      <p className="text-gray-500 text-sm">No notifications yet</p>
-                    </div>
-                  ) : notifications.map(n => (
-                    <div key={n.id} onClick={() => { if (!n.read_at) markRead(n.id); }}
-                      className={`flex gap-3 px-4 py-3 border-b border-gray-800/50 cursor-pointer hover:bg-gray-800/40 ${!n.read_at ? 'bg-action-500/5' : ''}`}>
-                      <NavIcon name={TYPE_ICON[n.type] ?? TYPE_ICON.default} className="flex-shrink-0 mt-0.5 text-gray-400" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={`text-xs font-medium leading-tight ${n.read_at ? 'text-gray-400' : 'text-white'}`}>{n.title}</p>
-                          {!n.read_at && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-action-500 mt-1" />}
-                        </div>
-                        {n.message && <p className="text-gray-500 text-xs mt-0.5 line-clamp-2">{n.message}</p>}
-                        <p className="text-gray-600 text-xs mt-1">{relative(n.created_at)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="px-4 py-2.5 border-t border-gray-800">
-                  <button onClick={() => { setBellOpen(false); fetchNotifications(); }}
-                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
-                    Refresh
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* A609: on a phone the panel goes to the page itself (createPortal) — see bellPanelRef above. */}
+            {bellOpen && (isPhone ? createPortal(bellPanel, document.body) : bellPanel)}
           </div>
         </div>
 
@@ -667,15 +696,16 @@ export default function DashboardLayout() {
           100dvh layout into an empty band (the owner on Analytics > Costs: "scroll down to an empty space"). */}
       <main className="relative flex-1 min-w-0 overflow-y-auto flex flex-col" data-testid="dashboard-main">
         {/* A463: the phone's top bar — ☰ opens the menu; the business and its unread notifications at a glance. */}
-        <div className="md:hidden sticky top-0 z-20 flex items-center gap-3 px-3 h-12 bg-gray-900 border-b border-gray-800">
+        <div className="md:hidden sticky top-0 z-20 flex items-center gap-3 px-3 h-12 bg-gray-900 border-b border-gray-800 brand-divider">
           <button data-testid="nav-open" onClick={() => setNavOpen(true)} aria-label="Open the menu"
             className="p-2 -ml-1 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
           {look?.logo && <img src={look.logo} alt="" className={`h-7 max-w-[56px] object-contain rounded p-0.5 flex-shrink-0 ${logoChip}`} />}
           <p className="flex-1 min-w-0 truncate text-sm font-semibold text-white">{business?.name ?? 'ZapTill'}</p>
+          {/* A609: opens the panel over the page (no longer through the menu drawer). */}
           {unreadCount > 0 && (
-            <button onClick={() => { setNavOpen(true); setBellOpen(true); }} aria-label="Notifications"
+            <button onClick={() => setBellOpen(true)} aria-label="Notifications"
               className="min-w-[1.5rem] h-6 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold">{unreadCount > 99 ? '99+' : unreadCount}</button>
           )}
         </div>

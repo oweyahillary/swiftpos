@@ -8,7 +8,7 @@
  *    (400) in dark mode, textLight (700) in light mode. An unknown or unchosen theme id resolves to the default.
  *  computeDashboardThemeVars is PURE; applyDashboardThemeVars is the only DOM write.
  */
-import { resolveTheme, themeTokens, resolveBrandLayer, brandPalette, cleanBrandHex, type Hex, type BrandPalette } from './themes';
+import { resolveTheme, themeTokens, resolveBrandLayer, brandPalette, cleanBrandHex, contrast, type Hex, type BrandPalette } from './themes';
 
 /** A597: + the owner's brand colours and the logo (GET /api/business/branding). */
 export interface BrandingForTheme {
@@ -20,7 +20,7 @@ export interface BrandingForTheme {
  *  web POS's action-* / act-* and the labels on them onto these (A605's colour map, docs/AUDIT-REGISTER.md). */
 const MODE_VARS = (pre: string, m: 'l' | 'd') => [`${pre}-primary-${m}`, `${pre}-on-primary-${m}`, `${pre}-primary-hover-${m}`,
   `${pre}-primary-pressed-${m}`, `${pre}-text-${m}`, `${pre}-text-${m}-hover`, `${pre}-ring-${m}`, `${pre}-subtle-${m}`, `${pre}-tint-${m}`, `${pre}-chart-${m}`];
-export const DASHBOARD_BRAND_VARS = [...MODE_VARS('bp', 'l'), ...MODE_VARS('bp', 'd'), 'bp-band', 'bp-on-band',
+export const DASHBOARD_BRAND_VARS = [...MODE_VARS('bp', 'l'), ...MODE_VARS('bp', 'd'), 'bp-band', 'bp-on-band', 'bp-edge-l',
   ...MODE_VARS('bs', 'l'), ...MODE_VARS('bs', 'd')] as const;
 export const DASHBOARD_THEME_VARS = ['action-t-500', 'action-t-600', 'action-d-400', 'action-l-400', ...DASHBOARD_BRAND_VARS] as const;
 
@@ -43,7 +43,10 @@ export function computeDashboardThemeVars(b: BrandingForTheme | null | undefined
 
 /** A605: a palette's variables, light and dark (channels "r g b"). The secondary's only when one is chosen. PURE. */
 export function brandColourVars(p: BrandPalette, s: BrandPalette | null = null): Record<string, string> {
-  const v: Record<string, string> = { 'bp-band': channels(p.base), 'bp-on-band': channels(p.on) };
+  // A609: the light pages' hairline round a brand fill — the ring shade when the fill barely stands out from white (a
+  // yellow is 1.5:1), else the fill itself (the hairline vanishes into it). index.css :root[data-brand]:not(.dark).
+  const edge = contrast(p.light.primary, '#ffffff') < 3 ? p.light.ring : p.light.primary;
+  const v: Record<string, string> = { 'bp-band': channels(p.base), 'bp-on-band': channels(p.on), 'bp-edge-l': channels(edge) };
   const put = (pre: string, pal: BrandPalette) => {
     for (const [m, k] of [['l', pal.light], ['d', pal.dark]] as const) {
       v[`${pre}-primary-${m}`] = channels(k.primary); v[`${pre}-on-primary-${m}`] = channels(k.onPrimary);
@@ -62,6 +65,8 @@ export function applyDashboardThemeVars(v: Record<string, string> | null, root: 
   for (const n of DASHBOARD_THEME_VARS) root.style.removeProperty(`--${n}`);
   // A597: the marker index.css keys the back office's brand colours on — only while the brand shades are set.
   if (v && v['bp-primary-l']) root.setAttribute?.('data-brand', ''); else root.removeAttribute?.('data-brand');
+  // A609: the secondary's accents (index.css :root[data-brand-2]) — only when a secondary is chosen beside the primary.
+  if (v && v['bp-primary-l'] && v['bs-ring-l']) root.setAttribute?.('data-brand-2', ''); else root.removeAttribute?.('data-brand-2');
   if (!v) return;
   for (const [n, val] of Object.entries(v)) root.style.setProperty(`--${n}`, val);
 }

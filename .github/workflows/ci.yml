@@ -490,6 +490,11 @@ jobs:
       - name: Partner from the Role list (A603)
         run: node --no-warnings tests/partner-add-a603.test.mjs
 
+      # A608: sign-in by role — Partner / General Manager email only, a Manager email (web dashboard) and a PIN for the
+      # desktop POS, a Cashier a PIN; the web POS refuses a manager's PIN (USE_WEB_DASHBOARD), the desktop's /verify-pin untouched.
+      - name: Staff sign-in by role (A608)
+        run: node --no-warnings tests/staff-signin-by-role-a608.test.mjs
+
       # A582 — "All my branches": a partner of SOME branches (two or more) reads them combined, never another branch. The
       # whole cloud (routes/index.js behind the real requireAuth) over HTTP: X-Branch-Id 'mine' → exactly their list (never
       # null / every branch), forged values (another branch, 'all', '', NO_BRANCH) never reach it; ~120 reads (reports and

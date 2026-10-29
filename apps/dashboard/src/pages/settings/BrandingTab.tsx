@@ -640,7 +640,7 @@ function BrandColoursField({ editable, primary, secondary, onPrimary, onSecondar
   const notes = [...brandNotes(primaryHex), ...brandNotes(secondaryHex).map((n) => n.replace(/^Your /, 'Your secondary '))];
   const fields: Array<[string, string, (v: string) => void, string | null, string]> = [
     ['Primary', primary, onPrimary, primaryHex, 'Buttons, the pay button, selected items, links and the menu.'],
-    ['Secondary', secondary, onSecondary, secondaryHex, 'Used sparingly: accents and the second series on charts.'],
+    ['Secondary', secondary, onSecondary, secondaryHex, 'Used sparingly: the line under your logo, the active menu and tab marker, and the second series on charts.'],
   ];
   const fromLogo = logoColours?.colours ?? [];
   const pick = (hex: string) => {
@@ -728,8 +728,11 @@ function BrandLivePreview({ primaryHex, secondaryHex, logo, bizName }: { primary
     );
   }
   const k = p[mode], s2 = s ? s[mode] : null;
-  const S = mode === 'light'
-    ? { page: '#f8fafc', card: '#ffffff', edge: '#e2e8f0', ink: '#0f172a', muted: '#64748b', soft: '#f1f5f9', neutral: '#94a3b8' }
+  // A609: the secondary's accents, as index.css draws them (data-brand-2): its ring shade on the line under the logo, the
+  // active menu marker and the active tab; none chosen → the neutral line and the primary, as before.
+  const accent = s2 ? s2.ring : null;
+  const S = mode === 'light'   // A609: the light greys and edges index.css now uses
+    ? { page: '#f8fafc', card: '#ffffff', edge: '#dbe2ea', ink: '#0f172a', muted: '#4f5d73', soft: '#f1f5f9', neutral: '#94a3b8' }
     : { page: '#030712', card: '#111827', edge: '#1f2937', ink: '#f9fafb', muted: '#9ca3af', soft: '#1f2937', neutral: '#4b5563' };
   const bars = [42, 64, 50, 78, 58, 88, 70];
   const paid = STATUS_SHADES.paid[mode === 'light' ? 3 : 1];
@@ -748,17 +751,21 @@ function BrandLivePreview({ primaryHex, secondaryHex, logo, bizName }: { primary
       <div className="rounded-lg overflow-hidden flex" style={{ background: S.page, border: `1px solid ${S.edge}`, minHeight: 168 }} data-testid="preview-dashboard">
         <div className="w-[34%] flex flex-col" style={{ background: k.tint, borderRight: `1px solid ${S.edge}` }}>
           <div className="h-1" style={{ background: p.base }} aria-hidden data-testid="preview-band" />
-          <div className="px-2.5 py-2 flex items-center gap-1.5" style={{ borderBottom: `1px solid ${S.edge}` }}>
+          <div className="px-2.5 py-2 flex items-center gap-1.5" style={{ borderBottom: `1px solid ${accent ?? S.edge}` }} data-testid="preview-divider">
             {logo && <img src={logo} alt="" className="h-5 max-w-[28px] object-contain rounded logo-chip-light p-0.5" />}
             <span className="text-[10px] font-bold truncate" style={{ color: S.ink }}>{bizName}</span>
           </div>
           <div className="p-1.5 space-y-0.5 text-[10px]">
-            <div className="rounded px-2 py-1 font-medium" style={{ background: k.subtle, color: k.text, boxShadow: `inset 2px 0 0 ${k.primary}` }}>Overview</div>
+            <div className="rounded px-2 py-1 font-medium" style={{ background: k.subtle, color: k.text, boxShadow: `inset 2px 0 0 ${accent ?? k.primary}` }}>Overview</div>
             {['Sales', 'Products', 'Settings'].map((n) => <div key={n} className="px-2 py-1" style={{ color: S.muted }}>{n}</div>)}
           </div>
         </div>
         <div className="flex-1 p-2.5 space-y-2 min-w-0">
           <div className="rounded-md p-2" style={{ background: S.card, border: `1px solid ${S.edge}` }}>
+            <div className="flex gap-2 mb-1.5 text-[9px]" style={{ borderBottom: `1px solid ${S.edge}` }} data-testid="preview-tabs">
+              <span className="pb-0.5 -mb-px font-medium" style={{ color: k.text, borderBottom: `2px solid ${accent ?? k.ring}` }}>Today</span>
+              <span className="pb-0.5" style={{ color: S.muted }}>This week</span>
+            </div>
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-[9px]" style={{ color: S.muted }}>Sales today</div>
