@@ -90,7 +90,7 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      // A346: the pull stores the cloud's web POS answer through this.
                      setWebPosEnabled: () => {},
                      // A367: the pull caches the owner's quick picks for order notes through this.
-                     setOrderNotePicks: () => {}, setPosFeatures: () => {}, setReversalRules: () => {},   // 0.6.30
+                     setOrderNotePicks: () => {}, setPosFeatures: () => {}, setAttendanceFlag: () => {}, setEtimsFlag: () => {}, setReversalRules: () => {},   // 0.6.30, A599
                      setBusinessDayCutoff: () => {}, setSupportContact: () => {},   // 0.6.34, 0.6.35
                      setCashierHistoryMethods: () => {},   // 0.6.37
                      setStockCountFreeze: () => {}, setCashierSeesShiftSales: () => {}, setCashierHistoryTotals: () => {},   // A394
@@ -222,7 +222,8 @@ check('the lock screen re-reads branding on the refresh signal', /const unsubscr
 // is unchanged — with no brand colour and themes OFF, null is APPLIED (back to the default), never ignored.
 check('…and a cleared branding returns it to the default (null is applied, not ignored)',
   // A544: through the branch's effective look — a null branding still clears it (accent and theme null → the default).
-  /setAccentHex\(accent \?\? \(theme \? resolveTheme\(theme\)\.shades\[500\] : null\)\)/.test(pin) && !/if \(cancelled \|\| !b\) return;/.test(pin));
+  // A597: the owner's primary (only with a theme) sits between the two.
+  /setAccentHex\(accent \?\? \((?:primary \? primary\.layer : )?theme \? resolveTheme\(theme\)\.shades\[500\] : null\)\)/.test(pin) && !/if \(cancelled \|\| !b\) return;/.test(pin));
 const pos = src('renderer/pages/POSPage.tsx');
 check('the POS grid still reloads on the same signal', /posApi\.pos\.onCatalogueChanged\(loadCatalogue\)/.test(pos));
 

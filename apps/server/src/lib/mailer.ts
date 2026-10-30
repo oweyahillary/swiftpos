@@ -67,7 +67,7 @@ export function mailRecipients(to: string): string[] {
  * provider's own error text — SendGrid returns { errors: [{ message }] } — so the caller can log it or fall back.
  * Never throws: a network failure comes back as its message, like a refusal.
  */
-export async function sendViaSendGrid(opts: { from: string; to: string; subject: string; html: string; attachments?: MailAttachment[] }): Promise<string | null> {
+export async function sendViaSendGrid(opts: { from: string; to: string; subject: string; html: string; text?: string; attachments?: MailAttachment[] }): Promise<string | null> {
   if (!SENDGRID_KEY) return 'SENDGRID_API_KEY is not set';
   try {
     const res = await fetch(SENDGRID_URL, {
@@ -78,7 +78,8 @@ export async function sendViaSendGrid(opts: { from: string; to: string; subject:
         personalizations: [{ to: splitRecipients(opts.to).map((email) => ({ email })) }],
         from: parseFrom(opts.from),
         subject: opts.subject,
-        content: [{ type: 'text/html', value: opts.html }],
+        // A592: a text/plain part first when given (SendGrid wants text/plain before text/html).
+        content: [...(opts.text ? [{ type: 'text/plain', value: opts.text }] : []), { type: 'text/html', value: opts.html }],
         // A455: files (the monthly pack) — SendGrid takes them base64.
         ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => ({
           content: a.content.toString('base64'), filename: a.filename, type: a.contentType, disposition: 'attachment',
@@ -316,6 +317,8 @@ export interface MailOptions {
   to: string;
   subject: string;
   html: string;
+  /** A592: the plain-text alternative (the admin alerts); without it the providers send HTML only, as before. */
+  text?: string;
   attachments?: MailAttachment[];
   /** Override the FROM address — used for per-business domains (Step 19/21) */
   from?: string;
@@ -507,6 +510,7 @@ export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
     try {
       const { error } = await resend.emails.send({
         from, to: mailRecipients(opts.to), subject: opts.subject, html: opts.html,   // A532: a list
+        ...(opts.text ? { text: opts.text } : {}),   // A592
       });
       if (!error) return { ok: true, provider: 'resend' };
       failures.push(`Resend: ${error.message}`);
@@ -516,7 +520,7 @@ export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
   }
 
   if (SENDGRID_KEY) {
-    const sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html });
+    const sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html, text: opts.text });
     if (!sgError) return { ok: true, provider: 'sendgrid' };
     failures.push(`SendGrid: ${sgError}`);
   }
@@ -524,7 +528,7 @@ export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
   const smtp = await getSmtpTransport();
   if (smtp) {
     try {
-      await smtp.sendMail({ from, to: opts.to, subject: opts.subject, html: opts.html });
+      await smtp.sendMail({ from, to: opts.to, subject: opts.subject, html: opts.html, ...(opts.text ? { text: opts.text } : {}) });
       return { ok: true, provider: 'smtp' };
     } catch (err: any) {
       return {

@@ -51,6 +51,7 @@ import type { Request, Response } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
 import { requirePermission, can, allBranchAccess, inBranchSet } from '../middleware/rbac';
+import { maskCustomerContacts } from '../lib/personalData';   // A595
 import { supabase } from '../lib/supabase';
 import { seesCosts } from '../lib/costAccess';
 import { getDayCutoff } from '../lib/dayCutoff';
@@ -72,7 +73,10 @@ import {
 const router = safeRouter();
 router.use(requireAuth);
 router.use(requireWebSurface);
-router.use(requirePermission('reports.sales'));
+// A595 (docs/PERMISSIONS-AUDIT.md F7): the Analytics area is its own part of reports.sales (reports.analytics — migration
+// 176 gave it to every holder of reports.sales), and customers' phones are masked here without customers.contacts.
+router.use(requirePermission('reports.analytics'));
+router.use(maskCustomerContacts());
 
 // ── The cache: one answer per business, branch and period, kept CACHE_TTL_MS ──────────────────────────────────────
 export const CACHE_TTL_MS = 5 * 60_000;
@@ -537,7 +541,8 @@ router.get('/stock', async (req, res) => {
 // order-type mix with the average bill (anyone with reports.sales; for them no customer is read).
 router.get('/customers', async (req, res) => {
   const c = await context(req, res); if (!c) return;
-  await answer(res, async () => ({ period: period(c), branchId: c.branch, ...(await customers(c, seesCredit(req))) }));
+  // A595: the NAMED list is what customers bought (customers.history), or the credit side's own (customers.credit).
+  await answer(res, async () => ({ period: period(c), branchId: c.branch, ...(await customers(c, can(req, 'customers.history', 'customers.credit'))) }));
 });
 
 // GET /api/analytics/costs?from&to&branch — A561: food cost, the thinnest margins, cost rises, the items with no cost.

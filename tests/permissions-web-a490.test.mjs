@@ -10,8 +10,7 @@
  * MUTATIONS TO CONFIRM BITE:
  *   - posRouting back to a role-name list                         → "no role-name checks" and "routing" fail
  *   - posRouting without dropping OPEN_BEFORE_A490                → "a pre-A490 cashier stays on the till" fails
- *   - a manager nav item back to 'reports.view' / null            → "every manager page has its fine key" fails
- *   - a report tab without its key                                → "every report tab has its key" fails
+ *   - (A608: the two manager-portal mutations — a nav item / a report tab without its key — went with the portal)
  *   - PaymentModal sending a promo discount without sales.discount → "discount" fails
  *   - POSOrderHistoryTab gating refund on sales.void              → "void and refund" fails
  *   - ZReportModal showing expected cash to everyone              → "Z-report" fails
@@ -125,81 +124,21 @@ await ok('POSAuthContext: hasPermission is the expanded map (memoised); a refres
   assert.doesNotMatch(c, /session\.permissions\[key\] === true/);
 });
 
-// ── Manager portal: every page, tab and action by its fine key ───────────────────────────────────────────────────────
-const EXPECTED_NAV = {
-  overview: "'reports.overview'", menu: "'products.view'", offers: "'menu.offers'", inventory: "'inventory.view'",
-  receiving: "['inventory.receive', 'inventory.transfer']", counts: "'inventory.count'", wastage: "'inventory.waste'",
-  // A523: Shifts also opens for whoever may close a day or force-close a drawer (Tills & days lives in it).
-  expiry: "'inventory.waste'", history: "'inventory.receive'", orders: "'orders.view_all'", shift: "['orders.view_all', 'shifts.close_day', 'shifts.force_close']",
-  reports: 'MANAGER_REPORT_KEYS', analytics: "'reports.sales'" /* A549 */, turnover: "'orders.view_all'", expenses: "'expenses.view'", customers: "'customers.view'",
-  credit: "'customers.view'", staff: "'staff.view'", printers: "'stations.manage'", security: 'null',
-  // A502: the owner's by default, for someone the owner gives the right.
-  promotions: "'menu.promotions'", reversals: "'settings.reversals'",
-  // A518: supplier bills — read with payables.view (the Accountant), recorded and paid with payables.manage.
-  bills: "['payables.view', 'payables.manage']",
-  // A544: their branch's own theme, colour and receipt footer — the Branding tab's keys (the cloud: own branch only).
-  branding: "['receipt.manage', 'settings.business']",
-  // A576: the watch list (loss-prevention alerts) — the voids & exceptions report's key, as the cloud's GET /api/loss-alerts.
-  watch: "'reports.voids'",
-};
-await ok('every manager page has its fine key (and only "My sign-in" is open)', () => {
-  const md = read('pages/manager/ManagerDashboard.tsx');
-  const block = md.slice(md.indexOf('const NAV_ITEMS: NavItem[] = ['), md.indexOf('const GROUP_ORDER'));
-  const items = [...block.matchAll(/\{ key: '([a-z]+)',[^\n]*?permission: ((?:'[a-z_.]+'|\[[^\]]+\]|MANAGER_REPORT_KEYS|null)),/g)];
-  const got = Object.fromEntries(items.map((m) => [m[1], m[2]]));
-  assert.deepEqual(got, EXPECTED_NAV);
-  for (const v of Object.values(got)) for (const k of v.matchAll(/'([a-z_.]+)'/g)) assert.ok(KEYS.has(k[1]), k[1]);
-  assert.match(md, /const visibleNav\s+= NAV_ITEMS\.filter\(i => navAllowed\(i, held, isPetrol\)(?: && managerItemShown\(i\.key, session\.businessType\))?\);/);   // A573: a restaurant's pages only at a restaurant
-  assert.match(md, /if \(item\.key === 'reports'\) return hasAnyPermission\(held, tabsForBusiness\(isPetrol\)\.map\(t => t\.permission\)\);/);
-});
-await ok('every manager report tab has its key; the page shows only the ones held', () => {
-  const rp = read('pages/manager/ManagerReportsPage.tsx');
-  const tabs = Object.fromEntries([...rp.matchAll(/\{ id: '([a-z_]+)',\s+label: '[^']+',\s+permission: '([a-z_.]+)' \}/g)].map((m) => [m[1], m[2]]));
-  assert.deepEqual(tabs, { summary: 'reports.sales', hourly: 'reports.sales', items: 'reports.items', voids: 'reports.voids',
-    staff: 'reports.staff', shifts: 'reports.shifts', fuel_sales: 'reports.fuel', wet_stock: 'reports.fuel' });
-  assert.match(rp, /const TABS = tabsForBusiness\(isPetrol\)\.filter\(t => hasPermission\(t\.permission\)\);/);
-  assert.match(rp, /\{report && mayDownload && \(/);
-  assert.match(rp, /const mayDownload = hasPermission\('reports\.export'\);/);
-});
-await ok('manager actions: credit edits, drawer confirm / count, day close, staff edits, costs', () => {
-  const md = read('pages/manager/ManagerDashboard.tsx');
-  assert.match(md, /const canManage = hasPermission\('customers\.credit'\);/);
-  assert.match(md, /<StaffTab branches=\{managerBranch\} canEdit=\{hasAnyPermission\(held, \['staff\.edit'\]\)\} \/>/);
-  assert.match(md, /const seesCosts\s+= hasAnyPermission\(held, \['menu\.costs', 'reports\.costs'\]\);/);
-  assert.match(md, /<Wastage [^>]*showCosts=\{seesCosts\} \/>/);
-  assert.match(md, /<Expiry [^>]*showCosts=\{seesCosts\}\s+canEditBatches=/);   // A506: + batch edits by receive / adjust
-  const sh = read('pages/manager/ManagerShiftTab.tsx');
-  assert.match(sh, /const canCountClose = hasPermission\('shifts\.confirm'\);/);
-  assert.match(sh, /const seesExpected = hasPermission\('reports\.shifts'\) \|\| canCountClose;/);
-  assert.match(sh, /\{seesExpected && <> · expected /);
-  assert.match(read('pages/manager/RemoteDayClose.tsx'), /const allowed = hasPermission\('shifts\.close_day'\);/);
-  const rc = read('pages/manager/ManagerReceivingTab.tsx');
-  assert.match(rc, /const seesCosts\s+= hasPermission\('menu\.costs'\) \|\| hasPermission\('reports\.costs'\);/);
-  assert.match(rc, /unit_cost: seesCosts \? Number\(poLines\[g\.id\]\?\.cost \|\| 0\) : undefined/);
-  assert.match(read('pages/manager/ManagerHistoryTab.tsx'), /hideCosts: !seesCosts/);
-});
-await ok('the Overview fetches a report only with its key', () => {
-  const md = read('pages/manager/ManagerDashboard.tsx');
-  const ov = md.slice(md.indexOf('function OverviewTab()'), md.indexOf('// ── Expenses Tab'));
-  // A518: the day's figures (/sales) and the top items (/products) also with reports.overview — the cloud admits it there
-  // (tests/web-tidy-a518.test.mjs); the hourly chart and products-v2 keep their own keys.
-  assert.match(ov, /const seesDay = hasPermission\('reports\.sales'\) \|\| hasPermission\('reports\.overview'\);/);
-  assert.match(ov, /seesDay \? posApi\.get<SalesSummary>\(`\/api\/reports\/sales/);
-  assert.match(ov, /hasPermission\('reports\.sales'\) \? posApi\.get<\{ series: HourlyRow\[\] \}>\(`\/api\/reports\/hourly/);
-  assert.match(ov, /hasPermission\('reports\.items'\) \? posApi\.get<\{ products: TopProduct\[\] \}>\(`\/api\/reports\/products-v2/);
-  assert.doesNotMatch(ov, /\/api\/reports\/(?:voids|staff)/);
-  assert.match(md, /seesFuel \? posApi\.get<any>\(`\/api\/reports\/fuel-sales/);
-  assert.match(md, /seesSales \? posApi\.get<any>\(`\/api\/reports\/sales/);
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; its four checks (every manager page,
+// every manager report tab, the manager's actions, the portal Overview's fetches — all of ManagerDashboard.tsx,
+// ManagerReportsPage.tsx, ManagerShiftTab.tsx, RemoteDayClose.tsx, ManagerReceivingTab.tsx, ManagerHistoryTab.tsx) are
+// gone with those files. A manager now uses the dashboard itself, whose nav and routes are gated by the same fine keys.
 
 // ── Web POS ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-await ok('discount: sales.discount — no manual discount reaches the sale without it; the input is not offered', () => {
+// A595 (owner decision D6): the web POS applies set-up discounts and promo codes — sales.discount_preset (or the typed
+// discounts' sales.discount); the cloud checks the discount named and its amount (routes/orders.ts discountRefused).
+await ok('discount: sales.discount or its set-up part — no discount reaches the sale without one; the input is not offered', () => {
   const pm = read('pages/pos/PaymentModal.tsx');
-  assert.match(pm, /const mayDiscount = hasPermission\('sales\.discount'\);/);
+  assert.match(pm, /const mayDiscount = hasPermission\('sales\.discount'\) \|\| hasPermission\('sales\.discount_preset'\);/);
   assert.match(pm, /const rawPromoDiscount\s+= mayDiscount \? \(discountState\?\.discount_amount \?\? 0\) : 0;/);
   assert.equal((pm.match(/discount_id:\s+mayDiscount \? \(discountState\?\.discount\.id \?\? null\) : null,/g) ?? []).length, 2);
   const dp = read('pages/pos/DiscountPanel.tsx');
-  assert.match(dp, /const mayDiscount = hasPermission\('sales\.discount'\);/);
+  assert.match(dp, /const mayDiscount = hasPermission\('sales\.discount'\) \|\| hasPermission\('sales\.discount_preset'\);/);
   assert.match(dp, /if \(!mayDiscount\) return null;/);
 });
 await ok('void and refund: sales.void and sales.refund, each on its own', () => {
@@ -223,7 +162,8 @@ await ok('Z-report: kept for the cashier, but expected cash and the difference n
 });
 await ok('Float / Expense: shifts.cash_movements (the old switch still applies on a map from before); printers: stations.manage', () => {
   const cs = read('pages/pos/CashierScreen.tsx');
-  assert.match(cs, /const mayMoveMoney = hasPermission\('shifts\.cash_movements'\)\s*&& mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\);/);
+  // A594: shifts.cash_movements is "Record cash in" now; Float / Expense are offered to all (a manager approves without it).
+  assert.match(cs, /const mayCashIn = hasPermission\('shifts\.cash_movements'\)\s*&& mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\);/);
   assert.match(cs, /const canSetPrinters = hasPermission\('stations\.manage'\);/);
   assert.match(cs, /\{canSetPrinters && \(/);
   assert.doesNotMatch(cs, /isManager\b/);
@@ -264,8 +204,10 @@ await ok('RolesTab: the new API — keys, copy_from, rename, delete with ROLE_IN
 });
 await ok('StaffTab: a person\'s rights by key (override_keys) on the same picker, against the role; no role names', () => {
   const s = read('pages/settings/StaffTab.tsx');
-  assert.match(s, /\.\.\.\(keysChanged \? \{ override_keys \} : \{\}\),\s*\}\);/);   // A506: an edit sends them when they changed
-  assert.match(s, /api\.post\('\/api\/staff', \{[^}]*override_keys/);
+  // A506: an edit sends them when they changed; A595: with `parts: true` (the keys exactly as ticked), and only with staff.access.
+  assert.match(s, /const keysField: \{ override_keys\?: Record<string, boolean>; parts\?: true \} = keysChanged \? \{ override_keys, parts: true \} : \{\};/);
+  assert.match(s, /\.\.\.keysField,\s*\}\);/);
+  assert.match(s, /api\.post\('\/api\/staff', \{[^}]*\.\.\.keysField/);   // A595: the person's rights (override_keys, parts: true) when the adder holds staff.access
   assert.match(s, /<PermissionPicker keys=\{catalogue\.keys\} groups=\{catalogue\.groups\} checked=\{effectiveKeys\}\s+onChange=\{setEffectiveKeys\} baseline=\{roleBaseline\}/);
   assert.match(s, /canResetSignIn && s\.status === 'active' && needsSignInCode\(role, s\.override_keys\)/);
   assert.doesNotMatch(s, /OTP_ROLES|excludeRoles|permission_id: p\.id/);
@@ -279,7 +221,7 @@ await ok('Business: POS options and the business-wide payment methods, on /api/c
   assert.match(c, /api\.put\('\/api\/controls\/loyalty', patch\)/);
   assert.doesNotMatch(c, /\/api\/controls\/updates/);
   assert.match(c, /api\.post\('\/api\/business\/settings', \{ key: PAYMENT_METHODS_ENABLED_KEY, value: v \}\)/);
-  assert.match(c, /export const POS_OPTION_KEYS = \['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes'\] as const;/);
+  assert.match(c, /export const POS_OPTION_KEYS = \['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin'\] as const;/);   // A594
   const bp = read('pages/settings/BusinessPage.tsx');
   assert.match(bp, /\{ to: 'pos-options',\s+label: 'POS options' \}/);
   assert.doesNotMatch(bp, /till-updates/);

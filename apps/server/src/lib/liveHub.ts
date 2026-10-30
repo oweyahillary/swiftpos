@@ -49,6 +49,8 @@ import { requireAuth } from '../middleware/auth';
 import { SERVER_SIGNATURE_HEADER, SERVER_SIGNATURE_VALUE } from './serverSignature';
 import { latestSeq, forgetChangesOf } from './syncChanges';
 import { traffic } from './trafficStats';
+import { meterJob } from './supabaseMeter';                    // A591
+import { lastWriteAt, memoEnabled } from './writeActivity';      // A591
 
 export const LIVE_PATH = '/api/pos/live';
 export const HELLO_WAIT_MS = 10_000;
@@ -258,8 +260,35 @@ export function recheckBusiness(businessId: string | null): void {
 }
 
 // ── (b) everything else: one read for every business every 5 s ─────────────────────────────────────────────────────
+/**
+ * A591: the change log moves only when something is written, and every write a client makes comes through this server
+ * (lib/writeActivity.ts). So the 5 s read runs while a write was seen in the last 130 s (the read's 120 s replay window,
+ * where a late commit shows up, plus a tick); otherwise once a minute — a change made straight in SQL is still pushed
+ * within a minute. A night of tills left on was 17,280 reads a day; idle, it is 1,440. A591_MEMO=off: every 5 s as before.
+ */
+export const HEADS_ACTIVE_MS = 130_000;
+/**
+ * A593 (owner, 2026-10-26: job:liveHeads 317 Supabase calls in 1.1 h — "logs are full already"): any write of ANY
+ * business kept the 5 s read going for 130 s, so a day of trading anywhere read every 5 s all day. The change log gets an
+ * entry only when something is written, every write a POS or the web makes comes through this server, and it is noted
+ * when the request has FINISHED (its transaction committed — the entry is there to be read, a late commit included: that
+ * request's own finish is noted after it). So the read now runs on the next 5 s tick after a write was noted for a
+ * business that has a socket open (or a write with no business, or a job's) since the last read began — one read for
+ * every business, as before — and otherwise every 5 minutes (a change made straight in SQL: within 5 minutes, as a POS
+ * without a socket asks). A write of a business with no socket open reads nothing. A591_MEMO=off: every 5 s as before.
+ */
+export const HEADS_IDLE_MS = 5 * 60_000;
+let headsReadAt = 0;
+export function headsDue(now = Date.now()): boolean {
+  if (!memoEnabled()) return true;
+  if (now - headsReadAt >= HEADS_IDLE_MS) return true;
+  for (const b of byBusiness.keys()) if (lastWriteAt(b) >= headsReadAt) return true;   // a write since the last read began
+  return false;
+}
+
 export async function headsTick(now = Date.now()): Promise<void> {
   if (!byBusiness.size) return;
+  headsReadAt = now;
   try {
     if (globalAfter === null) {
       const { data, error } = await supabase.from('sync_changes').select('seq').order('seq', { ascending: false }).limit(1).maybeSingle();
@@ -334,13 +363,17 @@ export function attachLiveHub(server: http.Server): WebSocketServer {
       try { c.ws.ping(); } catch { /* gone */ }
     }
   }, PING_EVERY_MS);
-  const recheck = setInterval(async () => {
+  const recheck = setInterval(meterJob('liveRecheck', async () => {
     for (const set of [...byBusiness.values()]) for (const c of [...set]) {
       const v = await checkToken(c.token);
       if (!v.ok && v.status !== 503) { try { c.ws.close(4001, v.code ?? 'sign in again'); } catch { /* gone */ } }
     }
-  }, RECHECK_EVERY_MS);
-  const poll = setInterval(() => { void headsTick(); }, HEADS_EVERY_MS);
+  }), RECHECK_EVERY_MS);
+  const poll = setInterval(meterJob('liveHeads', () => {
+    const now = Date.now();
+    if (headsDue(now)) void headsTick(now);
+    else flushStock(now);   // a stock-only ring whose turn has come still goes on time
+  }), HEADS_EVERY_MS);
   for (const t of [ping, recheck, poll]) t.unref?.();
   timers.push(ping, recheck, poll);
   server.on('close', () => { for (const t of timers) clearInterval(t); timers = []; wss.close(); });
@@ -349,13 +382,13 @@ export function attachLiveHub(server: http.Server): WebSocketServer {
 
 /** Old change-log entries go once a day (30 days kept). Never throws. */
 export function startSyncChangePruneJob(): void {
-  cron.schedule('17 3 * * *', async () => {
+  cron.schedule('17 3 * * *', meterJob('pruneSyncChanges', async () => {
     try {
       const { data, error } = await supabase.rpc('prune_sync_changes', { p_keep_days: 30 });
       if (error) { console.warn(`[liveHub] prune_sync_changes: ${error.message} (migration 151?)`); return; }
       console.log(`[liveHub] change log: ${Number(data) || 0} entries older than 30 days removed`);
     } catch (e) { console.warn(`[liveHub] prune failed: ${(e as Error)?.message ?? e}`); }
-  }, { timezone: 'UTC' });
+  }), { timezone: 'UTC' });
 }
 
 interface BranchHead { business_id: string; branch_id: string | null; max_seq: number | string; n: number | string; topics: string[] | null }

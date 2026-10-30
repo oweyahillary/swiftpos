@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { posApi, StaffSession } from '../lib/posApi';
 import { resolveBranding } from '@zaptill/core/contrast';
-import { resolveTheme } from '@zaptill/core/themes';
+import { resolveTheme, brandPalette } from '@zaptill/core/themes';
 
 interface Branch { id: string; name: string; desktop_licensed: boolean; }
 
@@ -57,7 +57,9 @@ export default function PinPage({ businessName, onStaffLogin, onTechUnlock, onHe
         // A544: the branch's own colour / theme when it overrides them (main resolves branch → business → default).
         const accent = b?.effective ? b.effective.accentHex : b?.accentHex ?? null;
         const theme = b?.effective ? b.effective.themeId : b?.themeId ?? null;
-        setAccentHex(accent ?? (theme ? resolveTheme(theme).shades[500] : null));
+        // A597: no lock-screen accent but the owner's primary colour → its shade that is seen on this dark screen.
+        const primary = theme ? brandPalette(b?.effective?.primaryHex ?? null) : null;   // A605: the same palette as the web
+        setAccentHex(accent ?? (primary ? primary.layer : theme ? resolveTheme(theme).shades[500] : null));
         setLogoDataUri(b?.logoPng ?? null);
       }).catch(() => { /* keep what is on screen; first paint falls back to the ZapTill default */ });
     };

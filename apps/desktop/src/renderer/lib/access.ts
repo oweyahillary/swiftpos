@@ -104,3 +104,4 @@ export function mayMoveMoney(s: SessionLike | null | undefined, cashierNoMoneyOu
   if (hasMarker(s)) return can(s, 'shifts.cash_movements');
   return !cashierNoMoneyOut || can(s, 'shifts.confirm');
 }
+

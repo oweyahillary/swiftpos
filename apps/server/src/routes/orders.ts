@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { cashierHistoryView } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { getHistoryMethods } from '../lib/historyMethods';
 import { cashierHistoryTotals, historyTotal } from '../lib/cashierShiftSales';   // A418
@@ -30,7 +30,7 @@ import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
 import { sendReceiptWhatsApp } from '../lib/whatsapp';
 import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
-import { callerMayConfirm, replayTime } from '../lib/shiftConfirm';
+import { callerMayConfirm, callerMayApprove, replayTime } from '../lib/shiftConfirm';
 import { ownHistoryOnly, holds } from '../lib/historyScope';   // A490
 import { cleanDeliveryFee, customerDeliveryFee, isFreeDelivery } from '@zaptill/core/delivery';
 import { payRider, returnRiderPayout } from '../lib/riderPayout';
@@ -50,6 +50,10 @@ import { webSaleStockRefusal } from '../lib/stockGateStore';   // A563
 import { recordCreditSale } from '../lib/creditConfirm';   // A545
 import { isSoldByWeight, weighedAmountAccepted } from '@zaptill/core/scaleBarcode';   // A577
 import { loadCreditRule, onApproverList, type CreditApprovalRule } from '../lib/creditApprovers';   // A585
+import { isMasked, seesCustomerContacts, maskPhone } from '../lib/personalData';   // A595
+import { branchCreditEnabled, branchLimitOf, owedAtBranch, creditAvailable, CREDIT_OFF_HERE } from '../lib/branchCredit';   // A595 D4
+import { backfillQuiet } from '../lib/backfill';   // A602
+import { saleBuyerPin } from '../lib/customerDetails';   // A607
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -90,7 +94,7 @@ function logTillMadeSale(req: any, what: string): void {
 }
 
 /** A494 + A505: POST / — orders.create, except a till's own sale sent under a person's till sign-in (tillMadeSale). */
-const sellsOrTillSale = (req: any, res: any, next: any): void => {
+export const sellsOrTillSale = (req: any, res: any, next: any): void => {   // A602: exported for the backfill
   if (tillMadeSale(req) && !can(req, 'orders.create')) { logTillMadeSale(req, 'orders.create'); next(); return; }
   sells(req, res, next);
 };
@@ -101,9 +105,21 @@ const sellsOrTillSale = (req: any, res: any, next: any): void => {
  * on a till (a desktop token can be used from anywhere) — needs the key.
  * A505: except a sale the till already made (tillMadeSale) — refusing it lost the sale on a till before 1.0.16.
  */
-function discountRefused(req: any, manual: number): boolean {
+async function discountRefused(req: any, manual: number, preset?: { discountId: unknown; base: number }): Promise<boolean> {
   if (!(manual > 0) || req.isTill || can(req, 'sales.discount')) return false;
   if (tillMadeSale(req)) { logTillMadeSale(req, 'sales.discount'); return false; }
+  // A595 (docs/PERMISSIONS-AUDIT.md F16): a SET-UP discount is its own part of sales.discount (sales.discount_preset) — the
+  // discount named (discount_id, this business's, active) and no more than it gives on this sale; a typed amount is not.
+  if (preset && typeof preset.discountId === 'string' && preset.discountId && can(req, 'sales.discount_preset')) {
+    const { data: d } = await supabase.from('discounts').select('type, value, status')
+      .eq('id', preset.discountId).eq('business_id', req.businessId).maybeSingle();
+    const row = d as { type?: string; value?: number | string; status?: string } | null;
+    if (row && row.status === 'active') {
+      const v = Number(row.value) || 0, base = Math.max(0, Number(preset.base) || 0);
+      const most = row.type === 'percentage' ? round2((base * v) / 100) : Math.min(v, base);
+      if (manual <= most + 0.01) return false;
+    }
+  }
   return true;
 }
 
@@ -686,13 +702,21 @@ async function awardLoyaltyPoints(
 // POST /api/orders
 // Creates order, order_items, order_item_variants, order_item_modifiers, payment,
 // deducts stock, creates kitchen ticket, and handles loyalty earn/redeem.
-router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own sale is never refused for its person's keys
+/**
+ * POST /api/orders — the sale itself. A602: a named, exported handler (was inline) so the bulk history backfill
+ * (routes/backfill.ts, POST /api/sync/backfill) runs EXACTLY this for each sale it carries — the same validation, the same
+ * idempotency (X-Idempotency-Key = the POS's order id), the same writes and effects. No second copy of the rules.
+ */
+export async function createOrder(req: Request, res: Response): Promise<void> {
   // Idempotency — the desktop sync engine (and any retrying client) sends
   // X-Idempotency-Key. If we've already created an order for this key, return
   // the existing one with 200 instead of creating a duplicate. This makes a
   // lost-response retry safe.
   const idempotencyKey = (req.header('X-Idempotency-Key') || req.body?.idempotency_key || '').trim();
-  if (idempotencyKey) {
+  // A602: the backfill looked up its whole batch's keys in ONE read first (lib/backfill.ts) — a sale it found new skips this
+  // per-sale read. A race (two copies at once) is still caught below: create_order_atomic's 23505 on the key → duplicate.
+  const quiet = backfillQuiet(req);
+  if (idempotencyKey && !quiet?.knownNew) {
     const { data: existing } = await supabase
       .from('orders')
       .select('id, order_number')
@@ -735,6 +759,14 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
   } = req.body;
   const deliveryFee = order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
   const deliveryFree = isFreeDelivery(order_type, deliveryFee, deliveryFreeRaw);
+  // A607: the buyer's KRA PIN for THIS sale (orders.buyer_kra_pin → the receipt and KRA eTIMS); none when not sent. A POS
+  // checks it before it sends, so a malformed one is refused (400 BAD_BUYER_PIN) — but the history backfill drops it
+  // instead: an old sale is never refused over its PIN (and the backfill never fiscalises anyway).
+  const buyerPin = saleBuyerPin(req.body?.buyer_kra_pin);
+  if (buyerPin === 'bad' && !quiet) {
+    res.status(400).json({ error: "The buyer's KRA PIN is not a KRA PIN (A or P, 9 digits and a letter — A123456789Z).", code: 'BAD_BUYER_PIN' });
+    return;
+  }
 
   // Normalise to array — support both old single `payment` and new `payments` array
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -845,7 +877,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     // A490: a manual discount on a LIVE web sale is sales.discount (offers are not a manual discount). A till's sale was
     // made already — never refused for it (the till checks its own person).
-    if (discountRefused(req, round2(recomputed.discount - recomputed.offerDiscount))) {   // A494
+    if (await discountRefused(req, round2(recomputed.discount - recomputed.offerDiscount),
+      { discountId: discount_id, base: round2(Number(recomputed.subtotal) - recomputed.offerDiscount) })) {   // A494, A595
       res.status(403).json(DISCOUNT_REFUSED); return;
     }
     let {
@@ -883,7 +916,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     // stored total remains the authoritative re-priced figure — but now the
     // discrepancy is visible instead of silent, and can be reviewed.
     const clientTotal = Number(total);
-    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01) {
+    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01 && quiet) quiet.repriced++;   // A602: counted, one line per batch
+    else if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01) {
       const isOffline = !!(req.body?.created_at || req.body?.client_created_at);
       console.warn(
         `[reprice-divergence]${isOffline ? ' OFFLINE' : ''} order ${order_number}: ` +
@@ -918,6 +952,7 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     let creditNote = '';   // A511: who approved it, on the ledger line
     let creditOk: CreditOk | null = null;   // A545: approved at the sale, or a till's sale awaiting a manager
     let creditOverLimit = false;            // A545: a till's sale past the limit is recorded, flagged
+    let creditBranchLimit: number | null = null;   // A595 D4: the customer's limit at this branch, when one is set
     if (creditLeg) {
       if (!customer_id) {
         res.status(400).json({ error: 'A customer is required for a credit sale' });
@@ -933,7 +968,15 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         .select('credit_limit, credit_balance')
         .eq('id', customer_id).eq('business_id', req.businessId).single();
       if (!cust) { res.status(400).json({ error: 'Invalid customer' }); return; }
-      const available = Number(cust.credit_limit) - Number(cust.credit_balance);
+      // A595 D4 (owner, 2026-10-27): a branch the owner (or its partner) closed to credit sells nothing on account — a sale
+      // the POS already took there is recorded and flagged for the manager, never lost; and a customer's limit AT this
+      // branch, when one is set, is checked against what they owe here (else the business-wide limit, as before).
+      const creditHere = await branchCreditEnabled(req.businessId!, branch_id ?? null);
+      if (!creditHere && !ca.tillSale) { res.status(403).json({ ...CREDIT_OFF_HERE }); return; }
+      creditBranchLimit = await branchLimitOf(req.businessId!, customer_id, branch_id ?? null);
+      const available = creditAvailable({ limit: Number(cust.credit_limit) || 0, owedTotal: Number(cust.credit_balance) || 0,
+        branchLimit: creditBranchLimit, owedHere: creditBranchLimit !== null ? await owedAtBranch(req.businessId!, customer_id, branch_id ?? null) : 0 });
+      if (!creditHere) creditOverLimit = true;
       // A545: a sale the till already took is never refused for the limit (the goods are gone) — recorded, flagged for
       // the manager who confirms it.
       if (creditAmount > available && ca.tillSale) creditOverLimit = true;
@@ -1068,7 +1111,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         // Empty access = all branches (same rule verify-pin applies).
         claimValid = access.length === 0 || access.some(b => b.branch_id === branch_id);
       }
-      if (!claimValid) {
+      if (!claimValid && quiet) quiet.cashierClaims++;   // A602: counted, one line per batch
+      else if (!claimValid) {
         console.warn(`[orders] rejected cashier claim ${claimedCashier} on branch ${branch_id} — not an active branch cashier; crediting ${req.userId ?? 'no one (the till\'s own session)'}`);
       }
     }
@@ -1076,12 +1120,23 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       mayClaim, subject: req.userId ?? null, claimed: claimedCashier, claimValid,
     });
 
+    // A595: a POS shown a customer's MASKED number (the person may not see it, or the POS's own credit list) sends that back
+    // with the sale — the order keeps the customer's real number instead, never the mask.
+    let orderCustomerPhone: string | null = customer_phone ?? null;
+    if (isMasked(orderCustomerPhone)) {
+      orderCustomerPhone = null;
+      if (customer_id) {
+        const { data: cRow } = await supabase.from('customers').select('phone').eq('id', customer_id).eq('business_id', req.businessId).maybeSingle();
+        orderCustomerPhone = (cRow as { phone?: string | null } | null)?.phone ?? null;
+      }
+    }
+
     const orderPayload = {
       business_id: req.businessId,
       branch_id,
       customer_id: customer_id ?? null,
       customer_name: customer_name ?? null,
-      customer_phone: customer_phone ?? null,
+      customer_phone: orderCustomerPhone,
       order_number,
       order_type,
       delivery_person: order_type === 'delivery'
@@ -1194,6 +1249,13 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         .eq('id', createdRow.order_id).eq('business_id', req.businessId);
       if (noteErr) console.error('[order-create] the order note was not saved:', noteErr.message);
     }
+    // A607: the sale's buyer KRA PIN — written before the invoice is sent to KRA below (create_order_atomic does not carry
+    // it, as the note). A failure is logged, never the sale's.
+    if (buyerPin && buyerPin !== 'bad') {
+      const { error: pinErr } = await supabase.from('orders').update({ buyer_kra_pin: buyerPin })
+        .eq('id', createdRow.order_id).eq('business_id', req.businessId);
+      if (pinErr) console.error('[order-create] the buyer KRA PIN was not saved (is migration 181 applied?):', pinErr.message);
+    }
     const order = {
       id: createdRow.order_id,
       order_number: createdRow.order_number,
@@ -1243,10 +1305,11 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     }
 
 
-    // 7. Kitchen ticket
+    // 7. Kitchen ticket. A602: a sale from the history backfill (weeks or months old) is recorded as already collected —
+    //    never a new ticket on today's kitchen screen.
     const { error: ktErr } = await supabase
       .from('kitchen_tickets')
-      .insert({ order_id: order.id, branch_id, status: 'new' });
+      .insert({ order_id: order.id, branch_id, status: quiet ? 'collected' : 'new' });
     if (ktErr) console.error('Failed to create kitchen ticket:', ktErr.message);
 
     // 7b. Low-stock alerts now fire inside applyStockEffects, so the dine-in
@@ -1324,8 +1387,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       await supabase.rpc('increment_discount_usage', { discount_uuid: discount_id });
     }
 
-    // 10. Fire webhook — non-blocking
-    fireWebhook(req.businessId, 'order.completed', {
+    // 10. Fire webhook — non-blocking. A602: not for the history backfill (old sales are not "order completed" news).
+    if (!quiet) fireWebhook(req.businessId, 'order.completed', {
       order_id: order.id, order_number: order.order_number,
       order_type, total: authTotal, branch_id, cashier_id: resolvedCashierId,
     }).catch(() => {});
@@ -1344,7 +1407,7 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         p_reference:     null,
         p_notes:         creditNote ? `Credit sale${creditNote}` : null,   // A511
         p_created_by:    req.userId,
-        p_enforce_limit: !creditOverLimit,   // A545: a till's sale already taken past the limit is still owed
+        p_enforce_limit: !creditOverLimit && creditBranchLimit === null,   // A545; A595 D4: a branch limit was checked above
       });
       if (credErr) console.error('[credit] charge failed for order', order.id, credErr.message);
       // A545: every sale on account waits for (or, approved at the sale, already has) a manager's confirmation.
@@ -1357,14 +1420,16 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       });
     }
 
-    // 11. Fiscalise with KRA eTIMS — non-blocking; never fails the sale.
-    fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));
+    // 11. Fiscalise with KRA eTIMS — non-blocking; never fails the sale. A602: never for the history backfill — old sales
+    //     are not sent to KRA as new invoices by an upload the owner did not mean as fiscalisation.
+    if (!quiet) fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));
 
     res.status(201).json({ orderId: order.id, orderNumber: order.order_number });
   } catch (err) {
     sendError(res, err, { message: 'Failed to create order' });
   }
-});
+}
+router.post('/', sellsOrTillSale, createOrder);   // A505: a till's own sale is never refused for its person's keys
 
 // GET /api/orders
 router.get('/', async (req, res) => {
@@ -1507,6 +1572,13 @@ router.get('/:id', async (req, res, next) => {
     shown.cashier_name = (who as any)?.name ?? null;
   }
 
+  // A595 (docs/PERMISSIONS-AUDIT.md F2): the customer's number and the M-Pesa payer's number only to a person holding
+  // customers.contacts — masked otherwise (the WhatsApp receipt is sent by the cloud to the order's own number). The POS's
+  // own session (no person) syncs the sale as it is.
+  if (!req.isTill && !seesCustomerContacts(req)) {
+    shown = { ...shown, customer_phone: shown.customer_phone ? maskPhone(shown.customer_phone) : shown.customer_phone,
+      payments: Array.isArray(shown.payments) ? shown.payments.map((p: any) => (p?.mpesa_phone ? { ...p, mpesa_phone: maskPhone(p.mpesa_phone) } : p)) : shown.payments };
+  }
   // A494: an order line's cost (unit_cost, …) only to someone who may see costs (lib/costAccess.ts).
   res.json(withoutCosts(req, shown));
 });
@@ -2277,8 +2349,9 @@ router.post('/:id/kitchen-void', async (req, res) => {
       if (req.body?.pin) {
         const key = pinKey(req);   // A494: the one PIN limiter
         if (pinLocked(key)) { res.status(429).json(PIN_LOCKED_BODY); return; }
+        // A595: approving a kitchen removal is its own part of shifts.confirm (sales.approve_kitchen_void).
         const found = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined,
-          { branchId: order.branch_id ?? null, actorId: req.userId ?? null });   // A494
+          { branchId: order.branch_id ?? null, actorId: req.userId ?? null, key: 'sales.approve_kitchen_void' });   // A494
         // A505: the asker's own PIN — someone else must approve; not a wrong guess (no strike towards the PIN lock).
         if (found === 'self') { res.status(403).json(SELF_APPROVAL_BODY); return; }
         if (found === 'none') { res.status(400).json(NO_CONFIRMER_BODY); return; }   // A518: nobody at the branch holds a PIN — no strike
@@ -2289,7 +2362,7 @@ router.post('/:id/kitchen-void', async (req, res) => {
           return;
         }
         notePinSuccess(key);
-      } else if (callerMayConfirm(req)) {
+      } else if (callerMayApprove(req, 'sales.approve_kitchen_void')) {
         approver = { id: req.userId!, name: null };
       } else {
         res.status(403).json({ error: 'A manager must approve this — enter a manager’s PIN.', code: 'KITCHEN_VOID_APPROVAL_REQUIRED' });
@@ -2377,6 +2450,12 @@ router.post('/:id/pay', sells, async (req, res) => {
 
   if (!paymentLegs.length) {
     res.status(400).json({ error: 'At least one payment leg is required' });
+    return;
+  }
+  // A607: the buyer's KRA PIN, given at payment of an order already open (a restaurant's bill) — as POST /orders.
+  const payBuyerPin = saleBuyerPin(req.body?.buyer_kra_pin);
+  if (payBuyerPin === 'bad') {
+    res.status(400).json({ error: "The buyer's KRA PIN is not a KRA PIN (A or P, 9 digits and a letter — A123456789Z).", code: 'BAD_BUYER_PIN' });
     return;
   }
 
@@ -2505,7 +2584,8 @@ router.post('/:id/pay', sells, async (req, res) => {
     const payDiscount = round2(payOffers.offerDiscount + capDiscount(payManualAsked, round2(paySubtotal - payOffers.offerDiscount)));
     const payTotal    = round2(paySubtotal - payDiscount);
     // A490: a manual discount on a LIVE web sale is sales.discount (as POST /orders).
-    if (discountRefused(req, round2(payDiscount - payOffers.offerDiscount))) {   // A494
+    if (await discountRefused(req, round2(payDiscount - payOffers.offerDiscount),
+      { discountId: discount_id, base: round2(paySubtotal - payOffers.offerDiscount) })) {   // A494, A595
       res.status(403).json(DISCOUNT_REFUSED); return;
     }
     const { vat: payVat, ctl: payCtl } = await taxSplit(req.businessId, payTotal);
@@ -2834,6 +2914,13 @@ router.post('/:id/pay', sells, async (req, res) => {
       branch_id: order.branch_id, cashier_id: req.userId,
     }).catch(() => {});
 
+    // A607: the buyer's KRA PIN, before the invoice goes to KRA. A failure is logged, never the payment's.
+    if (payBuyerPin) {
+      const { error: pinErr } = await supabase.from('orders').update({ buyer_kra_pin: payBuyerPin })
+        .eq('id', order.id).eq('business_id', req.businessId);
+      if (pinErr) console.error('[order-pay] the buyer KRA PIN was not saved (is migration 181 applied?):', pinErr.message);
+    }
+
     // 8. Fiscalise with KRA eTIMS — non-blocking; never fails the sale.
     fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));
 
@@ -2982,7 +3069,8 @@ router.post('/:id/whatsapp-receipt', async (req, res) => {
     return;
   }
 
-  const asked = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+  // A595: a masked number (what the screen was shown) means the order's own number.
+  const asked = typeof req.body?.phone === 'string' && !isMasked(req.body.phone) ? req.body.phone.trim() : '';
   if (asked && asked !== order.customer_phone && !can(req, 'customers.edit')) {
     res.status(403).json({ error: 'Only someone who may edit customers sends a receipt to another number.', detail: 'Missing permission: customers.edit' });
     return;

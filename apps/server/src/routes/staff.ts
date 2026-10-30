@@ -3,17 +3,19 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { verifyPin } from './auth';
-import { requirePermission, allBranchAccess, branchFilter, oneBranchOnly } from '../middleware/rbac';   // A550: allBranchAccess
+import { requirePermission, requireAnyPermission, allBranchAccess, branchFilter, oneBranchOnly, can } from '../middleware/rbac';   // A550: allBranchAccess
+import { maskPhone, maskEmail, isMasked } from '../lib/personalData';   // A595
 import { supabase } from '../lib/supabase';
 import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
 import { callerHeld, canAssignRole, roleEditRefusal, overridesBeyondCaller } from '../lib/roleCeiling';
 import { isOwnerRoleName } from '../lib/ownerRole';
-import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey } from '@zaptill/core/permissions';
-import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf } from '../lib/roleKeys';
+import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf } from '@zaptill/core/permissions';
+import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf, withNewParentParts, overridePartsOf } from '../lib/roleKeys';
 import { useEmailCodes } from '../lib/loginOtp';   // A391
 import { keysBeyond } from '@zaptill/core/permissions';   // A494
+import { webAccessGiverKind, webAccessTargetRefusal, isPartnerRoleName, PARTNER_OWNER_ONLY, makesPartnerRefusal } from '../lib/webAccessGivers';   // A608
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { revokePersonSessions } from '../lib/tillSessions';   // A494
 import { worksAtBranch } from '../lib/branchAccess';   // A494
@@ -24,6 +26,9 @@ import { sendEmailChecked } from '../lib/mailer';   // A550
 import { signInAddress } from '../lib/tenant';   // A550
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A562
 import { approvalPinOn } from '@zaptill/core/posFeatures';   // A562
+import { splitsPending } from '../lib/permissionsState';   // A595
+import { attendanceEnabled, attendanceStaffChanged } from '../lib/attendanceStore';   // A599
+import { CLOCK_BY_DEVICE_MESSAGE } from '../lib/attendanceRules';   // A599
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -48,7 +53,7 @@ function hashOverridePin(pin: string): Promise<string> {
 // always allowed. One already set keeps approving either way (lib/approver.ts reads no switch) — no manager's approval
 // breaks the day the switch is off; the owner removes it on the staff form.
 const APPROVAL_PIN_OFF_BODY = {
-  error: 'Separate approval PINs are off for this business — managers approve with their sign-in PIN. ZapTill support can turn them on.',
+  error: 'Separate approval PINs are off for this business — managers approve with their sign-in PIN. The owner turns them on in Settings › Business › POS options.',
   code: 'APPROVAL_PIN_OFF',
 } as const;
 async function approvalPinAllowed(req: any): Promise<boolean> {
@@ -113,7 +118,7 @@ async function refuseOverridesBeyondCaller(req: any): Promise<{ error: string; m
  * The user_permissions rows a body asks for — `overrides` (by id) and `override_keys` (by key; a broad key becomes the
  * fine keys it stands for; unknown keys are dropped) — or undefined when it names neither (leave them as they are).
  */
-async function overrideRows(userId: string, body: any): Promise<Array<{ user_id: string; permission_id: string; granted: boolean }> | undefined> {
+async function overrideRows(userId: string, body: any, held: ReadonlySet<string> = new Set(['*'])): Promise<Array<{ user_id: string; permission_id: string; granted: boolean }> | undefined> {
   const hasIds = Array.isArray(body?.overrides);
   const hasKeys = body?.override_keys && typeof body.override_keys === 'object';
   if (!hasIds && !hasKeys) return undefined;
@@ -125,6 +130,9 @@ async function overrideRows(userId: string, body: any): Promise<Array<{ user_id:
       if (typeof v !== 'boolean') continue;
       for (const f of expandKeys([k])) if (f !== '*' && isPermissionKey(f)) want.set(f, v);
     }
+    // A595: a client that does not know the split rights (no `parts: true`) sent a parent alone — it meant the parent's
+    // parts too, as before the split (a part it named itself wins).
+    if (body?.parts !== true) for (const [k, v] of overridePartsOf(want)) if (!want.has(k) && (!v || held.has('*') || held.has(k))) want.set(k, v);
     const ids = await permissionIds(want.keys());
     for (const [k, v] of want) { const id = ids.get(k); if (id) byId.set(id, v); }
   }
@@ -151,6 +159,21 @@ async function refuseIfProprietor(targetUserId: string, businessId: string): Pro
     return 'The business owner account can only be changed by the owner';
   }
   return null;
+}
+
+/**
+ * A608 part 3: would this change make a partner — someone with live web dashboard access (invited or active) moved onto
+ * the General Manager role — by someone other than the owner (lib/webAccessGivers.ts makesPartnerRefusal)? `userIds`: the
+ * people the change moves; `newRoleName` / `oldRoleName`: the role they end on and the one they were on. Fails closed.
+ */
+async function makesPartner(req: any, userIds: string[], newRoleName: unknown, oldRoleName: unknown): Promise<[number, object] | null> {
+  const owner = webAccessGiverKind(req, true) === 'owner';
+  if (owner || !userIds.length || !isPartnerRoleName(newRoleName) || isPartnerRoleName(oldRoleName)) return null;
+  const { map, error } = await readPartners(req.businessId);
+  if (error) return [503, { error: 'Could not check web dashboard access — please try again' }];
+  const live = userIds.some((id) => partnerLive(map[id], map[id]?.auth_user_id));
+  const r = makesPartnerRefusal({ owner, newRoleName, oldRoleName, liveWebAccess: live });
+  return r ? [403, r] : null;
 }
 
 /** A490: a non-owner manages only someone holding nothing beyond them (replaces "a manager may not touch a manager"). */
@@ -261,7 +284,8 @@ async function currentKeys(req: any, targetId: string): Promise<Set<string> | nu
  * kitchen removals (shifts.confirm). What it approves is still decided per action (lib/approver.ts mayApprove,
  * lib/shiftConfirm.ts mayConfirm): the PIN never approves more than its holder's keys.
  */
-export const APPROVAL_PIN_KEYS: readonly string[] = ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm'];
+// A595: and the two approvals split out of shifts.confirm (pay-outs and drawer expenses; kitchen removals).
+export const APPROVAL_PIN_KEYS: readonly string[] = ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm', 'shifts.approve_payout', 'sales.approve_kitchen_void'];
 const holdsApproval = (held: ReadonlySet<string>): boolean => held.has('*') || APPROVAL_PIN_KEYS.some((k) => held.has(k));
 
 /** A494: why this caller may not SET an override PIN for someone who will hold `targetKeys`, or null. */
@@ -270,6 +294,38 @@ function overridePinRefusal(req: any, targetKeys: ReadonlySet<string>): { error:
   if (!holdsApproval(targetKeys)) return { error: 'An approval PIN is for someone who may approve voids, refunds, sales on account or drawers — give them that permission first.', code: 'OVERRIDE_PIN_NO_AUTHORITY' };
   return null;
 }
+
+/** A595: does this body change a person's own rights (overrides by id or by key)? */
+function sendsOverrides(body: any): boolean {
+  return Array.isArray(body?.overrides) || !!(body?.override_keys && typeof body.override_keys === 'object');
+}
+
+/**
+ * A595 (docs/PERMISSIONS-AUDIT.md F6, F26): the parts of staff.edit — setting PINs and approval PINs (staff.pins), a
+ * person's own rights (staff.access), pay rates (staff.pay, which also lets someone without staff.edit change the rate
+ * alone). Migration 176 gave all three to every holder of staff.edit. Returns a 403 body, or null.
+ */
+function staffPartRefusal(req: any, wants: { edit?: boolean; pin?: boolean; approvalPin?: boolean; overrides?: boolean; pay?: boolean }):
+  { error: string; detail: string } | null {
+  const need = (key: string, error: string) => (can(req, key) ? null : { error, detail: `Missing permission: ${key}` });
+  if (wants.edit) { const r = need('staff.edit', 'Your role may only set pay rates.'); if (r) return r; }
+  if (wants.pin || wants.approvalPin) { const r = need('staff.pins', 'Your role does not set or reset PINs - ask the owner.'); if (r) return r; }
+  if (wants.overrides) { const r = need('staff.access', 'Your role does not give people their own rights - ask the owner.'); if (r) return r; }
+  if (wants.pay) { const r = need('staff.pay', 'Your role does not set pay rates - ask the owner.'); if (r) return r; }
+  return null;
+}
+
+/**
+ * A608: a pay rate as sent — a number of 0 or more, or null (none). One rule for adding someone (POST) and changing it
+ * (PATCH). undefined: not sent. Pure.
+ */
+export function hourlyRateValue(v: unknown): { ok: true; value: number | null | undefined } | { ok: false } {
+  if (v === undefined) return { ok: true, value: undefined };
+  if (v === null || v === '') return { ok: true, value: null };
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? { ok: true, value: n } : { ok: false };
+}
+const BAD_RATE = { error: 'The hourly rate must be a number of 0 or more.', code: 'BAD_HOURLY_RATE' } as const;
 
 // GET /api/staff — list staff for business
 // Whether this user can authorise a void/override, as a boolean.
@@ -281,9 +337,15 @@ function overridePinRefusal(req: any, targetKeys: ReadonlySet<string>): { error:
 // stripped before the response leaves.
 // A490: each person's own overrides also come as `override_keys` — { fine key: granted } (a broad override row from
 // before migration 134 shown as the fine keys it stands for).
-function shapeStaff(rows: any[], selfId?: string | null): any[] {
+// A595 (docs/PERMISSIONS-AUDIT.md F5): staff phone numbers and e-mails only with staff.contacts — masked otherwise (the
+// form shows them read-only and never sends them back; PATCH ignores a contact change from someone without the key).
+// Their own row is always theirs to see.
+function shapeStaff(rows: any[], selfId?: string | null, contacts = true): any[] {
   return (rows ?? []).map((u: any) => {
     const { override_pin_hash, pin_hash, ...rest } = u ?? {};
+    if (!contacts && !(selfId && u?.id === selfId)) {
+      rest.email = maskEmail(rest.email); rest.phone = maskPhone(rest.phone); rest.contacts_masked = true;
+    }
     const override_keys: Record<string, boolean> = {};
     for (const up of (u?.user_permissions ?? []) as Array<{ granted?: boolean; permissions?: { key?: string | null } | null }>) {
       const k = up?.permissions?.key;
@@ -314,7 +376,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
       .order('name');
 
     if (error) { sendError(res, error); return; }
-    res.json(shapeStaff(req.isOwner ? (data ?? []) : (data ?? []).filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId));
+    res.json(shapeStaff(req.isOwner ? (data ?? []) : (data ?? []).filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId, can(req, 'staff.contacts')));
     return;
   }
 
@@ -342,7 +404,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
       if (!u?.id || !f.ids.includes(row.branch_id) || seen.has(u.id)) continue;
       seen.set(u.id, { ...u, user_branches: (u.user_branches ?? []).filter((b: any) => f.ids.includes(b?.branch_id)) });
     }
-    res.json(shapeStaff([...seen.values()].filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId));
+    res.json(shapeStaff([...seen.values()].filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId, can(req, 'staff.contacts')));
     return;
   }
 
@@ -378,7 +440,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
   // filter would be undone by anyone talking to the API directly.
   staff = staff.filter((u: any) => !isOwnerRoleName(u?.roles?.name));
 
-  res.json(shapeStaff(staff, req.userId));
+  res.json(shapeStaff(staff, req.userId, can(req, 'staff.contacts')));
 });
 
 // GET /api/staff/authorizers — list staff who can authorize overrides.
@@ -396,22 +458,57 @@ router.get('/authorizers', async (req, res) => {
     .order('name');
 
   if (error) { sendError(res, error); return; }
-  res.json((data ?? []).map((u: any) => ({
-    id:   u.id,
-    name: u.name,
-    role: u.roles?.name ?? null,
-  })));
+  // A595 (docs/PERMISSIONS-AUDIT.md F10): the POS's PIN prompt needs who to pick — ids and names. Their roles only for
+  // someone who may see the staff or the roles.
+  const roles = can(req, 'staff.view', 'staff.edit', 'staff.roles');
+  res.json((data ?? []).map((u: any) => (roles ? { id: u.id, name: u.name, role: u.roles?.name ?? null } : { id: u.id, name: u.name })));
 });
 
 // POST /api/staff — create staff member with PIN
 router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), async (req, res) => {
-  const { name, email, phone, role_id, pin, branch_ids } = req.body;
+  const { name, email, phone, pin, branch_ids } = req.body;
+  let role_id: string | undefined = req.body.role_id;
 
-  if (!name || !role_id || !pin) {
+  // A603: "Partner" in the Role list — the OWNER's alone (never a partner, never a manager): the General Manager role
+  // (every permission) and web dashboard access in this one step, the same grant as "Give web access".
+  const partner = req.body.partner === true;
+  let partnerRoleName: string | null = null;
+  if (partner) {
+    if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_PARTNER); return; }
+    if (!String(email ?? '').includes('@')) {
+      res.status(400).json({ error: 'A partner needs an email address — it is how they sign in to the web dashboard.', code: 'NO_EMAIL' });
+      return;
+    }
+    let gm: { id: string; name: string } | null;
+    try { gm = await partnerRole(req.businessId); } catch { res.status(503).json({ error: 'Could not read the roles — please try again.' }); return; }
+    if (!gm) { res.status(400).json(NO_PARTNER_ROLE); return; }
+    role_id = gm.id; partnerRoleName = gm.name;
+  }
+  // A608 (owner, 2026-10-29: "For top management let it be email only, they access the dashboard. Change the shop manager
+  // to use email on web"): a General Manager or Manager added on the owner's dashboard gets web dashboard access in this
+  // same step — the same grant as "Give web access", all or nothing as for a partner. The owner's alone (A550).
+  // A608 part 3 (owner, 2026-10-29, "yes to all"): a partner holding staff.edit sends it too — for someone within their
+  // keys and branches (checked below, as for anyone they add), never a General Manager (that is a partner: the owner's).
+  const withWeb = !partner && req.body.web_access === true;
+  if (withWeb) {
+    const giver = webGiver(req);
+    if (!giver) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+    if (giver === 'staff') {
+      const { data: r } = role_id ? await supabase.from('roles').select('name').eq('id', role_id).maybeSingle() : { data: null };
+      if (!r) { res.status(403).json({ error: 'You are not allowed to assign this role' }); return; }
+      if (isPartnerRoleName((r as { name?: string }).name)) { res.status(403).json(PARTNER_OWNER_ONLY); return; }
+    }
+    if (!String(email ?? '').includes('@')) {
+      res.status(400).json({ error: 'An email address is required — it is how they sign in to the web dashboard.', code: 'NO_EMAIL' });
+      return;
+    }
+  }
+
+  if (!name || !role_id || (!pin && !partner && !withWeb)) {
     res.status(400).json({ error: 'name, role_id and pin are required' });
     return;
   }
-  if (!/^\d{4,6}$/.test(pin)) {
+  if (pin && !/^\d{4,6}$/.test(pin)) {
     res.status(400).json({ error: 'PIN must be 4–6 digits' });
     return;
   }
@@ -439,10 +536,17 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
   if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
   const overRefusal = await refuseOverridesBeyondCaller(req);   // A340
   if (overRefusal) { res.status(403).json(overRefusal); return; }
+  // A595: a person's own rights (staff.access) and an approval PIN (staff.pins) are their own parts of staff.edit. Adding
+  // someone needs their first sign-in PIN, so that one comes with adding them.
+  const partRefusal = staffPartRefusal(req, { overrides: sendsOverrides(req.body), approvalPin: typeof req.body?.override_pin === 'string' && req.body.override_pin.length > 0,
+    pay: req.body?.hourly_rate !== undefined && req.body?.hourly_rate !== null });   // A608: the rate typed when adding someone is staff.pay
+  if (partRefusal) { res.status(403).json(partRefusal); return; }
+  const rate = hourlyRateValue(req.body?.hourly_rate);   // A608: it was never stored
+  if (!rate.ok) { res.status(400).json(BAD_RATE); return; }
 
   // A494: what the new person will hold (role + overrides) — within the caller's keys, and the base of the override-PIN rule.
   let plannedRows: Array<{ permission_id: string; granted: boolean }> | undefined;
-  try { plannedRows = await overrideRows('new', req.body); } catch { res.status(503).json({ error: 'Could not check the permissions being granted' }); return; }
+  try { plannedRows = await overrideRows('new', req.body, callerHeld(req)); } catch { res.status(503).json({ error: 'Could not check the permissions being granted' }); return; }
   const willHold = (await resultingKeys(req, null, role_id, plannedRows)) ?? (req.isOwner ? new Set<string>() : null);
   if (!willHold) { res.status(403).json({ error: 'Could not check this role — please try again' }); return; }
   if (!req.isOwner) {
@@ -450,7 +554,7 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
     if (missing.length) { res.status(403).json({ error: 'You cannot give someone permissions you do not hold', missing }); return; }
   }
 
-  const pin_hash = await hashPin(pin);
+  const pin_hash = pin ? await hashPin(pin) : null;   // A603: a partner may be added without a POS PIN
 
   // Optional per-user override PIN (manager authority for voids/overrides).
   const overridePin = req.body.override_pin;
@@ -473,6 +577,7 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
       business_id: req.businessId, name, email: email || null, phone: phone || null,
       role_id, pin_hash, status: 'active',
       ...(override_pin_hash !== undefined ? { override_pin_hash } : {}),
+      ...(rate.value != null ? { hourly_rate: rate.value } : {}),   // A608
     })
     .select()
     .single();
@@ -485,9 +590,41 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
     );
   }
 
-  const rows = await overrideRows(user.id, req.body);
+  const rows = await overrideRows(user.id, req.body, callerHeld(req));
   if (rows?.length) await supabase.from('user_permissions').insert(rows);
 
+  // A603: a partner — web dashboard access now, or the person is taken off again (never half made: on the staff list
+  // with no sign-in). The invitation e-mail alone failing is not a half-made partner: access is given, "Resend invite".
+  // A608: the same for a General Manager or Manager added with web_access (STAFF_HALF_MADE, "… was not added.").
+  let webAccess: { status: string; emailed: boolean } | null = null;
+  if (partner || withWeb) {
+    let roleName: string | null = partnerRoleName;
+    if (withWeb) {
+      const { data: r } = await supabase.from('roles').select('name').eq('id', role_id).eq('business_id', req.businessId).maybeSingle();
+      roleName = (r as { name?: string } | null)?.name ?? null;
+    }
+    const grant = await giveWebAccess(req, { id: user.id, name, email: String(email).trim().toLowerCase(), status: 'active', roles: { name: roleName } });
+    if (!grant.ok) {
+      const undone = await undoNewStaff(req.businessId, user.id);
+      if (!undone) {
+        res.status(500).json({ code: partner ? 'PARTNER_HALF_MADE' : 'STAFF_HALF_MADE', user,
+          error: `${name} was added as ${roleName ?? 'staff'} but without web dashboard access, and could not be taken off the staff list. Use "Give web access" on their row, or deactivate them.` });
+        return;
+      }
+      res.status(grant.code).json({ ...grant.body, error: `${partner ? 'The partner' : name} was not added. ${grant.body.error}`, not_added: true });
+      return;
+    }
+    webAccess = { status: grant.status!, emailed: grant.emailed === true };
+  }
+
+  // A599: with Attendance on, a new member of staff gets the next free device number and goes onto their branch's devices.
+  await attendanceStaffChanged(req.businessId, { id: user.id, name, status: 'active', branch_id: effectiveBranchIds[0] ?? null }, req.userId ?? null);
+
+  if (webAccess) {
+    res.status(webAccess.emailed ? 201 : 207).json({ ...user, web_access: webAccess,
+      ...(webAccess.emailed ? {} : { warning: `${partner ? 'The partner' : name} was added, but the invitation email could not be sent — use "Resend invite".` }) });
+    return;
+  }
   res.status(201).json(user);
 });
 
@@ -555,8 +692,18 @@ router.post('/invite', requirePermission('staff.edit'), async (req, res) => {
 });
 
 // PATCH /api/staff/:id — update staff member
-router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema), async (req, res) => {
-  const { name, email, role_id, pin, status, branch_ids, hourly_rate } = req.body;
+// A595: the pay rate alone is staff.pay (a Finance Manager sets rates without editing staff); everything else staff.edit.
+router.patch('/:id', requireAnyPermission('staff.edit', 'staff.pay'), validate(UpdateStaffSchema), async (req, res) => {
+  const { name, role_id, pin, status, branch_ids, hourly_rate } = req.body;
+  // A595: an e-mail is changed only by someone who may see staff contacts — never over the real one with a masked value.
+  const email = req.body.email !== undefined && can(req, 'staff.contacts') && !isMasked(req.body.email) ? req.body.email : undefined;
+  const partRefusal = staffPartRefusal(req, {
+    edit: Object.keys(req.body ?? {}).some((k) => k !== 'hourly_rate' && k !== 'parts'),
+    pin: !!pin || (typeof req.body?.override_pin === 'string' && req.body.override_pin.length > 0),
+    overrides: sendsOverrides(req.body),
+    pay: hourly_rate !== undefined,
+  });
+  if (partRefusal) { res.status(403).json(partRefusal); return; }
 
   const { data: existing } = await supabase
     .from('users').select('id, role_id, status, email').eq('id', req.params.id).eq('business_id', req.businessId).single();
@@ -631,6 +778,13 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
     if (role_id) {
       const roleRefusal = await roleAssignRefusal(req, role_id);
       if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
+      // A608 part 3: someone with web access moved onto General Manager is a partner — the owner's to make.
+      const [{ data: to }, { data: cur }] = await Promise.all([
+        supabase.from('roles').select('name').eq('id', role_id).maybeSingle(),
+        supabase.from('users').select('roles ( name )').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle(),
+      ]);
+      const mp = await makesPartner(req, [req.params.id], (to as { name?: string } | null)?.name, (cur as any)?.roles?.name);
+      if (mp) { res.status(mp[0]).json(mp[1]); return; }
     }
     const beyond = await refuseIfBeyondCaller(req, req.params.id);
     if (beyond) { res.status(403).json({ error: beyond }); return; }
@@ -650,7 +804,7 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   }
 
   // (Their token renews on its own: the database bumps permissions_version on any override or role change, migration 13.)
-  const rows = await overrideRows(req.params.id, req.body);
+  const rows = await overrideRows(req.params.id, req.body, callerHeld(req));
 
   // A494: what they WILL hold — the new role and the new overrides together (removed deny rows included) — must stay
   // within a non-owner caller's keys; and it decides whether an override PIN may be set.
@@ -666,7 +820,11 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   if (email !== undefined) updates.email = email || null;
   if (role_id)            updates.role_id = role_id;
   if (status)             updates.status       = status;
-  if (hourly_rate !== undefined) updates.hourly_rate = hourly_rate !== null ? Number(hourly_rate) : null;
+  if (hourly_rate !== undefined) {
+    const rate = hourlyRateValue(hourly_rate);   // A608: one rule with adding someone (a typed word was stored as NaN)
+    if (!rate.ok) { res.status(400).json(BAD_RATE); return; }
+    updates.hourly_rate = rate.value ?? null;
+  }
   if (pin) {
     if (!/^\d{4,6}$/.test(pin)) { res.status(400).json({ error: 'PIN must be 4–6 digits' }); return; }
     updates.pin_hash = await hashPin(pin);   // A494: bcrypt
@@ -716,6 +874,11 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   const roleChanged = !!role_id && role_id !== (existing as any).role_id;
   const deactivated = !!status && status !== 'active';
   if (roleChanged || deactivated || branchesChanged) await revokePersonSessions(req.params.id, req.businessId);
+  // A599: with Attendance on, their device user follows a rename, a move or a deactivation (removed from the devices).
+  if (name || status || branch_ids !== undefined) {
+    await attendanceStaffChanged(req.businessId, { id: req.params.id, name: (data as any)?.name ?? name ?? null, status: (data as any)?.status ?? status ?? null,
+      ...(branch_ids !== undefined ? { branch_id: (branch_ids as string[]).filter(Boolean)[0] ?? null } : {}) }, req.userId ?? null);
+  }
 
   // A550: a new e-mail ends web dashboard access — the sign-in account the owner's grant names is the old address's.
   // The owner gives access again (and the invite goes to the new address).
@@ -730,7 +893,7 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
 
 // DELETE /api/staff/:id — soft deactivate
 // A391: a manager lost the phone with their authenticator app → back to emailed sign-in codes. The owner only.
-router.post('/:id/reset-otp', requirePermission('staff.edit'), async (req, res) => {
+router.post('/:id/reset-otp', requirePermission('staff.edit'), requirePermission('staff.pins'), async (req, res) => {   // A595
   if (!req.isOwner) { res.status(403).json({ error: 'Only the owner can reset a sign-in code.' }); return; }
   const { data: target } = await supabase
     .from('users').select('id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
@@ -779,6 +942,7 @@ router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
 
   if (error) { sendError(res, error); return; }
   await revokePersonSessions(req.params.id, req.businessId);   // A494: no session outlives the deactivation
+  await attendanceStaffChanged(req.businessId, { id: req.params.id, status: 'inactive' }, req.userId ?? null);   // A599: off the devices
   res.json({ success: true });
 });
 
@@ -790,11 +954,36 @@ router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
 
 /** The owner, signed in as themselves (not a till, not a PIN sign-in on one, never a partner — who is never isOwner). */
 const ownerOnly = (req: any): boolean => req.isOwner === true && !req.isTill && !req.pinSignIn && req.webPartner !== true;
-const OWNER_ONLY_ACCESS = { error: 'Only the owner gives or takes away web dashboard access.', code: 'OWNER_ONLY' } as const;
+const OWNER_ONLY_ACCESS = { error: 'Only the owner gives or takes away web dashboard access.', code: 'OWNER_ONLY' } as const;   // A608: or a partner who edits staff
+/** A603: a partner is made by the owner alone — a partner never makes another, a manager never makes one. */
+const OWNER_ONLY_PARTNER = { error: 'Only the owner can add a partner.', code: 'OWNER_ONLY' } as const;
+const NO_PARTNER_ROLE = { error: 'A partner is given the General Manager role, and this business has none. Add a role named General Manager with every permission, then add the partner.', code: 'NO_PARTNER_ROLE' } as const;
+
+/** A608 part 3: who may give / resend / take away web dashboard access — the owner, or a partner holding staff.edit. */
+const webGiver = (req: any) => webAccessGiverKind(req, can(req, 'staff.edit'));
+
+/**
+ * A608 part 3: why this giver may not give or take away this person's web access (lib/webAccessGivers.ts) — the owner
+ * never refused here; a partner only for someone within their keys and branches, never themselves, never a General
+ * Manager. The person's keys and branches are read afresh. Returns [status, body], or null.
+ */
+async function webTargetRefusal(req: any, targetId: string): Promise<[number, { error: string; code?: string }] | null> {
+  if (webGiver(req) === 'owner') return null;
+  let facts: Awaited<ReturnType<typeof personKeys>>;
+  try { facts = await personKeys(req.businessId, targetId); } catch { return [503, { error: 'Could not check this staff member — please try again' }]; }
+  if (!facts) return [404, { error: 'Staff member not found' }];
+  const { data: rows, error } = await supabase.from('user_branches').select('branch_id').eq('user_id', targetId);
+  if (error) return [503, { error: 'Could not check this staff member — please try again' }];
+  const r = webAccessTargetRefusal(
+    { userId: req.userId ?? null, held: callerHeld(req), allBranches: req.allBranches === true, branchIds: req.partnerBranches ?? [] },
+    { id: targetId, roleName: facts.roleName, keys: facts.keys, branchIds: ((rows ?? []) as Array<{ branch_id: string }>).map((b) => b.branch_id) });
+  return r ? [403, r] : null;
+}
 
 // GET /api/staff/web-access — each person's web dashboard access: invited (not signed in yet), active, revoked.
+// A608 part 3: the owner's, and a partner's holding staff.edit (who gives it too).
 router.get('/web-access', async (req, res) => {
-  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  if (!webGiver(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
   const { map, error } = await readPartners(req.businessId);
   if (error) { sendError(res, error as Error); return; }
   const out: Record<string, { status: string; granted_at: string; activated_at: string | null; revoked_at: string | null }> = {};
@@ -843,55 +1032,105 @@ async function sendPartnerInvite(to: string, name: string | null, businessName: 
 // POST /api/staff/:id/web-access — give web dashboard access (or send the invite again). The person must be an active
 // member of the staff with an e-mail address, and never on the owner's role.
 router.post('/:id/web-access', async (req, res) => {
-  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  if (!webGiver(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  const refused = await webTargetRefusal(req, String(req.params.id));   // A608 part 3
+  if (refused) { res.status(refused[0]).json(refused[1]); return; }
   const { data: target, error: tErr } = await supabase.from('users')
     .select('id, name, email, status, business_id, roles ( name )').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (tErr) { sendError(res, tErr); return; }
   if (!target) { res.status(404).json({ error: 'Staff member not found' }); return; }
-  const t = target as { id: string; name: string | null; email: string | null; status: string; roles?: { name?: string | null } | null };
-  if (isOwnerRoleName(t.roles?.name)) {
-    res.status(400).json({ error: 'The owner\'s role signs in as the owner. Give them another role (for example General Manager) first.', code: 'OWNER_ROLE' });
-    return;
+  const g = await giveWebAccess(req, target as WebAccessTarget);
+  if (!g.ok) {
+    if (g.dbError) { sendError(res, g.dbError as Error); return; }
+    res.status(g.code).json(g.body); return;
   }
-  if (t.status !== 'active') { res.status(400).json({ error: 'Activate this staff member first.', code: 'INACTIVE' }); return; }
+  res.status(g.emailed ? 200 : 207).json({ status: g.status, emailed: g.emailed,
+    ...(g.emailed ? {} : { warning: 'Access was given, but the invitation email could not be sent — use "Resend invite".' }) });
+});
+
+type WebAccessTarget = { id: string; name: string | null; email: string | null; status: string; roles?: { name?: string | null } | null };
+/** ok: given (status, emailed); not ok: the answer to send (code, body) — dbError: a read or write that failed. */
+type WebAccessGrant = { ok: boolean; status?: 'active' | 'invited'; emailed?: boolean; code?: number; body?: { error: string; code?: string }; dbError?: unknown };
+
+/**
+ * A550 (A603: one function, so "Give web access" and adding a Partner make exactly the same grant): the person must be an
+ * active member of the staff with an e-mail address, and never on the owner's role. The sign-in account, its link to
+ * this person, the owner's grant, then the invitation. A first grant that cannot be saved after the link was made takes
+ * the link off the account again (best effort — the link alone opens nothing).
+ */
+async function giveWebAccess(req: any, t: WebAccessTarget): Promise<WebAccessGrant> {
+  const no = (code: number, error: string, c?: string, dbError?: unknown): WebAccessGrant =>
+    ({ ok: false, code, body: { error, ...(c ? { code: c } : {}) }, ...(dbError ? { dbError } : {}) });
+  if (isOwnerRoleName(t.roles?.name)) return no(400, 'The owner\'s role signs in as the owner. Give them another role (for example General Manager) first.', 'OWNER_ROLE');
+  if (t.status !== 'active') return no(400, 'Activate this staff member first.', 'INACTIVE');
   const email = String(t.email ?? '').trim().toLowerCase();
-  if (!email.includes('@')) { res.status(400).json({ error: 'Add an email address for this staff member first.', code: 'NO_EMAIL' }); return; }
+  if (!email.includes('@')) return no(400, 'Add an email address for this staff member first.', 'NO_EMAIL');
 
   const { data: biz, error: bErr } = await supabase.from('businesses').select('id, name, owner_id, subdomain').eq('id', req.businessId).maybeSingle();
-  if (bErr || !biz) { sendError(res, bErr ?? new Error('business not found')); return; }
+  if (bErr || !biz) return no(500, 'Could not read the business. Try again in a minute.', undefined, bErr ?? new Error('business not found'));
   const acct = await partnerSignInAccount(email);
-  if (!acct) { res.status(502).json({ error: 'Could not set up a sign-in for this email. Try again in a minute.' }); return; }
-  if (acct.id === (biz as { owner_id?: string | null }).owner_id) {
-    res.status(400).json({ error: 'That email is the owner\'s own sign-in.', code: 'OWNER_ACCOUNT' });
-    return;
-  }
+  if (!acct) return no(502, 'Could not set up a sign-in for this email. Try again in a minute.');
+  if (acct.id === (biz as { owner_id?: string | null }).owner_id) return no(400, 'That email is the owner\'s own sign-in.', 'OWNER_ACCOUNT');
 
   const { map, error: rErr } = await readPartners(req.businessId);
-  if (rErr) { sendError(res, rErr as Error); return; }
+  if (rErr) return no(500, 'Could not read web dashboard access. Try again in a minute.', undefined, rErr);
   const prior = map[t.id];
   const keepActive = !!prior && partnerLive(prior, acct.id) && prior.status === 'active';
   const { error: mErr } = await supabase.auth.admin.updateUserById(acct.id, { app_metadata: withMetaLink(acct.app_metadata, req.businessId, t.id) });
-  if (mErr) { res.status(502).json({ error: 'Could not link the sign-in. Try again in a minute.' }); return; }
+  if (mErr) return no(502, 'Could not link the sign-in. Try again in a minute.');
   const now = new Date().toISOString();
   const wErr = await writePartners(req.businessId, { ...map, [t.id]: {
     auth_user_id: acct.id, status: keepActive ? 'active' : 'invited',
     granted_at: prior && partnerLive(prior, acct.id) ? prior.granted_at : now, granted_by: req.userId ?? null,
     activated_at: keepActive ? (prior?.activated_at ?? null) : null, revoked_at: null, revoked_reason: null,
   } });
-  if (wErr) { sendError(res, wErr as Error); return; }
+  if (wErr) {
+    if (!prior) {   // A603: nothing names this link now — take it off the account again
+      try {
+        const { data: a } = await supabase.auth.admin.getUserById(acct.id);
+        if (a?.user) await supabase.auth.admin.updateUserById(acct.id, { app_metadata: withMetaLink(a.user.app_metadata, req.businessId, null) });
+      } catch { /* the link alone opens nothing */ }
+    }
+    return no(500, 'Could not save web dashboard access. Try again in a minute.', undefined, wErr);
+  }
 
   const address = signInAddress((biz as { subdomain?: string | null }).subdomain) ?? (process.env.DASHBOARD_URL ?? 'https://app.zaptill.co.ke');
   const emailed = await sendPartnerInvite(email, t.name, (biz as { name?: string }).name ?? 'your business', address);
   console.log(`[staff] A550: web dashboard access given${prior ? ' (again)' : ''}`, { businessId: req.businessId, userId: t.id });
-  res.status(emailed ? 200 : 207).json({ status: keepActive ? 'active' : 'invited', emailed,
-    ...(emailed ? {} : { warning: 'Access was given, but the invitation email could not be sent — use "Resend invite".' }) });
-});
+  return { ok: true, status: keepActive ? 'active' : 'invited', emailed };
+}
+
+/** A603: the role a partner is given — the business's General Manager (every permission; migration 159 and sign-up give
+ *  every business one), by name with case and spaces aside, the built-in one first. Null: the owner deleted it. */
+async function partnerRole(businessId: string): Promise<{ id: string; name: string } | null> {
+  const { data, error } = await supabase.from('roles').select('id, name, is_default').eq('business_id', businessId);
+  if (error) throw error;
+  const norm = (n: unknown) => String(n ?? '').trim().replace(/[\s_]+/g, ' ').toLowerCase();
+  const gms = ((data ?? []) as Array<{ id: string; name: string; is_default?: boolean | null }>).filter((r) => norm(r.name) === 'general manager');
+  const pick = gms.find((r) => r.is_default) ?? gms[0];
+  return pick ? { id: pick.id, name: pick.name } : null;
+}
+
+/** A603: take a person just added off again (a partner whose web access could not be given — A608: or a General Manager
+ *  or Manager added with web access). True when they are gone. */
+async function undoNewStaff(businessId: string, userId: string): Promise<boolean> {
+  try {
+    await supabase.from('user_permissions').delete().eq('user_id', userId);
+    await supabase.from('user_branches').delete().eq('user_id', userId);
+    const { error } = await supabase.from('users').delete().eq('id', userId).eq('business_id', businessId);
+    if (error) { console.error('[staff] A603: could not take the half-added partner off', { businessId, userId }, error.message); return false; }
+    return true;
+  } catch (e) { console.error('[staff] A603: could not take the half-added partner off', { businessId, userId }, (e as Error)?.message); return false; }
+}
 
 // DELETE /api/staff/:id/web-access — take web dashboard access away: they are signed out everywhere at once.
 router.delete('/:id/web-access', async (req, res) => {
-  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  const giver = webGiver(req);
+  if (!giver) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  const refused = await webTargetRefusal(req, String(req.params.id));   // A608 part 3
+  if (refused) { res.status(refused[0]).json(refused[1]); return; }
   try {
-    const ended = await endPartnerAccess(req.businessId, req.params.id, 'revoked_by_owner');
+    const ended = await endPartnerAccess(req.businessId, req.params.id, giver === 'owner' ? 'revoked_by_owner' : 'revoked_by_staff');
     if (!ended) { res.status(404).json({ error: 'This staff member has no web dashboard access.' }); return; }
     res.json({ status: 'revoked' });
   } catch (e) { sendError(res, e as Error); }
@@ -916,7 +1155,9 @@ async function writeRoleKeys(roleId: string, keys: string[]): Promise<void> {
 
 // GET /api/staff/roles — every role of the business: its fine keys, whether it is the owner's, whether THIS caller may
 // give it (assignable) and change it (editable), and how many people hold it (members).
-router.get('/roles', async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F10): every role's keys and member count were open to any signed-in session — now for
+// someone who sees or manages staff or roles (the dashboard's Staff and Roles screens, the POS's role picker).
+router.get('/roles', requireAnyPermission('staff.view', 'staff.edit', 'staff.roles'), async (req, res) => {
   const { data, error } = await supabase
     .from('roles')
     .select(`
@@ -935,11 +1176,12 @@ router.get('/roles', async (req, res) => {
   const count = new Map<string, number>();
   for (const u of (members ?? []) as Array<{ role_id: string | null }>) if (u.role_id) count.set(u.role_id, (count.get(u.role_id) ?? 0) + 1);
   const held = callerHeld(req);
+  const partsPending = splitsPending();   // A595: before 176 a role's parent grant still brings its parts
   // A340: which of these THIS caller may hand out — the dashboard's and the till's role pickers show only these, so a
   // manager is never offered Owner (the routes refuse it regardless).
   res.json(roles.map((r) => {
     const isOwnerRole = isOwnerRoleName(r.name);
-    const keys = isOwnerRole ? ['*'] : [...expandKeys((r.role_permissions ?? []).map((rp: any) => rp?.permissions?.key).filter(Boolean))].filter((k) => k !== '*');
+    const keys = isOwnerRole ? ['*'] : [...expandKeys((r.role_permissions ?? []).map((rp: any) => rp?.permissions?.key).filter(Boolean), false, partsPending)].filter((k) => k !== '*');
     const role = { name: r.name, keys };
     return {
       ...r, keys, is_owner_role: isOwnerRole,
@@ -954,8 +1196,10 @@ router.get('/roles', async (req, res) => {
 router.get('/permissions', async (req, res) => {
   let ids: Map<string, string>;
   try { ids = await permissionIds(PERMISSIONS.map((p) => p.key)); } catch (e) { sendError(res, e as Error); return; }
+  // A595: and how the Roles screen nests them — a part names its parent; See / Do / Approve; the personal-data badge.
   res.json(PERMISSIONS.map((p) => ({
     id: ids.get(p.key) ?? null, key: p.key, label: p.label, description: p.description, group: p.group, surface: p.surface,
+    view: p.view === true, personal: p.personal === true, parent: parentOf(p.key), parts: [...partsOf(p.key)], kind: permissionKind(p.key),
   })));
 });
 
@@ -984,6 +1228,9 @@ router.put('/roles/:roleId/permissions', requirePermission('staff.roles'), async
   try { role = await loadRole(req.businessId, req.params.roleId); } catch (e) { sendError(res, e as Error); return; }
   if (!role) { res.status(404).json({ error: 'Role not found' }); return; }
 
+  // A595: a parent ticked for the first time by a client that does not know the split rights (no `parts: true`) brings
+  // its parts, as before the split — only those the caller may give.
+  if (req.body?.parts !== true) wanted = withNewParentParts(wanted, role.keys, callerHeld(req));
   const refusal = roleEditRefusal(callerHeld(req), role, wanted);
   if (refusal) { res.status(403).json(refusal); return; }
 
@@ -1009,6 +1256,7 @@ router.post('/roles', requirePermission('staff.roles'), async (req, res) => {
     const srcKeys = isOwnerRoleName(src.name) ? fineKeysOf(PERMISSIONS.map((p) => p.key)) : [...src.keys].filter((k) => k !== '*');
     wanted = [...new Set([...srcKeys, ...wanted])];
   }
+  if (req.body?.parts !== true && !copy_from) wanted = withNewParentParts(wanted, new Set(), callerHeld(req));   // A595
   const refusal = roleEditRefusal(callerHeld(req), { name: clean, keys: [] }, wanted);
   if (refusal) { res.status(403).json(refusal); return; }
 
@@ -1038,6 +1286,13 @@ router.patch('/roles/:roleId', requirePermission('staff.roles'), async (req, res
     const clean = typeof name === 'string' ? name.trim() : '';
     if (!clean || clean.length > 60) { res.status(400).json({ error: 'name must be 1–60 characters' }); return; }
     if (isOwnerRoleName(clean)) { res.status(403).json({ error: 'That name belongs to the owner\'s role — choose another.' }); return; }
+    // A608 part 3: renaming a role to General Manager makes a partner of each member with web access — the owner's to do.
+    if (isPartnerRoleName(clean) && !isPartnerRoleName(role.name)) {
+      const { data: members, error: mErr } = await supabase.from('users').select('id').eq('role_id', role.id).eq('business_id', req.businessId);
+      if (mErr) { sendError(res, mErr); return; }
+      const mp = await makesPartner(req, ((members ?? []) as Array<{ id: string }>).map((m) => m.id), clean, role.name);
+      if (mp) { res.status(mp[0]).json(mp[1]); return; }
+    }
     updates.name = clean;
   }
   if (description !== undefined) updates.description = description ? String(description) : null;
@@ -1076,6 +1331,13 @@ router.delete('/roles/:roleId', requirePermission('staff.roles'), async (req, re
 // failure counts towards the PIN limiter (lib/pinAttempts.ts).
 router.post('/clock', async (req, res) => {
   const { pin, type, branch_id, staff_id } = req.body ?? {};
+
+  // A599: with Attendance on (premium), every punch comes from the attendance device — the PIN clock-in is refused, before
+  // any PIN is looked at (so it is no PIN oracle either). Without the flag it works exactly as before.
+  if (await attendanceEnabled(req.businessId)) {
+    res.status(403).json({ error: CLOCK_BY_DEVICE_MESSAGE, code: 'CLOCK_BY_DEVICE' });
+    return;
+  }
 
   if (!pin)    { res.status(400).json({ error: 'PIN is required' }); return; }
   if (!type || !['in', 'out'].includes(type)) {

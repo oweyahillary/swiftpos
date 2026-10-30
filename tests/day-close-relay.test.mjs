@@ -33,7 +33,8 @@ ok('A275: /instruct requires a real count and replaces any pending close for tha
 ok('A275: /pending and /ack are scoped to the calling device (X-Device-Id)', () => {
   const s = r(DC);
   assert.match(s, /function deviceIdOf\(req: any\)/);
-  const pending = /router\.get\('\/pending'[\s\S]{0,1400}?res\.json\(rows/.exec(s)[0];   // A494: the own-till check made the handlers longer
+  // A494: the own-till check made the handlers longer; A593: the answer kept while nothing is written (res.json(answer))
+  const pending = /router\.get\('\/pending'[\s\S]{0,2600}?res\.json\(answer\)/.exec(s)[0];
   assert.match(pending, /\.eq\('device_id', deviceId\)/);
   assert.match(pending, /\.eq\('status', 'pending'\)/);
   assert.match(pending, /delivered_at/); // marks delivered

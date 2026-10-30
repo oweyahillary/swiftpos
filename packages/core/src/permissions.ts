@@ -43,6 +43,9 @@ export interface PermissionDef {
   /** A550: it only lets the person SEE something (a list, a report, a figure, a download) — it changes nothing. Decides
    *  the built-in Auditor (VIEW_KEYS); a new key says which it is here. */
   view?: boolean;
+  /** A595: it shows or sets PERSONAL data (Kenya Data Protection Act 2019): phone numbers, e-mails, what a customer bought,
+   *  PINs, pay. A "personal data" badge on the Roles screen; never part of the built-in Auditor (VIEW_KEYS). */
+  personal?: boolean;
 }
 
 export const PERMISSION_GROUPS: Array<{ id: PermissionGroup; label: string; description: string }> = [
@@ -63,8 +66,13 @@ export const PERMISSIONS: PermissionDef[] = [
   // ── Selling ────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'orders.create',        group: 'selling', surface: 'both', cashier: true, manager: true,
     label: 'Sell', description: 'Ring up sales, hold and recall bills, send orders to the kitchen and take payment' },
-  { key: 'sales.discount',       group: 'selling', surface: 'both', cashier: true, manager: true,
+  { key: 'sales.discount',       group: 'selling', surface: 'both', manager: true,   // A595 D6 (owner, 2026-10-27): typed discounts off cashiers (set-up ones stay)
     label: 'Give discounts', description: 'Give a discount on a sale, up to the business\'s discount limit' },
+  // A595 (owner, 2026-10-26: "break down any right that you feel is too big and exposes data - some can be broken down to
+  // view and edit etc."): each key marked as a PART below is one part of a key that exists (SPLITS). The parent keeps its
+  // name - a 1.0.21 desktop POS checks it by that name - and migration 176 gives every holder of a parent all its parts.
+  { key: 'sales.discount_preset', group: 'selling', surface: 'both', cashier: true, manager: true,
+    label: 'Apply set-up discounts and promo codes', description: 'Apply a discount or a promo code the business has set up (typing an amount needs Give discounts)' },
   { key: 'sales.void',           group: 'selling', surface: 'both', manager: true,
     label: 'Void sales', description: 'Void a sale within the void window (with a reason)' },
   { key: 'sales.refund',         group: 'selling', surface: 'both', manager: true,
@@ -73,14 +81,27 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Reprint receipts', description: 'Reprint a receipt from the sales history' },
   { key: 'sales.history_all',    group: 'selling', surface: 'both', view: true, manager: true,
     label: 'See every cashier\'s sales', description: 'The sales history shows every cashier\'s sales, not only their own' },
+  { key: 'sales.approve_kitchen_void', group: 'selling', surface: 'both', manager: true,
+    label: 'Approve removing items sent to the kitchen', description: 'Approve with their PIN taking an item off an order after it was sent to the kitchen or bar' },
   { key: 'invoice.create',       group: 'selling', surface: 'web', cashier: true, manager: true,
     label: 'Raise invoices', description: 'Raise an invoice for an order or a customer' },
 
   // ── Drawers and the day ──────────────────────────────────────────────────────────────────────────────────────────
-  { key: 'shifts.cash_movements', group: 'drawer', surface: 'both', cashier: true, manager: true,
-    label: 'Cash in, cash out and drawer expenses', description: 'Record money into or out of their drawer and expenses paid from it (cash out and expenses still need an approver)' },
+  // A594 (owner, 2026-10-26: "turn off that option for cashiers by default unless allowed" — then "we need to break those
+  // permissions further"): A453's switch 'cashier_no_money_out' as three keys, none a cashier default. The key is still
+  // named shifts.cash_movements (a 1.0.21 desktop POS checks it by that name) and now means Record cash in; migration 175
+  // relabels it and carries every role over (scripts/test-migration-175.mjs). Without a key the POS asks a manager's PIN
+  // on the spot for that cash in, cash out or expense — the approver is kept on the entry.
+  { key: 'shifts.cash_movements', group: 'drawer', surface: 'both', manager: true,
+    label: 'Record cash in', description: 'Put cash into their drawer, with a reason, with nobody approving it (without this, a manager approves each cash in with their PIN)' },
+  { key: 'shifts.cash_out',      group: 'drawer', surface: 'both', manager: true,
+    label: 'Record cash out / pay-outs', description: 'Take cash out of their drawer, with a reason - a manager approves every one with their PIN' },
+  { key: 'expenses.record',      group: 'drawer', surface: 'both', manager: true,
+    label: 'Record expenses', description: 'Record an expense paid from their drawer - a manager approves every one with their PIN' },
   { key: 'shifts.confirm',       group: 'drawer', surface: 'both', manager: true,
     label: 'Approve with their PIN', description: 'Approve cash out, expenses and removing items sent to the kitchen, confirm cashiers\' drawers and see the expected cash' },
+  { key: 'shifts.approve_payout', group: 'drawer', surface: 'both', manager: true,
+    label: 'Approve cash out and drawer expenses with their PIN', description: 'Approve with their PIN a cash out, a pay-out or an expense paid from a drawer, and a cash in by someone without Record cash in' },
   { key: 'shifts.force_close',   group: 'drawer', surface: 'both', manager: true,
     label: 'Force-close a drawer', description: 'Close another person\'s drawer without a cash count (it shows as unreconciled)' },
   // A520 (owner, 2026-10-17: "break close day and close branch as two, supervisor can have close day but not branch, a
@@ -95,6 +116,8 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Overview', description: 'The Overview page: today\'s sales, orders and open drawers' },
   { key: 'reports.sales',        group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Sales reports', description: 'Master / DSR, daily and hourly sales, payment methods and order channels' },
+  { key: 'reports.analytics',    group: 'reports', surface: 'web', view: true, manager: true,
+    label: 'Analytics', description: 'The Analytics pages: trends, menu engineering, branch comparisons and recommendations (money leaks also need Voids, refunds and exceptions)' },
   { key: 'reports.items',        group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Item mix and menu matrix', description: 'What sold, by product and category' },
   { key: 'reports.staff',        group: 'reports', surface: 'both', view: true, manager: true,
@@ -103,6 +126,8 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Shift reports and Z-reports', description: 'Each drawer\'s report: expected cash, counted cash and the difference' },
   { key: 'reports.voids',        group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Voids, refunds and exceptions', description: 'Voids and refunds, price differences on offline sales and other exceptions' },
+  { key: 'reports.audit',        group: 'reports', surface: 'web', view: true, manager: true,
+    label: 'Audit trail', description: 'Download the audit trail of voids, refunds, discounts and other changes, with who made them' },
   { key: 'reports.inventory',    group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Inventory report', description: 'Stock movement and value over a period' },
   { key: 'reports.fuel',         group: 'reports', surface: 'both', view: true, manager: true,
@@ -129,6 +154,10 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'See the menu', description: 'Read the menu and its prices' },
   { key: 'menu.edit',            group: 'menu', surface: 'both',
     label: 'Edit the menu', description: 'Add and change products, categories, variants, choices, extras and combos' },
+  { key: 'menu.delete',          group: 'menu', surface: 'both',
+    label: 'Delete products, categories and menus', description: 'Delete products, categories, menus, variants, choices, extras and combos' },
+  { key: 'menu.bulk',            group: 'menu', surface: 'both',
+    label: 'Bulk changes to the menu', description: 'Import products from a spreadsheet, change the tax or stock tracking of many items at once and generate barcodes' },
   { key: 'menu.prices',          group: 'menu', surface: 'both',
     label: 'Change prices', description: 'Change selling prices, branch prices and bulk prices' },
   { key: 'menu.offers',          group: 'menu', surface: 'both', manager: true,
@@ -140,12 +169,20 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Recipes and packaging', description: 'What each product uses from stock' },
   { key: 'menu.costs',           group: 'menu', surface: 'both', view: true,
     label: 'See cost prices', description: 'Cost prices and margins wherever they appear (menu, deliveries, stock)' },
+  { key: 'menu.costs_edit',      group: 'menu', surface: 'both',
+    label: 'Change cost prices', description: 'Change the cost price of products, one at a time or many at once' },
 
   // ── Stock ────────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'inventory.view',       group: 'stock', surface: 'both', view: true, cashier: true, manager: true,
     label: 'See stock levels', description: 'Stock levels of the branch' },
   { key: 'inventory.receive',    group: 'stock', surface: 'both', manager: true,
     label: 'Receive deliveries', description: 'Suppliers, purchase orders and receiving deliveries' },
+  { key: 'suppliers.manage',     group: 'stock', surface: 'both', manager: true,
+    label: 'Add, change and remove suppliers', description: 'Supplier records: names, contacts and payment details (seeing the suppliers comes with Receive deliveries)' },
+  { key: 'inventory.order',      group: 'stock', surface: 'both', manager: true,
+    label: 'Purchase orders', description: 'Raise, change and cancel purchase orders to suppliers' },
+  { key: 'inventory.reorder',    group: 'stock', surface: 'both', manager: true,
+    label: 'Reorder levels', description: 'Set the low-stock level of products and ingredients' },
   { key: 'inventory.transfer',   group: 'stock', surface: 'both', manager: true,
     label: 'Transfer stock', description: 'Send stock to another branch and receive transfers' },
   { key: 'inventory.count',      group: 'stock', surface: 'both', manager: true,
@@ -157,10 +194,14 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Stock count freeze', description: 'Choose whether a stock count stops sales of the items being counted' },
   { key: 'inventory.adjust',     group: 'stock', surface: 'web',
     label: 'Adjust stock', description: 'Change a stock figure by hand, review counts and close batches' },
+  { key: 'inventory.count_review', group: 'stock', surface: 'web',
+    label: 'Review and post stock counts', description: 'See the expected figures of a stock count, ask for a recount and post the count to stock' },
   { key: 'ingredients.manage',   group: 'stock', surface: 'web',
     label: 'Ingredient list', description: 'Add and change ingredients' },
   { key: 'payables.manage',      group: 'stock', surface: 'web',
     label: 'Supplier bills and payments', description: 'What is owed to suppliers, their bills and paying them' },
+  { key: 'payables.pay',         group: 'stock', surface: 'web',
+    label: 'Pay suppliers', description: 'Record a payment to a supplier and void one' },
   // A518: read-only supplier accounts (the Accountant's). Whoever holds payables.manage sees them already.
   { key: 'payables.view',        group: 'stock', surface: 'web', view: true,
     label: 'See supplier bills', description: 'See supplier bills, payments and returns, without recording or paying them' },
@@ -168,47 +209,97 @@ export const PERMISSIONS: PermissionDef[] = [
   // ── Customers ────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'customers.view',       group: 'customers', surface: 'both', view: true, cashier: true, manager: true,
     label: 'See customers', description: 'Customer records, points and credit balances' },
+  { key: 'customers.contacts',   group: 'customers', surface: 'both', view: true, personal: true, cashier: true, manager: true,   // A595 D1: cashiers keep them
+    label: 'See customer phone numbers and e-mails', description: 'Full phone numbers and e-mail addresses wherever customers appear: lists, credit, orders, M-Pesa payers and Analytics (without it they are masked - finding a customer by typing their number still works)' },
+  { key: 'customers.history',    group: 'customers', surface: 'both', view: true, personal: true, cashier: true, manager: true,   // A595 D1
+    label: 'See what a customer bought', description: 'A customer purchases, visits and insights' },
   { key: 'customers.edit',       group: 'customers', surface: 'both', cashier: true, manager: true,
     label: 'Add and edit customers', description: 'Add customers and change their details' },
+  { key: 'customers.delete',     group: 'customers', surface: 'web', manager: true,
+    label: 'Remove customers', description: 'Remove a customer record (also how a request to erase the data of a customer is honoured)' },
   { key: 'customers.credit',     group: 'customers', surface: 'both', manager: true,
     label: 'Customer credit', description: 'Approve sales on account with their PIN, set credit limits, record repayments and adjust balances' },   // A511
+  { key: 'customers.credit_payment', group: 'customers', surface: 'both', manager: true,
+    label: 'Record credit repayments', description: 'Record a payment a customer makes towards what they owe on account' },
+  { key: 'customers.credit_adjust', group: 'customers', surface: 'both', /* A595 D9: not a new Manager's */
+    label: 'Adjust or write off credit balances', description: 'Correct the balance of a customer on account or write it off, with a reason' },
+  // A595: was a rule by role NAME (lib/creditApprovers.ts, A585 / A587); migration 176 gives it to exactly who set limits.
+  { key: 'customers.credit_limit', group: 'customers', surface: 'both', manager: true,
+    label: 'Set credit limits', description: 'Give, change or remove the credit limit of a customer on account' },
 
   // ── Expenses ─────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'expenses.view',        group: 'expenses', surface: 'both', view: true, manager: true,
     label: 'See expenses', description: 'The expenses list and its totals' },
   { key: 'expenses.manage',      group: 'expenses', surface: 'both', manager: true,
     label: 'Record expenses', description: 'Record, change and remove expenses and expense types, and record entries in the monthly pack' },
+  { key: 'expenses.edit',        group: 'expenses', surface: 'both', /* A595 D9: not a new Manager's */
+    label: 'Change or remove recorded expenses', description: 'Change or remove an expense that was already recorded' },
+  { key: 'expenses.types',       group: 'expenses', surface: 'both', manager: true,
+    label: 'Expense types', description: 'Add, rename and remove expense types' },
+  { key: 'expenses.monthly',     group: 'expenses', surface: 'both', /* A595 D9: not a new Manager's */
+    label: 'Monthly pack entries', description: 'Record and remove entries in the cash and M-Pesa books of the monthly pack' },
 
   // ── Staff ────────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'staff.view',           group: 'staff', surface: 'both', view: true, manager: true,
     label: 'See staff', description: 'The staff list of their branch' },
+  { key: 'staff.contacts',       group: 'staff', surface: 'both', view: true, personal: true, manager: true,
+    label: 'See staff phone numbers and e-mails', description: 'Phone numbers and e-mail addresses on the staff list (without it they are hidden)' },
   { key: 'staff.edit',           group: 'staff', surface: 'both', manager: true,
     label: 'Add and edit staff', description: 'Add staff, set PINs and branches, and deactivate staff — never with more rights than they hold themselves' },
+  { key: 'staff.pins',           group: 'staff', surface: 'both', personal: true, manager: true,
+    label: 'Set and reset PINs and sign-in codes', description: 'Set the PIN and the approval PIN of staff and reset their sign-in codes' },
+  { key: 'staff.access',         group: 'staff', surface: 'both', /* A595 D9: not a new Manager's */
+    label: 'Give a person their own rights', description: 'Give or take away rights for one person beyond their role - never more than they hold themselves' },
+  { key: 'staff.pay',            group: 'staff', surface: 'web', personal: true, /* A595 D9: not a new Manager's */
+    label: 'Set staff pay rates', description: 'The hourly pay rate of each person' },
   { key: 'staff.roles',          group: 'staff', surface: 'web',
     label: 'Roles and permissions', description: 'Change what each role may see and do — never beyond what they hold themselves' },
+  // A599 (owner, 2026-10-28): Attendance (premium — the 'attendance' flag; off, none of these opens anything). Owner and
+  // partners all three (partners by the cloud's rule, whatever their role); the built-in Manager and General Manager see
+  // and correct (migration 180); cashiers and waiters none. Pay figures on the report also need staff.pay.
+  { key: 'attendance.view',      group: 'staff', surface: 'web', view: true, personal: true, manager: true,
+    label: 'See attendance', description: 'The Attendance report: who came in and when, hours worked, missed punch-outs and corrections (pay figures also need Set staff pay rates)' },
+  { key: 'attendance.edit',      group: 'staff', surface: 'web', manager: true,
+    label: 'Correct attendance', description: 'Add or fix a punch with a reason (the original is kept) and link punches nobody was matched to' },
+  { key: 'attendance.devices',   group: 'staff', surface: 'web',
+    label: 'Attendance devices', description: 'Add and remove attendance devices, give people their device numbers and match the users found on a device' },
 
   // ── Front of house ───────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'reservations.manage',  group: 'front', surface: 'web', cashier: true, manager: true,
     label: 'Reservations and waitlist', description: 'Take and change reservations and the waitlist' },
   { key: 'parking.manage',       group: 'front', surface: 'both', cashier: true, manager: true,
     label: 'Parking', description: 'Open, close and void parking tickets' },
+  { key: 'parking.void',         group: 'front', surface: 'both', manager: true,
+    label: 'Void parking tickets', description: 'Void a parking ticket, with a reason' },
   { key: 'fuel.manage',          group: 'front', surface: 'both', cashier: true, manager: true,
     label: 'Fuel pumps and tanks', description: 'Set pumps active or idle, record tank deliveries and set up pumps and tanks' },
+  { key: 'fuel.deliveries',      group: 'front', surface: 'both', manager: true,
+    label: 'Record fuel deliveries', description: 'Record a delivery of fuel into a tank' },
+  { key: 'fuel.setup',           group: 'front', surface: 'both', manager: true,
+    label: 'Set up pumps and tanks', description: 'Add, change and remove pumps and tanks' },
 
   // ── Settings ─────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'settings.business',    group: 'settings', surface: 'both',
     label: 'Business settings', description: 'Business profile, receipt and history rules, opening hours and tax rates' },
+  { key: 'settings.tax',         group: 'settings', surface: 'both',
+    label: 'Tax rates', description: 'The VAT and levy rates' },
+  { key: 'settings.sales_rules',  group: 'settings', surface: 'both',
+    label: 'Discount limit and selling rules', description: 'The discount limit, continuous operation and how the sales history is shown to cashiers' },
   { key: 'settings.branches',    group: 'settings', surface: 'web',
     label: 'Branches', description: 'Branch details and each branch\'s own settings' },
   { key: 'settings.payments',    group: 'settings', surface: 'both',
     label: 'Payment methods', description: 'Which payment methods each branch takes, and the business\'s own methods' },
-  { key: 'settings.mpesa',       group: 'settings', surface: 'till', manager: true,
+  { key: 'settings.mpesa',       group: 'settings', surface: 'till', /* A595 D9: not a new Manager's */
     label: 'M-Pesa number', description: 'Set the branch M-Pesa number customers pay to (Buy Goods till number, or Paybill and account number), set on the till, and the owner is told of every change' },
   // A502: owner's by default — who may void and refund, the void window and the offline rules.
   { key: 'settings.reversals',   group: 'settings', surface: 'web',
     label: 'Void and refund rules', description: 'Who may void and refund, for how long after a sale, and what a till may do offline' },
   { key: 'settings.integrations', group: 'settings', surface: 'web',
     label: 'Integrations', description: 'Webhooks, QR ordering and scheduled report emails' },
+  { key: 'settings.webhooks',    group: 'settings', surface: 'web',
+    label: 'Webhooks (send sales to another system)', description: 'Send every sale, with customer details, to another system at an address they choose' },
+  { key: 'settings.report_emails', group: 'settings', surface: 'web',
+    label: 'Scheduled report e-mails', description: 'E-mail reports on a schedule to any address' },
   { key: 'settings.pos',         group: 'settings', surface: 'web',
     label: 'POS options', description: 'How the tills work: delivery fee and rider, pay later, pay before kitchen, sign-in codes and loyalty' },
   { key: 'receipt.manage',       group: 'settings', surface: 'both', manager: true,
@@ -219,17 +310,92 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Tables and zones', description: 'The dining tables and floor zones' },
   { key: 'devices.approve',      group: 'settings', surface: 'web', manager: true,
     label: 'Tills and devices', description: 'Approve, rename, retire and remove tills' },
+  { key: 'devices.view',         group: 'settings', surface: 'web', view: true, manager: true,
+    label: 'See the POS devices', description: 'The list of POS devices, their state and the fleet' },
+  { key: 'devices.retire',       group: 'settings', surface: 'web', /* A595 D9: not a new Manager's */
+    label: 'Retire, remove or hand over POS devices', description: 'Retire a POS device, bring one back, remove one or authorise a hand-over to new hardware' },
   { key: 'etims.manage',         group: 'settings', surface: 'web',
     label: 'eTIMS / KRA', description: 'eTIMS set-up and KRA device registration' },
   { key: 'changes.approve',      group: 'settings', surface: 'web',
     label: 'Approve till changes', description: 'Approve or refuse menu and staff changes made on a till' },
+  { key: 'changes.approve_staff', group: 'settings', surface: 'web',
+    label: 'Approve staff changes made on a POS', description: 'Approve or refuse new staff and PIN changes made on a POS' },
 ];
 
 /** Every fine key. */
 export const PERMISSION_KEYS: readonly string[] = PERMISSIONS.map((p) => p.key);
 const FINE = new Set(PERMISSION_KEYS);
-/** A550: the keys that only show something (`view`) — everything a non-owner can be given to SEE, nothing that changes. */
-export const VIEW_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.view).map((p) => p.key);
+/** A550: the keys that only show something (`view`) — everything a non-owner can be given to SEE, nothing that changes.
+ *  A595: and nothing personal (`personal`) — an outside auditor needs the figures, not phone numbers. */
+export const VIEW_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.view && !p.personal).map((p) => p.key);
+/** A595: the keys that show or set personal data (the Roles screen's "personal data" badge). */
+export const PERSONAL_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.personal).map((p) => p.key);
+
+/**
+ * A595 — the keys that were too broad, and their PARTS. Owner, 2026-10-26: "implement the changes and break down any right
+ * that you feel is too big and exposes data — some can be broken down to view and edit etc." (docs/PERMISSIONS-AUDIT.md).
+ *
+ * A parent keeps its name and what a 1.0.21 desktop POS checks by it; each part guards one piece the parent used to guard
+ * too (the cloud checks the part). Nobody gains or loses anything on the day: migration 176 gives every role and every
+ * per-person override holding a parent all of its parts (a taken-away parent becomes taken-away parts), and until 176 is
+ * recorded — and for a token or a map made before A595 — the parent still brings its parts (withParts). After that the
+ * owner unticks a part per role or per person. inventory.reorder is a part of two parents (reorder levels were open to
+ * both receiving and adjusting); staff.contacts of two (the staff list, and editing staff, showed them).
+ */
+export const SPLITS: Readonly<Record<string, readonly string[]>> = {
+  'sales.discount':        ['sales.discount_preset'],
+  'shifts.confirm':        ['shifts.approve_payout', 'sales.approve_kitchen_void'],
+  'reports.sales':         ['reports.analytics'],
+  'reports.voids':         ['reports.audit'],
+  'menu.edit':             ['menu.delete', 'menu.bulk'],
+  'menu.costs':            ['menu.costs_edit'],
+  'inventory.receive':     ['suppliers.manage', 'inventory.order', 'inventory.reorder'],
+  'inventory.adjust':      ['inventory.count_review', 'inventory.reorder'],
+  'payables.manage':       ['payables.pay'],
+  'customers.view':        ['customers.contacts', 'customers.history'],
+  'customers.edit':        ['customers.delete'],
+  'customers.credit':      ['customers.credit_payment', 'customers.credit_adjust'],
+  'expenses.manage':       ['expenses.edit', 'expenses.types', 'expenses.monthly'],
+  'staff.view':            ['staff.contacts'],
+  'staff.edit':            ['staff.contacts', 'staff.pins', 'staff.access', 'staff.pay'],
+  'parking.manage':        ['parking.void'],
+  'fuel.manage':           ['fuel.deliveries', 'fuel.setup'],
+  'settings.business':     ['settings.tax', 'settings.sales_rules'],
+  'settings.integrations': ['settings.webhooks', 'settings.report_emails'],
+  'devices.approve':       ['devices.view', 'devices.retire'],
+  'changes.approve':       ['changes.approve_staff'],
+};
+/** A595: the parents of each part (most have one). */
+export const PARENTS_OF: Readonly<Record<string, readonly string[]>> = (() => {
+  const out: Record<string, string[]> = {};
+  for (const [parent, parts] of Object.entries(SPLITS)) for (const c of parts) (out[c] ??= []).push(parent);
+  return out;
+})();
+/** A595: the parts of a key (none for a key that was not split). */
+export const partsOf = (key: string): readonly string[] => SPLITS[key] ?? [];
+/** A595: the parent a part is listed under on the Roles screen (its first parent), or null for a key that is not a part. */
+export const parentOf = (key: string): string | null => PARENTS_OF[key]?.[0] ?? null;
+/**
+ * A595: the keys with every part of a held parent added — what a parent meant before the split. Used only where the old
+ * meaning must hold: until migration 176 is recorded (the cloud's splitsPending), for a token or map made before A595, and
+ * for a broad key (LEGACY). Never on stored grants after 176: there a part not held was taken away on purpose.
+ */
+export function withParts(keys: Iterable<string>): Set<string> {
+  const out = new Set(keys);
+  for (const k of [...out]) for (const c of partsOf(k)) out.add(c);
+  return out;
+}
+/**
+ * A595: the Roles screen's three columns per area — SEE (a list, a report, a figure), DO (add, change, sell, record) and
+ * APPROVE (with their PIN, or someone else's request). Display only: it decides nothing.
+ */
+export type PermissionKind = 'see' | 'do' | 'approve';
+const APPROVE_KEYS = new Set(['shifts.confirm', 'shifts.approve_payout', 'sales.approve_kitchen_void', 'customers.credit',
+  'changes.approve', 'changes.approve_staff', 'devices.approve']);
+export function permissionKind(key: string): PermissionKind {
+  if (APPROVE_KEYS.has(key)) return 'approve';
+  return PERMISSIONS.find((p) => p.key === key)?.view ? 'see' : 'do';
+}
 
 /**
  * The broad keys used before A490, and the fine keys each stood for. Each list reproduces EVERYTHING the broad key
@@ -268,15 +434,18 @@ export const isPermissionKey = (k: string): boolean => FINE.has(k);
  * The fine keys a set of granted keys stands for. '*' stays '*'. Broad keys become their fine keys; unknown keys are
  * dropped. `openBefore` (true until migration 134 has run) adds OPEN_BEFORE_A490 — what nobody was ever refused.
  */
-export function expandKeys(keys: Iterable<string> | null | undefined, openBefore = false): Set<string> {
+export function expandKeys(keys: Iterable<string> | null | undefined, openBefore = false, partsBefore = false): Set<string> {
   const out = new Set<string>();
   for (const k of keys ?? []) {
     if (k === '*') { out.add('*'); continue; }
     if (FINE.has(k)) out.add(k);
     const fine = LEGACY[k];
-    if (fine) for (const f of fine) out.add(f);
+    // A595: a broad key stood for everything its fine keys did before the split — their parts too.
+    if (fine) for (const f of withParts(fine)) out.add(f);
   }
   if (openBefore) for (const k of OPEN_BEFORE_A490) out.add(k);
+  // A595: before migration 176 (or for a token made before A595) a parent still brings its parts.
+  if (partsBefore) for (const k of withParts(out)) out.add(k);
   return out;
 }
 
@@ -286,12 +455,16 @@ export const MAP_MARKER = 'catalogue.v2';
 
 /** A permission map ({key: granted}, the shape tills and the web POS hold) as fine keys. A `false` (a per-person
  *  override taking a key away) removes what the key stands for. `openBefore` defaults to "the map predates A490". */
-export function expandMap(map: Record<string, unknown> | null | undefined, openBefore?: boolean): Set<string> {
+export function expandMap(map: Record<string, unknown> | null | undefined, openBefore?: boolean, partsBefore = false): Set<string> {
   if (openBefore === undefined) openBefore = !(map && (map as Record<string, unknown>)[MAP_MARKER] === true);
   const granted: string[] = [], denied: string[] = [];
   for (const [k, v] of Object.entries(map ?? {})) (v === true ? granted : v === false ? denied : []).push(k);
   const out = expandKeys(granted, openBefore);
   for (const k of expandKeys(denied)) if (k !== '*') out.delete(k);
+  // A595: before the split (partsBefore) every parent still held brings its parts — so a taken-away parent takes away
+  // what only it brought, and a part another held parent brings stays (staff.contacts: seeing OR editing staff). A part
+  // taken away by its own entry stays away.
+  if (partsBefore) for (const k of withParts(out)) if (!denied.includes(k)) out.add(k);
   return out;
 }
 
@@ -415,28 +588,33 @@ const CASHIER_DEFAULT_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.cash
 const MANAGER_DEFAULT_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.manager).map((p) => p.key);
 const ACCOUNTANT_KEYS: readonly string[] = ['reports.overview', 'reports.sales', 'reports.items', 'reports.staff', 'reports.shifts',
   'reports.voids', 'reports.inventory', 'reports.fuel', 'reports.tax', 'reports.costs', 'reports.labour', 'reports.monthly_pack',
-  'reports.payments', 'reports.export', 'orders.view_all', 'expenses.view', 'payables.view'];
+  'reports.payments', 'reports.export', 'orders.view_all', 'expenses.view', 'payables.view',
+  'reports.analytics', 'reports.audit'];   // A595: the parts of reports.sales / reports.voids an accountant reads
 export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
   { name: 'Manager', description: 'Runs a branch', keys: MANAGER_DEFAULT_KEYS },
   { name: 'Cashier', description: 'Sells at the till', keys: CASHIER_DEFAULT_KEYS },
   { name: 'Supervisor', description: 'Sells, and approves voids, refunds, sales on account and drawers with their PIN',
-    keys: [...CASHIER_DEFAULT_KEYS, 'sales.void', 'sales.refund', 'sales.reprint', 'sales.history_all', 'customers.credit',
-      'shifts.confirm', 'reports.sales', 'reports.shifts', 'shifts.close_day'] },   // A520: Close Day, not Close Branch
+    keys: [...CASHIER_DEFAULT_KEYS, 'sales.discount', 'shifts.cash_movements', 'shifts.cash_out', 'expenses.record', 'sales.void',   // A594
+      'sales.refund', 'sales.reprint', 'sales.history_all', 'customers.credit', 'shifts.confirm', 'reports.sales', 'reports.shifts', 'shifts.close_day',   // A520: Close Day, not Close Branch
+      // A595: repayments and the two PIN approvals; not Analytics (the premium area is for managers).
+      'customers.credit_payment', 'shifts.approve_payout', 'sales.approve_kitchen_void'] },
   { name: 'Waiter', description: 'Takes orders, sends them to the kitchen and takes payment',
-    keys: ['orders.create', 'sales.discount', 'products.view', 'inventory.view', 'customers.view', 'customers.edit',
+    keys: ['orders.create', 'sales.discount', 'sales.discount_preset', 'products.view', 'inventory.view', 'customers.view', 'customers.contacts', 'customers.history', 'customers.edit',
       'reservations.manage'], types: FOOD_BUSINESS_TYPES },   // A580: restaurants and cafés only
   { name: 'Kitchen', description: 'Kitchen staff - reads the menu (the kitchen display has its own sign-in)',
     keys: ['products.view'], types: FOOD_BUSINESS_TYPES },   // A580
   { name: 'Storekeeper', description: 'Receives deliveries, transfers, counts and writes off stock',
     keys: ['products.view', 'inventory.view', 'inventory.receive', 'inventory.transfer', 'inventory.count',
-      'inventory.waste', 'reports.inventory', 'menu.costs'] },
+      'inventory.waste', 'reports.inventory', 'menu.costs', 'inventory.reorder'] },   // A595: sees cost prices, never changes them
   { name: 'Accountant', description: 'Reads the books - every report, the orders and the expenses, changes nothing',
     keys: ACCOUNTANT_KEYS },
   { name: 'Fuel attendant', description: 'Sells fuel at the pumps', keys: ['orders.create', 'products.view', 'fuel.manage'],
     types: FUEL_BUSINESS_TYPES },
   // ── A550 ──
   { name: 'General Manager', description: 'Runs the whole business day to day - every permission, never the owner',
-    keys: PERMISSION_KEYS },
+    // A595 D3 (owner, 2026-10-27): webhooks are the owner's alone; who receives the report e-mails the owner's and partners'.
+    // A599: attendance devices are the owner's and the partners' (the General Manager sees and corrects attendance).
+    keys: PERMISSION_KEYS.filter((k) => k !== 'settings.webhooks' && k !== 'settings.report_emails' && k !== 'attendance.devices') },
   { name: 'Operations Manager', description: 'Runs operations - menu, stock, kitchen, shifts and the day, staff and the operational reports',
     keys: ['products.view', 'menu.edit', 'menu.prices', 'menu.offers', 'menu.recipes', 'menu.costs',
       'inventory.view', 'inventory.receive', 'inventory.transfer', 'inventory.count', 'inventory.waste', 'inventory.adjust',
@@ -444,14 +622,23 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
       'shifts.close_day', 'shifts.close_branch', 'shifts.force_close', 'staff.view', 'staff.edit',
       'reservations.manage', 'parking.manage', 'fuel.manage',
       'reports.overview', 'reports.sales', 'reports.items', 'reports.inventory', 'reports.shifts', 'reports.voids',
-      'reports.fuel', 'orders.view_all', 'sales.history_all'] },
+      'reports.fuel', 'orders.view_all', 'sales.history_all',
+      // A595: the operational parts — not per-person rights, pay rates, the audit trail or approving staff changes.
+      'menu.costs_edit', 'menu.delete', 'menu.bulk', 'suppliers.manage', 'inventory.order', 'inventory.reorder',
+      'inventory.count_review', 'staff.contacts', 'staff.pins', 'parking.void', 'fuel.deliveries', 'fuel.setup',
+      'reports.analytics', 'devices.view'] },
   { name: 'Finance Manager', description: 'The accountant who acts - pays suppliers, records expenses, customer credit and drawer checks',
-    keys: [...ACCOUNTANT_KEYS, 'payables.manage', 'expenses.manage', 'customers.view', 'customers.credit', 'shifts.confirm'] },
+    keys: [...ACCOUNTANT_KEYS, 'payables.manage', 'expenses.manage', 'customers.view', 'customers.credit', 'shifts.confirm',
+      // A595: paying suppliers, every expense part, phone numbers (to chase a balance), credit repayments and write-offs,
+      // pay-out approvals and pay rates — not kitchen removals (finance confirms drawers, not the kitchen).
+      'payables.pay', 'expenses.edit', 'expenses.types', 'expenses.monthly', 'customers.contacts', 'customers.credit_payment',
+      'customers.credit_adjust', 'shifts.approve_payout', 'staff.pay'] },
   { name: 'Auditor', description: 'Sees every report, list and figure a non-owner can be shown, changes nothing',
     keys: VIEW_KEYS },
   { name: 'Kitchen Manager', description: 'Runs the kitchen - the menu and recipes, receiving, counting and writing off stock',
     keys: ['products.view', 'menu.edit', 'menu.recipes', 'menu.costs', 'ingredients.manage', 'inventory.view',
-      'inventory.receive', 'inventory.count', 'inventory.waste', 'reports.inventory', 'stations.manage'],
+      'inventory.receive', 'inventory.count', 'inventory.waste', 'reports.inventory', 'stations.manage',
+      'menu.costs_edit', 'inventory.order', 'inventory.reorder'],   // A595: not deleting the menu, bulk changes or suppliers
     types: FOOD_BUSINESS_TYPES },   // A580
 ];
 
@@ -499,7 +686,7 @@ export const FLOOR_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.cashier
 export const POS_ACTION_KEYS: readonly string[] = ['customers.credit', 'sales.void', 'sales.refund', 'sales.reprint'];
 /** What makes nobody back office: the floor, what every person held before A490 (migration 134 keeps it on every role —
  *  the staff list, every cashier's sales — so it says nothing about who is a manager), and the POS actions. */
-const FLOOR = new Set([...FLOOR_KEYS, ...OPEN_BEFORE_A490, ...POS_ACTION_KEYS]);
+const FLOOR = withParts([...FLOOR_KEYS, ...OPEN_BEFORE_A490, ...POS_ACTION_KEYS]);   // A595: and their parts (176 gives them to every cashier)
 
 /** Holds anything beyond the shop floor (or is the owner). */
 export function isBackOffice(held: ReadonlySet<string> | readonly string[]): boolean {

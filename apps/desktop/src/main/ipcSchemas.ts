@@ -116,6 +116,10 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'node:retryFailed':       NO_PAYLOAD,                                                          // A501
   'node:distribution':      NO_PAYLOAD,                                                          // A534 (A23)
   'node:drawersStatus':     NO_PAYLOAD,                                                          // A542
+  'attendance:status':      NO_PAYLOAD,                                                          // A599
+  'attendance:test':        { device_id: { t: 'string', min: 1 } },                              // A599
+  'attendance:setTime':     { device_id: { t: 'string', min: 1 } },                              // A599
+  'attendance:pullNow':     NO_PAYLOAD,                                                          // A599
   'branding:get':           NO_PAYLOAD,
   // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so
@@ -236,7 +240,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'branchClose:closeTill':  { device_id: { t: 'string' }, counted_cash: { t: 'number' }, notes: { t: 'string', optional: true } },
   'branchClose:confirmShift': { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } },   // A452
   'branchClose:closeBranch':  { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true }, without_tills: { t: 'stringArray', optional: true } },   // A452, A458, A521
-  'branchClose:shiftMoney':   { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true }, expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true } },   // A465
+  'branchClose:shiftMoney':   { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true }, expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true }, count_ack: { t: 'boolean', optional: true } },   // A465; A594: count_ack
   'branchClose:cancelShiftMoney': { instruction_id: { t: 'number' } },   // A465
   'branchClose:forgetTill':   { device_id: { t: 'string', min: 1 } },   // F4 (A521: "Revoke this till")
   'branchClose:hideTill':     { device_id: { t: 'string', min: 1 } },   // A521
@@ -247,7 +251,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'day:close':              { countedCash: { t: 'number' }, notes: { t: 'string', optional: true } },
   'shift:forceClose':       { reason: { t: 'string' } },
   'shift:open':             { opening_float: { t: 'number' }, drawer_label: { t: 'string', optional: true } },
-  'shift:float':            { type: { t: 'enum', values: ['float_in','float_out'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, pin: { t: 'string', optional: true } },   // 0.6.37: pin
+  'shift:float':            { type: { t: 'enum', values: ['float_in','float_out'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, pin: { t: 'string', optional: true }, countAck: { t: 'boolean', optional: true } },   // 0.6.37: pin; A594: countAck
   'shift:close':            { closing_float: { t: 'number' }, notes: { t: 'string', optional: true }, declared: { t: 'any', optional: true } },
   'shift:awaiting':         NO_PAYLOAD,
   'shift:canConfirm':       NO_PAYLOAD,
@@ -286,6 +290,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'credit:awaiting':             NO_PAYLOAD,
   'credit:dismiss':              { kind: 'string' },
   'credit:customers':            { search: { t: 'string', optional: true } },   // A552: On account at the till
+  'customer:create':             { name: { t: 'string' }, phone: { t: 'string' }, email: { t: 'string', optional: true }, kra_pin: { t: 'string', optional: true } },   // A595 D1
   'batches:expiring':            NO_PAYLOAD,
   'manage:createCategory':      { name: { t: 'string' } },
   'manage:updateCategory':      idPatch,
@@ -396,7 +401,17 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'monthly:addMovement':      { movement_date: { t: 'string', min: 10 }, method: { t: 'string', min: 1 }, kind: { t: 'string', min: 1 },
                                 amount: { t: 'number' }, note: { t: 'string', optional: true }, branch_id: { t: 'string', optional: true } },
   'monthly:removeMovement': { id: { t: 'string', min: 1 } },
-  'tech:setBackupDir': { dir: { t: 'any' } },          // A380: a folder, or null for the default
+  'tech:setBackupDir': { dir: { t: 'any', optional: true } },   // A380: a folder, or null for the default (A600: null was refused as missing)
+  // A600: Manager › Settings › Backup (owner / manager / technician; restore the owner or a technician).
+  'backup:status':            NO_PAYLOAD,
+  'backup:now':               NO_PAYLOAD,
+  'backup:chooseDir':         NO_PAYLOAD,
+  'backup:setDir':            { dir: { t: 'any', optional: true } },   // a folder, or null for the default
+  'backup:chooseRestoreFile': NO_PAYLOAD,
+  'backup:restore':           { token: { t: 'string', min: 1 }, confirm: { t: 'string' } },
+  // A602: the history upload's progress and the owner's choices (how far back, quiet hours) — the Backup panel's people.
+  'historyUpload:status':      NO_PAYLOAD,
+  'historyUpload:setSettings': { window: { t: 'string', optional: true }, quietFrom: { t: 'string', optional: true }, quietTo: { t: 'string', optional: true } },
   'tech:query':         { sql: { t: 'string' } },
   'tech:status':        NO_PAYLOAD,
   'tech:testConnection':NO_PAYLOAD,
@@ -404,4 +419,25 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'tech:sendLogs':      NO_PAYLOAD,   // A519
   'tech:saveLog':       NO_PAYLOAD,   // A519
   'install:checkTerminalCode': { code: { t: 'string', min: 1 }, branch_id: { t: 'string', optional: true } },   // A519
+  // A606: the customer screen — the POS's sale as the customer sees it (cleaned in main), the page's reads, the setup.
+  'customerDisplay:update':   { kind: 'object' },
+  'customerDisplay:current':  NO_PAYLOAD,
+  'customerDisplay:content':  NO_PAYLOAD,
+  'customerDisplay:slide':    { key: { t: 'string', min: 1 } },
+  'customerDisplay:status':   NO_PAYLOAD,
+  'customerDisplay:set':      { enabled: { t: 'boolean' }, displayId: { t: 'any', optional: true } },
+  'customerDisplay:test':     NO_PAYLOAD,
+  'customerDisplay:identify': NO_PAYLOAD,
+  // A607: customer details at the counter (main/ipc/customerDetails.ts) — the request and the answer are cleaned in main
+  // (customerDetails.ts sanitiseAsk / cleanAnswer); the answer is accepted only from the customer screen's own page.
+  'customer:saleInfo':          NO_PAYLOAD,
+  'customerDisplay:askable':    NO_PAYLOAD,
+  'customerDisplay:ask':        { id: { t: 'string', min: 4 }, purpose: { t: 'string' } },
+  'customerDisplay:cancelAsk':  { id: { t: 'string', optional: true } },
+  'customerDisplay:answer':     { id: { t: 'string', min: 1 } },
+  'customerDisplay:setTouch':   { on: { t: 'boolean' } },
+  'mpesa:stkOffered':           NO_PAYLOAD,
+  'mpesa:stkStart':             { phone: { t: 'string', min: 1 }, amount: { t: 'number' }, ref: { t: 'string', min: 1 } },
+  'mpesa:stkReset':             NO_PAYLOAD,
+  'mpesa:stkState':             NO_PAYLOAD,
 };

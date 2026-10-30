@@ -225,7 +225,8 @@ router.post('/:id/close', async (req, res) => {
 // ── POST /api/parking-sessions/:id/void ──────────────────────────────────────
 // Vehicle left without paying, or session created in error.
 
-router.post('/:id/void', async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F22): voiding a ticket is its own part of parking.manage (parking.void).
+router.post('/:id/void', requirePermission('parking.void'), async (req, res) => {
   const session = await ownSession(req, res, 'id, status, branch_id');   // A494
   if (!session) return;
 

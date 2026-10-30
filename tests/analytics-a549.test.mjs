@@ -166,7 +166,7 @@ try {
     reset([S.A]);
     const r = await call(`/api/analytics/insights?${PERIOD}`, T.cash);
     assert.equal(r.status, 403);
-    assert.match(r.body.detail, /reports\.sales/);
+    assert.match(r.body.detail, /reports\.analytics/);   // A595: Analytics is its own part of reports.sales (an older token holding reports.sales still opens it)
     const c = await call(`/api/analytics/credit-ageing`, T.mgrNoCosts);
     assert.equal(c.status, 403);
     assert.match(c.body.detail, /customers\.view/);

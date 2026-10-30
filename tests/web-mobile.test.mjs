@@ -3,7 +3,7 @@
  *
  * Owner, 2026-10-13: "read all the web apps especially dashboard make it mobile responsive".
  *
- * Pins the shipped layouts (React is not run): the owner's sidebar and the manager's sidebar are drawers on a phone, the
+ * Pins the shipped layouts (React is not run): the owner's sidebar is a drawer on a phone (A608: the manager portal is retired), the
  * web POS cart is a full-screen sheet opened from a bar, dialogs fit the screen, wide tables scroll sideways inside
  * their card, and the admin portal's three-column grids collapse.
  *
@@ -24,7 +24,6 @@ const ok = (n, c, d = '') => { if (c) { pass++; console.log(`PASS  ${n}`); } els
 
 const D = 'apps/dashboard/src/';
 const layout = read(D + 'components/DashboardLayout.tsx');
-const mgr = read(D + 'pages/manager/ManagerDashboard.tsx');
 const pos = read(D + 'pages/pos/CashierScreen.tsx');
 
 // ── the owner's dashboard ──
@@ -34,13 +33,13 @@ ok('☰ opens it; a page change closes it',
   /data-testid="nav-open"/.test(layout) && /setNavOpen\(true\)/.test(layout) && /setNavOpen\(false\); \}, \[navLocation\.pathname\]/.test(layout));
 ok('the phone\'s top bar shows only below md', /md:hidden sticky top-0/.test(layout));
 ok('the shell uses the dynamic viewport height', /h-\[100dvh\]/.test(layout) && !/h-screen/.test(layout));
-ok('the notifications panel fits a phone', /fixed left-3 right-3 top-16 md:absolute/.test(layout));
+// A609 (owner, 2026-10-29: the notification unreadable on a phone): the panel moved out of the drawer (a portal) — full width
+// with a 12-px gutter, its list scrolling inside the screen; the old in-drawer classes are gone on purpose.
+ok('the notifications panel fits a phone', /'fixed inset-x-3 top-3 z-\[70\] max-h-\[calc\(100dvh-24px\)\]'/.test(layout)
+  && /isPhone \? createPortal\(bellPanel, document\.body\) : bellPanel/.test(layout) && /flex-1 min-h-0 overflow-y-auto/.test(layout));
 
-// ── the manager's dashboard ──
-ok('the manager\'s sidebar is a drawer on a phone',
-  /isPhone \? `fixed inset-y-0 left-0 z-40 w-64/.test(mgr) && /-translate-x-full/.test(mgr));
-ok('picking a page on a phone closes the drawer', /setActive\(item\.key\); if \(isPhone\) setSidebarOpen\(false\)/.test(mgr));
-ok('the manager\'s drawer starts closed on a phone', /useState\(\(\) => !\(typeof window/.test(mgr));
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; the manager's sidebar drawer
+// (ManagerDashboard.tsx) is gone; a manager uses the owner's dashboard, whose drawer is pinned above.
 
 // ── the web POS ──
 ok('the web POS cart is a sheet on a phone, opened from the cart bar',
@@ -69,8 +68,8 @@ ok('the POS dialogs fit a phone', /maxWidth: 340, maxHeight: '90dvh', overflowY:
 ok('the POS fills the dynamic viewport', (pos.match(/height: '100dvh'/g) || []).length >= 2 && !/height: '100vh'/.test(pos));
 
 // ── wide tables scroll inside their card; side panels stack; toasts fit ──
-const mgrRep = read(D + 'pages/manager/ManagerReportsPage.tsx');
-ok('the manager\'s report tables scroll sideways', (mgrRep.match(/overflow-x-auto/g) || []).length >= 6);
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; the manager's report tables
+// (ManagerReportsPage.tsx) are gone; the owner's ReportsPage is pinned below (View more).
 for (const f of ['pages/OrdersPage.tsx', 'pages/expenses/ExpensesPage.tsx', 'pages/stock/IngredientsPage.tsx',
                  'pages/OpenShiftsPage.tsx', 'components/ShiftConfirmations.tsx', 'pages/DiscountsPage.tsx']) {
   ok(`${f}: its table scrolls sideways`, /overflow-x-auto/.test(read(D + f)));
@@ -90,7 +89,7 @@ ok('A464: View more and its details exist only on a phone',
 ok('A464: View more does not open a clickable row', /e\.stopPropagation\(\); onClick\(\);/.test(rowMore));
 for (const f of ['pages/OrdersPage.tsx', 'pages/expenses/ExpensesPage.tsx', 'pages/products/ProductsPage.tsx', 'pages/stock/IngredientsPage.tsx',
                  'pages/inventory/InventoryPage.tsx', 'pages/OpenShiftsPage.tsx', 'pages/ReportsPage.tsx', 'pages/reports/MonthlyPackTab.tsx',
-                 'pages/manager/ManagerReportsPage.tsx', 'pages/DiscountsPage.tsx', 'pages/customers/CreditAccountsPage.tsx', 'pages/FleetPage.tsx']) {
+                 'pages/DiscountsPage.tsx', 'pages/customers/CreditAccountsPage.tsx', 'pages/FleetPage.tsx']) {
   const src = read(D + f);
   ok(`A464: ${f} — View more on its wide tables`, /useRowMore\(\)/.test(src) && /<ViewMore /.test(src) && /<MoreRow /.test(src) && /DESK/.test(src));
 }

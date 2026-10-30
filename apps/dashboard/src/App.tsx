@@ -33,7 +33,6 @@ const ProductsPage            = lazy(() => import('./pages/products/ProductsPage
 const LabelsPage              = lazy(() => import('./pages/products/LabelsPage'));   // A571
 const POSPage                 = lazy(() => import('./pages/pos/POSPage'));
 const POSEntryPage            = lazy(() => import('./pages/pos/POSEntryPage'));
-const ManagerDashboard        = lazy(() => import('./pages/manager/ManagerDashboard'));
 const InventoryPage           = lazy(() => import('./pages/inventory/InventoryPage'));
 // Settings › three sections (register A133). Container pages default-export;
 // their child route wrappers are named exports pulled via the {default} shim so
@@ -54,6 +53,7 @@ const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').t
 const PosOptionsTab       = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.PosOptionsTab })));     // A491
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
 const AnalyticsPage           = lazy(() => import('./pages/analytics/AnalyticsPage'));   // A549
+const AttendancePage          = lazy(() => import('./pages/attendance/AttendancePage'));   // A599 (premium: the 'attendance' flag)
 const WatchListPage           = lazy(() => import('./pages/WatchListPage'));   // A576
 const LossAlertsTab           = lazy(() => import('./pages/settings/LossAlertsTab'));   // A576
 const CreditApproversTab       = lazy(() => import('./pages/settings/CreditApproversTab'));   // A585
@@ -61,6 +61,7 @@ const ScaleLabelsTab          = lazy(() => import('./pages/settings/ScaleLabelsT
 const ShiftReportsPage        = lazy(() => import('./pages/ShiftReportsPage'));
 const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
 const KDSPage                 = lazy(() => import('./pages/kds/KDSPage'));
+const CustomerDisplayWebPage = lazy(() => import('./pages/pos/CustomerDisplayWebPage'));   // A606
 const CustomersPage           = lazy(() => import('./pages/crm/CustomersPage'));
 const CreditAccountsPage      = lazy(() => import('./pages/customers/CreditAccountsPage'));
 const TableTurnoverPage       = lazy(() => import('./pages/pos/TableTurnoverPage'));
@@ -113,6 +114,8 @@ export default function App() {
 
               {/* ── Public routes (no auth) ─────────────────────────── */}
               <Route path="/kds"         element={<KDSPage />} />
+              {/* A606: the web POS's customer screen — it only listens to the POS window (BroadcastChannel), fetches nothing. */}
+              <Route path="/customer-display" element={<CustomerDisplayWebPage />} />
               <Route path="/menu/:slug"  element={<QRMenuPage />} />
               {/* 0.6.35 (A384): "What to do when" — open to anyone (a locked-out cashier needs it most). */}
               <Route path="/help"        element={<HelpPage />} />
@@ -126,14 +129,10 @@ export default function App() {
                 </ErrorBoundary>
               } />
 
-              {/* ── Manager surface — PIN auth ───────────────────────── */}
-              <Route path="/manager" element={
-                <ErrorBoundary>
-                  <POSAuthProvider>
-                    <ManagerDashboard />
-                  </POSAuthProvider>
-                </ErrorBoundary>
-              } />
+              {/* ── A608 (owner, 2026-10-29, "yes to all"): the web manager portal is retired — managers sign in to the web
+                  dashboard by email and password (and sell with Open POS). An old link or bookmark goes to the dashboard;
+                  signed out, its guard (ProtectedRoute) sends them to /login. ─────────────────────────────────────── */}
+              <Route path="/manager/*" element={<Navigate to="/dashboard" replace />} />
 
               {/* ── Owner dashboard — Supabase session ──────────────── */}
               <Route path="*" element={
@@ -154,6 +153,7 @@ export default function App() {
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
                       <Route path="analytics"                 element={<AnalyticsPage />} />
+                      <Route path="attendance"                element={<AttendancePage />} />
                       <Route path="watch-list"                element={<WatchListPage />} />
                       <Route path="shift-reports"             element={<ShiftReportsPage />} />
                       <Route path="orders"                    element={<OrdersPage />} />

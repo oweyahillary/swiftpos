@@ -211,7 +211,9 @@ router.put('/:id/items', requirePermission('menu.edit'), async (req, res) => {
 
 // ── Delete combo ──────────────────────────────────────────────────────────────
 
-router.delete('/:id', requirePermission('menu.edit'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F24): deleting is its own part of menu.edit (menu.delete — migration 176 gave it to every
+// holder of menu.edit).
+router.delete('/:id', requirePermission('menu.delete'), async (req, res) => {
   const { error } = await supabase
     .from('products')
     .delete()

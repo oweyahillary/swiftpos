@@ -69,10 +69,24 @@ console.log('\n0. Harness matches maintenance.ts');
   ok('retention floor of 7 days — a sub-week window is a misconfiguration', /n >= 7/.test(SRC_M));
   ok('snapshot uses the backup API, never fs.copyFile',
      // The comment WARNING against copyFile must not trip this — assert no CALL.
-     SRC_M.includes('.backup(dest)') && !/copyFile(?:Sync)?\s*\(/.test(SRC_M));
+     // A600: in steps — .backup(dest, { progress }).
+     /\.backup\(dest(\)|, \{ progress)/.test(SRC_M) && !/copyFile(?:Sync)?\s*\(/.test(SRC_M));
   ok('failure is recorded, not swallowed', SRC_M.includes("`FAILED — ${err?.message"));
-  ok('both jobs scheduled hourly AND once after boot',
-     /pruneIfDue\(\);[\s\S]{0,200}snapshotIfDue\(\)/.test(SRC_IX) && /setTimeout\([\s\S]{0,300}90_000\)/.test(SRC_IX));
+  // A600: the backup on its own 5-minute check (backupIfDue → snapshotIfDue with the PC's idle time), prune hourly; both
+  // once after boot.
+  ok('both jobs scheduled (prune hourly, the backup every 5 minutes) AND once after boot',
+     /setInterval\(\(\) => \{\s*try \{ pruneIfDue\(\); \}[\s\S]{0,200}3_600_000\)/.test(SRC_IX)
+       && /snapshotIfDue\(new Date\(\), idleSeconds\(\)\)/.test(SRC_IX) && /setInterval\(backupIfDue, 5 \* 60_000\)/.test(SRC_IX)
+       && /setTimeout\(\(\) => \{\s*try \{ pruneIfDue\(\); \}[\s\S]{0,200}backupIfDue\(\);[\s\S]{0,40}90_000\)/.test(SRC_IX));
+  // A600 follow-up (owner, 2026-10-28): every 6 hours and after a day close, the 10 most recent kept (only files named
+  // exactly as a backup), and no copy when the drive has less than 2 × the database + 200 MB free — checked BEFORE the copy.
+  ok('every 6 hours (03:00, 09:00, 15:00, 21:00), 10 kept, and a backup after a close wired at start',
+     /BACKUP_SLOT_HOURS = \[3, 9, 15, 21\]/.test(SRC_M) && /DEFAULT_SNAPSHOT_KEEP = 10;/.test(SRC_M)
+       && /wireCloseBackups\(\);/.test(SRC_IX));
+  ok('retention deletes only files named exactly as a backup',
+     /BACKUP_FILE_RE = \/\^swiftpos-\\d\{4\}-\\d\{2\}-\\d\{2\}T/.test(SRC_M) && /function rotateBackups[\s\S]{0,200}backupFiles\(dir\)/.test(SRC_M));
+  ok('the free-space guard runs before the copy',
+     SRC_M.indexOf('if (free !== null && free < need)') > 0 && SRC_M.indexOf('if (free !== null && free < need)') < SRC_M.indexOf('.backup(dest, { progress'));
   ok('maintenance_state table exists in schema', SRC_DB.includes('maintenance_state'));
   {
     const local = Number((SRC_DB.match(/LOCAL_SCHEMA_VERSION = (\d+)/) || [])[1]);

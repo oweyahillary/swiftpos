@@ -10,17 +10,25 @@
 import { supabase } from './supabase';
 
 export const PERMISSIONS_MIGRATION = '134_permission_catalogue';
+/** A595: the migration that carries every holder of a broad key over to its parts (shared permissions.ts SPLITS). */
+export const SPLITS_MIGRATION = '176_permission_splits';
 const REFRESH_MS = 5 * 60_000;
 
 let migrated = false;
+let splitsMigrated = false;
 let checkedAt = 0;
 let inFlight: Promise<void> | null = null;
 
 async function check(): Promise<void> {
   try {
+    // A595: both answers in one read (A593: no extra call).
     const { data, error } = await supabase.from('schema_migrations').select('version')
-      .eq('version', PERMISSIONS_MIGRATION).maybeSingle();
-    if (!error) migrated = !!data;
+      .in('version', [PERMISSIONS_MIGRATION, SPLITS_MIGRATION]);
+    if (!error) {
+      const got = new Set(((data ?? []) as Array<{ version?: string }>).map((r) => r.version));
+      migrated = got.has(PERMISSIONS_MIGRATION);
+      splitsMigrated = got.has(SPLITS_MIGRATION);
+    }
   } catch { /* keep the last answer */ }
   checkedAt = Date.now();
 }
@@ -37,5 +45,17 @@ export function permissionsOpenBefore(now = Date.now()): boolean {
   return !migrated;
 }
 
+/**
+ * A595: true until migration 176 is recorded — every role and override still holds only the broad keys, so a broad key
+ * (a parent) brings all of its parts, exactly what it meant before the split (shared permissions.ts withParts). From 176
+ * on the stored grants hold the parts themselves, and a part not held was taken away on purpose.
+ */
+export function splitsPending(now = Date.now()): boolean {
+  if (now - checkedAt > REFRESH_MS) void refreshPermissionsState();
+  return !splitsMigrated;
+}
+
 /** Tests only. */
 export function _setPermissionsMigrated(v: boolean): void { migrated = v; checkedAt = Date.now(); }
+/** Tests only (A595). */
+export function _setSplitsMigrated(v: boolean): void { splitsMigrated = v; checkedAt = Date.now(); }

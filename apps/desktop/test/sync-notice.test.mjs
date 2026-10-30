@@ -130,8 +130,10 @@ ok('POS: the header status is inside canSeeSync; the bottom notice only for mana
   assert.ok(j > i && j < k, 'the sync indicator sits inside the gate');
   assert.ok(pos.indexOf('⟳ {syncStatus.failedCount} failed') < k, 'the failed/retry button too');
   assert.match(pos, /const notice = canSeeSync \? syncNotice\(syncStatus\) : null;/);
-  assert.match(pos, /\{notice && \(\s*<div\s+data-testid="sync-notice"/);
-  assert.match(pos, /if \(notice\.action === 'retry-failed'\) await posApi\.sync\.retryFailed\(\);\s+else await posApi\.sync\.trigger\(\);/);
+  // A601: what is shown is `shownNotice` — the same gated notice, or (the desktop-only notice closed) the next one, gated too.
+  assert.match(pos, /const shownNotice = notice\?\.action === 'dismiss' && backupNoticeClosed \? syncNotice\(syncStatus, new Date\(\), \{ backupNoticeClosed: true \}\) : notice;/);
+  assert.match(pos, /\{shownNotice && \(\s*<div\s+data-testid="sync-notice"/);
+  assert.match(pos, /if \(shownNotice\.action === 'retry-failed'\) await posApi\.sync\.retryFailed\(\);\s+else await posApi\.sync\.trigger\(\);/);
   assert.match(read('src/renderer/App.tsx'), /canSeeSync=\{backOffice\(staff\)\}/);
 });
 ok('manager screen: a neutral "Last synced" line', () => {

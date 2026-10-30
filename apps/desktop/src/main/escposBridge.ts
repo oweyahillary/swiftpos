@@ -267,6 +267,8 @@ export interface SaleForPrint {
   kotCount: number;
   /** A367: the cashier's note on the whole order. */
   note?: string | null;
+  /** A607: the buyer's KRA PIN for this sale ("Buyer PIN: A123456789Z" on the receipt). */
+  buyerPin?: string;
   /** Set on any copy after the first. Drives the Duplicate Print banner. */
   reprint?: { at: Date; count: number };
   /** 0.6.28: a KITCHEN VOID — the production ticket prints under a VOID banner so the kitchen stops that dish. */
@@ -424,6 +426,7 @@ export function printSale(
         deliveryFree:   sale.deliveryFree === true,       // 0.6.33
         kotCount:       sale.kotCount,
         note:           cleanNote(sale.note, ORDER_NOTE_MAX) ?? undefined,   // A367
+        ...(sale.buyerPin && /^[AP][0-9]{9}[A-Z]$/.test(sale.buyerPin) ? { buyerPin: sale.buyerPin } : {}),   // A607
       },
     };
 

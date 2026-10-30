@@ -25,6 +25,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { posApi, type BranchPeerShift, type ShiftMoneyView } from '../lib/posApi';
 import { methodLabel } from '@zaptill/core/paymentCatalogue';   // A465
+import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_CODE, DRAWER_COUNT_WARNING, cashInAddsText } from '@zaptill/core/posFeatures';   // A594
 import { methodName, cashLines, type MethodOption } from '@zaptill/core/shiftConfirm';
 import MethodDot from '../components/MethodDot';
 import { CreditAwaitingNotice } from '../components/CreditSalesTab';   // A545
@@ -687,16 +688,21 @@ function ShiftMoneyModal({ till, s, mode, label, money, currency, options, time,
     if (mode === 'expense') posApi.expense.categories().then(setCategories).catch(() => {});
   }, [mode]);
 
-  const save = async () => {
+  // A594: a cash in is confirmed ("This ADDS …"), and again when the till's figures say it looks like a drawer count.
+  const [step, setStep] = useState<'form' | 'adds' | 'count'>('form');
+  const save = async (countAck = false) => {
     if (!(Number(amount) > 0)) { setError('Enter an amount greater than zero.'); return; }
     if (mode === 'expense' && !desc.trim()) { setError('Description is required.'); return; }
+    if (mode === 'float' && !reason.trim()) { setError(CASH_MOVEMENT_REASON_REQUIRED); return; }
+    if (mode === 'float' && type === 'float_in' && step === 'form') { setError(''); setStep('adds'); return; }
     setBusy(true); setError('');
     try {
       const r = await posApi.branchClose.shiftMoney(mode === 'float'
-        ? { device_id: till.device_id, shift_id: s.id, kind: type, amount: Number(amount), reason: reason.trim() || undefined }
+        ? { device_id: till.device_id, shift_id: s.id, kind: type, amount: Number(amount), reason: reason.trim(), ...(countAck ? { count_ack: true } : {}) }
         : { device_id: till.device_id, shift_id: s.id, kind: 'expense', amount: Number(amount), description: desc.trim(),
             expense_category_id: catId || undefined, category_name: categories.find(c => c.id === catId)?.name, payment_method: method });
-      if (!r.ok) { setError(r.error ?? 'Could not record it.'); return; }
+      if (!r.ok && r.code === DRAWER_COUNT_CODE) { setStep('count'); return; }   // A594: nothing sent to the till yet
+      if (!r.ok) { setStep('form'); setError(r.error ?? 'Could not record it.'); return; }
       // A521: to a till that is off it waits for it — said so (r.message: "the till is not connected — this applies when it reconnects").
       onDone(r.direct ? 'Recorded on this terminal\'s drawer.' : r.queued_offline ? `Saved. ${r.message ?? ''}`.trim() : 'Sent — the POS records it within about 15 seconds.');
     } catch (e: any) { setError(e?.message ?? 'Could not record it.'); }
@@ -720,7 +726,7 @@ function ShiftMoneyModal({ till, s, mode, label, money, currency, options, time,
           {mode === 'float' ? (<>
             <div className="flex gap-2">
               {(['float_in', 'float_out'] as const).map(k => (
-                <button key={k} onClick={() => setType(k)} data-testid={`shift-money-${k}`}
+                <button key={k} onClick={() => { setType(k); setStep('form'); }} data-testid={`shift-money-${k}`}
                   className={`flex-1 px-3 py-2 rounded-lg text-sm border ${type === k ? 'bg-action-500 border-action-500 text-gray-950 font-semibold' : 'border-gray-600 text-gray-200'}`}>
                   {k === 'float_in' ? 'Cash in' : 'Cash out'}
                 </button>
@@ -728,12 +734,23 @@ function ShiftMoneyModal({ till, s, mode, label, money, currency, options, time,
             </div>
             <label className="block space-y-1">
               <span className="text-xs text-gray-400">Amount ({currency})</span>
-              <input className={inputCls} type="number" min="0" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <input className={inputCls} type="number" min="0" inputMode="decimal" value={amount} disabled={step !== 'form'} onChange={(e) => setAmount(e.target.value)} />
             </label>
             <label className="block space-y-1">
-              <span className="text-xs text-gray-400">Reason</span>
-              <input className={inputCls} value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder={type === 'float_in' ? 'e.g. Change top-up' : 'e.g. Banked'} />
+              <span className="text-xs text-gray-400">Reason (required)</span>
+              <input className={inputCls} value={reason} maxLength={200} disabled={step !== 'form'} onChange={(e) => setReason(e.target.value)} placeholder={type === 'float_in' ? 'e.g. Change top-up' : 'e.g. Banked'} />
             </label>
+            {/* A594: the cash in confirmations — Save below sends it once confirmed. */}
+            {step === 'adds' && (
+              <p className="text-sm text-amber-100 border border-amber-500/40 bg-amber-500/10 rounded-lg px-3 py-2" data-testid="shift-money-adds">
+                {cashInAddsText(money(Number(amount)))} Press Save again to add it.
+              </p>
+            )}
+            {step === 'count' && (
+              <p className="text-sm text-red-100 border border-red-500/40 bg-red-500/10 rounded-lg px-3 py-2" data-testid="shift-money-count">
+                {DRAWER_COUNT_WARNING} Press Save again only if it really is cash put into the drawer.
+              </p>
+            )}
           </>) : (<>
             <label className="block space-y-1">
               <span className="text-xs text-gray-400">Type</span>
@@ -761,7 +778,7 @@ function ShiftMoneyModal({ till, s, mode, label, money, currency, options, time,
             <p className="text-xs text-gray-400">{method === 'cash' ? 'Cash comes out of this drawer — its expected cash goes down.' : 'Not cash — the drawer is not affected.'}</p>
           </>)}
           <div className="flex gap-2 pt-1">
-            <button data-testid="shift-money-save" onClick={() => void save()} disabled={busy}
+            <button data-testid="shift-money-save" onClick={() => void save(step === 'count')} disabled={busy}
               className="px-4 py-2 rounded-lg bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold disabled:opacity-50">
               {busy ? 'Saving…' : 'Save'}
             </button>

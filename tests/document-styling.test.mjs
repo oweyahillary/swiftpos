@@ -12,7 +12,6 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pd = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/printDocument.ts'), 'utf8');
 const po = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/stock/PurchaseOrdersPage.tsx'), 'utf8');
-const rx = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx'), 'utf8');
 const tp = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/stock/StockTransfersPage.tsx'), 'utf8');
 
 let pass = 0, fail = 0;
@@ -34,10 +33,9 @@ ok('PO page delegates to purchaseOrderDocSpec + grnDocSpec', () => {
   assert.match(po, /printDocument\(purchaseOrderDocSpec\(/);
   assert.match(po, /printDocument\(grnDocSpec\(/);
 });
-ok('Manager receive delegates to transferDocSpec + grnDocSpec', () => {
-  assert.match(rx, /printDocument\(transferDocSpec\(/);
-  assert.match(rx, /printDocument\(grnDocSpec\(/);
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; 
+// "Manager receive delegates to transferDocSpec + grnDocSpec" pinned ManagerReceivingTab.tsx; the PO page and the
+// transfers page (both below/above) still pin the same delegation.
 ok('Owner transfers page delegates to transferDocSpec', () => {
   assert.match(tp, /printDocument\(transferDocSpec\(/);
 });

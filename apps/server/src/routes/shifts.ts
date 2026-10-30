@@ -12,12 +12,16 @@ import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
 import { webTillName } from '../lib/terminalLabel';
-import { foreignCash, foreignOrders, ownReversals, type CloudOrder } from '../lib/foreignCash';
+import { foreignCash, foreignOrders, ownReversals } from '../lib/foreignCash';
+import { readShift, shiftOrdersFor } from '../lib/shiftOrdersMemo';   // A591
+import { quietMemo } from '../lib/quietMemo';   // A593
+/** A593: GET /state's rows and names per (business, the ids asked) — lib/quietMemo.ts. */
+const stateMemo = quietMemo<{ rows: unknown[]; names: Record<string, string> }>('shifts.state');
 import { recorderId } from '../lib/expenseRecorder';
 import { cleanExpenseMethod, nonCashExpenses } from '@zaptill/core/expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from '@zaptill/core/confirmReasons';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
-import { MONEY_MOVEMENT_MANAGER_ONLY } from '@zaptill/core/posFeatures';   // A453
+import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, cashMovementNeedsApprover, looksLikeDrawerCount } from '@zaptill/core/posFeatures';   // A594
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, cashBreakdown, type MethodMap } from '../lib/shiftConfirm';
 import { confirmerRows, confirmerByPin, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from '../lib/confirmerLookup';
@@ -211,20 +215,32 @@ router.get('/state', async (req, res) => {
   const ids = String(req.query.ids ?? '').split(',').map((x) => x.trim())
     .filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
   if (!ids.length) { res.json([]); return; }
-  const { data, error } = await supabase.from('shifts')
-    // A433: and the confirmation — a shift confirmed on the web or another till is confirmed on the till that holds it.
-    .select('id, branch_id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes, confirmed_at, confirmed_by, confirmed_methods, expected_methods, confirm_reasons, confirm_self')
-    .eq('business_id', req.businessId).in('id', ids);
-  if (error) { sendError(res, error); return; }
-  // A582: a partner gets only the drawers of their branches (the ids came from the caller)
-  const rows = ((data ?? []) as Array<{ id: string; branch_id?: string | null; status: string; closed_by: string | null; [k: string]: unknown }>)
-    .filter((r) => !partnerOutside(req, r.branch_id));
-  const closerIds = [...new Set(rows.flatMap((r) => [r.closed_by, r.confirmed_by as string | null]).filter((x): x is string => !!x))];
-  const names = new Map<string, string>();
-  if (closerIds.length) {
-    const { data: us } = await supabase.from('users').select('id, name').in('id', closerIds);
-    for (const u of (us ?? []) as Array<{ id: string; name: string | null }>) names.set(u.id, u.name ?? '');
+  // A593: the drawers' rows and their closers' names, kept while nothing is written for the business (a close, a force
+  // close, a confirmation — a POS's or the web's — all come through this server; ≤ 5 minutes for a change made in SQL).
+  // The POS asks every 20 s and the answer is almost always the same. The partner filter below runs on every ask.
+  type StateRow = { id: string; branch_id?: string | null; status: string; closed_by: string | null; [k: string]: unknown };
+  const memoKey = ids.join(',');
+  let kept = stateMemo.get(req.businessId!, memoKey);
+  if (!kept) {
+    const mark = stateMemo.mark(req.businessId!);
+    const { data, error } = await supabase.from('shifts')
+      // A433: and the confirmation — a shift confirmed on the web or another till is confirmed on the till that holds it.
+      .select('id, branch_id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes, confirmed_at, confirmed_by, confirmed_methods, expected_methods, confirm_reasons, confirm_self')
+      .eq('business_id', req.businessId).in('id', ids);
+    if (error) { sendError(res, error); return; }
+    const all = (data ?? []) as StateRow[];
+    const everyCloser = [...new Set(all.flatMap((r) => [r.closed_by, r.confirmed_by as string | null]).filter((x): x is string => !!x))];
+    const nameOf: Record<string, string> = {};
+    if (everyCloser.length) {
+      const { data: us, error: uErr } = await supabase.from('users').select('id, name').in('id', everyCloser);
+      for (const u of (us ?? []) as Array<{ id: string; name: string | null }>) nameOf[u.id] = u.name ?? '';
+      if (uErr) { kept = { rows: all, names: nameOf }; }   // answered as before (names missing), never kept
+    }
+    if (!kept) { kept = { rows: all, names: nameOf }; stateMemo.set(req.businessId!, memoKey, kept, mark); }
   }
+  // A582: a partner gets only the drawers of their branches (the ids came from the caller)
+  const rows = (kept.rows as StateRow[]).filter((r) => !partnerOutside(req, r.branch_id));
+  const names = new Map<string, string>(Object.entries(kept.names));
   res.json(rows.map((r) => ({
     ...r,
     closed_by_name: r.closed_by ? names.get(r.closed_by) || null : null,
@@ -413,9 +429,9 @@ router.post('/:id/foreign-cash', async (req, res) => {
 // ──────────────────────────────────────────────────────────
 router.post('/:id/foreign-orders', async (req, res) => {
   const { id } = req.params;
-  const { data: shift } = await supabase
-    .from('shifts').select('id, device_id, terminal_code, branch_id, opened_by, cashier_id')
-    .eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  // A591: the drawer and its sales from lib/shiftOrdersMemo.ts — only what changed is read, only the sales the answer can
+  // hold are read in full, nothing at all while nothing was written (the till asks every ~20 s).
+  const shift = await readShift(req.businessId, id);
   if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
   if (notThisBranch(req, res, shift)) return;   // A494
 
@@ -431,23 +447,7 @@ router.post('/:id/foreign-orders', async (req, res) => {
   const ownIds = Array.isArray(req.body?.own_ids)
     ? req.body.own_ids.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20_000) : [];
   try {
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        id, order_number, order_type, status, subtotal, vat_amount, discount_amount, total, tip_amount,
-        ctl_amount, covers, customer_id, customer_name, customer_phone, idempotency_key, cashier_id,
-        shift_id, branch_id, created_at, void_reason, voided_at, voided_by, refunded_at,
-        refunded_amount, refund_reason, delivery_person, notes, delivery_fee, delivery_free,
-        order_items ( id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status, notes ),
-        payments ( id, method, amount, amount_tendered, change_given, reference, status, created_at )
-      `)
-      .eq('shift_id', id)
-      .eq('business_id', req.businessId)
-      .in('status', ['completed', 'voided'])
-      .order('created_at', { ascending: true })
-      .limit(2000);
-    if (error) throw error;
-    const rows = (data ?? []) as unknown as CloudOrder[];
+    const rows = await shiftOrdersFor(req.businessId, id, shift, ownIds);
     // 0.6.26 (A336 follow-up): also which of the till's OWN sales were voided or refunded here (on the web). An older till
     // ignores the field.
     res.json({ orders: foreignOrders(rows, ownIds), own_reversals: ownReversals(rows, ownIds) });
@@ -1062,11 +1062,58 @@ async function shiftCashSales(shiftId: string): Promise<number> {
   return cashSales;
 }
 
-export async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {   // A476: the owner emails show it too
+/** A594: expected cash and the parts it is made of — the web's Shift Reports shows them (drawer-figure viewers only). */
+export interface ExpectedCashParts {
+  opening_float: number; cash_sales: number; cash_in: number; cash_out: number; expenses: number; expected: number;
+}
+export async function computeExpectedCashParts(shiftId: string, openingFloat: number): Promise<ExpectedCashParts> {
   const cashSales = await shiftCashSales(shiftId);
   const { floatIn, floatOut } = await shiftFloats(shiftId);   // P1-4: throws on a failed read
   const expenses = await shiftExpenses(shiftId);
-  return Number(openingFloat) + cashSales + floatIn - floatOut - expenses;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    opening_float: r2(Number(openingFloat)), cash_sales: r2(cashSales), cash_in: r2(floatIn), cash_out: r2(floatOut),
+    expenses: r2(expenses), expected: Number(openingFloat) + cashSales + floatIn - floatOut - expenses,
+  };
+}
+
+export async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {   // A476: the owner emails show it too
+  return (await computeExpectedCashParts(shiftId, openingFloat)).expected;
+}
+
+/**
+ * A594: the cash in / cash out and cash expenses of a shift, each with when, why, who recorded it and who approved it —
+ * the lines behind expected cash (the incident: two "Cash in" entries with no reason and no approver).
+ */
+export async function shiftCashMovements(shiftId: string, floats?: Array<Record<string, any>> | null): Promise<Array<{
+  kind: 'cash_in' | 'cash_out' | 'expense'; amount: number; at: string | null; reason: string | null; by: string | null; approved_by: string | null;
+}>> {
+  const [fl, ex] = await Promise.all([
+    floats ? Promise.resolve({ data: floats, error: null })
+      : supabase.from('float_transactions').select('type, amount, reason, created_at, cashier_id, approved_by_name').eq('shift_id', shiftId),
+    supabase.from('expenses').select('description, amount, created_at, recorded_by, paid_by, approved_by_name')
+      .eq('shift_id', shiftId).eq('payment_method', 'cash'),
+  ]);
+  if (fl.error) throw new Error(`shift floats: ${fl.error.message}`);
+  if (ex.error) throw new Error(`shift expenses: ${ex.error.message}`);
+  const floatRows = (fl.data ?? []) as Array<Record<string, any>>;
+  const expRows = (ex.data ?? []) as Array<Record<string, any>>;
+  const ids = [...new Set([...floatRows.map((f) => f.cashier_id), ...expRows.map((e) => e.recorded_by ?? e.paid_by)].filter(Boolean))] as string[];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const { data: us } = await supabase.from('users').select('id, name').in('id', ids.slice(0, 500));
+    for (const u of (us ?? []) as Array<{ id: string; name: string }>) names.set(u.id, u.name);
+  }
+  const out = [
+    ...floatRows.filter((f) => f.type === 'float_in' || f.type === 'float_out').map((f) => ({
+      kind: (f.type === 'float_in' ? 'cash_in' : 'cash_out') as 'cash_in' | 'cash_out', amount: Number(f.amount) || 0,
+      at: f.created_at ?? null, reason: f.reason ?? null, by: f.cashier_id ? (names.get(f.cashier_id) ?? null) : null,
+      approved_by: f.approved_by_name ?? null })),
+    ...expRows.map((e) => ({
+      kind: 'expense' as const, amount: Number(e.amount) || 0, at: e.created_at ?? null, reason: e.description ?? null,
+      by: (e.recorded_by ?? e.paid_by) ? (names.get(e.recorded_by ?? e.paid_by) ?? null) : null, approved_by: e.approved_by_name ?? null })),
+  ];
+  return out.sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1173,36 +1220,34 @@ router.post('/:id/force-close', requirePermission('shifts.force_close'), async (
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/shifts/:id/float
 // Records a float_in or float_out transaction during an open shift.
-// Body: { type: 'float_in'|'float_out', amount, reason?, pin? }
+// Body: { type: 'float_in'|'float_out', amount, reason, pin?, count_ack? }   (A594: reason required)
 // 0.6.37 (A388): a pay-out (float_out) needs a manager — signed in, or `pin` (a manager's). A pay-in needs nobody.
 // ─────────────────────────────────────────────────────────────────────────────
-/** A453: with 'cashier_no_money_out' only a manager signed in records an expense or cash in / out at the POS (no PIN
- *  route for a cashier). Answers 403 and returns false when refused. */
-async function moneyMovementAllowed(req: Request, res: Response): Promise<boolean> {
-  // A490: shifts.cash_movements (lib/historyScope.ts — before migration 134 the switch still applies to non-confirmers).
-  if (mayMoveMoney(req as any, await businessPosFeatures(req.businessId))) return true;
-  res.status(403).json({ error: MONEY_MOVEMENT_MANAGER_ONLY, code: 'MANAGER_ONLY_MONEY' });
-  return false;
-}
-
+/**
+ * A594 (owner, 2026-10-26: "we need to turn off that option for cashiers by default unless allowed"): a cash in needs no
+ * approver only for someone who holds shifts.cash_movements ("Record cash in" — lib/historyScope.ts mayMoveMoney, the
+ * switch rule before migration 134); a cash out always needs one (A388). A453's refusal of everyone else is gone: a
+ * manager approves on the spot (signed in, or `pin`). Every one gives a reason; a cash in of what the drawer should hold
+ * (or its cash sales) answers 409 CASH_IN_LOOKS_LIKE_COUNT until the person confirms it (`count_ack: true`).
+ */
 router.post('/:id/float', async (req, res) => {
   const { id } = req.params;
-  const { type, amount, reason } = req.body;
+  const { type, amount } = req.body;
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 200) : '';
 
   if (!type || !amount || !['float_in', 'float_out'].includes(type)) {
     res.status(400).json({ error: 'type (float_in|float_out) and amount are required' });
     return;
   }
-  if (Number(amount) <= 0) {
+  if (!(Number(amount) > 0)) {
     res.status(400).json({ error: 'amount must be greater than zero' });
     return;
   }
-  if (!(await moneyMovementAllowed(req, res))) return;   // A453
 
   // Verify shift is open and belongs to this business
   const { data: shift, error: shiftErr } = await supabase
     .from('shifts')
-    .select('id, branch_id, status')
+    .select('id, branch_id, status, opening_float')
     .eq('id', id)
     .eq('business_id', req.businessId)
     .eq('status', 'open')
@@ -1213,9 +1258,22 @@ router.post('/:id/float', async (req, res) => {
     return;
   }
   if (notThisBranch(req, res, shift)) return;   // A494
+  if (!reason) { res.status(400).json({ error: CASH_MOVEMENT_REASON_REQUIRED, code: 'REASON_REQUIRED' }); return; }   // A594
+
+  // A594: a drawer count typed into Cash in — asked again before anything is written. The figures never go back (a
+  // cashier's close stays blind); a failed read only skips the warning.
+  if (type === 'float_in' && req.body?.count_ack !== true) {
+    try {
+      const parts = await computeExpectedCashParts(shift.id, Number((shift as { opening_float?: number }).opening_float) || 0);
+      if (looksLikeDrawerCount(Number(amount), { openingFloat: parts.opening_float, cashSales: parts.cash_sales, expected: parts.expected })) {
+        res.status(409).json({ error: DRAWER_COUNT_WARNING, code: DRAWER_COUNT_CODE });
+        return;
+      }
+    } catch { /* no figures — no warning */ }
+  }
 
   let approver: { id: string; name: string | null } | null = null;
-  if (type === 'float_out') {
+  if (cashMovementNeedsApprover(type, mayMoveMoney(req as any, await businessPosFeatures(req.businessId)))) {
     const a = await payoutApprover(req, shift.branch_id ?? null);   // A494: an approver of the drawer's branch
     if (a.ok === false) { res.status(a.status).json({ error: a.error, code: a.code }); return; }
     approver = a.approver;
@@ -1229,7 +1287,7 @@ router.post('/:id/float', async (req, res) => {
       cashier_id: req.userId,
       type,
       amount: Number(amount),
-      reason: reason ?? null,
+      reason,
       approved_by: approver?.id ?? null,         // 0.6.37 (A388)
       approved_by_name: approver?.name ?? null,
     })
@@ -1260,7 +1318,7 @@ router.post('/:id/expense', async (req, res) => {
   if (!description) { res.status(400).json({ error: 'Say what the money was for (description).' }); return; }
   if (description.length > 255) { res.status(400).json({ error: 'Description is too long (255 characters at most).' }); return; }
   if (!Number.isFinite(amount) || amount <= 0) { res.status(400).json({ error: 'Enter an amount greater than zero.' }); return; }
-  if (!(await moneyMovementAllowed(req, res))) return;   // A453
+  // A594: no refusal by key any more — every drawer expense is approved by a manager below (A388), key or not.
 
   const { data: shift, error: shiftErr } = await supabase
     .from('shifts')
@@ -1556,9 +1614,12 @@ router.get('/', async (req, res) => {
   // number in single figures, and only they can be force-closed.
   const openOnes = shifts.filter(s => s.status === 'open').slice(0, 50);
   const expectedById = new Map<string, number>();
+  const partsById = new Map<string, ExpectedCashParts>();   // A594: what it is made of
   await Promise.all(openOnes.map(async s => {
     try {
-      expectedById.set(s.id, await computeExpectedCash(s.id, Number(s.opening_float)));
+      const parts = await computeExpectedCashParts(s.id, Number(s.opening_float));
+      expectedById.set(s.id, parts.expected);
+      partsById.set(s.id, parts);
     } catch {
       /* leave absent — the UI shows "unavailable" rather than a wrong number */
     }
@@ -1588,6 +1649,8 @@ router.get('/', async (req, res) => {
     // A365: closed under the new rule (declared every method) and not yet confirmed by a manager.
     awaiting_confirmation: s.status !== 'open' && s.declared_methods != null && s.confirmed_at == null,
     expected_cash_live: expectedById.has(s.id) ? expectedById.get(s.id) : null,
+    // A594: the parts of expected cash — only to someone who may see drawer figures (never the cashier's own drawer view).
+    ...(figures && partsById.has(s.id) ? { expected_cash_parts: partsById.get(s.id) } : {}),
   }));
 
   res.json(enriched);
@@ -1697,9 +1760,22 @@ router.get('/:id', async (req, res) => {
     });
     return;
   }
+  // A594: expected cash, part by part, with every cash in / cash out and cash expense (when, why, who, approved by) —
+  // only to someone who may see drawer figures (seesDrawerFigures, A494). A failed read leaves it out (never a wrong sum).
+  let expectedBreakdown: (ExpectedCashParts & { movements: Awaited<ReturnType<typeof shiftCashMovements>> }) | null = null;
+  if (seesDrawerFigures(req)) {
+    try {
+      const [parts, movements] = await Promise.all([
+        computeExpectedCashParts(shift.id, Number(shift.opening_float) || 0),
+        shiftCashMovements(shift.id, (floatTxns ?? null) as Array<Record<string, any>> | null),
+      ]);
+      expectedBreakdown = { ...parts, movements };
+    } catch { /* left out */ }
+  }
   res.json({
     ...shift,
     cashier_name: cashier?.name ?? 'Unknown',
+    ...(expectedBreakdown ? { expected_breakdown: expectedBreakdown } : {}),   // A594
     float_transactions: floatTxns ?? [],
     order_count: (orders ?? []).length,
     total_revenue: totalRevenue,

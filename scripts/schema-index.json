@@ -22,6 +22,25 @@
     "pinned": "\"boolean\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "admin_notifications": {
+    "id": "\"uuid\" NOT NULL",
+    "category": "\"text\" NOT NULL",
+    "business_id": "\"uuid\"",
+    "alert_key": "\"text\"",
+    "title": "\"text\" NOT NULL",
+    "detail": "\"text\"",
+    "data": "\"jsonb\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "read_at": "\"timestamp with time zone\"",
+    "read_by": "\"text\"",
+    "digest_sent_at": "\"timestamp with time zone\""
+  },
+  "admin_settings": {
+    "key": "\"text\" NOT NULL",
+    "value": "\"jsonb\" NOT NULL",
+    "updated_by": "\"text\"",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "admin_users": {
     "id": "\"uuid\" NOT NULL",
     "email": "\"text\" NOT NULL",
@@ -49,6 +68,68 @@
     "status": "\"character varying\" NOT NULL",
     "created_by": "\"uuid\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "attendance_device_actions": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "device_id": "\"uuid\" NOT NULL",
+    "action": "\"text\" NOT NULL",
+    "person_id": "\"uuid\"",
+    "attendance_no": "\"integer\" NOT NULL",
+    "name": "\"text\"",
+    "overwrite": "\"boolean\" NOT NULL",
+    "status": "\"text\" NOT NULL",
+    "attempts": "\"integer\" NOT NULL",
+    "last_error": "\"text\"",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "done_at": "\"timestamp with time zone\""
+  },
+  "attendance_device_users": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "device_id": "\"uuid\" NOT NULL",
+    "device_user_id": "\"text\" NOT NULL",
+    "device_uid": "\"integer\"",
+    "name": "\"text\"",
+    "privilege": "\"integer\" NOT NULL",
+    "seen_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "attendance_devices": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "ip": "\"text\" NOT NULL",
+    "port": "\"integer\" NOT NULL",
+    "comm_key": "\"integer\" NOT NULL",
+    "serial": "\"text\"",
+    "model": "\"text\"",
+    "firmware": "\"text\"",
+    "last_pull_at": "\"timestamp with time zone\"",
+    "last_error": "\"text\"",
+    "last_error_at": "\"timestamp with time zone\"",
+    "clock_drift_s": "\"integer\"",
+    "users_on_device": "\"integer\"",
+    "punches_on_device": "\"integer\"",
+    "removed_at": "\"timestamp with time zone\"",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "attendance_people": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "user_id": "\"uuid\"",
+    "name": "\"text\" NOT NULL",
+    "attendance_no": "\"integer\" NOT NULL",
+    "active": "\"boolean\" NOT NULL",
+    "deactivated_at": "\"timestamp with time zone\"",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
   "attribute_groups": {
     "id": "\"uuid\" NOT NULL",
@@ -250,11 +331,25 @@
   "clock_events": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
-    "staff_id": "\"uuid\" NOT NULL",
+    "staff_id": "\"uuid\"",
     "branch_id": "\"uuid\"",
     "event_type": "\"text\" NOT NULL",
     "recorded_at": "\"timestamp with time zone\" NOT NULL",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "source": "\"text\" NOT NULL",
+    "person_id": "\"uuid\"",
+    "device_id": "\"uuid\"",
+    "device_serial": "\"text\"",
+    "device_user_id": "\"text\"",
+    "attendance_no": "\"integer\"",
+    "raw_status": "\"integer\"",
+    "raw_punch": "\"integer\"",
+    "reason": "\"text\"",
+    "created_by": "\"uuid\"",
+    "corrects_id": "\"uuid\"",
+    "voided_at": "\"timestamp with time zone\"",
+    "voided_by": "\"uuid\"",
+    "void_reason": "\"text\""
   },
   "cloud_payments": {
     "id": "\"uuid\" NOT NULL",
@@ -333,6 +428,16 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "customer_branch_credit_limits": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "customer_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "credit_limit": "\"numeric\" NOT NULL",
+    "set_by": "\"uuid\"",
+    "set_by_name": "\"text\"",
+    "set_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "customer_credit_transactions": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -362,7 +467,11 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "credit_limit": "\"numeric\" NOT NULL",
-    "credit_balance": "\"numeric\" NOT NULL"
+    "credit_balance": "\"numeric\" NOT NULL",
+    "kra_pin": "\"text\"",
+    "credit_limit_locked": "\"boolean\" NOT NULL",
+    "credit_limit_locked_by": "\"uuid\"",
+    "credit_limit_locked_at": "\"timestamp with time zone\""
   },
   "day_close_instructions": {
     "id": "\"uuid\" NOT NULL",
@@ -737,6 +846,23 @@
     "recorded_by_name": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "mpesa_stk_requests": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "device_id": "\"text\"",
+    "requested_by": "\"uuid\"",
+    "client_ref": "\"text\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "mpesa_phone": "\"text\" NOT NULL",
+    "mpesa_checkout_id": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "reference": "\"text\"",
+    "paid_amount": "\"numeric\"",
+    "mpesa_result_desc": "\"text\"",
+    "mpesa_requested_at": "\"timestamp with time zone\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "notifications": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -905,7 +1031,8 @@
     "delivery_fee": "\"numeric\" NOT NULL",
     "delivery_free": "\"boolean\" NOT NULL",
     "offer_discount": "\"numeric\" NOT NULL",
-    "offers": "\"jsonb\""
+    "offers": "\"jsonb\"",
+    "buyer_kra_pin": "\"text\""
   },
   "parking_sessions": {
     "id": "\"uuid\" NOT NULL",

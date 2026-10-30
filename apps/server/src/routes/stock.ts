@@ -203,7 +203,8 @@ const costSent = (v: unknown): boolean => v !== undefined && v !== null && v !==
 router.post('/ingredients', requirePermission('ingredients.manage'), async (req, res) => {
   const { name, category, unit, unit_cost, notes, is_packaging } = req.body;
   // A494: an ingredient's cost is menu.costs, as a product's cost price is (routes/products.ts).
-  if (costSent(unit_cost) && !can(req, 'menu.costs')) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs' }); return; }
+  // A595: setting a cost is changing it — menu.costs_edit (a part of menu.costs).
+  if (costSent(unit_cost) && !can(req, 'menu.costs_edit')) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs_edit' }); return; }
   if (!name?.trim()) { res.status(400).json({ error: 'name is required' }); return; }
   if (!unit?.trim()) { res.status(400).json({ error: 'unit is required' }); return; }
 
@@ -255,7 +256,7 @@ router.post('/ingredients/bulk', requirePermission('ingredients.manage'), async 
   if (!(await guardBranch(req, res, branch_id))) return;   // A494: the owner's branch must be this business's too
   const createdBy = req.isOwner ? null : req.userId ?? null;
   // A494: the cost column is applied only for menu.costs (as the product import) — otherwise left as it is.
-  const mayCost = can(req, 'menu.costs');
+  const mayCost = can(req, 'menu.costs_edit');   // A595: the cost column changes costs
   const results = { created: 0, updated: 0, stocked: 0, errors: [] as { row: number; error: string }[] };
 
   for (let i = 0; i < rows.length; i++) {
@@ -336,13 +337,13 @@ router.patch('/ingredients/:id', requirePermission('ingredients.manage'), async 
   if (is_packaging !== undefined)  updates.is_packaging  = !!is_packaging;
 
   // A494: changing the cost is menu.costs. A form that never showed the cost sends it empty — ignored, not a change.
-  if (updates.unit_cost !== undefined && !can(req, 'menu.costs')) {
+  if (updates.unit_cost !== undefined && !can(req, 'menu.costs_edit')) {   // A595: changing it is menu.costs_edit
     if (costSent(unit_cost)) {
       const { data: cur } = await supabase.from('ingredients').select('unit_cost').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
       if (!cur) { res.status(404).json({ error: 'Ingredient not found' }); return; }
       const was = (cur as { unit_cost: unknown }).unit_cost;
       if (was === null || was === undefined || Number(was) !== Number(unit_cost)) {
-        res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs' }); return;
+        res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs_edit' }); return;
       }
     }
     delete updates.unit_cost;   // empty, or the same value: nothing changes
@@ -419,7 +420,9 @@ router.post('/ingredients/:id/adjust', requirePermission('inventory.adjust'), as
 
 // Set the per-branch reorder level for an ingredient (owner-only). Upserts the
 // (ingredient, branch) row; current_stock is preserved on update.
-router.patch('/ingredients/:id/reorder', requirePermission('inventory.adjust'), async (req, res) => {
+// A595: reorder levels are their own part (inventory.reorder, of inventory.adjust and inventory.receive). An ingredient's
+// level was inventory.adjust's alone, so it still needs that too — a storekeeper (receiving) gains nothing.
+router.patch('/ingredients/:id/reorder', requirePermission('inventory.reorder'), requirePermission('inventory.adjust'), async (req, res) => {
   const { branch_id, reorder_level } = req.body as { branch_id: string; reorder_level: number };
   if (!branch_id) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
@@ -472,7 +475,9 @@ router.get('/suppliers', requirePermission('inventory.receive'), async (req, res
   res.json(data ?? []);
 });
 
-router.post('/suppliers', requirePermission('inventory.receive'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F9): adding, changing and removing suppliers is its own part of inventory.receive
+// (suppliers.manage — migration 176 gave it to every holder); seeing them stays with receiving.
+router.post('/suppliers', requirePermission('suppliers.manage'), async (req, res) => {
   const { name, contact_name, email, phone, address, notes } = req.body;
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
   const { data, error } = await supabase.from('suppliers')
@@ -482,7 +487,7 @@ router.post('/suppliers', requirePermission('inventory.receive'), async (req, re
   res.status(201).json(data);
 });
 
-router.patch('/suppliers/:id', requirePermission('inventory.receive'), async (req, res) => {
+router.patch('/suppliers/:id', requirePermission('suppliers.manage'), async (req, res) => {   // A595
   const { name, contact_name, email, phone, address, notes, status } = req.body;
   const { data, error } = await supabase.from('suppliers')
     .update({ name, contact_name, email, phone, address, notes, status, updated_at: new Date().toISOString() })
@@ -492,7 +497,7 @@ router.patch('/suppliers/:id', requirePermission('inventory.receive'), async (re
 });
 
 // Already a soft delete (flips status to 'inactive', no row removed).
-router.delete('/suppliers/:id', requirePermission('inventory.receive'), async (req, res) => {
+router.delete('/suppliers/:id', requirePermission('suppliers.manage'), async (req, res) => {   // A595
   const { error } = await supabase.from('suppliers')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('business_id', req.businessId);
@@ -541,7 +546,9 @@ router.get('/purchase-orders/:id', requirePermission('inventory.receive'), async
   res.json({ ...data, total_amount });
 });
 
-router.post('/purchase-orders', requirePermission('inventory.receive'), async (req, res) => {
+// A595 (F9): raising, changing and cancelling purchase orders is its own part of inventory.receive (inventory.order);
+// reading them stays with receiving.
+router.post('/purchase-orders', requirePermission('inventory.order'), async (req, res) => {
   const { branch_id, supplier_id, order_date, expected_date, notes, items = [] } = req.body;
   if (!branch_id)    { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
@@ -582,7 +589,7 @@ router.post('/purchase-orders', requirePermission('inventory.receive'), async (r
   res.status(201).json({ ...po, purchase_order_items: lineItems });
 });
 
-router.patch('/purchase-orders/:id', requirePermission('inventory.receive'), async (req, res) => {
+router.patch('/purchase-orders/:id', requirePermission('inventory.order'), async (req, res) => {   // A595
   const { status, notes, expected_date, supplier_id } = req.body;
   const { data: current } = await supabase.from('purchase_orders')
     .select('status, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).single();
@@ -599,7 +606,7 @@ router.patch('/purchase-orders/:id', requirePermission('inventory.receive'), asy
   res.json(data);
 });
 
-router.post('/purchase-orders/:id/cancel', requirePermission('inventory.receive'), async (req, res) => {
+router.post('/purchase-orders/:id/cancel', requirePermission('inventory.order'), async (req, res) => {   // A595
   const { reason } = req.body as { reason?: string };
   const { data: po } = await supabase.from('purchase_orders')
     .select('status, notes, po_number, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).single();
@@ -619,7 +626,7 @@ router.post('/purchase-orders/:id/cancel', requirePermission('inventory.receive'
 
 // Soft delete (audit H13 — this used to be a real DELETE of a procurement
 // record). Still draft-only, same as before; just preserved instead of purged.
-router.delete('/purchase-orders/:id', requirePermission('inventory.receive'), async (req, res) => {
+router.delete('/purchase-orders/:id', requirePermission('inventory.order'), async (req, res) => {   // A595
   const { data: po } = await supabase.from('purchase_orders')
     .select('status, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).single();
   if (!po)                   { res.status(404).json({ error: 'Purchase order not found' }); return; }

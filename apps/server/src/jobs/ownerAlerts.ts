@@ -19,6 +19,9 @@
  * One business failing (a read, a provider refusing a message) never stops the others; a failed send is not stamped,
  * so it is tried again on the next run.
  */
+import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
+import { writeGen, memoEnabled } from '../lib/writeActivity';   // A591
+import { traffic } from '../lib/trafficStats';   // A591
 import cron from 'node-cron';
 // A478: formatInTimeZone CONVERTS to EAT; date-fns-tz's format(…, { timeZone }) only labels the machine's local time — on
 // Render (UTC) the 21:00 / 09:00 / Monday 08:00 / 1st-07:00 sends ran three hours late. A Nairobi-time PC hid it.
@@ -26,10 +29,11 @@ import { formatInTimeZone } from 'date-fns-tz';
 const tzFormat = (d: Date, fmt: string, o: { timeZone: string }) => formatInTimeZone(d, o.timeZone, fmt);
 import { supabase } from '../lib/supabase';
 import { sendEmail } from '../lib/mailer';
-import { standingFor } from '../lib/cloudPlan';   // A581
-import { getDayCutoff } from '../lib/dayCutoff';
+import { standingFor, primeStandings } from '../lib/cloudPlan';   // A581 (A593: primeStandings)
+import { getDayCutoff, primeDayCutoffs } from '../lib/dayCutoff';   // A593: primeDayCutoffs
+import { pageAll } from '../lib/pgQuery';   // A593
 import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
-import { readReportSchedule, gatherRecipients } from './dailySummary';
+import { readReportSchedule, gatherRecipients, readSettingsFor, parseReportSchedule, type SettingsRows } from './dailySummary';   // A593: the tick's reads
 import {
   readAlerts, decideBranchSlot, selectOpenTills, decideNotSyncing, tillTrading, bigReversals, bigVariances,
   readAlertState, pruneSent, decideWeeklySend, decideSecurityAlert, type AlertState,
@@ -55,15 +59,17 @@ type Biz = { id: string; name: string; owner_id: string; currency: string | null
 
 export function startOwnerAlertsJob(): void {
   const schedule = process.env.OWNER_ALERTS_CRON ?? '*/15 * * * *';
-  cron.schedule(schedule, async () => {
+  cron.schedule(schedule, meterJob('ownerAlerts', async () => {
     try { await runOwnerAlertsTick(new Date()); } catch (err: any) { console.error('[ownerAlerts] Job failed:', err?.message); }
-  }, { timezone: 'UTC' });
+  }, { quietWrites: true }), { timezone: 'UTC' });   // A591: its writes are its own stamps (business_settings) and emails
   console.log(`[ownerAlerts] Scheduled: ${schedule} (branch tills, alerts, weekly summary)`);
 }
 
 // ── settings rows ────────────────────────────────────────────────────────────
 
 async function readSetting(businessId: string, key: string): Promise<unknown> {
+  const t = tickSetting(businessId, key);   // A593
+  if (t) return t.row?.value ?? null;
   const { data, error } = await supabase.from('business_settings').select('value')
     .eq('business_id', businessId).eq('key', key).maybeSingle();
   if (error) throw new Error(error.message);
@@ -71,8 +77,12 @@ async function readSetting(businessId: string, key: string): Promise<unknown> {
 }
 
 async function writeSetting(businessId: string, key: string, value: unknown): Promise<void> {
-  const { data: existing, error: rErr } = await supabase.from('business_settings').select('id')
+  // A593: the tick already read this row (or knows there is none) — no second read to find it.
+  const t = tickSetting(businessId, key);
+  tick?.dirty.add(`${businessId}|${key}`);
+  const found = t ? { data: t.row ? { id: t.row.id } : null, error: null } : await supabase.from('business_settings').select('id')
     .eq('business_id', businessId).eq('key', key).maybeSingle();
+  const { data: existing, error: rErr } = found;
   if (rErr) throw new Error(rErr.message);
   const { error } = existing
     ? await supabase.from('business_settings').update({ value, updated_at: new Date().toISOString() }).eq('id', existing.id)
@@ -87,9 +97,12 @@ const asText = (v: unknown): string | null => (v === null || v === undefined ? n
 export async function runOwnerAlertsTick(now: Date = new Date()): Promise<void> {
   const { data: businesses, error } = await supabase.from('businesses').select('id, name, owner_id, currency');
   if (error) { console.error('[ownerAlerts] businesses:', error.message); return; }
+  try { await startTick((businesses ?? []) as Biz[], now); } catch { tick = null; }   // A593
+  try {
   for (const biz of (businesses ?? []) as Biz[]) {
     let schedule: any;
-    try { schedule = await readReportSchedule(biz.id); } catch (e: any) { console.error(`[ownerAlerts] ${biz.name}: schedule:`, e?.message); continue; }
+    const pre = tickSetting(biz.id, 'report_schedule');   // A593
+    try { schedule = pre ? parseReportSchedule(pre.row) : await readReportSchedule(biz.id); } catch (e: any) { console.error(`[ownerAlerts] ${biz.name}: schedule:`, e?.message); continue; }
     for (const [name, step] of [
       ['branch points of sale', () => branchOpenTillsForBusiness(biz, schedule, now)],
       ['alerts', () => alertsForBusiness(biz, schedule, now)],
@@ -98,7 +111,139 @@ export async function runOwnerAlertsTick(now: Date = new Date()): Promise<void> 
       try { await step(); } catch (e: any) { console.error(`[ownerAlerts] ${name} failed for ${biz.name} (${biz.id}):`, e?.message); }
     }
   }
+  } finally { tick = null; }
 }
+
+// ── A593: one tick's reads for every business at once ───────────────────────────────────────────────────────────────
+/**
+ * Owner, 2026-10-26 (the System page: job:ownerAlerts 375 Supabase calls in 5 runs — "logs are full already"): every run
+ * read, per business, its schedule, its alert state, its branches (twice), its branch stamps, its cut-off and its tills
+ * and open drawers. Now the tick reads them for EVERY business at once — the settings rows in one read, the branches in
+ * one, the cut-offs in one, the tills and the open drawers in one each when a business needs them — and each business is
+ * decided from those rows exactly as from its own reads. A read that fails, or a key held twice (the single read refuses
+ * it): that business reads its own, as before. A business's steps called on their own (the tests) read as before.
+ */
+interface Tick {
+  ids: string[];
+  settings: SettingsRows | null;
+  keys: Set<string>;
+  dirty: Set<string>;
+  branches: Map<string, Map<string, string>> | null;
+  devices?: Promise<Map<string, any[]> | null>;
+  open?: Promise<Map<string, string[]> | null>;
+  rows?: Map<string, Promise<Map<string, any[]> | null>>;
+}
+let tick: Tick | null = null;
+
+/** The row the tick read for (business, key): { row } (null: none), or undefined — read it as before. */
+function tickSetting(businessId: string, key: string): { row: { id: string; value: unknown } | null } | undefined {
+  if (!tick?.settings || !tick.keys.has(key) || tick.dirty.has(`${businessId}|${key}`) || !tick.ids.includes(businessId)) return undefined;
+  const rows = tick.settings.get(`${businessId}|${key}`) ?? [];
+  return rows.length > 1 ? undefined : { row: rows[0] ?? null };
+}
+
+/** Every row of `build(chunk)` for the ids, 150 a read, page by page. */
+async function pagedIn<T>(ids: string[], build: (chunk: string[]) => any): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += 150) {
+    const chunk = ids.slice(i, i + 150);
+    out.push(...await pageAll<T>(() => build(chunk), 1000));
+  }
+  return out;
+}
+
+async function startTick(businesses: Biz[], now: Date): Promise<void> {
+  const ids = businesses.map((b) => b.id);
+  const t: Tick = { ids, settings: null, keys: new Set(), dirty: new Set(), branches: null };
+  try {
+    const rows = await pagedIn<{ id: string; business_id: string; name: string | null }>(ids, (c) => supabase.from('branches').select('id, business_id, name').in('business_id', c));
+    const by = new Map<string, Map<string, string>>();
+    for (const r of rows) {
+      const m = by.get(r.business_id) ?? new Map<string, string>();
+      if (m.size < 1000) m.set(r.id, r.name ?? 'Branch');   // as branchNames' limit(1000)
+      by.set(r.business_id, m);
+    }
+    t.branches = by;
+  } catch { t.branches = null; }
+  const keys = ['report_schedule', ALERT_STATE_KEY, WEEKLY_KEY,
+    ...(t.branches ? [...t.branches.values()].flatMap((m) => [...m.keys()].map((id) => `${BRANCH_TILLS_KEY}${id}`)) : [])];
+  t.settings = await readSettingsFor(ids, keys);
+  if (t.settings) for (const k of keys) t.keys.add(k);
+  await primeDayCutoffs(ids.map((id) => ({ businessId: id })), now.getTime());
+  await primeStandings(ids).catch(() => { /* each reads its own */ });   // the plan standing: one read set for all
+  tick = t;
+}
+
+/** The tick's tills of every business (loadDevices' rows), read once when the first business needs them. */
+function tickDevices(): Promise<Map<string, any[]> | null> | null {
+  if (!tick) return null;
+  return (tick.devices ??= (async () => {
+    const base = 'id, business_id, device_id, branch_id, device_label, terminal_code, status, retired_at, last_seen_at, last_sync_at, app_version';
+    try {
+      const rows = await pagedIn<any>(tick!.ids, (c) => supabase.from('user_devices')
+        .select(`${base}, session_lost_at, session_lost_reason, security_alert_at, security_alert_reason`).in('business_id', c).eq('status', 'approved').is('retired_at', null));
+      const by = new Map<string, any[]>();
+      for (const r of rows) { const list = by.get(r.business_id) ?? []; if (list.length < 500) { const { business_id: _b, ...d } = r; list.push(d); } by.set(r.business_id, list); }
+      return by;
+    } catch { return null; }
+  })());
+}
+/** The tick's open drawers' branches of every business, read once when the first business needs them. */
+function tickOpen(): Promise<Map<string, string[]> | null> | null {
+  if (!tick) return null;
+  return (tick.open ??= (async () => {
+    try {
+      const rows = await pagedIn<{ business_id: string; branch_id: string | null }>(tick!.ids, (c) => supabase.from('shifts').select('id, business_id, branch_id').in('business_id', c).eq('status', 'open'));
+      const by = new Map<string, string[]>();
+      for (const r of rows) { const list = by.get(r.business_id) ?? []; if (list.length < 500 && r.branch_id) list.push(r.branch_id); by.set(r.business_id, list); }
+      return by;
+    } catch { return null; }
+  })());
+}
+/** A593: ORDER BY col ASC LIMIT n, as the single read did (ties by id, so the cut is stable). */
+function firstByTime(rows: any[], col: string, n: number): any[] {
+  return [...rows].sort((a, b) => (Date.parse(a[col]) - Date.parse(b[col])) || String(a.id).localeCompare(String(b.id))).slice(0, n);
+}
+/**
+ * A593: the tick's voids and refunds (orders voided or refunded since) or confirmed drawers (shifts confirmed since) of
+ * EVERY business, read once when the first business needs them; each business then filters its own by its own amount.
+ * 50,000 rows or a failed read: null — each business reads its own, as before.
+ */
+function tickRows(kind: 'reversals' | 'confirmed', since: string): Promise<Map<string, any[]> | null> | null {
+  if (!tick) return null;
+  const t = tick;
+  const key = `${kind}|${since}`;
+  t.rows ??= new Map();
+  if (!t.rows.has(key)) t.rows.set(key, (async () => {
+    try {
+      const rows = kind === 'reversals'
+        ? [...await pagedIn<any>(t.ids, (c) => supabase.from('orders').select('id, business_id, status, order_number, total, void_reason, cashier_id, voided_by, authorized_by, branch_id, voided_at, created_at, refunded_amount, refund_reason, refunded_by, refund_authorized_by, refunded_at')
+            .in('business_id', c).eq('status', 'voided').gte('voided_at', since)),
+           ...await pagedIn<any>(t.ids, (c) => supabase.from('orders').select('id, business_id, status, order_number, total, void_reason, cashier_id, voided_by, authorized_by, branch_id, voided_at, created_at, refunded_amount, refund_reason, refunded_by, refund_authorized_by, refunded_at')
+            .in('business_id', c).not('refunded_at', 'is', null).gte('refunded_at', since))]
+        : await pagedIn<any>(t.ids, (c) => supabase.from('shifts').select('id, business_id, branch_id, cashier_id, device_id, terminal_code, expected_methods, confirmed_methods, cash_variance, confirm_reasons, confirmed_at, confirmed_by')
+            .in('business_id', c).gte('confirmed_at', since));
+      if (rows.length >= 50_000) return null;
+      const by = new Map<string, any[]>();
+      const seen = new Set<string>();
+      for (const r of rows) {
+        const k = `${r.business_id}|${r.id}`;
+        if (kind === 'reversals' && seen.has(k)) continue;   // voided AND refunded: one row (each list filters its own)
+        seen.add(k);
+        const { business_id: b, ...row } = r;
+        by.set(b, [...(by.get(b) ?? []), row]);
+      }
+      return by;
+    } catch { return null; }
+  })());
+  return t.rows.get(key)!;
+}
+
+async function branchesOf(businessId: string): Promise<Map<string, string>> {
+  if (tick?.branches && tick.ids.includes(businessId)) return new Map(tick.branches.get(businessId) ?? []);
+  return branchNames(businessId);
+}
+
 
 // ── 1. branch managers: tills not closed (always) ────────────────────────────
 
@@ -108,13 +253,18 @@ export async function branchOpenTillsForBusiness(biz: Biz, schedule: { send_time
   // cheap exit: no slot can be due before the earlier of 09:00 and send_time
   if (!decideBranchSlot(nowDate, nowHHMM, schedule.send_time, null)) return 0;
 
-  const branches = await branchNames(biz.id);
+  const branches = await branchesOf(biz.id);   // A593: the tick's read when it has one
   if (!branches.size) return 0;
   const keys = [...branches.keys()].map((id) => `${BRANCH_TILLS_KEY}${id}`);
-  const { data: stamps, error } = await supabase.from('business_settings').select('key, value')
-    .eq('business_id', biz.id).in('key', keys);
-  if (error) throw new Error(error.message);
-  const last = new Map(((stamps ?? []) as any[]).map((r) => [r.key, asText(r.value)]));
+  let last: Map<string, string | null>;
+  if (keys.every((k) => tick?.settings && tick.keys.has(k) && !tick.dirty.has(`${biz.id}|${k}`)) && tick?.ids.includes(biz.id)) {
+    last = new Map(keys.flatMap((k) => (tick!.settings!.get(`${biz.id}|${k}`) ?? []).map((r) => [k, asText(r.value)] as [string, string | null])));
+  } else {
+    const { data: stamps, error } = await supabase.from('business_settings').select('key, value')
+      .eq('business_id', biz.id).in('key', keys);
+    if (error) throw new Error(error.message);
+    last = new Map(((stamps ?? []) as any[]).map((r) => [r.key, asText(r.value)]));
+  }
 
   const cutoff = await getDayCutoff(biz.id);
   const reportDate = businessDateEAT(now, cutoff);
@@ -163,20 +313,52 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
   const nowIso = now.toISOString();
   let ownerTo: string[] | null = null;
   const owner = async () => (ownerTo ??= await ownerAndExtras(biz, schedule));
-  const branches = await branchNames(biz.id);
+  const branches = await branchesOf(biz.id);   // A593
   let sent = 0;
+  // A591: the big-void and variance checks read 48 h of voids, refunds and confirmed drawers every 15 minutes. While
+  // nothing was written for the business (lib/writeActivity.ts) since a read that left nothing to tell, the same read
+  // finds the same nothing: skipped. Read again at least every 6 h. The not-syncing check (time decides it) always runs.
+  const gen = writeGen(biz.id);
+  const q = ownerQuiet.get(biz.id);
+  const unchanged = memoEnabled() && !seeding && !!q && q.gen === gen;
+  const skipVoids = unchanged && q!.voidsAt > 0 && now.getTime() - q!.voidsAt < OWNER_QUIET_MAX_MS;
+  const skipVariance = unchanged && q!.varianceAt > 0 && now.getTime() - q!.varianceAt < OWNER_QUIET_MAX_MS;
+  let voidsAt = skipVoids ? q!.voidsAt : 0;
+  let devicesSeen: OwnerQuiet['devices'] = null;
+  let varianceAt = skipVariance ? q!.varianceAt : 0;
 
   if (s.alert_not_syncing) {
-    const devices = await loadDevices(biz.id);
-    const { data: open, error } = await supabase.from('shifts').select('branch_id')
-      .eq('business_id', biz.id).eq('status', 'open').limit(500);
-    if (error) throw new Error(error.message);
-    const trading = new Set(((open ?? []) as any[]).map((r) => r.branch_id).filter(Boolean) as string[]);
+    // A591: the tills' rows and the open drawers change only by a write (a till's sync or heartbeat comes through this
+    // server); the decision is the clock's. While nothing was written since they were read (at most 6 h), the same rows
+    // are decided again at this run's time — no read. A till left on sends its heartbeat every 15 minutes, so a trading
+    // business is read every run, as before; a closed shop overnight is not.
+    const seen = unchanged && q!.devices && now.getTime() - q!.devices.at < OWNER_QUIET_MAX_MS ? q!.devices : null;
+    let devices: Awaited<ReturnType<typeof loadDevices>>;
+    let openBranches: string[];
+    if (seen) { devices = seen.rows; openBranches = seen.open; traffic.count('owner_alerts.devices_from_memory'); }
+    else {
+      // A593: the tick's one read of every business's tills and open drawers, when it has them.
+      const allDevices = await tickDevices();
+      const allOpen = await tickOpen();
+      devices = allDevices ? (allDevices.get(biz.id) ?? []) as Awaited<ReturnType<typeof loadDevices>> : await loadDevices(biz.id);
+      if (allOpen) openBranches = allOpen.get(biz.id) ?? [];
+      else {
+        const { data: open, error } = await supabase.from('shifts').select('branch_id')
+          .eq('business_id', biz.id).eq('status', 'open').limit(500);
+        if (error) throw new Error(error.message);
+        openBranches = ((open ?? []) as any[]).map((r) => r.branch_id).filter(Boolean) as string[];
+      }
+    }
+    const trading = new Set(openBranches);
     let managers: Awaited<ReturnType<typeof branchManagerEmails>> | null = null;
     const next: Record<string, string> = {};
     // A581: the cloud plan lapsed past its grace — the cloud refuses the tills' sync on purpose; the owner hears it from the
     // plan's reminders, never as "till not syncing".
-    const planLapsed = (await standingFor(biz.id).catch(() => null))?.syncRefused === true;
+    // (not remembered: a grace period runs out by the clock, with no write)
+    // A601: and a desktop-only business from the cut-off — its POSs send no backup on purpose.
+    const planStanding = await standingFor(biz.id).catch(() => null);
+    const planLapsed = planStanding?.syncRefused === true || planStanding?.desktopOnly?.backupOff === true;
+    devicesSeen = seen ?? { rows: devices, open: openBranches, at: now.getTime() };
     for (const d of devices) {
       // A477: the till's sign-in used from another computer — to the owner, once per incident.
       const sec = decideSecurityAlert(d, state.sent, now);
@@ -223,8 +405,14 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
     state.not_syncing = next;
   }
 
-  if (s.alert_big_void) {
-    const [v, r] = await Promise.all([
+  if (s.alert_big_void && skipVoids) traffic.count('owner_alerts.voids_skipped');
+  if (s.alert_big_void && !skipVoids) {
+    // A593: the tick's one read of every business's voids and refunds since, when it has it (the same rows, the same order).
+    const all = await tickRows('reversals', since);
+    const [v, r] = all ? [
+      { data: firstByTime((all.get(biz.id) ?? []).filter((o) => o.status === 'voided' && o.voided_at && Date.parse(o.voided_at) >= Date.parse(since) && Number(o.total) >= s.big_void_amount), 'voided_at', 200), error: null },
+      { data: firstByTime((all.get(biz.id) ?? []).filter((o) => o.refunded_at && Date.parse(o.refunded_at) >= Date.parse(since) && Number(o.refunded_amount) >= s.big_void_amount), 'refunded_at', 200), error: null },
+    ] : await Promise.all([
       supabase.from('orders').select('id, order_number, total, void_reason, cashier_id, voided_by, authorized_by, branch_id, voided_at, created_at')
         .eq('business_id', biz.id).eq('status', 'voided').gte('voided_at', since).gte('total', s.big_void_amount)
         .order('voided_at', { ascending: true }).limit(200),
@@ -258,11 +446,14 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
         } else delivered = true;   // nobody to tell: do not pile them up
       }
       if (delivered) for (const x of fresh) state.sent[`${x.kind}:${x.id}`] = nowIso;
-    }
+      if (delivered) voidsAt = now.getTime();
+    } else voidsAt = now.getTime();
   }
 
-  if (s.alert_variance) {
-    const { data, error } = await supabase.from('shifts')
+  if (s.alert_variance && skipVariance) traffic.count('owner_alerts.variance_skipped');
+  if (s.alert_variance && !skipVariance) {
+    const allConfirmed = await tickRows('confirmed', since);   // A593: the tick's one read, when it has it
+    const { data, error } = allConfirmed ? { data: firstByTime(allConfirmed.get(biz.id) ?? [], 'confirmed_at', 500), error: null } : await supabase.from('shifts')
       .select('id, branch_id, cashier_id, device_id, terminal_code, expected_methods, confirmed_methods, cash_variance, confirm_reasons, confirmed_at, confirmed_by')
       .eq('business_id', biz.id).gte('confirmed_at', since).order('confirmed_at', { ascending: true }).limit(500);
     if (error) throw new Error(error.message);
@@ -284,14 +475,23 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
         } else delivered = true;
       }
       if (delivered) for (const x of fresh) state.sent[`shift:${x.id}`] = nowIso;
-    }
+      if (delivered) varianceAt = now.getTime();
+    } else varianceAt = now.getTime();
   }
 
   state.sent = pruneSent(state.sent, now);
   state.seeded = true;
   if (JSON.stringify(state) !== before) await writeSetting(biz.id, ALERT_STATE_KEY, state);
+  ownerQuiet.set(biz.id, { gen, voidsAt, varianceAt, devices: devicesSeen });
   return sent;
 }
+
+/** A591: per business, the write generation and when the void and variance checks last read and left nothing to tell. */
+interface OwnerQuiet { gen: string; voidsAt: number; varianceAt: number; devices: { rows: any[]; open: string[]; at: number } | null }
+const ownerQuiet = new Map<string, OwnerQuiet>();
+export const OWNER_QUIET_MAX_MS = 6 * 3_600_000;
+/** Test seam. */
+export function _resetOwnerQuiet(): void { ownerQuiet.clear(); }
 
 // ── 3. the weekly summary ────────────────────────────────────────────────────
 

@@ -69,12 +69,11 @@ await ok('a void: claimed once (only one wins), the stock goes back only if it l
   assert.match(r, /code: 'REASON_REQUIRED'/);
   assert.doesNotMatch(r, /from\('wastage_entries'\)\.delete\(\)/);
 });
-await ok('the screens: Stock › Wastage for the owner, Manager › Wastage (inventory.waste); clear test data counts it', () => {
+await ok('the screens: Stock › Wastage on the dashboard; clear test data counts it', () => {
   assert.match(read('apps/dashboard/src/App.tsx'), /<Route path="stock\/wastage"\s+element=\{<WastagePage \/>\} \/>/);
   assert.match(read('apps/dashboard/src/components/DashboardLayout.tsx'), /\{ to: '\/dashboard\/stock\/wastage',\s+label: 'Wastage'/);
-  const m = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
-  assert.match(m, /key: 'wastage',.*permission: 'inventory\.waste'/);
-  assert.match(m, /case 'wastage':\n\s+return <Wastage client=\{posApi\} branchId=\{session\.branchId\}/);
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; Manager › Wastage
+  // (ManagerDashboard.tsx) is gone; Stock › Wastage (route + nav, above) and the shared component (below) still hold.
   const c = read('apps/dashboard/src/components/Wastage.tsx');
   assert.match(c, /client\.get<Item\[\]>\(`\/api\/wastage\/items\?branch_id=\$\{branchId\}`\)/);
   assert.match(c, /report\.can_void && <button onClick=\{\(\) => voidEntry\(e\)\}/);

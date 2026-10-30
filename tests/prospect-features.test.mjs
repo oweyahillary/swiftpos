@@ -65,7 +65,7 @@ await ok('the switches, all off unless set; the standard ones always on (0.6.29;
   assert.equal(F.parsePosFeatures('not json').delivery_fee, false);
 });
 await ok('pos/init sends every switch (an older till ignores it)', () => {
-  assert.match(read('apps/server/src/routes/pos.ts'), /\n\s+posFeatures: await \(async \(\) => \{\s*const \{ data \} = await supabase\.from\('feature_flags'\)\.select\('key, enabled'\)\s*\.eq\('business_id', req\.businessId\)\.in\('key', \[\.\.\.POS_FEATURE_KEYS\]\);\s*return parsePosFeatures\(data \?\? \[\]\);/);
+  assert.match(read('apps/server/src/routes/pos.ts'), /const \{ data \} = await supabase\.from\('feature_flags'\)\.select\('key, enabled'\)\s*\.eq\('business_id', req\.businessId\)\.in\('key', \[\.\.\.POS_FEATURE_KEYS, ATTENDANCE_FLAG, 'etims_enabled'\]\);[\s\S]{0,200}posFeatures: parsePosFeatures\(rows\.filter\(\(r\) => r\.key !== ATTENDANCE_FLAG && r\.key !== 'etims_enabled'\)\)/);   // A599 / A607: the same read carries the attendance and eTIMS flags
 });
 await ok('the client cannot set a POS switch — only the admin portal (owner\'s decision)', () => {
   assert.match(read('apps/server/src/routes/flags.ts'), /if \(\(POS_FEATURE_KEYS as readonly string\[\]\)\.includes\(req\.params\.key\)\) \{\s*res\.status\(403\)/);
@@ -73,7 +73,7 @@ await ok('the client cannot set a POS switch — only the admin portal (owner\'s
   assert.match(ap, /\{POS_FEATURES\.map\(pf => \{/);
   // A491: the owner sets them now (A490, Settings › Business › POS options) — the admin portal still lists every switch
   // but shows its state read-only (was: `toggle(on, () => toggleFeature(pf.key, !on), pf.label)`).
-  assert.match(ap, /\{statePill\(on, pf\.label\)\}/);
+  assert.match(ap, /\{ownerValue\(on, pf\.label\)\}/);   // A604: a plain "On" / "Off" (was statePill)
   assert.doesNotMatch(ap, /toggleFeature\(pf\.key/);
 });
 

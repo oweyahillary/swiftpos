@@ -17,6 +17,7 @@ import CreditSalesToConfirm, { ledgerNote } from '../../components/CreditSalesTo
 import { usePermissions } from '../../context/PermissionsContext';   // A545
 import GiveCreditPicker from '../../components/GiveCreditPicker';   // A567
 import { useSetsLimits } from '../../hooks/useSetsLimits';   // A585, A587
+import { CreditSettingsPanel, CreditBranchPanel, useCreditSettings, type BranchCreditRow } from '../../components/CreditBranchPanels';   // A595 D4
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -35,6 +36,8 @@ export default function CreditAccountsPage() {
   const currency = useBusiness().business?.currency ?? 'KES';
   const perms = usePermissions();
   const mayCredit = perms.can('customers.credit');   // A545: confirm / dispute sales on account
+  // A595: recording a repayment and adjusting / writing off a balance are their own parts of customers.credit.
+  const mayRepay = perms.can('customers.credit_payment'), mayAdjust = perms.can('customers.credit_adjust');
   const { setsLimits, line: limitLine } = useSetsLimits();   // A585: the owner; A587: a partner at one of their branches
   const [rows, setRows] = useState<CreditCustomer[]>([]);
   const [search, setSearch] = useState('');
@@ -43,6 +46,10 @@ export default function CreditAccountsPage() {
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [giving, setGiving] = useState(false);   // A567
+  // A595 D4: the owner's ceiling, partners' switch and branch switches; the customer's owed / limit per branch and the lock.
+  const { settings: creditSettings, reload: reloadCreditSettings } = useCreditSettings();
+  const [branchRows, setBranchRows] = useState<BranchCreditRow[]>([]);
+  const [locked, setLocked] = useState(false);
 
   // form state for the detail drawer
   const [limit, setLimit] = useState('');
@@ -76,8 +83,9 @@ export default function CreditAccountsPage() {
     setSelected(c); setLimit(String(c.credit_limit)); setMsg(null);
     setPayAmount(''); setPayRef(''); setAdjAmount(''); setAdjNotes('');
     try {
-      const { customer, ledger } = await api.get<{ customer: CreditCustomer; ledger: LedgerRow[] }>(`/api/credit/customer/${c.id}`);
+      const { customer, ledger, branches } = await api.get<{ customer: CreditCustomer & { credit_limit_locked?: boolean }; ledger: LedgerRow[]; branches?: BranchCreditRow[] }>(`/api/credit/customer/${c.id}`);
       setSelected(customer); setLimit(String(customer.credit_limit)); setLedger(ledger ?? []);
+      setBranchRows(branches ?? []); setLocked(customer.credit_limit_locked === true);   // A595 D4
     } catch (e: any) {
       setMsg({ kind: 'err', text: e?.message ?? 'Failed to load account' });
     }
@@ -85,8 +93,9 @@ export default function CreditAccountsPage() {
 
   const refreshSelected = async () => {
     if (!selected) return;
-    const { customer, ledger } = await api.get<{ customer: CreditCustomer; ledger: LedgerRow[] }>(`/api/credit/customer/${selected.id}`);
+    const { customer, ledger, branches } = await api.get<{ customer: CreditCustomer & { credit_limit_locked?: boolean }; ledger: LedgerRow[]; branches?: BranchCreditRow[] }>(`/api/credit/customer/${selected.id}`);
     setSelected(customer); setLimit(String(customer.credit_limit)); setLedger(ledger ?? []);
+    setBranchRows(branches ?? []); setLocked(customer.credit_limit_locked === true);   // A595 D4
     await loadList();
   };
 
@@ -141,6 +150,8 @@ export default function CreditAccountsPage() {
 
   return (
     <div className="p-4 sm:p-6">
+      {/* A595 D4: the owner's maximum, partners' switch and the branches that sell on account */}
+      <CreditSettingsPanel settings={creditSettings} reload={reloadCreditSettings} partner={perms.isPartner} currency={currency} />
       <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
         <h1 className="text-xl font-bold text-white">Credit Accounts</h1>
         <div className="flex items-center gap-3">
@@ -247,7 +258,12 @@ export default function CreditAccountsPage() {
               <button onClick={saveLimit} disabled={busy} className="px-4 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Save</button>
             </div>}
 
-            {/* Record payment */}
+            {/* A595 D4: owed here / in total per branch, the limit at a branch, the owner's lock */}
+            <CreditBranchPanel customerId={selected.id} limit={Number(selected.credit_limit) || 0} owedTotal={Number(selected.credit_balance) || 0}
+              locked={locked} rows={branchRows} settings={creditSettings} partner={perms.isPartner} currency={currency} onChanged={refreshSelected} />
+
+            {/* Record payment — A595: customers.credit_payment */}
+            {mayRepay && (
             <div className="bg-gray-800/50 rounded-lg p-4 mb-4">
               <p className="text-white font-medium text-sm mb-3">Record repayment</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
@@ -262,8 +278,10 @@ export default function CreditAccountsPage() {
               </div>
               <button onClick={recordPayment} disabled={busy} className="px-4 py-2 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Record payment</button>
             </div>
+            )}
 
-            {/* Adjustment */}
+            {/* Adjustment — A595: customers.credit_adjust */}
+            {mayAdjust && (
             <div className="bg-gray-800/50 rounded-lg p-4 mb-5">
               <p className="text-white font-medium text-sm mb-1">Manual adjustment</p>
               <p className="text-xs text-gray-500 mb-3">Use a negative amount to reduce the balance, positive to increase. Reason required.</p>
@@ -275,6 +293,7 @@ export default function CreditAccountsPage() {
               </div>
               <button onClick={postAdjustment} disabled={busy} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-lg text-sm">Post adjustment</button>
             </div>
+            )}
 
             {/* Ledger */}
             <p className="text-white font-medium text-sm mb-2">Statement</p>

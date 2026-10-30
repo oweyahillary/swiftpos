@@ -65,7 +65,7 @@ ok('a dine-in order opened from the web keeps its order note', () => {
 });
 ok('pos/init sends the quick picks (always a list)', () => {
   const pos = read('apps/server/src/routes/pos.ts');
-  assert.match(pos, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',(?: 'receipt_pay_label', 'receipt_pay_number',(?: 'receipt_pay_account',)?)?\s*(?:SCALE_SETTINGS_KEY,[^\n]*\n\s*)?\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // A577: + the scale label layout   // A492: + the Paybill account   // A450: + the receipt's M-Pesa line   // A429   // 0.6.37: + History methods   // 0.6.30: + the owner's void/refund rules
+  assert.match(pos, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',(?: 'receipt_pay_label', 'receipt_pay_number',(?: 'receipt_pay_account',)?)?\s*(?:SCALE_SETTINGS_KEY,[^\n]*\n\s*)?(?:CUSTOMER_SCREEN_KEY,[^\n]*\n\s*)?\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // A606: + the customer screen's slideshow   // A577: + the scale label layout   // A492: + the Paybill account   // A450: + the receipt's M-Pesa line   // A429   // 0.6.37: + History methods   // 0.6.30: + the owner's void/refund rules
   assert.match(pos, /\n\s+noteQuickPicks: parseNotePicks\(receiptTextRows\?\.find\(\(r: any\) => r\.key === 'order_note_picks'\)\?\.value\)/);
 });
 ok('the owner\'s list is readable by the settings page', () => {
@@ -73,7 +73,8 @@ ok('the owner\'s list is readable by the settings page', () => {
 });
 ok('the kitchen display and the till\'s web-sales download read the notes', () => {
   assert.match(read('apps/server/src/routes/kitchen.ts'), /order_number, order_type, notes,/);
-  const shifts = read('apps/server/src/routes/shifts.ts');
+  // A591: the web-sales read's columns moved to lib/shiftOrdersMemo.ts (FULL_COLS — the same list)
+  const shifts = read('apps/server/src/lib/shiftOrdersMemo.ts');
   assert.match(shifts, /refund_reason, delivery_person, notes,/);
   assert.match(shifts, /course, fire_status, notes \),/);
 });

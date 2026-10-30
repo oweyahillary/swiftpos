@@ -1,0 +1,94 @@
+# A589: the nightly backup — every night at 00:00 Nairobi (21:00 UTC), owner-controlled, off-site, encrypted.
+#
+# Owner, 2026-10-25: "how can I be doing backups to protect my client data each night at 12am".
+# Supabase's own daily backups exist only on a paid plan (Pro: 7 days, Point-in-Time Recovery an add-on) and live in the
+# same Supabase account; this one is the owner's: a logical pg_dump, checked, ENCRYPTED, kept in his own Cloudflare R2
+# bucket — 30 daily and 12 monthly copies. The steps: scripts/backup/nightly-backup.sh; the result: scripts/backup/report.sh
+# (the admin portal's System page; a failure emails the admin at once). Restore: scripts/restore-backup.sh.
+# Everything — the role, the bucket, the secrets, the monthly restore test — docs/BACKUPS.md.
+#
+# NEVER as a GitHub artifact: this repository is public, and an artifact can be downloaded by anyone who can see the run.
+#
+# ── ONE-TIME SETUP (docs/BACKUPS.md) ─────────────────────────────────────────
+# Settings → Environments → New environment "backup" (no reviewers — it runs at night, unattended), its secrets:
+#   BACKUP_DATABASE_URL    the read-only backup role's SESSION-pooler string (port 5432)
+#   BACKUP_PASSPHRASE      at least 20 characters — keep a copy in a password manager: without it no backup restores
+#   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
+# and (repository or environment) ADMIN_ALERT_EMAIL, RESEND_API_KEY or SENDGRID_API_KEY, TELEGRAM_BOT_TOKEN,
+# TELEGRAM_CHAT_ID, OPS_INGEST_TOKEN — the same values the server uses. Optional variables: BACKUP_PG_MAJOR (17),
+# BACKUP_SCHEMAS ("public auth storage"), BACKUP_STORAGE_BUCKETS (with secrets SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY).
+# Not db-migrate-prod.yml's DATABASE_URL: that one is the owner role, behind the "production" environment's reviewer —
+# a nightly job waiting for a click would never run.
+
+name: Nightly backup
+
+on:
+  schedule:
+    # A591: weekly, not nightly - a full dump is a whole database of Supabase egress each run (Free plan: 5 GB a month).
+    # Saturday 21:00 UTC = Sunday 00:00 Nairobi (EAT, UTC+3, no daylight saving).
+    - cron: '0 21 * * 6'
+  workflow_dispatch: {}
+
+concurrency:
+  group: nightly-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Back up the production database
+    # A591: the schedule only runs once the owner turns it on (repository variable BACKUP_SCHEDULE_ENABLED = true);
+    # "Run workflow" by hand always runs.
+    if: github.event_name == 'workflow_dispatch' || vars.BACKUP_SCHEDULE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: backup
+    env:
+      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BACKUP_SCHEMAS: ${{ vars.BACKUP_SCHEMAS }}
+      BACKUP_STORAGE_BUCKETS: ${{ vars.BACKUP_STORAGE_BUCKETS }}
+      PG_MAJOR: ${{ vars.BACKUP_PG_MAJOR || '17' }}
+      PROD_URL: ${{ vars.PROD_URL }}
+      OPS_INGEST_TOKEN: ${{ secrets.OPS_INGEST_TOKEN }}
+      ADMIN_ALERT_EMAIL: ${{ secrets.ADMIN_ALERT_EMAIL }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+      ALERT_FROM_EMAIL: ${{ secrets.ALERT_FROM_EMAIL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
+      # pg_dump must be at least the server's version (Supabase: PostgreSQL 15 or 17) — from the PostgreSQL apt repository.
+      - name: Install the PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common gnupg jq >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq "postgresql-client-${PG_MAJOR}" >/dev/null
+          echo "/usr/lib/postgresql/${PG_MAJOR}/bin" >> "$GITHUB_PATH"
+          "/usr/lib/postgresql/${PG_MAJOR}/bin/pg_dump" --version
+          aws --version
+
+      - name: Dump, check, encrypt, upload, prune
+        shell: bash
+        run: bash scripts/backup/nightly-backup.sh
+
+      - name: Record the result (and tell the admin on a failure)
+        if: always()
+        shell: bash
+        run: bash scripts/backup/report.sh

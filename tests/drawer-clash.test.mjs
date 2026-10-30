@@ -23,7 +23,9 @@ const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e)
 
 const o = read('apps/server/src/routes/orders.ts');
 // A494: POST / is gated by orders.create (`sells`); A505: by sellsOrTillSale (a till's own sale is never refused for it).
-const route = o.slice(o.indexOf("router.post('/', sellsOrTillSale, async (req, res) => {"), o.indexOf("router.get('/', async (req, res) => {"));
+// A602: the handler is the named createOrder (the history backfill runs it for each sale), mounted as POST /.
+assert.ok(o.includes("router.post('/', sellsOrTillSale, createOrder);"), 'POST / is createOrder behind sellsOrTillSale');
+const route = o.slice(o.indexOf('export async function createOrder(req: Request, res: Response): Promise<void> {'), o.indexOf("router.get('/', async (req, res) => {"));
 const guard = route.indexOf("res.status(424).json({ code: 'shift_not_synced'");
 
 ok('unknown drawer → 424 shift_not_synced, looked up by id inside the caller\'s business', () => {

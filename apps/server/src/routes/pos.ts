@@ -8,6 +8,7 @@ import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '@zaptill/core/orderNotes';
 import { parseReversalRules, REVERSAL_SETTING_KEYS } from '@zaptill/core/reversalRules';
 import { parsePosFeatures, POS_FEATURE_KEYS } from '@zaptill/core/posFeatures';
+import { ATTENDANCE_FLAG } from '../lib/attendanceRules';   // A599
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -15,7 +16,7 @@ import { isNodeRole } from '../lib/deviceRegistry';
 import { checkDeviceBranch } from '../lib/deviceBinding';   // A446
 import { createHash } from 'crypto';   // A446
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
-import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
+import { themesEnabled, effectiveThemeId, effectiveBrandColours, selectBusinessBranding } from '../lib/themeAccess';   // A597
 import { getWebAccess } from '../lib/webAccess';
 import { worksAtBranch } from '../lib/branchAccess';   // A426
 import { isConfirmedBranchServer } from '../lib/deviceRole';   // A427
@@ -36,9 +37,16 @@ import { changesAnswer, ChangesUnavailable } from '../lib/syncChanges';         
 import { menusForPos } from '../lib/menus';                                    // A537
 import { servedBranchBranding } from '../lib/branchBrandingStore';             // A544
 import { businessOutOfStockMode, branchStockView } from '../lib/stockGateStore';  // A563
-import { assertBranchAccess } from '../middleware/rbac';                        // A563
+import { assertBranchAccess, can } from '../middleware/rbac';                   // A563, A595
+import { maskPhone, seesCustomerContacts } from '../lib/personalData';           // A595
+import { branchCreditEnabled, branchLimitsAt, owedByCustomerAt } from '../lib/branchCredit';   // A595 D4
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
+import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '../lib/customerScreen';   // A606
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
+import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
+import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601
+/** A593: GET /test-data-clears per (business, the POS's last applied clear) — lib/quietMemo.ts. */
+const clearsMemo = quietMemo<unknown[]>('pos.test_clears');
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -153,7 +161,7 @@ router.get('/changes', async (req, res) => {
   try {
     // A535: and whether the caller may see a level a blind count is counting (a till's own session never — A394).
     const answer = await changesAnswer({ businessId: req.businessId!, branchId, isTill: !!req.isTill, seesCosts: seesCosts(req),
-      seesCountedStock: mayStock(req, 'inventory.adjust') }, since);
+      seesCountedStock: mayStock(req, 'inventory.adjust') || mayStock(req, 'inventory.count_review') }, since);   // A595
     res.set('Cache-Control', 'no-store');
     res.json(answer);
   } catch (e) {
@@ -412,6 +420,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       // same shape of thing: owner-authored, per business, cached on every till.
       .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
         SCALE_SETTINGS_KEY,   // A577: the business's scale label layout
+        CUSTOMER_SCREEN_KEY,   // A606: the customer screen's slideshow (the owner's images)
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -456,11 +465,8 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A304: client branding (accent + base64 logo) for this business, pulled to
     // the till's local `branding` mirror (remote-wins). maybeSingle — the absent
     // row is the norm (branding is optional) and must not fail the pull closed.
-    supabase
-      .from('business_branding')
-      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id')
-      .eq('business_id', req.businessId)
-      .maybeSingle(),
+    // A597: + the owner's brand colours (migration 179; read without them on a database not yet migrated).
+    selectBusinessBranding(req.businessId, 'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, primary_hex, secondary_hex'),
   ]);
   // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
   // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
@@ -606,6 +612,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       // A311: the receipt raster + the client's opt-in toggle ride the same pull.
       logoReceipt: branding.logo_receipt ?? null,
       receiptLogoEnabled: branding.receipt_logo_enabled === true,
+      // A597: the owner's brand colours — null while themes are off (the POS keeps today's look). They win over the
+      // curated theme's action shades; a branch's own theme still wins over them (lib/branchBranding.ts).
+      ...effectiveBrandColours(themesOn, branding),
     } : null,
     themeId,
     // A544: the branch's own override ({ branchId, themeId, accentHex, receiptFooter }), or null. The till and the web POS
@@ -631,6 +640,10 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     support: await getSupportContact(req.businessId),
     // A346: the till shows its Stock screen only when this is true (cached on the till; older tills ignore it).
     webPosEnabled,
+    // A601: the desktop-only cut-off — on: the cloud takes this POS's backup; phase 'notice' / 'cut' and the date for the
+    // manager's notice ('none': nothing to say). The standing is remembered (lib/cloudPlan.ts standingFor); a failed read
+    // sends no key, so the POS keeps what it had. Older POSs ignore it.
+    ...(!req.businessId ? {} : await standingFor(req.businessId).then((s) => (s ? { cloudBackup: cloudBackupWire(s) } : {})).catch(() => ({}))),
     receiptFooter: receiptText.receipt_footer ?? '',
     // A450: how a customer pays the business by M-Pesa, printed under the payments ("Buy Goods: 123456", "Paybill: …").
     // '' = not set (the receipt prints no such line). The branch's own value wins, as for the header and footer.
@@ -660,13 +673,25 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A577: how this business's weighing scales print their labels (shared/scaleBarcode.ts) — always sent, the default
     // when unset or unreadable, so the till and the web POS read scale labels offline. Older tills ignore it.
     scaleBarcodes: scaleSettingsOrDefault(receiptTextRows?.find((r: any) => r.key === SCALE_SETTINGS_KEY)?.value ?? null),
+    // A606: the customer screen's slideshow — the owner's images in order and the seconds each shows; null = none. The POS
+    // shows it (and fetches each image, once) only with the online licence (webPosEnabled). Older POSs ignore it.
+    customerScreen: slidesFromWire(receiptTextRows?.find((r: any) => r.key === CUSTOMER_SCREEN_KEY)?.value ?? null),
     // 0.6.27: the per-client switches the admin portal sets (feature_flags). Always every key, true or false — an unset
     // switch is off. Older tills ignore it.
-    posFeatures: await (async () => {
+    // A599: the same read carries the 'attendance' flag (premium) — on, the web POS hides its PIN clock-in (the device
+    // records every punch) and the cloud refuses it. Older tills ignore attendanceDevice.
+    ...(await (async () => {
       const { data } = await supabase.from('feature_flags').select('key, enabled')
-        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS]);
-      return parsePosFeatures(data ?? []);
-    })(),
+        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS, ATTENDANCE_FLAG, 'etims_enabled']);
+      const rows = (data ?? []) as Array<{ key: string; enabled: boolean }>;
+      return {
+        posFeatures: parsePosFeatures(rows.filter((r) => r.key !== ATTENDANCE_FLAG && r.key !== 'etims_enabled')),
+        attendanceDevice: rows.some((r) => r.key === ATTENDANCE_FLAG && r.enabled === true),
+        // A607: KRA eTIMS is on for the business — the POS then asks for the buyer's KRA PIN (customer details at the
+        // counter) and sends it with the sale. Older POSs ignore it.
+        etimsEnabled: rows.some((r) => r.key === 'etims_enabled' && r.enabled === true),
+      };
+    })()),
     // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules — always every rule, defaults where
     // unset. Older tills ignore it.
     reversalRules: parseReversalRules((receiptTextRows ?? []) as Array<{ key: string; value: unknown }>),
@@ -749,8 +774,16 @@ router.get('/stock-view', async (req, res) => {
   }
 });
 
+// A595 (docs/PERMISSIONS-AUDIT.md F4): this answered every credit customer's name, phone, limit and balance to ANY desktop
+// session. Now: the POS's own session (it keeps the list offline for every seller — names, limits and balances; phones
+// masked, the last three digits still tell two customers apart), or a person holding customers.view or customers.credit
+// (phones masked unless they hold customers.contacts). The credit sale needs the id, name, limit and balance only: the
+// cloud puts the customer's real number on the order itself (routes/orders.ts, a masked number is never stored).
+export const CREDIT_LIST_REFUSED = { error: 'Your role does not see customers on account.', code: 'NO_CUSTOMER_ACCESS' } as const;
 router.get('/credit-customers', async (req, res) => {
   if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
+  if (!req.isTill && !can(req, 'customers.view', 'customers.credit')) { res.status(403).json(CREDIT_LIST_REFUSED); return; }
+  const fullPhones = !req.isTill && seesCustomerContacts(req);
   try {
     const at = new Date().toISOString();
     const rows = await pageAll<any>(() => supabase.from('customers')
@@ -760,7 +793,7 @@ router.get('/credit-customers', async (req, res) => {
     const customers = rows
       .filter((c) => c && c.status !== 'deleted' && (Number(c.credit_limit) > 0 || Number(c.credit_balance) > 0))
       .slice(0, 5000)
-      .map((c) => ({ id: c.id, name: c.name ?? '', phone: c.phone ?? null, status: c.status ?? 'active',
+      .map((c) => ({ id: c.id, name: c.name ?? '', phone: fullPhones ? (c.phone ?? null) : maskPhone(c.phone), status: c.status ?? 'active',
         credit_limit: Number(c.credit_limit) || 0, credit_balance: Number(c.credit_balance) || 0 }));
     // A585: who approves a sale on account at THIS branch — the owner's choice (off = A552's customers.credit rule). The
     // till keeps it with the list, so it holds offline. owner_id: the owner always approves.
@@ -768,8 +801,24 @@ router.get('/credit-customers', async (req, res) => {
     const [rule, { data: biz }] = await Promise.all([loadCreditRule(req.businessId),
       supabase.from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle()]);
     const approval = { on: rule.on, approvers: rule.on ? approversAt(rule, branchId) : [], owner_id: (biz as { owner_id?: string | null } | null)?.owner_id ?? null };
+    // A595 D4 (owner, 2026-10-27): whether this branch sells on account, and each customer's limit AT this branch with
+    // what they owe here — the POS keeps them with the list (offline) and checks the sale against them.
+    let branch: { credit_enabled: boolean; limits: Record<string, { limit: number; owed: number }> } = { credit_enabled: true, limits: {} };
+    if (branchId) {
+      const [enabled, limits] = await Promise.all([branchCreditEnabled(req.businessId!, branchId), branchLimitsAt(req.businessId!, branchId)]);
+      const owed = await owedByCustomerAt(req.businessId!, branchId, [...limits.keys()]);
+      branch = { credit_enabled: enabled, limits: Object.fromEntries([...limits].map(([c, l]) => [c, { limit: l, owed: owed.get(c) ?? 0 }])) };
+      // a customer with a limit only at this branch (none business-wide) is offered here too
+      const missing = [...limits.keys()].filter((c) => !customers.some((x) => x.id === c));
+      if (missing.length) {
+        const { data: extra } = await supabase.from('customers').select('id, name, phone, credit_limit, credit_balance, status')
+          .eq('business_id', req.businessId).in('id', missing.slice(0, 1000));
+        for (const c of (extra ?? []) as any[]) if (c.status !== 'deleted') customers.push({ id: c.id, name: c.name ?? '', phone: fullPhones ? (c.phone ?? null) : maskPhone(c.phone),
+          status: c.status ?? 'active', credit_limit: Number(c.credit_limit) || 0, credit_balance: Number(c.credit_balance) || 0 });
+      }
+    }
     res.set('Cache-Control', 'no-store');
-    res.json({ at, customers, approval });
+    res.json({ at, customers, approval, branch });
   } catch (e: any) {
     sendError(res, e);
   }
@@ -784,14 +833,27 @@ router.get('/credit-customers', async (req, res) => {
 // the test sales and the test day that then locked it. The 60-day floor stays only for a till that has applied none yet
 // (a new till must not replay an old clear — a whole-menu clear would empty the menu it has just pulled).
 router.get('/test-data-clears', async (req, res) => {
-  const floor = new Date(Date.now() - 60 * 86_400_000).toISOString();
+  const floor = new Date(quietNow() - 60 * 86_400_000).toISOString();   // A593: quietNow — Date.now() but for the tests
   const asked = typeof req.query.after === 'string' && !Number.isNaN(Date.parse(req.query.after)) ? req.query.after : null;
   const after = asked ?? floor;
+  // A593: a clear is made only in the admin portal (through this server: every business's generation moves) — the POS's
+  // ask every beat is answered from memory while nothing was written (≤ 5 minutes for a change made in SQL). Keyed by
+  // the POS's own `after` (none: the 60-day floor — it moves with the clock, so the kept rows are cut at THIS ask's floor,
+  // and a kept list that was full (20) is read again: the next ones might be due).
+  const memoKey = asked ? `after:${asked}` : 'floor';
+  const kept = clearsMemo.get(req.businessId!, memoKey) as Array<{ created_at?: string }> | undefined;
+  if (kept && (asked || kept.length < 20)) {
+    res.set('Cache-Control', 'no-store');
+    res.json(asked ? kept : kept.filter((c) => Date.parse(String(c.created_at)) > Date.parse(floor)));
+    return;
+  }
+  const mark = clearsMemo.mark(req.businessId!);
   const clearsOf = (cols: string) => supabase.from('test_data_purges').select(cols)
     .eq('business_id', req.businessId).gt('created_at', after).order('created_at', { ascending: true }).limit(20);
   let { data, error } = await clearsOf('id, from_at, to_at, created_at, menu');
   if (error) ({ data, error } = await clearsOf('id, from_at, to_at, created_at'));
   if (error) { res.json([]); return; }   // before migration 122: nothing to clear
+  clearsMemo.set(req.businessId!, memoKey, (data ?? []) as unknown[], mark);
   res.set('Cache-Control', 'no-store');
   res.json(data ?? []);
 });

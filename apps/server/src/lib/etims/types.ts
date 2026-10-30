@@ -38,6 +38,9 @@ export interface EtimsInvoiceDTO {
   branch: EtimsBranchConfig;
   buyerName: string | null;
   buyerPhone: string | null;
+  /** A607: the buyer's KRA PIN — KRA's custTin. The sale's own (orders.buyer_kra_pin), else the attached customer's
+   *  kra_pin, else null. Always a valid PIN or null (A or P, 9 digits, a letter). */
+  buyerPin?: string | null;
   lines: EtimsLine[];
   subtotal: number;
   vatAmount: number;

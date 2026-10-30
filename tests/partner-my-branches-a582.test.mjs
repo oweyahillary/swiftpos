@@ -83,6 +83,8 @@ const MARKS = [W, 'Westgate', 'Wakanda', 'Wanda', 'Wilma', '99999'];
 const leaks = (text) => MARKS.filter((m) => text.includes(m));
 const AT = '2026-10-20T09:00:00Z';
 const RANGE = 'from=2026-10-01&to=2026-10-22';
+// The watch list reads the last 7 days (EAT) — its alerts are dated today, or the file stops passing a week after it was written.
+const LA_DATE = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
 
 // ── PGlite: the analytics SQL for real (through 171) ─────────────────────────────────────────────────────────────────
 const pg = await openSchema({ through: 171 });
@@ -167,8 +169,8 @@ const reset = () => {
       { id: 'n-w', business_id: B, branch_id: W, user_id: null, type: 'low_stock', title: 'Westgate alert', message: 'Wakanda low', created_at: AT, read_at: null },
       { id: 'n-none', business_id: B, branch_id: null, user_id: null, type: 'system', title: 'Business notice', message: 'all', created_at: AT, read_at: null }],
     loss_alerts: [
-      { id: 'la-x', business_id: B, branch_id: X, kind: 'voids', period: 'day', business_date: '2026-10-22', staff_id: XAVI, count: 3, amount: 300, score: 2, message: 'Xavi voids', dismissed_at: null },
-      { id: 'la-w', business_id: B, branch_id: W, kind: 'voids', period: 'day', business_date: '2026-10-22', staff_id: WANDA, count: 9, amount: 99999, score: 9, message: 'Wanda voids', dismissed_at: null }],
+      { id: 'la-x', business_id: B, branch_id: X, kind: 'voids', period: 'day', business_date: LA_DATE, staff_id: XAVI, count: 3, amount: 300, score: 2, message: 'Xavi voids', dismissed_at: null },
+      { id: 'la-w', business_id: B, branch_id: W, kind: 'voids', period: 'day', business_date: LA_DATE, staff_id: WANDA, count: 9, amount: 99999, score: 9, message: 'Wanda voids', dismissed_at: null }],
     stock_levels: [lvl('sl-x', 'p-x', X, 5, 'Xenon wrap'), lvl('sl-w', 'p-w', W, 99999, 'Wakanda special')],
     stock_movements: [
       { id: 'sm-x', product_id: 'p-x', branch_id: X, movement_type: 'restock', quantity_change: 5, quantity_after: 5, created_at: AT, 'products.business_id': B, products: { name: 'Xenon wrap', business_id: B } },

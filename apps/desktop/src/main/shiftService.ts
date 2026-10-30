@@ -21,6 +21,7 @@ import { nonCashExpenses, expenseLabel, cleanExpenseMethod } from '@zaptill/core
 import { reasonsNeeded, cleanReasons, missingReasons } from '@zaptill/core/confirmReasons';
 import { kitchenVoidsForShift, type KitchenVoidLine } from './kitchenService';
 import { noteActivity } from './activityTracker';   // A508
+import { noteClosed } from './closeHooks';   // A600 follow-up: a standalone POS backs up after a shift close
 import type { KitchenVoidSummary } from '@zaptill/core/kitchenLines';
 import { riderSummary, type RiderLine } from '@zaptill/core/delivery';   // 0.6.33: the riders summary
 import { signedIn as sessionPerson, personCan, seesAllHistory } from './tillAccess';   // A490: the till's one rule
@@ -764,6 +765,7 @@ export function closeShift(closing_float: number, notes?: string, foreign: Forei
     expected_cash: expectedCash, cash_variance: variance, notes: notes ?? null,
     close_method: 'counted', closed_by: sessionInfo().staff?.staff_id ?? null,
   });
+  noteClosed('shift');   // A600 follow-up (wired in index.ts; a standalone POS only)
 
   return computeZReport(shift.id, foreign);
 }
@@ -1077,6 +1079,7 @@ export function forceCloseShift(reason: string, closedByStaffId?: string | null)
     close_method: 'forced',
     closed_by: closedByStaffId ?? sessionInfo().staff?.staff_id ?? null,
   });
+  noteClosed('shift');   // A600 follow-up
 
   return computeZReport(shift.id);
 }

@@ -117,6 +117,16 @@ services:
       - key: DESKTOP_DOWNLOAD_BASE_URL
         sync: false
 
+      # ── Desktop-only cut-off (A601) — optional; unset = nothing changes ──────
+      # lib/cloudPlan.ts: the date desktop-only businesses (no cloud plan, paid-until or web access) stop backing up to
+      # the cloud (their POSs' sales, shifts, drawers and day closes answered 503 CLOUD_BACKUP_OFF; sign-in, joining,
+      # catalogue and staff changes and support logs stay open) and stop getting desktop updates. Before the date the
+      # POS and the admin portal show the notice. An ISO date (2026-12-01 = that day's start in Nairobi), at least a
+      # month after the notice. Per business (admin portal, super admin): cloud_backup keeps the backup,
+      # desktop_updates releases updates. docs/DESKTOP-ONLY-CUTOFF-PLAN.md.
+      # - key: DESKTOP_ONLY_CUTOFF_AT
+      #   value: "2026-12-01"
+
       # ── Mail — optional, degrades gracefully ────────────────────────────────
       # lib/mailer.ts:16 guards on presence; unset simply disables outbound mail.
       # Needed for owner notifications (e.g. device_pending) and daily summaries.

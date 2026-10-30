@@ -34,11 +34,14 @@ export default function UsersAccessPage() {
 // Child route wrappers — kept here so the section owns its data (branches).
 export function StaffMembersRoute() {
   const { branches } = useOutletContext<{ branches: Branch[] }>();
-  // A550: resetting a sign-in code and giving web dashboard access are the owner's; a partner manages staff by their keys.
-  const { isOwner, can } = usePermissions();
+  // A550: resetting a sign-in code is the owner's; a partner manages staff by their keys. A608 part 3 (owner, 2026-10-29,
+  // "yes to all"): web dashboard access is given by the owner AND by a partner who edits staff (the cloud keeps them to
+  // people within their keys and branches, never a General Manager); adding a Partner stays the owner's.
+  const { isOwner, isPartner, can } = usePermissions();
   return (
     <div className="p-4 sm:p-6">
-      <StaffTab branches={branches} canResetSignIn={isOwner} webAccess={isOwner} canEdit={can('staff.edit')} />
+      <StaffTab branches={branches} canResetSignIn={isOwner} webAccess={isOwner || (isPartner && can('staff.edit'))} partners={isOwner}
+        canEdit={can('staff.edit')} can={can} />   {/* A595 */}
     </div>
   );
 }

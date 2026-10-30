@@ -9,6 +9,8 @@ import { apiHelmet } from './lib/apiHeaders';     // A528
 import { countTraffic } from './lib/trafficStats'; // A528
 import { signAnswers } from './lib/serverSignature'; // A529
 import { compressJson } from './lib/compressJson';    // A531
+import { labelRequests } from './lib/supabaseMeter';  // A591
+import { trackWrites } from './lib/writeActivity';    // A591
 import { attachLiveHub, startSyncChangePruneJob } from './lib/liveHub'; // A531
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import apiRoutes   from './routes';
@@ -22,7 +24,7 @@ import { startMonthlyPackJob }  from './jobs/monthlyPack';       // A455
 import { startOwnerAlertsJob }  from './jobs/ownerAlerts';       // A476
 import { startLossAlertsJob }   from './jobs/lossAlerts';        // A576
 import { startCloudPlanRemindersJob } from './jobs/cloudPlanReminders';   // A581
-import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt, recordSyncQueue, parseQueueCount } from './lib/watchdogCounters';
+import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt, recordSyncQueue, parseQueueCount, recordRequestDuration } from './lib/watchdogCounters';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { refreshPermissionsState } from './lib/permissionsState';   // A490
@@ -31,6 +33,7 @@ import { isTenantOrigin }       from '@zaptill/core/tenantHost';   // A378: clie
 import { isRenewalPath, renewalKey, RENEWALS_PER_WINDOW } from './lib/authLimits';   // A415
 import { authLimiterKeyFor, apiLimiterKeyFor, BUCKET_VERIFY_OPTIONS } from './lib/limiterKeys';   // A494, A505
 import jwt from 'jsonwebtoken';
+import { backfillBodyParser, BACKFILL_JSON_LIMIT } from './lib/backfill';   // A602
 
 const app  = express();
 const PORT = process.env.PORT ?? 4000;
@@ -89,6 +92,9 @@ app.use(cors({
   credentials: true,
 }));
 
+// A602: the POS's sales history in bulk (gzip'd, up to 500 sales a call) has its own, larger limit — on the INFLATED size.
+// Mounted first: the 1 MB parser below then sees a body already read and leaves it alone.
+app.use('/api/sync/backfill', backfillBodyParser);
 app.use(express.json({ limit: '1mb' })); // explicit limit — prevents oversized payload DoS
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -171,6 +177,7 @@ app.use((req, res, next) => {
   const path0 = req.originalUrl || req.url || '';
   const tillSync = isTillSync(req.method, path0) && !!req.header('X-Device-Id');
   let answer: any = null;
+  const startedAt = Date.now();   // A589: the answer time — the overload signal (lib/watchdogRules.ts serverOverload)
   if (tillSync) {
     const json = res.json.bind(res);
     res.json = ((body: any) => { answer = body; return json(body); }) as typeof res.json;
@@ -180,6 +187,9 @@ app.use((req, res, next) => {
     // A581: a lapsed cloud plan's 503 (CLOUD_SUBSCRIPTION_ENDED) is a decision, not a fault — never a server error, never a
     // till "the cloud keeps refusing" (the admin is told by the plan's reminders and the client list).
     if (res.locals.cloudLapsed === true) return;
+    // A589: a stream or a file download takes as long as it takes — not a slow server.
+    const type = String(res.getHeader('content-type') ?? '');
+    if (!/event-stream|octet-stream|application\/x-msdownload/i.test(type)) recordRequestDuration(Date.now() - startedAt);
     if (res.statusCode >= 500) recordServerError(path);
     else if (isSignInFailure(req.method, path, res.statusCode)) {
       recordFailedSignIn({ path, account: typeof req.body?.email === 'string' ? req.body.email : '', ip: req.ip ?? '' });
@@ -201,6 +211,12 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// A591: every Supabase call is counted against the route that made it (lib/supabaseMeter.ts — the System page's Supabase
+// card), and every write a client makes moves its business's write generation (lib/writeActivity.ts — the polled answers
+// remembered while nothing was written). After the body parser: a request's work runs inside its label from here on.
+app.use(labelRequests);
+app.use(trackWrites());
 
 app.use('/api/auth',       authLimiter);
 app.use('/api/auth',       renewLimiter);   // A415
@@ -305,7 +321,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
   // express.json() throws this when body exceeds the limit
   if ((err as any).type === 'entity.too.large') {
-    res.status(413).json({ error: 'Payload too large (max 1MB)' });
+    res.status(413).json({ error: `Payload too large (max ${/^\/api\/sync\/backfill/.test(_req.originalUrl ?? '') ? BACKFILL_JSON_LIMIT.toUpperCase() : '1MB'})`, code: 'PAYLOAD_TOO_LARGE' });
     return;
   }
 
@@ -340,13 +356,19 @@ const httpServer = app.listen(PORT, () => {
   // throws — a shop must not fail to trade over an unverified mail domain.
   void reportMailReadiness();
 
-  startDailySummaryJob();
-  startEtimsRetryJob();
-  startWatchdogJob();
-  startMonthlyPackJob();   // A455: the monthly pack by email on the 1st
-  startOwnerAlertsJob();   // A476: branch managers' open tills (always), the owner's alerts, the weekly summary
-  startLossAlertsJob();    // A576: loss-prevention alerts every hour (the watch list, the bell)
-  startCloudPlanRemindersJob();   // A581: cloud plan reminders to the owner and ZapTill (14/7/3/1 days, lapse, weekly)
+  // A591: BACKGROUND_JOBS=off (the DEV service on Render) starts none of the scheduled jobs — every one reads Supabase
+  // around the clock, and the dev project's egress counts against the same Free-plan organisation as production.
+  if (String(process.env.BACKGROUND_JOBS ?? '').toLowerCase() === 'off') {
+    console.log('[jobs] BACKGROUND_JOBS=off — no scheduled jobs on this server (summaries, watchdog, alerts, billing)');
+  } else {
+    startDailySummaryJob();
+    startEtimsRetryJob();
+    startWatchdogJob();
+    startMonthlyPackJob();   // A455: the monthly pack by email on the 1st
+    startOwnerAlertsJob();   // A476: branch managers' open tills (always), the owner's alerts, the weekly summary
+    startLossAlertsJob();    // A576: loss-prevention alerts every hour (the watch list, the bell)
+    startCloudPlanRemindersJob();   // A581: cloud plan reminders to the owner and ZapTill (14/7/3/1 days, lapse, weekly)
+  }
 
   // A525: the start, in the admin portal's System page (public.ops_events). Never awaited, never throws — a missing
   // table (migration 149 not run) is a warning in the log.

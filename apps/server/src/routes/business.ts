@@ -9,7 +9,8 @@ import { BRANCH_BRANDING_COLUMNS, type BranchBrandingRow, servedBranchBranding }
 import { effectiveThemeId } from '../lib/themeRules';   // A547
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
-import { themesEnabled, themeWriteError } from '../lib/themeAccess';
+import { themesEnabled, themeWriteError, brandColourWriteError, BRAND_COLOUR_FIELDS, selectBusinessBranding,
+  isMissingBrandColourColumn, withoutBrandColourColumns } from '../lib/themeAccess';   // A597: brand colours
 import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
 import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '@zaptill/core/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
@@ -25,6 +26,8 @@ import { CREDIT_APPROVERS_KEY } from '../lib/creditApprovers';         // A585
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
 import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
+import { CUSTOMER_SCREEN_KEY, cleanCustomerScreen, slidesFromWire, customerScreenWriteError } from '../lib/customerScreen';   // A606
+import { getWebAccess } from '../lib/webAccess';   // A606: the slideshow is part of the online licence
 
 const router = safeRouter();
 
@@ -44,7 +47,13 @@ const RECEIPT_SETTING_KEYS = new Set(['receipt_header', 'receipt_footer', 'recei
 
 /** A490: the keys that write business settings — the route admits any of them, then narrows per setting. */
 const SETTING_WRITE_KEYS = ['receipt.manage', 'settings.business', 'settings.payments', 'settings.pos', 'settings.integrations',
-  'settings.reversals', 'inventory.count_freeze'];   // A502
+  'settings.reversals', 'inventory.count_freeze',   // A502
+  'settings.sales_rules', 'settings.report_emails'];   // A595: parts of settings.business / settings.integrations
+/**
+ * A595 (docs/PERMISSIONS-AUDIT.md F20): the selling rules are their own part of settings.business (settings.sales_rules —
+ * migration 176 gave it to every holder): continuous operation and what a cashier's History shows.
+ */
+const SALES_RULE_KEYS: ReadonlySet<string> = new Set(['continuous_operation', CASHIER_HISTORY_METHODS_KEY, 'cashier_sees_shift_sales', 'cashier_history_totals']);
 const LOYALTY_SETTING_KEYS = new Set(['loyalty_enabled', 'loyalty_earn_rate']);
 
 /**
@@ -94,6 +103,18 @@ export const SUPERVISOR_PIN_RETIRED = {
   code:  'SUPERVISOR_PIN_RETIRED',
 } as const;
 
+/**
+ * A595 (owner, 2026-10-27, decision D3: "report emails — owner and partners can set them; managers cannot"): who may read
+ * and set the Report Scheduler (who receives the automatic e-mails) — the owner, a partner (web dashboard access,
+ * lib/webPartners.ts), or someone the owner gave settings.report_emails in Staff. Migration 177 takes the key off every
+ * role (a manager's role no longer opens it); a person's own grant is kept.
+ */
+export function mayReportEmails(req: import('express').Request): boolean {
+  if (req.isTill) return false;
+  return req.isOwner === true || req.webPartner === true || can(req, 'settings.report_emails');
+}
+const REPORT_EMAILS_REFUSED = { error: 'Only the owner or a partner chooses who receives the report e-mails.', code: 'REPORT_EMAILS_OWNER', detail: 'Missing permission: settings.report_emails' } as const;
+
 /** A490: the one key that may write this business setting — null when it is the OWNER's alone (A494). */
 export function settingPermission(key: string): string | null {
   if (ownerOnlySetting(key)) return null;
@@ -102,7 +123,10 @@ export function settingPermission(key: string): string | null {
   if (RECEIPT_SETTING_KEYS.has(key)) return 'receipt.manage';
   if (key === PAYMENT_METHODS_ENABLED_KEY) return 'settings.payments';
   if (LOYALTY_SETTING_KEYS.has(key)) return 'settings.pos';
-  if (key === 'report_schedule') return 'settings.integrations';
+  // A595 (F3): scheduled report e-mails send the business's figures to any address — their own part of
+  // settings.integrations (settings.report_emails).
+  if (key === 'report_schedule') return 'settings.report_emails';
+  if (SALES_RULE_KEYS.has(key)) return 'settings.sales_rules';   // A595 (F20)
   if (BUSINESS_SETTING_KEYS.has(key) || BUSINESS_SETTING_PREFIXES.some((p) => key.startsWith(p))) return 'settings.business';
   return null;   // A494: unknown — the owner's (default-deny, as GET /settings is)
 }
@@ -204,10 +228,17 @@ router.get('/', requireAuth, async (req, res) => {
 // dates etc. stay admin-controlled); currency is locked once any sale exists,
 // because historical amounts are denominated in it; `email` here is the business
 // CONTACT email, not a login credential.
-router.patch('/', requireAuth, requirePermission('settings.business'), async (req, res) => {
+router.patch('/', requireAuth, requireAnyPermission('settings.business', 'settings.tax'), async (req, res) => {
   const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'ctl_rate', 'currency', 'logo_url'] as const;
   const updates: Record<string, unknown> = {};
   for (const k of EDITABLE) if (k in req.body) updates[k] = req.body[k];
+  // A595 (docs/PERMISSIONS-AUDIT.md F20): the VAT and levy rates are their own part of settings.business (settings.tax —
+  // migration 176 gave it to every holder); the rest of the profile stays settings.business.
+  const TAX_FIELDS = ['vat_rate', 'ctl_rate'];
+  const wantsTax = Object.keys(updates).some((k) => TAX_FIELDS.includes(k));
+  const wantsProfile = Object.keys(updates).some((k) => !TAX_FIELDS.includes(k));
+  if (wantsTax && !can(req, 'settings.tax')) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: settings.tax' }); return; }
+  if (wantsProfile && !can(req, 'settings.business')) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: settings.business' }); return; }
 
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: 'No editable fields provided' });
@@ -278,21 +309,23 @@ router.get('/cloud-trial', requireAuth, async (req, res) => {
   res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null, plan: null });
 });
 
+// A597: + the owner's brand colours (primary_hex / secondary_hex, migration 179).
+const BRANDING_COLUMNS = 'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, primary_hex, secondary_hex, updated_at';
+
 // GET /api/business/branding
 // The client branding row (accent + logo) for this business, or null when unset (A303).
 // Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
 router.get('/branding', requireAuth, async (req, res) => {
   const [{ data, error }, enabled] = await Promise.all([
-    supabase
-      .from('business_branding')
-      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
-      .eq('business_id', req.businessId)
-      .maybeSingle(),
+    selectBusinessBranding(req.businessId, BRANDING_COLUMNS),   // A597: falls back before migration 179
     themesEnabled(req.businessId),   // A325: the web shows the theme picker only when the business has themes
   ]);
   if (error) { sendError(res, error); return; }
-  // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column.
-  res.json(data ? { ...data, themes_enabled: enabled } : (enabled ? { themes_enabled: true } : null));
+  // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column. A597: + whether
+  // this caller may choose the brand colours (the owner, signed in as themselves — the Branding page shows the fields).
+  const brandColoursEditable = req.isOwner === true && !req.isTill && req.webPartner !== true;
+  res.json(data ? { ...data, themes_enabled: enabled, brand_colours_editable: brandColoursEditable }
+    : (enabled ? { themes_enabled: true, brand_colours_editable: brandColoursEditable } : null));
 });
 
 // PUT /api/business/branding
@@ -367,12 +400,24 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     if (err) { res.status(400).json({ error: err }); return; }
     row.theme_id = req.body.theme_id;
   }
+  // A597 (owner, 2026-10-27): the business's primary and secondary colours — ANY #rrggbb (the apps derive readable shades,
+  // never refuse one), null clears. The OWNER's alone (as the approval PIN option, A594: never a partner, a manager with
+  // receipt.manage / settings.business, or a POS's own session) and premium: the 'themes' flag. Omitted = left as is, so
+  // a manager's or a POS's branding save never touches them.
+  const colourFields = BRAND_COLOUR_FIELDS.filter((f) => has(f));
+  if (colourFields.length) {
+    const who = { owner: req.isOwner === true && !req.isTill && req.webPartner !== true, enabled: await themesEnabled(req.businessId) };
+    for (const f of colourFields) {
+      const refusal = brandColourWriteError(f, req.body[f], who);
+      if (refusal) { res.status(refusal.status).json({ error: refusal.error, code: refusal.code }); return; }
+      row[f] = req.body[f] === null ? null : String(req.body[f]).trim().toLowerCase();
+    }
+  }
 
-  const { data, error } = await supabase
-    .from('business_branding')
-    .upsert(row, { onConflict: 'business_id' })
-    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
-    .single();
+  const upsert = (cols: string) => supabase.from('business_branding').upsert(row, { onConflict: 'business_id' }).select(cols).single();
+  let { data, error } = await upsert(BRANDING_COLUMNS);
+  // A597: a database before migration 179 — the same save without the colour columns (a colour write itself then fails).
+  if (isMissingBrandColourColumn(error) && !colourFields.length) ({ data, error } = await upsert(withoutBrandColourColumns(BRANDING_COLUMNS)));
   if (error) { sendError(res, error); return; }
   res.json(data);
 });
@@ -526,6 +571,45 @@ router.delete('/branding/branches/:branchId', requireAuth, requireAnyPermission(
   res.json({ branch_id: branch.id, cleared: true });
 });
 
+// ── A606: the customer screen's slideshow ─────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-28: a dual-screen POS shows the customer what is rung up; while idle, premium clients show a slideshow of
+// their own offers or pictures. The images are uploaded like product pictures (the dashboard's image store) and the list
+// (in order, and how many seconds each shows) is kept in business_settings under 'customer_screen' — served to every POS
+// with /api/pos/init (customerScreen). The OWNER's alone, signed in as themselves (never a partner, a manager or a POS's
+// own session), and part of the online licence (lib/webAccess fullAccess, the POS's webPosEnabled). Emptying the list
+// needs no licence, so an owner can always take the images down. Rules: lib/customerScreen.ts (up to 10, uploaded JPEG /
+// PNG / WebP only, 3–60 seconds).
+const customerScreenWho = async (req: any) => ({
+  owner: req.isOwner === true && !req.isTill && req.webPartner !== true,
+  licensed: (await getWebAccess(req.businessId)).fullAccess === true,
+});
+
+// GET /api/business/customer-screen — the list, whether this caller may change it, and whether the licence is there.
+router.get('/customer-screen', requireAuth, async (req, res) => {
+  const { data, error } = await supabase.from('business_settings').select('value')
+    .eq('business_id', req.businessId).eq('key', CUSTOMER_SCREEN_KEY).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  const who = await customerScreenWho(req);
+  const list = slidesFromWire(data?.value ?? null) ?? { slides: [], seconds: 8 };
+  res.json({ ...list, editable: who.owner, licensed: who.licensed });
+});
+
+// PUT /api/business/customer-screen — { slides: [{ url }], seconds } replaces the list (an empty list takes it down).
+router.put('/customer-screen', requireAuth, async (req, res) => {
+  const c = cleanCustomerScreen(req.body);
+  if ('error' in c) { res.status(400).json({ error: c.error, code: 'INVALID_VALUE' }); return; }
+  const refusal = customerScreenWriteError(await customerScreenWho(req), c.value.slides.length === 0);
+  if (refusal) { res.status(refusal.status).json({ error: refusal.error, code: refusal.code }); return; }
+  const value = JSON.stringify(c.value);
+  const { data: existing } = await supabase
+    .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', CUSTOMER_SCREEN_KEY).maybeSingle();
+  const { error } = existing
+    ? await supabase.from('business_settings').update({ value, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    : await supabase.from('business_settings').insert({ business_id: req.businessId, key: CUSTOMER_SCREEN_KEY, value });
+  if (error) { sendError(res, error); return; }
+  res.json(c.value);
+});
+
 // GET /api/business/settings
 // Returns all key/value settings for this business.
 router.get('/settings', requireAuth, async (req, res) => {
@@ -557,7 +641,9 @@ router.get('/settings', requireAuth, async (req, res) => {
 // (`api.get('/api/business/settings/report-schedule')`) hits nothing, its
 // `.catch(() => {})` swallows the 404, and the toggle silently reverts to the
 // default — "saved" on screen, off on reload (register A54).
-router.get('/settings/report-schedule', requireAuth, async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F3): who the reports go to (e-mail addresses) — read by whoever may change it
+// (settings.report_emails), no longer by every signed-in session.
+router.get('/settings/report-schedule', requireAuth, (req, res, next) => { if (mayReportEmails(req)) next(); else res.status(403).json(REPORT_EMAILS_REFUSED); }, async (req, res) => {
   const DEFAULT = { enabled: false, send_time: '21:00', recipients: [] as string[] };
 
   const { data, error } = await supabase
@@ -584,7 +670,12 @@ router.get('/settings/report-schedule', requireAuth, async (req, res) => {
 // POST /api/business/settings
 // Upserts a single key/value pair for this business.
 // Body: { key: string, value: string }
-router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS), async (req, res) => {
+// A595 (D3): the report schedule is the owner's and the partners' (mayReportEmails) — let a partner in for that key alone.
+const settingsWriteGate = requireAnyPermission(...SETTING_WRITE_KEYS);
+router.post('/settings', requireAuth, (req, res, next) => {
+  if (String(req.body?.key ?? '') === 'report_schedule') { if (mayReportEmails(req)) next(); else res.status(403).json(REPORT_EMAILS_REFUSED); return; }
+  settingsWriteGate(req, res, next);
+}, async (req, res) => {
   const { key, value } = req.body;
 
   if (!key || value === undefined) {
@@ -594,6 +685,11 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // A514: the business-wide supervisor PIN is retired — refused for everyone, before any other check or write.
   if (isRetiredSupervisorPinKey(String(key))) {
     res.status(410).json({ ...SUPERVISOR_PIN_RETIRED });
+    return;
+  }
+  // A606: the customer screen's slideshow has its own rules (owner, online licence, uploaded images) — its own route.
+  if (String(key) === CUSTOMER_SCREEN_KEY) {
+    res.status(400).json({ error: 'The customer screen images are saved on Settings › Branding › Customer screen.', code: 'USE_CUSTOMER_SCREEN' });
     return;
   }
   // A492: the M-Pesa number is per branch, set on the branch's till by its manager — not business-wide.
@@ -615,7 +711,9 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // settings.payments, loyalty settings.pos, the report schedule settings.integrations, everything else
   // settings.business. The void/refund rules and the stock-count freeze stay the owner's (below).
   const needed = settingPermission(String(key));
-  if (needed === null) {
+  if (String(key) === 'report_schedule') {
+    // A595 (D3): checked at the gate above (mayReportEmails).
+  } else if (needed === null) {
     // A494: the owner's own settings — the real owner, signed in as themselves (not a till's own sign-in).
     if (!req.isOwner || req.isTill) {
       res.status(403).json({ error: 'Only the owner can change that setting.', code: 'OWNER_ONLY', detail: `"${key}" is the owner's` });

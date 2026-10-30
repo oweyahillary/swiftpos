@@ -39,7 +39,11 @@ router.use(stripCostsUnlessAllowed());
 /** A490: a cost value someone without menu.costs sends is IGNORED when it is empty (their form never saw the cost —
  *  it was stripped) and refused when it is a value. */
 const costSent = (v: unknown) => v !== undefined && v !== null && v !== '';
-const PRODUCT_WRITE = requireAnyPermission('menu.edit', 'menu.prices', 'menu.costs');
+// A595: changing a cost price is its own part of menu.costs (menu.costs_edit) — "See cost prices" no longer changes them
+// (docs/PERMISSIONS-AUDIT.md F12: the Auditor, who changes nothing, could). Migration 176 gave it to every holder of menu.costs.
+const PRODUCT_WRITE = requireAnyPermission('menu.edit', 'menu.prices', 'menu.costs_edit');
+// A595 (F24): changes to many items at once are their own part of menu.edit (menu.bulk).
+const BULK = requirePermission('menu.bulk');
 const PRODUCT_FIELDS = ['name', 'description', 'base_price', 'category_id', 'image_url', 'track_stock', 'has_variants',
   'has_modifiers', 'status', 'barcode', 'plu_code', 'sold_by', 'is_fuel', 'fuel_unit', 'cost_price', 'reorder_level',
   'pieces_per_unit', 'unit_label', 'source', 'tax_type', 'kra_item_class_code', 'is_kitchen', 'show_days'];
@@ -132,7 +136,7 @@ async function barcodeNumbering(businessId: string): Promise<{ numbering: Barcod
 // conditional on the field still being empty, so one typed (or generated) meanwhile is kept. The unique index
 // products_barcode_business_idx (business_id, barcode) makes a duplicate impossible: a clash with a concurrent
 // generate re-reads the business's codes and takes the next free number. dry_run answers how many would get one.
-router.post('/barcodes/generate', requirePermission('menu.edit'), async (req, res) => {
+router.post('/barcodes/generate', BULK, async (req, res) => {   // A595: many items at once
   const body = req.body ?? {};
   if (body.product_ids !== undefined && !Array.isArray(body.product_ids)) {
     res.status(400).json({ error: 'product_ids must be a list' }); return;
@@ -253,11 +257,12 @@ router.get('/labels/restocked', requirePermission('inventory.view'), async (req,
 // ── POST /api/products ────────────────────────────────────────────────────────
 
 router.post('/', requirePermission('menu.edit'),validateLoose(CreateProductSchema), async (req, res) => {
-  // A490: adding a product is menu.edit (its first price with it); a cost price with it is menu.costs.
-  if (costSent(req.body?.cost_price) && !can(req, 'menu.costs')) {
-    res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs' }); return;
+  // A490: adding a product is menu.edit (its first price with it); a cost price with it is menu.costs — A595: changing
+  // (here: setting) one is menu.costs_edit.
+  if (costSent(req.body?.cost_price) && !can(req, 'menu.costs_edit')) {
+    res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs_edit' }); return;
   }
-  if (!can(req, 'menu.costs')) delete req.body.cost_price;
+  if (!can(req, 'menu.costs_edit')) delete req.body.cost_price;
   const {
     name, description, base_price, category_id, image_url,
     track_stock, has_variants, has_modifiers,
@@ -369,7 +374,7 @@ router.patch('/:id', PRODUCT_WRITE, validateLoose(UpdateProductSchema), async (r
     const need = new Set<string>();
     for (const k of PRODUCT_FIELDS) {
       if (body[k] === undefined || same(k)) continue;
-      need.add(k === 'base_price' ? 'menu.prices' : k === 'cost_price' ? 'menu.costs' : 'menu.edit');
+      need.add(k === 'base_price' ? 'menu.prices' : k === 'cost_price' ? 'menu.costs_edit' : 'menu.edit');   // A595: costs_edit
     }
     const missing = [...need].find((k) => !can(req, k));
     if (missing) { res.status(403).json({ error: 'Forbidden', detail: `Missing permission: ${missing}` }); return; }
@@ -455,7 +460,9 @@ router.patch('/:id', PRODUCT_WRITE, validateLoose(UpdateProductSchema), async (r
 
 // ── DELETE /api/products/:id ──────────────────────────────────────────────────
 
-router.delete('/:id', requirePermission('menu.edit'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F24): deleting is its own part of menu.edit (menu.delete — migration 176 gave it to every
+// holder of menu.edit).
+router.delete('/:id', requirePermission('menu.delete'), async (req, res) => {
   const { id } = req.params;
 
   // Soft delete — set status to 'inactive' (archived not in DB constraint)
@@ -488,7 +495,7 @@ const VALID_TAX_TYPES = ['A', 'B', 'C', 'D', 'E'];
 // Body: { category_id?: string|null, tax_type?, kra_item_class_code?, only_unset?: boolean }
 // Applies to every product in the business (optionally filtered to one category).
 // only_unset=true touches just products missing a class code (safe re-runs).
-router.patch('/bulk-tax/by-category', requirePermission('menu.edit'), async (req, res) => {
+router.patch('/bulk-tax/by-category', BULK, async (req, res) => {   // A595
   const { category_id, tax_type, kra_item_class_code, only_unset } = req.body ?? {};
 
   if (tax_type === undefined && kra_item_class_code === undefined) {
@@ -517,7 +524,7 @@ router.patch('/bulk-tax/by-category', requirePermission('menu.edit'), async (req
 // PATCH /api/products/bulk-tax/by-ids
 // Body: { items: [{ id, tax_type?, kra_item_class_code? }, ...] }
 // Per-row codes — drives CSV import. Each id is verified to belong to the business.
-router.patch('/bulk-tax/by-ids', requirePermission('menu.edit'), async (req, res) => {
+router.patch('/bulk-tax/by-ids', BULK, async (req, res) => {   // A595
   const { items } = req.body ?? {};
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'items array is required' }); return;
@@ -556,7 +563,7 @@ router.patch('/bulk-tax/by-ids', requirePermission('menu.edit'), async (req, res
 // Set cost_price on many products at once — each a different value — for the
 // cost-price editor. Mirrors bulk-tax/by-ids' business scoping. cost_price is
 // the unit cost that drives margin, COGS and the Menu Matrix; null/'' clears it.
-router.patch('/bulk-cost/by-ids', requirePermission('menu.costs'), async (req, res) => {
+router.patch('/bulk-cost/by-ids', requirePermission('menu.costs_edit'), async (req, res) => {   // A595: changing costs
   const { items } = req.body ?? {};
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'items array is required' }); return;
@@ -598,7 +605,7 @@ router.patch('/bulk-cost/by-ids', requirePermission('menu.costs'), async (req, r
 // Body: { ids: string[], track_stock: boolean }
 // Turn stock tracking on/off for many existing products at once — the retro path the
 // "+ New product" toggle alone did not provide (A144). Scoped to the caller's business.
-router.patch('/bulk-track/by-ids', requirePermission('menu.edit'), async (req, res) => {
+router.patch('/bulk-track/by-ids', BULK, async (req, res) => {   // A595
   const { ids, track_stock } = req.body ?? {};
   if (!Array.isArray(ids) || ids.length === 0) {
     res.status(400).json({ error: 'ids array is required' }); return;
@@ -666,7 +673,7 @@ router.post('/bulk-price', requirePermission('menu.prices'), async (req, res) =>
   res.json({ updated, errors, preview });
 });
 
-router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
+router.post('/bulk', BULK, async (req, res) => {   // A595: the spreadsheet import
   const { rows } = req.body;
 
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -776,7 +783,7 @@ router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
   const rowDone = new Set<number>();
 
   const results = { created: 0, updated: 0, errors: [] as { row: number; error: string }[], createdNames: [] as string[] };
-  const mayCost = can(req, 'menu.costs'), mayPrice = can(req, 'menu.prices');
+  const mayCost = can(req, 'menu.costs_edit'), mayPrice = can(req, 'menu.prices');   // A595: setting costs is costs_edit
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];

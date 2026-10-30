@@ -9,8 +9,8 @@ import ConfirmShiftModal from '../components/ConfirmShiftModal';
 import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '@zaptill/core/shiftConfirm';
 import { expenseLabel } from '@zaptill/core/expenseMethod';
 import { methodLabel } from '@zaptill/core/paymentCatalogue';   // A442
-import { MONEY_MOVEMENT_MANAGER_ONLY } from '@zaptill/core/posFeatures';   // A453
-import { mayMoveMoney, type SessionLike } from '../lib/access';   // A490: shifts.cash_movements (the main process's rule)
+import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, cashInAddsText, cashMovementNeedsApprover } from '@zaptill/core/posFeatures';   // A594
+import { can, mayMoveMoney, type SessionLike } from '../lib/access';   // A490 / A594: the main process's rules
 
 /** 0.6.27: what an expense can be paid with — cash, M-Pesa, card and the business's own methods. */
 function expenseMethodChoices(options: MethodOption[]): string[] {
@@ -55,11 +55,13 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const [floatReason, setFloatReason] = useState('');
   // 0.6.37 (A388): a cash-out and an expense need a manager — signed in (no PIN), or their PIN typed here.
   const [isManager, setIsManager] = useState(false);
-  // A453: 'cashier_no_money_out' — only a manager signed in records an expense or cash in / out.
+  // A453: 'cashier_no_money_out' — still decides "Record cash in" on a map from before the catalogue (mayMoveMoney).
   const [managerOnlyMoney, setManagerOnlyMoney] = useState(false);
   // A490: the person signed in — cash in / out and expenses are shifts.cash_movements.
   const [me, setMe] = useState<SessionLike | null>(null);
   const [floatPin, setFloatPin] = useState('');
+  // A594: a cash in is confirmed ("This ADDS …"), and confirmed again when it looks like a drawer count.
+  const [floatStep, setFloatStep] = useState<'form' | 'adds' | 'count'>('form');
   const [expPin, setExpPin] = useState('');
 
   // Close form
@@ -135,7 +137,10 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     posApi.pos.paymentMethods().then(setMethodOptions).catch(() => {});   // A365
     posApi.shift.canConfirm().then(setIsManager).catch(() => setIsManager(false));   // 0.6.37: no PIN for a manager (A490: shifts.confirm)
     posApi.auth.getStaffSession().then((s) => setMe(s ?? null)).catch(() => setMe(null));   // A490
-    posApi.pos.features().then((f) => { setManagerOnlyMoney(!!f.cashier_no_money_out); setPayLater(!!(f as any).pay_later_tabs); }).catch(() => {});   // A453; A461
+    posApi.pos.features().then((f) => {
+      setManagerOnlyMoney(!!f.cashier_no_money_out);   // A453
+      setPayLater(!!(f as any).pay_later_tabs);   // A461
+    }).catch(() => {});
   }, []);
 
   // A465: a manager on the branch server recorded a cash in / out or expense on this drawer — reload its figures.
@@ -170,15 +175,29 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     finally { setBusy(false); }
   };
 
+  // A594: check the form, then (a cash in) confirm "This ADDS …" before anything is sent.
   const handleFloat = async () => {
     if (!(Number(floatAmount) > 0)) { setError('Enter an amount greater than zero'); return; }
-    if (floatType === 'float_out' && !isManager && !floatPin.trim()) { setError('A manager must approve a pay out — enter a manager’s PIN.'); return; }
+    if (!floatReason.trim()) { setError(CASH_MOVEMENT_REASON_REQUIRED); return; }
+    if (floatNeedsPin && !floatPin.trim()) {
+      setError(floatType === 'float_out' ? 'A manager must approve a pay out — enter a manager’s PIN.' : CASH_MOVEMENT_ASK_MANAGER); return;
+    }
+    setError('');
+    if (floatType === 'float_in' && floatStep === 'form') { setFloatStep('adds'); return; }
+    await sendFloat(false);
+  };
+  // countAck: the person confirmed a cash in that looks like a drawer count is a real cash in (the main process asks).
+  const sendFloat = async (countAck: boolean) => {
     setBusy(true); setError('');
     try {
-      const r = await posApi.shift.float(floatType, Number(floatAmount), floatReason.trim() || undefined,
-        floatType === 'float_out' && floatPin.trim() ? floatPin.trim() : undefined);
-      setReport(r); onShiftChange(r); setFloatAmount(''); setFloatReason(''); setFloatPin('');
-    } catch (e: any) { setError(e?.message ?? 'Could not record float'); }
+      const r = await posApi.shift.float(floatType, Number(floatAmount), floatReason.trim(),
+        floatNeedsPin && floatPin.trim() ? floatPin.trim() : undefined, countAck);
+      setReport(r); onShiftChange(r); setFloatAmount(''); setFloatReason(''); setFloatPin(''); setFloatStep('form');
+    } catch (e: any) {
+      const msg = String(e?.message ?? '');
+      if (msg.includes(DRAWER_COUNT_WARNING)) { setFloatStep('count'); return; }   // A594: asked again, nothing written
+      setFloatStep('form'); setError(msg || 'Could not record float');
+    }
     finally { setBusy(false); }
   };
 
@@ -205,7 +224,13 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     finally { setExpBusy(false); }
   };
 
-  const moneyAllowed = mayMoveMoney(me, managerOnlyMoney);   // A453 → A490: shifts.cash_movements
+  // A594: three rights — Record cash in (shifts.cash_movements: with nobody approving), Record cash out (shifts.cash_out),
+  // Record expenses (expenses.record). Without one, a manager approves it on the spot (their PIN) — "Ask a manager"; a cash
+  // out and an expense always need a manager (A388). A manager signed in approves as themselves (no PIN).
+  const mayCashIn = mayMoveMoney(me, managerOnlyMoney);
+  const ownRight = floatType === 'float_in' ? mayCashIn : can(me, 'shifts.cash_out');
+  const floatNeedsPin = cashMovementNeedsApprover(floatType, mayCashIn) && !isManager;
+  const expenseOwnRight = can(me, 'expenses.record');
   const expected   = report?.totals.expectedCash ?? 0;
   const counted    = Number(closingFloat);
   const hasCount   = closingFloat.trim() !== '' && !Number.isNaN(counted);
@@ -293,7 +318,8 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
         {/* Tabs — only when a shift is open and not finalised */}
         {report && !finalReport && (
           <div className="flex border-b border-gray-800 flex-shrink-0">
-            {(moneyAllowed ? (['shift', 'expenses'] as const) : (['shift'] as const)).map(t => (
+            {/* A594: Expenses for everyone on the drawer — every expense needs a manager (signed in, or their PIN). */}
+            {(['shift', 'expenses'] as const).map(t => (
               <button key={t} onClick={() => setActiveTab(t)}
                 className={`flex-1 py-2.5 text-sm font-medium transition-colors capitalize ${
                   activeTab === t
@@ -396,32 +422,59 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 </div>
               )}
 
-              {/* Float movement — A453: a cashier sees only who records it while 'cashier_no_money_out' is on */}
-              {!moneyAllowed ? (
-                <p className="border border-gray-800 rounded-xl p-4 text-sm text-gray-400" data-testid="money-manager-only">{MONEY_MOVEMENT_MANAGER_ONLY}</p>
-              ) : (
-              <div className="border border-gray-800 rounded-xl p-4 space-y-3">
+              {/* Cash movement — A594: for everyone on the drawer; a person who may not record one on their own types a
+                  manager's PIN for each (a cash in too). A cash in is confirmed, and again when it looks like a count. */}
+              <div className="border border-gray-800 rounded-xl p-4 space-y-3" data-testid="cash-movement">
                 <p className="text-sm text-gray-300 font-medium">Cash movement</p>
                 <div className="flex gap-2">
                   {(['float_out', 'float_in'] as const).map(t => (
-                    <button key={t} onClick={() => setFloatType(t)}
+                    <button key={t} onClick={() => { setFloatType(t); setFloatStep('form'); }} disabled={floatStep !== 'form'}
                       className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${floatType === t ? 'bg-action-500 text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
-                      {t === 'float_out' ? 'Pay out' : 'Pay in'}
+                      {t === 'float_out' ? 'Cash out' : 'Cash in'}
                     </button>
                   ))}
                 </div>
-                <input type="number" inputMode="decimal" value={floatAmount} onChange={e => setFloatAmount(e.target.value)} placeholder={`Amount (${currency})`} className={inputCls} />
-                <input type="text" value={floatReason} onChange={e => setFloatReason(e.target.value)} placeholder="Reason (optional)" className={inputCls} />
-                {floatType === 'float_out' && !isManager && (
+                {!ownRight && !isManager && (
+                  <p className="text-xs text-amber-200" data-testid="cash-ask-manager">{CASH_MOVEMENT_ASK_MANAGER}</p>
+                )}
+                <input type="number" inputMode="decimal" value={floatAmount} disabled={floatStep !== 'form'}
+                  onChange={e => setFloatAmount(e.target.value)} placeholder={`Amount (${currency})`} className={inputCls} />
+                <input type="text" value={floatReason} maxLength={200} disabled={floatStep !== 'form'} data-testid="float-reason"
+                  onChange={e => setFloatReason(e.target.value)} placeholder="Reason (required)" className={inputCls} />
+                {floatNeedsPin && (
                   <input type="password" inputMode="numeric" autoComplete="off" value={floatPin} data-testid="payout-pin"
                     onChange={e => setFloatPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                    placeholder="Manager PIN (approves the pay out)" className={inputCls} />
+                    placeholder={`Manager PIN (approves the ${floatType === 'float_out' ? 'cash out' : 'cash in'})`} className={inputCls} />
                 )}
-                <button onClick={handleFloat} disabled={busy} className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
-                  Record {floatType === 'float_out' ? 'pay out' : 'pay in'}
-                </button>
+                {floatStep === 'form' && (
+                  <button onClick={handleFloat} disabled={busy} className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
+                    Record {floatType === 'float_out' ? 'cash out' : 'cash in'}
+                  </button>
+                )}
+                {floatStep === 'adds' && (
+                  <div className="border border-amber-500/40 bg-amber-500/10 rounded-lg p-3 space-y-2" data-testid="cash-in-adds">
+                    <p className="text-sm text-amber-100">{cashInAddsText(money(Number(floatAmount)))}</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => void sendFloat(false)} disabled={busy} data-testid="cash-in-adds-yes"
+                        className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-gray-950 rounded-lg py-2 text-sm font-semibold">Yes, add it</button>
+                      <button onClick={() => setFloatStep('form')} disabled={busy}
+                        className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-lg py-2 text-sm">Back</button>
+                    </div>
+                  </div>
+                )}
+                {floatStep === 'count' && (
+                  <div className="border border-red-500/40 bg-red-500/10 rounded-lg p-3 space-y-2" data-testid="cash-in-count-warning">
+                    <p className="text-sm text-red-100 font-medium">{DRAWER_COUNT_WARNING}</p>
+                    <p className="text-xs text-red-100/80">To count the drawer, close the shift below. Record this only if it really is cash put into the drawer.</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setFloatStep('form'); setFloatAmount(''); }} disabled={busy}
+                        className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-lg py-2 text-sm">No — I will close the shift</button>
+                      <button onClick={() => void sendFloat(true)} disabled={busy} data-testid="cash-in-count-yes"
+                        className="flex-1 bg-red-500/90 hover:bg-red-500 disabled:opacity-40 text-white rounded-lg py-2 text-sm font-semibold">Yes, it is a cash in</button>
+                    </div>
+                  </div>
+                )}
               </div>
-              )}
 
               {/* A366: another cashier cannot count out this drawer — its owner or a manager does. */}
               {!closeRights.allowed && (
@@ -554,7 +607,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
           )}
 
           {/* ── Expenses tab ── */}
-          {!loading && report && !finalReport && activeTab === 'expenses' && moneyAllowed && (
+          {!loading && report && !finalReport && activeTab === 'expenses' && (
             <>
               {/* New expense form */}
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
@@ -632,7 +685,9 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   )}
                 </div>
 
-                {/* 0.6.37 (A388): a manager approves every expense — signed in, or their PIN here. */}
+                {/* 0.6.37 (A388): a manager approves every expense — signed in, or their PIN here. A594: without "Record
+                    expenses" the screen says so first (ask a manager). */}
+                {!isManager && !expenseOwnRight && <p className="text-xs text-amber-200" data-testid="expense-ask-manager">{EXPENSE_ASK_MANAGER}</p>}
                 {!isManager && (
                   <input type="password" inputMode="numeric" autoComplete="off" value={expPin} data-testid="expense-pin"
                     onChange={e => setExpPin(e.target.value.replace(/\D/g, '').slice(0, 8))}

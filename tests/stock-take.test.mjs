@@ -105,22 +105,23 @@ console.log('\nThe cloud\n');
 const st = read('apps/server/src/routes/stockTakes.ts');
 const acc = read('apps/server/src/lib/stockTakeAccess.ts');
 await ok('who: counting is inventory.count; recount and post are inventory.adjust (the owner by default)', () => {
-  assert.match(st, /router\.post\('\/:id\/count', requireAnyPermission\('inventory\.count', 'inventory\.adjust'\)/);
-  assert.match(st, /router\.post\('\/:id\/recount', requirePermission\('inventory\.adjust'\)/);
-  assert.match(st, /router\.post\('\/:id\/post', requirePermission\('inventory\.adjust'\)/);
+  // A595: reviewing a count (recount, post, the expected figures) is its own part of inventory.adjust (inventory.count_review).
+  assert.match(st, /router\.post\('\/:id\/count', requireAnyPermission\('inventory\.count', 'inventory\.adjust', 'inventory\.count_review'\)/);
+  assert.match(st, /router\.post\('\/:id\/recount', requirePermission\('inventory\.count_review'\)/);
+  assert.match(st, /router\.post\('\/:id\/post', requirePermission\('inventory\.count_review'\)/);
   assert.match(read('packages/core/src/permissions.ts'), /key: 'inventory\.count'/  /* A490: the catalogue is packages/core/src/permissions.ts */);
   assert.match(read('apps/server/src/routes/index.ts'), /router\.use\('\/stock-takes',\s+stockTakeRoutes\);/);
 });
 await ok('blind on the cloud: the items and totals reach only someone who may change stock', () => {
   assert.match(st, /lines: full \? lines : lines\.map\(\(l\) => blindLine\(/);
   assert.match(st, /summary: full \? \(take\.summary \?\? summary\) : null,/);
-  assert.match(st, /const full = may\(req, 'inventory\.adjust'\);\n  if \(full && isOpen\(take\.status\)\) lines = await preview\(take, lines\);/);
+  assert.match(st, /const full = may\(req, 'inventory\.count_review'\);[^\n]*\n  if \(full && isOpen\(take\.status\)\) lines = await preview\(take, lines\);/);
   // what the system held at the moment of the count is recorded, never sent back
   assert.match(st, /counted_qty: s\.qty, expected_qty: levels\.get\(lineKey\(s\.line\)\) \?\? 0, counted_at: now/);
   assert.match(st, /res\.json\(\{ saved: toSave\.length, counted_at: now \}\);/);
 });
 await ok('blind beyond the count screen: stock screens hide the counted items from someone who may not change stock', () => {
-  assert.match(acc, /if \(!branchId \|\| may\(req, 'inventory\.adjust'\)\) return hide;/);
+  assert.match(acc, /if \(!branchId \|\| may\(req, 'inventory\.adjust'\) \|\| may\(req, 'inventory\.count_review'\)\) return hide;/);   // A595
   assert.match(read('apps/server/src/routes/inventory.ts'), /hide\.has\(`p:\$\{r\.product_id\}`\) \? \{ \.\.\.r, quantity: null, qty_pieces: null, counting: true \} : r/);
   assert.match(read('apps/server/src/routes/stock.ts'), /hide\.has\(`i:\$\{i\.id\}`\) \? \{ \.\.\.i, current_stock: null, branch_stock: \[\], counting: true \} : i/);
 });
@@ -186,8 +187,8 @@ await ok('the screens: the difference only for a reviewer; a blind printed sheet
   assert.match(sc, /const showDiff = take\.can_review && \(take\.status === 'review' \|\| take\.status === 'posted'\);/);
   assert.match(sc, /: \[\{ label: 'Item' \}, \{ label: 'Category' \}, \{ label: 'Unit' \}, \{ label: 'Counted', align: 'right' \}\],/);
   assert.match(sc, /\{\(isOwner \|\| canFreeze\) && <FreezeSwitch client=\{client\} \/>\}/);
-  const md = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
-  assert.match(md, /key: 'counts',[^\n]+permission: 'inventory\.count', group: 'Inventory' \}/);
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's Counts tab
+  // (ManagerDashboard.tsx) is gone; the dashboard's Stock › Stock Counts (route + nav, below) is where a manager counts.
   assert.match(read('apps/dashboard/src/App.tsx'), /<Route path="stock\/counts"\s+element=\{<StockCountsPage \/>\} \/>/);
   assert.match(read('apps/dashboard/src/components/DashboardLayout.tsx'), /\{ to: '\/dashboard\/stock\/counts',\s+label: 'Stock Counts'/);
 });

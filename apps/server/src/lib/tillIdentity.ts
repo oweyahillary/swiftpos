@@ -29,13 +29,19 @@ export interface TillIdentityResult {
 const SEEN_EVERY_MS = 60 * 60_000;
 
 /** Check (and on first sight, record) the machine behind a till's request. Never throws. */
-export async function checkTillIdentity(businessId: string, deviceId: string, header: (name: string) => unknown, now = new Date()): Promise<TillIdentityResult> {
+export interface TillIdentityRow { id: string; mac_address?: string | null; machine_guid_hash?: string | null; serial_hash?: string | null; identity_seen_at?: string | null }
+/** A593: the columns checkTillIdentity reads — a caller that reads the till's row anyway (the renewal) reads them with it. */
+export const IDENTITY_COLS = 'id, mac_address, machine_guid_hash, serial_hash, identity_seen_at';
+
+export async function checkTillIdentity(businessId: string, deviceId: string, header: (name: string) => unknown, now = new Date(),
+  known?: TillIdentityRow | null): Promise<TillIdentityResult> {
   const p = presentedIdentity(header);
   const presented = !!(p.guidHash || p.serialHash);
   if (!presented) return { verdict: 'pass', matched: false, presented };
   try {
-    const { data, error } = await supabase.from('user_devices')
-      .select('id, mac_address, machine_guid_hash, serial_hash, identity_seen_at')
+    // A593: the renewal's own read of the till's row carries these columns — the same row, not a second read.
+    const { data, error } = known !== undefined ? { data: known, error: null } : await supabase.from('user_devices')
+      .select(IDENTITY_COLS)
       .eq('business_id', businessId).eq('device_id', deviceId).maybeSingle();
     if (error || !data) return { verdict: 'pass', matched: false, presented };   // before migration 131 / no row
     const row = data as { id: string; mac_address?: string | null; machine_guid_hash?: string | null; serial_hash?: string | null; identity_seen_at?: string | null };

@@ -283,10 +283,11 @@ try {
     assert.match(pl, /if \(data\.code === 'OTP_REQUIRED'\) \{/);
     assert.match(pl, /otp_trust: otpPass \|\| readOtpTrust\(email\)/, 'the branch choice after the code needs no second code');
   });
-  await ok('each person picks email or an authenticator app (admin portal, dashboard, manager screens)', () => {
+  await ok('each person picks email or an authenticator app (admin portal, dashboard)', () => {
     assert.match(read('apps/admin/src/SignInCodeCard.tsx'), /"\/auth\/otp\/totp\/confirm"/);
     assert.match(read('apps/dashboard/src/components/SignInSecurity.tsx'), /'\/api\/auth\/otp\/totp\/confirm'/);
-    assert.match(read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), /case 'security':\s*return <SignInSecurity \/>;/);
+    // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's Security tab
+    // (ManagerDashboard.tsx) is gone; the dashboard's /security route (below) is where a manager sets it now.
     assert.match(read('apps/dashboard/src/App.tsx'), /<Route path="security" element=\{<SignInSecurityRoute \/>\} \/>/);
   });
   await ok('migration 119: the settings on both account tables, the code table under RLS, recorded', () => {

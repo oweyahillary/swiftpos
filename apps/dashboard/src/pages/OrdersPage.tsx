@@ -11,7 +11,7 @@
  * their own PIN (A444). A444 also: an opened row lists the order's items, and Reprint is offered as the cloud allows.
  */
 import { useState, useEffect, useCallback, Fragment } from 'react';
-import { reportPresets } from '../lib/reportPeriods';   // A497: Today · Yesterday · This week … (local Kenya days)
+import { reportPresets, activePreset } from '../lib/reportPeriods';   // A497: Today · Yesterday · This week … (local Kenya days)
 import { api } from '../lib/api';
 import { usePermissions } from '../context/PermissionsContext';
 import { isRefunded } from './orderRefund';
@@ -102,6 +102,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
     const t = reportPresets()[0];
     return { from: t.from, to: t.to };
   });
+  const [pickedPreset, setPickedPreset] = useState<string | null>('Today');   // only the clicked preset lights up
   const [loading, setLoading] = useState(false);
   const [reprintingId, setReprintingId] = useState<string | null>(null);
   const [reprintMsg, setReprintMsg] = useState('');
@@ -213,9 +214,9 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
         <div className="flex items-center gap-1 max-w-full overflow-x-auto bg-gray-800 border border-gray-700 rounded-lg p-1">
           {[...reportPresets().map((pr) => ({ label: pr.label, r: { from: pr.from, to: pr.to } as { from: string; to: string } | null })),
             { label: 'All dates', r: null as { from: string; to: string } | null }].map(({ label, r }) => {
-            const on = r === null ? range === null : !!range && range.from === r.from && range.to === r.to;
+            const on = r === null ? range === null : activePreset(reportPresets(), range, pickedPreset) === label;
             return (
-              <button key={label} type="button" onClick={() => setRange(r)} data-testid={`orders-preset-${label.toLowerCase().replace(/ /g, '-')}`}
+              <button key={label} type="button" onClick={() => { setPickedPreset(r ? label : null); setRange(r); }} data-testid={`orders-preset-${label.toLowerCase().replace(/ /g, '-')}`}
                 className={`flex-shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-md transition-colors ${on ? 'bg-swift-strong text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
                 {label}
               </button>

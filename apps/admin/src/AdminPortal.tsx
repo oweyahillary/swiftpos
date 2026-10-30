@@ -2,21 +2,23 @@ import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
-import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, STAFF_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "@zaptill/core/posFeatures";   // A538; A543; A562
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS, STANDARD_POS_FEATURES } from "@zaptill/core/posFeatures";   // A538; A543 (A594: the approval PIN is the owner's); A604
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
-import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
+import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage,
+  OWNER_POS_OPTIONS_HEADING, OWNER_POS_OPTIONS_NOTE, PER_ROLE_NOTE, ALWAYS_ON_NOTE, OWNER_LOYALTY, OTHER_FLAG_LABELS, ownerValueText } from "./ownerSettings";   // A604
 import { RELEASE, releaseLabel, releasesDiffer } from "@zaptill/core/release";
 import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "@zaptill/core/tenantHost";   // A378: a client's own sign-in address
 import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "@zaptill/core/support";   // 0.6.35 (A384): a shop's own tech
 import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and Account pages
 import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
+import NotificationBell from "./NotificationBell";   // A589: the bell — client problems and billing notices, not an email each
 import SystemPage from "./SystemPage";   // A525: what production runs, the deploy check, the dependency scan
 import SignInCodeCard from "./SignInCodeCard";   // A391
 import TestDataCard from "./TestDataCard";   // A396
 import SupportLogsCard from "./SupportLogsCard";   // A519
 import TillsDaysCard from "./TillsDaysCard";   // A523
 import DownloadZapTill from "./DownloadZapTill";   // A570: the installer, through our own server
-import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone, expiryText } from "./cloudPlan";   // A569; A581 expiryText
+import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone, expiryText, desktopOnlyText, cutoffLine, desktopUpdatesLine } from "./cloudPlan";   // A569; A581 expiryText; A601
 import CloudPlanCard from "./CloudPlanCard";   // A581: the cloud payment plan
 import AdminPager, { usePageSize } from "./AdminPager";   // A475
 import { paginate } from "@zaptill/core/paginate";
@@ -656,6 +658,7 @@ function SupportTechPicker({ req, clientId, current, onSaved }) {
 function ClientsPage({ req, onSelectClient }) {
   const [clients, setClients] = useState([]);
   const [total, setTotal]     = useState(0);
+  const [cutoff, setCutoff]   = useState(null);   // A601: the cloud's desktop-only cut-off date
   const [search, setSearch]   = useState("");
   const [status, setStatus]   = useState("");
   const [type, setType]       = useState("");
@@ -676,7 +679,7 @@ function ClientsPage({ req, onSelectClient }) {
       if (type)   params.set("type", type);
       if (expiry) params.set("expiry", expiry);
       const data = await req("GET", `/clients?${params}`);
-      setClients(data.clients); setTotal(data.total);
+      setClients(data.clients); setTotal(data.total); setCutoff(data.cutoff ?? null);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   }, [search, status, type, expiry, page, pageSize]);
@@ -716,8 +719,11 @@ function ClientsPage({ req, onSelectClient }) {
           <option value="no_expiry">No expiry set</option>
           <option value="not_interested">Not interested</option>
           <option value="off">Web access off</option>
+          {/* A601: the clients the desktop-only cut-off is about (no plan, no date, no trial, no web access) */}
+          <option value="desktop_only">Desktop only (cloud backup cut-off)</option>
         </select>
       </div>
+      {expiry === "desktop_only" && <div data-testid="desktop-only-cutoff" style={{ fontSize: 12, color: C.muted, margin: "-6px 0 14px" }}>{cutoffLine(cutoff)}</div>}
 
       <div style={S.card}>
         <div className="sp-table-wrap"><table style={S.table}>
@@ -738,7 +744,7 @@ function ClientsPage({ req, onSelectClient }) {
                 {/* A569: Desktop / Cloud trial / Cloud trial ended / Cloud / No licence yet */}
                 <td data-testid="client-plan" style={{ ...S.td, fontSize: 12, color: TONE[planTone(b.plan_label)] }}>{b.plan_label || "—"}</td>
                 {/* A584: "Due in 5 days" / "Unpaid 3 days (locks in 4 days)" / "Locked 2 days" / "No expiry set" */}
-                {(() => { const x = expiryText(b.cloud); return <td data-testid="client-expiry" style={{ ...S.td, fontSize: 12, color: x ? TONE[x.tone] : C.muted, whiteSpace: "nowrap" }}>{x ? x.text : "—"}</td>; })()}
+                {(() => { const x = expiryText(b.cloud) ?? desktopOnlyText(b.desktop_only); return <td data-testid="client-expiry" style={{ ...S.td, fontSize: 12, color: x ? TONE[x.tone] : C.muted, whiteSpace: "nowrap" }}>{x ? x.text : "—"}</td>; })()}
                 <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{b.currency}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{b.phone || "—"}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(b.created_at)}</td>
@@ -755,8 +761,8 @@ function ClientsPage({ req, onSelectClient }) {
 }
 
 // ─── CLIENT DETAIL ────────────────────────────────────────────────────────────
-function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false }) {
-  const [tab, setTab]     = useState("overview");
+function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, initialTab = "overview" }) {
+  const [tab, setTab]     = useState(initialTab);   // A592: an alert's button can open a tab (POS & days)
   const [detail, setDetail] = useState(null);
   const [features, setFeatures] = useState([]);
   const [subs, setSubs]   = useState([]);
@@ -825,6 +831,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
   // the per-role switches are never written from here — the cloud answers OWNER_SETS, and its message is shown.
   async function toggleFeature(key, enabled) {
     if (!adminSwitches(key)) { setError(`${key}: ${PER_ROLE_SWITCHES[key] ? PER_ROLE_WHERE : OWNER_POS_OPTIONS_WHERE}.`); return; }
+    if ((STANDARD_POS_FEATURES as readonly string[]).includes(key)) { setError(ALWAYS_ON_NOTE); return; }   // A604: nothing to switch
     try {
       await req("PATCH", `/clients/${client.id}/features/${key}`, { enabled });
       setFeatures(prev => {
@@ -892,6 +899,14 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
   // insights). Premium; off by default. While off the page shows "part of ZapTill Premium" and the cloud refuses
   // /api/analytics (ANALYTICS_OFF). Price not decided: no invoice is raised here.
   const hasAnalytics = features.find(f => f.key === 'analytics')?.enabled === true;
+  // A599: Attendance (premium; off by default; +KES 2,000 on the cloud price) — punches from a ZKTeco device through the
+  // branch server, the web dashboard's Attendance report. While off nothing attendance-related shows anywhere and the
+  // cloud refuses /api/attendance (ATTENDANCE_OFF). No invoice is raised here (the cloud plan's price is set there).
+  const hasAttendance = features.find(f => f.key === 'attendance')?.enabled === true;
+  // A601: the desktop-only cut-off's two switches (super admin; no migration — feature_flags rows): keep the cloud backup
+  // with no plan (goodwill), and release desktop updates (a paid support extra; the version is still the approval).
+  const hasCloudBackup = features.find(f => f.key === 'cloud_backup')?.enabled === true;
+  const hasDesktopUpdates = features.find(f => f.key === 'desktop_updates')?.enabled === true;
 
   // A147: set businesses.web_access_expires_at — the date the renewal ladder is
   // measured against (distinct from the legacy web_hosting on/off boolean above).
@@ -956,8 +971,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
 
   async function toggleThemes(enable) {
     const msg = enable
-      ? 'Enable themes? The client can then pick an app theme on the Branding page; their points of sale pick it up within about 20 seconds.'
-      : 'Disable themes? The client\'s points of sale return to the standard look within about 20 seconds. Their chosen theme is kept for later.';
+      ? 'Enable themes and brand colours? The client can then pick an app theme, and the owner their brand colours, on the Branding page; their web dashboard and points of sale pick them up within about 20 seconds.'
+      : 'Disable themes and brand colours? The client\'s web dashboard and points of sale return to the standard look within about 20 seconds. Their chosen theme and colours are kept for later.';
     if (!(await askConfirm(msg))) return;
     try {
       await req("PATCH", `/clients/${client.id}/features/themes`, {
@@ -987,6 +1002,47 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
         if (existing) return prev.map(f => f.key === 'analytics' ? { ...f, enabled: enable } : f);
         return [...prev, { key: 'analytics', enabled: enable }];
       });
+    } catch(e) { setError(e.message); }
+  }
+
+  async function toggleAttendance(enable) {
+    const msg = enable
+      ? 'Enable Attendance (+KES 2,000 on the cloud price)? The owner can then set up ZKTeco attendance devices and see the Attendance report on the web dashboard; the web POS PIN clock-in is replaced by the device.'
+      : 'Disable Attendance? The Attendance page, its devices and the report disappear from the web dashboard at once and the branch server stops pulling punches. The web POS PIN clock-in comes back. Recorded punches are kept.';
+    if (!(await askConfirm(msg))) return;
+    try {
+      await req("PATCH", `/clients/${client.id}/features/attendance`, {
+        enabled: enable,
+        notes:   enable ? 'Attendance enabled (A599, premium)' : 'Attendance disabled',
+      });
+      setFeatures(prev => {
+        const existing = prev.find(f => f.key === 'attendance');
+        if (existing) return prev.map(f => f.key === 'attendance' ? { ...f, enabled: enable } : f);
+        return [...prev, { key: 'attendance', enabled: enable }];
+      });
+    } catch(e) { setError(e.message); }
+  }
+
+  // A601: cloud_backup / desktop_updates — the client's POSs hear within about 20 seconds (a feature_flags change) or at
+  // their next catalogue pull.
+  async function toggleCutoffFlag(key, enable) {
+    const name = detail?.name ?? 'this client';
+    const msg = key === 'cloud_backup'
+      ? (enable ? `Keep the cloud backup for ${name} with no plan? Their points of sale keep sending sales, shifts and day closes to the cloud after the cut-off. (Audited.)`
+                : `Stop keeping the cloud backup for ${name}? From the cut-off their points of sale keep everything on the PC and send no backup to the cloud. (Audited.)`)
+      : (enable ? `Release desktop updates to ${name}? The version approved on Desktop updates is offered to their points of sale even after the cut-off. (Audited.)`
+                : `Stop releasing desktop updates to ${name}? After the cut-off no update is offered to their points of sale. (Audited.)`);
+    if (!(await askConfirm(msg))) return;
+    try {
+      await req("PATCH", `/clients/${client.id}/features/${key}`, { enabled: enable,
+        notes: key === 'cloud_backup' ? (enable ? 'Cloud backup kept with no plan (A601)' : 'Cloud backup exemption removed (A601)')
+                                      : (enable ? 'Desktop updates released (A601)' : 'Desktop updates release ended (A601)') });
+      setFeatures(prev => {
+        const existing = prev.find(f => f.key === key);
+        if (existing) return prev.map(f => f.key === key ? { ...f, enabled: enable } : f);
+        return [...prev, { key, enabled: enable }];
+      });
+      await reloadDetail();
     } catch(e) { setError(e.message); }
   }
 
@@ -1202,12 +1258,11 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
     </button>
   );
 
-  // A491: a setting the owner holds — its state, not a switch.
-  const statePill = (on, label) => (
-    <span data-testid="owner-set-state" aria-label={`${label}: ${on ? "on" : "off"}`}
-      style={{ flex: "0 0 auto", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, letterSpacing: 0.4,
-        background: on ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.05)", color: on ? "#22c55e" : C.muted, border: `1px solid ${on ? "rgba(34,197,94,0.3)" : C.border}` }}>
-      {on ? "ON" : "OFF"}
+  // A491: a setting the owner holds — its state, not a switch. A604: plain words ("On" / "Off"), no pill, nothing to press.
+  const ownerValue = (on, label) => (
+    <span data-testid="owner-set-value" aria-label={`${label}: ${on ? "on" : "off"}`}
+      style={{ flex: "0 0 auto", fontSize: 12, fontWeight: 600, color: on ? C.text : C.muted }}>
+      {ownerValueText(on)}
     </span>
   );
 
@@ -1699,40 +1754,70 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Features</div>
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Changes take effect at once; tills pick them up at their next sync.</p>
           {/* A325: client branding Phase 2 — curated app themes (premium; off by default). */}
-          {settingRow("App themes",
-            hasThemes ? "The client picks an app theme on the Branding page; points of sale follow it." : "Points of sale keep the standard look. Turn on to let the client pick an app theme.",
-            toggle(hasThemes, () => toggleThemes(!hasThemes), "App themes"))}
+          {/* A597: the same switch now also lets the OWNER choose their brand colours (web dashboard and both POS apps). */}
+          {settingRow("App themes and brand colours",
+            hasThemes ? "The client picks an app theme, and the owner their own brand colours, on the Branding page; the web dashboard and points of sale follow them." : "The web dashboard and points of sale keep the standard look. Turn on to let the client pick an app theme and the owner their brand colours.",
+            toggle(hasThemes, () => toggleThemes(!hasThemes), "App themes and brand colours"))}
           {/* A549: Analytics v1 (premium; off by default) — the web dashboard's Analytics page. */}
           {settingRow("Analytics",
             hasAnalytics ? "The Analytics page is open: menu engineering, sales heatmap, money leaks, credit ageing and insights." : "The Analytics page shows “part of ZapTill Premium”. Turn on when the client has paid for it.",
             toggle(hasAnalytics, () => toggleAnalytics(!hasAnalytics), "Analytics"), "feature-analytics")}
+          {/* A599: Attendance (premium; off by default; +KES 2,000 on the cloud price) — ZKTeco devices and the report. */}
+          {settingRow("Attendance (+KES 2,000 on the cloud price)",
+            hasAttendance ? "On: the client sets up ZKTeco attendance devices and sees the Attendance report; punches come from the device (the web POS PIN clock-in is off)." : "Off: nothing about attendance shows for this client. Turn on when the client has paid for it (+KES 2,000 on the cloud price).",
+            toggle(hasAttendance, () => toggleAttendance(!hasAttendance), "Attendance"), "feature-attendance")}
+          {/* A601: the desktop-only cut-off — only for a client with no plan, no paid-until, no trial and no web access. */}
+          {detail?.desktop_only && (
+            <div data-testid="desktop-only-features">
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Desktop only — cloud backup cut-off</div>
+              <div style={{ fontSize: 12, color: TONE[desktopOnlyText(detail.desktop_only)?.tone ?? "muted"], marginTop: 4 }}>{desktopOnlyText(detail.desktop_only)?.text}</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 1.5 }}>{cutoffLine(detail.desktop_only_cutoff)}</div>
+              {settingRow("Keep cloud backup (no plan)",
+                hasCloudBackup ? "On: this client's points of sale keep backing up to the cloud after the cut-off, with no plan (goodwill)." : "Off: from the cut-off their points of sale keep sales on the PC (backed up there every night) and send none to the cloud.",
+                superOnly(toggle(hasCloudBackup, () => toggleCutoffFlag('cloud_backup', !hasCloudBackup), "Keep cloud backup")), "feature-cloud-backup")}
+              {settingRow("Release desktop updates",
+                hasDesktopUpdates ? "On: the version approved on Desktop updates is offered to this client's points of sale after the cut-off (a paid support extra)." : "Off: after the cut-off no update is offered; their POS says updates are released by ZapTill support.",
+                superOnly(toggle(hasDesktopUpdates, () => toggleCutoffFlag('desktop_updates', !hasDesktopUpdates), "Release desktop updates")), "feature-desktop-updates")}
+            </div>
+          )}
           {/* 0.6.27: the POS switches — always listed (off until set), named and explained.
-              A491: the owner sets them now (A490) — shown read-only with where the owner sets each. */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
-          <div data-testid="pos-options-owner-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_WHERE}.</div>
+              A491: the owner sets them now (A490) — shown read-only with where the owner sets each.
+              A604 (owner, 2026-10-28: "why cant we move this switches to the owners side"): they ARE the owner's — said once
+              at the top; each value plain "On" / "Off" (nothing that looks like a switch); the cashier switches retired into
+              role permissions (A490/A594) are not listed; the STANDARD keys are one line, never raw toggles. */}
+          <div data-testid="pos-options-heading" style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>{OWNER_POS_OPTIONS_HEADING}</div>
+          <div data-testid="pos-options-owner-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_NOTE}</div>
           {POS_FEATURES.map(pf => {
             if ((RECEIPT_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
             if ((KITCHEN_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A543: switched below
-            if ((STAFF_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A562: switched below
+            if (PER_ROLE_SWITCHES[pf.key]) return null;   // A604: a role permission now — the one line below
+            // A594: the approval PIN (A562 STAFF_OPTION_KEYS) is the owner's now — listed here, read-only, like the rest.
             const on = features.some(f => f.key === pf.key && f.enabled);
-            const perRole = PER_ROLE_SWITCHES[pf.key];
             return (
               <div key={pf.key} data-testid={`pos-feature-${pf.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{pf.label}</div>
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pf.description}</div>
-                  {perRole ? (
-                    <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4, lineHeight: 1.5 }}>
-                      {PER_ROLE_WHERE}: “{perRole}”. The stored value shown no longer applies once roles hold the permission.
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_WHERE}</div>
-                  )}
                 </div>
-                {statePill(on, pf.label)}
+                {ownerValue(on, pf.label)}
               </div>
             );
           })}
+          {/* A604: loyalty is the owner's too (Settings › Business › POS options) — listed with the rest, not under Other flags. */}
+          {(() => {
+            const on = features.some(f => f.key === OWNER_LOYALTY.key && f.enabled);
+            return (
+              <div data-testid={`pos-feature-${OWNER_LOYALTY.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{OWNER_LOYALTY.label}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{OWNER_LOYALTY.description}</div>
+                </div>
+                {ownerValue(on, OWNER_LOYALTY.label)}
+              </div>
+            );
+          })()}
+          <div data-testid="per-role-note" style={{ fontSize: 12, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>{PER_ROLE_NOTE}</div>
+          <div data-testid="always-on-note" style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>{ALWAYS_ON_NOTE}</div>
           {/* A530 (owner, 2026-10-19: "the switch settings … should be in the admin per client"); A538 (owner, 2026-10-21:
               "go back to the old layout", "line spacing in the middle, about 3.75 mm"): the standard is the classic layout
               at 3.75 mm with a small logo; each switch changes one part for this client. ZapTill sets them, here. */}
@@ -1768,35 +1853,22 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
               </div>
             );
           })}
-          {/* A562 (owner, 2026-10-22: "we remove approval pin and add it as a feature we can turn on or off in the admin
-              panel"): off = managers approve with their sign-in PIN and the staff form offers no approval PIN. */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Staff options</div>
-          {STAFF_OPTION_KEYS.map(key => {
-            const sf = POS_FEATURES.find(x => x.key === key);
-            const on = features.some(f => f.key === key && f.enabled);
-            return (
-              <div key={key} data-testid={`staff-feature-${key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{sf?.label ?? key}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{sf?.description}</div>
-                </div>
-                {toggle(on, () => toggleFeature(key, !on), sf?.label ?? key)}
-              </div>
-            );
-          })}
-          {/* A538: a retired switch's stored row (receipt_classic_layout) is read by nothing — not listed here either. */}
-          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "analytics" && f.key !== "web_hosting").length > 0 && (
+          {/* A538: a retired switch's stored row (receipt_classic_layout) is read by nothing — not listed here either.
+              A604: nor a STANDARD key (always on, a stored value ignored — the line above) or loyalty (the owner's, above).
+              What is left is ZapTill's to switch (etims_enabled, named), each under its plain name. */}
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && !(STANDARD_POS_FEATURES as readonly string[]).includes(f.key) && f.key !== OWNER_LOYALTY.key && f.key !== "themes" && f.key !== "analytics" && f.key !== "attendance" && f.key !== "web_hosting" && f.key !== "cloud_backup" && f.key !== "desktop_updates").length > 0 && (
             <>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
-              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "analytics" && f.key !== "web_hosting").map(f => (
+              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && !(STANDARD_POS_FEATURES as readonly string[]).includes(f.key) && f.key !== OWNER_LOYALTY.key && f.key !== "themes" && f.key !== "analytics" && f.key !== "attendance" && f.key !== "web_hosting" && f.key !== "cloud_backup" && f.key !== "desktop_updates").map(f => (
                 <div key={f.key} data-testid={`other-flag-${f.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, gap: 12 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{OTHER_FLAG_LABELS[f.key]?.label ?? f.key}</div>
+                    {OTHER_FLAG_LABELS[f.key] && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{OTHER_FLAG_LABELS[f.key].description}</div>}
                     {f.notes && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{f.notes}</div>}
-                    {/* A491: loyalty_enabled (and any other owner-held key) — the owner's POS options. */}
+                    {/* A491: any other owner-held key — the owner's POS options. */}
                     {!adminSwitches(f.key) && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{PER_ROLE_SWITCHES[f.key] ? PER_ROLE_WHERE : OWNER_POS_OPTIONS_WHERE}</div>}
                   </div>
-                  {adminSwitches(f.key) ? toggle(f.enabled, () => toggleFeature(f.key, !f.enabled), f.key) : statePill(f.enabled, f.key)}
+                  {adminSwitches(f.key) ? toggle(f.enabled, () => toggleFeature(f.key, !f.enabled), OTHER_FLAG_LABELS[f.key]?.label ?? f.key) : ownerValue(f.enabled, f.key)}
                 </div>
               ))}
             </>
@@ -1813,6 +1885,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
               ? `Approved: ${detail.desktop_approved_version}. Points of sale on 0.6.16 or later update to it within the hour; it installs when each POS is next closed.`
               : "Held — points of sale stay on the version they run. (Points of sale older than 0.6.16 still follow the published GitHub release.)"}
           </div>
+          {/* A601: a desktop-only client's updates stop at the cut-off unless released (Features). */}
+          {desktopUpdatesLine(detail?.desktop_only) && <div data-testid="desktop-only-updates" style={{ fontSize: 12, color: "#f59e0b", marginTop: 6, lineHeight: 1.5 }}>{desktopUpdatesLine(detail?.desktop_only)}</div>}
           {desktopReleases && desktopReleases.error && (
             <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
           )}
@@ -2782,6 +2856,21 @@ function NewClientPage({ req, onCreated }) {
 }
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
+/** A592: the pages and client tabs an alert's button may open (lib/alertFormat.ts alertsUrl / systemUrl / clientUrl). */
+const DEEP_PAGES = ["alerts", "system", "billing", "clients", "tech"];
+const DEEP_TABS = ["overview", "branches", "billing", "features", "tills", "updates", "account", "notes"];
+function readDeepLink() {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const open = q.get("open"), client = q.get("client"), tab = q.get("tab");
+    if (!open && !client) return null;
+    // Off the address bar, so a reload does not open it again.
+    window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    if (client && /^[0-9a-f-]{36}$/i.test(client)) return { client, tab: DEEP_TABS.includes(tab) ? tab : null };
+    return DEEP_PAGES.includes(open) ? { open } : null;
+  } catch { return null; }
+}
+
 export default function AdminPortal() {
   const { req, token, setToken, apiUrl, setApiUrl } = useAdminApi();
   const [admin, setAdmin]     = useState(() => {
@@ -2807,6 +2896,19 @@ export default function AdminPortal() {
       });
     }).catch(() => { /* a 401 already signs out in req */ });
   }, [token]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // A592: an alert's button opens a page directly — ?open=alerts|system|billing, ?client=<id>&tab=tills ("Close it
+  // remotely" → the client's POS & days). Read once (before sign-in too), applied once signed in.
+  const [deepLink, setDeepLink] = useState(readDeepLink);
+  const [clientTab, setClientTab] = useState(null);
+  useEffect(() => {
+    if (!token || !admin || !deepLink) return;
+    setDeepLink(null);
+    if (deepLink.client) {
+      req("GET", `/clients/${deepLink.client}`, undefined)
+        .then(c => { if (c?.id) { setClientTab(deepLink.tab); setSelectedClient(c); setPage("client_detail"); } })
+        .catch(() => { /* not found or no access: stay where we are */ });
+    } else if (deepLink.open) setPage(deepLink.open);
+  }, [token, admin, deepLink]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleLogin(tok, adminData) {
     setToken(tok);
@@ -2823,6 +2925,7 @@ export default function AdminPortal() {
   }
 
   function handleSelectClient(client) {
+    setClientTab(null);
     setSelectedClient(client);
     setPage("client_detail");
   }
@@ -2833,7 +2936,7 @@ export default function AdminPortal() {
 
   const pageEl = (() => {
     if (page === "client_detail" && selectedClient)
-      return <ClientDetailPage client={selectedClient} req={req} apiUrl={apiUrl} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} />;
+      return <ClientDetailPage key={`${selectedClient.id}:${clientTab ?? ""}`} client={selectedClient} req={req} apiUrl={apiUrl} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} initialTab={clientTab ?? "overview"} />;
     if (page === "new_client") return <NewClientPage req={req} onCreated={(biz) => { setSelectedClient(biz); setPage("client_detail"); }} />;
     if (page === "clients")   return <ClientsPage req={req} onSelectClient={handleSelectClient} />;
     if (page === "billing")   return <BillingPage req={req} />;
@@ -2994,6 +3097,8 @@ export default function AdminPortal() {
             {page === "client_detail" ? selectedClient?.name
               : NAV_GROUPS.flatMap(g => g.items).find(n => n.id === page)?.label ?? "Dashboard"}
           </span>
+
+          <NotificationBell req={req} enabled={Boolean(token && admin)} onOpenAlerts={() => { setPage("alerts"); setSelectedClient(null); }} />
 
           <span className="sp-email-label" style={{ fontSize: 12, color: C.muted, flexShrink: 0, whiteSpace: "nowrap" }}>
             Logged in as <strong style={{ color: C.text }}>{admin.email}</strong>

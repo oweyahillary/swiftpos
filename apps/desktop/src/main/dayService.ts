@@ -45,6 +45,7 @@ import { getDeviceConfig, getBusinessDayCutoff } from './deviceConfig';   // 0.6
 import { v4 as uuid } from 'uuid';
 import { businessDateLocal, businessDayEndLocal } from '@zaptill/core/businessDay';   // 0.6.34
 import { signedInCan } from './tillAccess';   // A490
+import { noteClosed } from './closeHooks';   // A600 follow-up
 
 
 // 24-hour operation grace (A104): hours after midnight a continuous business may
@@ -654,6 +655,7 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
     cash_variance: dayVariance,
     notes: (db.prepare(`SELECT notes FROM business_days WHERE id=?`).get(day.id) as { notes: string | null }).notes,
   });
+  noteClosed('day');   // A600 follow-up: a backup right after the day is closed (wired in index.ts; never inside the close)
 
   return {
     ...summary,

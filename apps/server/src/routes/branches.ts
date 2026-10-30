@@ -15,6 +15,7 @@ import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type M
 import { maySetMpesa } from '@zaptill/core/permissions';                 // A492
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A492
 import { hiddenWhileCounting } from '../lib/stockTakeAccess';     // A494
+import { maskPhone, maskEmail } from '../lib/personalData';        // A595
 
 const router = safeRouter();
 
@@ -169,10 +170,13 @@ router.get('/:id/staff', requireAuth, requirePermission('staff.view'), async (re
 
   if (error) { sendError(res, error); return; }
 
-  const staff = (data ?? []).map((row: any) => ({
-    ...row.users,
-    role_name: row.users?.roles?.name ?? null,
-  }));
+  // A595: staff phone numbers and e-mails only with staff.contacts (masked otherwise; their own row is theirs).
+  const contacts = can(req, 'staff.contacts');
+  const staff = (data ?? []).map((row: any) => {
+    const u = { ...row.users, role_name: row.users?.roles?.name ?? null };
+    if (!contacts && u.id !== req.userId) { u.email = maskEmail(u.email); u.phone = maskPhone(u.phone); u.contacts_masked = true; }
+    return u;
+  });
 
   res.json(staff);
 });

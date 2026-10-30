@@ -83,7 +83,9 @@ export interface POSInitResponse {
   reversalRules?: unknown;
   receiptHeader?: string;
   /** A304/A311: branding from /pos/init; null when the business has no row. */
-  branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean } | null;
+  branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean;
+    /** A597: the owner's brand colours (null while themes are off). */
+    primaryHex?: string | null; secondaryHex?: string | null } | null;
   receiptFooter?: string;
   /** A325: the business's effective action theme (null = themes off). */
   themeId?: string | null;

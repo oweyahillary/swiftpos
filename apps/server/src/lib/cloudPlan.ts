@@ -50,6 +50,7 @@
  * Pure rules first (the tests run them), storage after.
  */
 import { supabase } from './supabase';
+import { memoEnabled, writeGen } from './writeActivity';   // A593
 import { CLOUD_TRIAL_KEY, TRIAL_REPORTS_ONLY_DAYS, cleanTrial, type CloudTrial } from './cloudTrial';
 import {
   DAY_MS, EAT_MS, UNPAID_DAYS, ADMIN_WARN_DAY, NOT_INTERESTED_MONTHS, nairobiDay, daysUntil, effectiveDue, lockAtFor, unpaidDaysAt, paidState,
@@ -148,6 +149,73 @@ export interface CloudFacts {
   webHosting: boolean | null;
   /** businesses.status === 'suspended' (a hard off-switch of its own — not this rule's). */
   suspended?: boolean;
+  /** A601: feature_flags.cloud_backup — ZapTill keeps a desktop-only business's cloud backup (goodwill). null: no row. */
+  cloudBackup?: boolean | null;
+  /** A601: feature_flags.desktop_updates — ZapTill releases desktop updates to a desktop-only business. null: no row. */
+  desktopUpdates?: boolean | null;
+}
+
+// ── A601: desktop-only clients cut off from the cloud backup ──────────────────────────────────────────────────────────
+// Owner, 2026-10-28 (docs/DESKTOP-ONLY-CUTOFF-PLAN.md): a business the cloud calls not_on_plan (no plan, no paid-until,
+// no web_hosting) keeps setup, sign-in, catalogue and staff changes and support logs, but from the date ZapTill sets its
+// POS no longer backs up sales, orders, shifts, drawers, reversals and day closes to the cloud, and gets no desktop update
+// unless ZapTill releases one. Until the date, the POS and the admin portal show the notice.
+//   DESKTOP_ONLY_CUTOFF_AT  unset or not a date: nothing changes (phase 'none'); before it: 'notice'; from it: 'cut'.
+//                           A bare date (2026-12-01) is that day's start in Nairobi.
+//   cloud_backup flag       admin-only (PUT /api/flags refuses every key not in CLIENT_SETTABLE_FLAGS; the admin portal's
+//                           switch is a super admin's): on, the business keeps the backup with no plan.
+//   desktop_updates flag    admin-only: on, the business's approved version (Desktop updates) is offered at the cut.
+// No migration: both are feature_flags rows; read in the same query as web_hosting (no extra read).
+export const CLOUD_BACKUP_FLAG = 'cloud_backup';
+export const DESKTOP_UPDATES_FLAG = 'desktop_updates';
+export const DESKTOP_ONLY_CUTOFF_ENV = 'DESKTOP_ONLY_CUTOFF_AT';
+export type DesktopOnlyPhase = 'none' | 'notice' | 'cut';
+
+/** The cut-off as an ISO instant, or null (unset, or not a date). A bare YYYY-MM-DD is 00:00 Nairobi that day. Pure. */
+export function parseCutoff(raw: string | null | undefined): string | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(s) ? Date.parse(`${s}T00:00:00+03:00`) : Date.parse(s);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+/** DESKTOP_ONLY_CUTOFF_AT as set on this server now (read each time: cheap, and a test can set it). */
+export function desktopOnlyCutoffAt(): string | null { return parseCutoff(process.env[DESKTOP_ONLY_CUTOFF_ENV]); }
+/** Where the switch stands at `now`. Pure. */
+export function cutoffPhase(cutoffAt: string | null, now: number): DesktopOnlyPhase {
+  if (!cutoffAt) return 'none';
+  return now >= Date.parse(cutoffAt) ? 'cut' : 'notice';
+}
+
+export interface DesktopOnly {
+  /** The business is desktop-only (the cloud calls it not_on_plan) — whatever the date. */
+  is: boolean;
+  /** The cloud_backup flag is on: the backup is kept. */
+  exempt: boolean;
+  /** The desktop_updates flag is on: the approved version is offered. */
+  updatesReleased: boolean;
+  /** The switch for this business: 'none' unless desktop-only and the date is set. */
+  phase: DesktopOnlyPhase;
+  cutoffAt: string | null;
+  /** Its POS's backup writes are refused now (503 CLOUD_BACKUP_OFF). */
+  backupOff: boolean;
+  /** No update is offered now. */
+  updatesHeld: boolean;
+  /** The POS and the admin portal show the notice (before and after the date; not when exempt). */
+  notice: boolean;
+}
+const NOT_DESKTOP_ONLY: DesktopOnly = { is: false, exempt: false, updatesReleased: false, phase: 'none', cutoffAt: null, backupOff: false, updatesHeld: false, notice: false };
+
+/** A601: the desktop-only rule for a not_on_plan business. Pure. */
+export function desktopOnlyFor(f: Pick<CloudFacts, 'cloudBackup' | 'desktopUpdates'>, now: number, cutoffAt: string | null): DesktopOnly {
+  const phase = cutoffPhase(cutoffAt, now);
+  const exempt = f.cloudBackup === true;
+  const updatesReleased = f.desktopUpdates === true;
+  return {
+    is: true, exempt, updatesReleased, phase, cutoffAt: phase === 'none' ? null : cutoffAt,
+    backupOff: phase === 'cut' && !exempt,
+    updatesHeld: phase === 'cut' && !updatesReleased,
+    notice: phase !== 'none' && !exempt,
+  };
 }
 
 /**
@@ -199,6 +267,8 @@ export interface CloudStanding {
   billingStart: string | null;
   /** A587: when an unpaid client is (or would be) taken as "Not interested" — 3 months after max(due, billingStart). */
   notInterestedAt: string | null;
+  /** A601: the desktop-only cut-off (is: false for every business with a plan, a date, a trial or web access). */
+  desktopOnly: DesktopOnly;
 }
 
 const validIso = (s: string | null | undefined): s is string => !!s && Number.isFinite(Date.parse(s));
@@ -219,14 +289,14 @@ export function lockedUnderOldLadder(paidUntil: string | null | undefined, now: 
   return Number.isFinite(t) && now >= t + OLD_LADDER_LOCK_DAYS * DAY_MS;
 }
 
-/** Where a business stands at `now`. Pure. */
-export function cloudStanding(f: CloudFacts, now: number = Date.now()): CloudStanding {
+/** Where a business stands at `now`. Pure (A601: the cut-off date from the server's env unless given). */
+export function cloudStanding(f: CloudFacts, now: number = Date.now(), cutoffAt: string | null = desktopOnlyCutoffAt()): CloudStanding {
   const onTrial = !!f.trial && !f.trial.converted_at;
   const dated = validIso(f.expiresAt);
   const blank: CloudStanding = {
     gated: false, state: 'not_on_plan', trial: onTrial, paidUntil: dated ? f.expiresAt : null, dueAt: null, lockAt: null, syncStopsAt: null,
     daysLeft: null, unpaidDays: null, lockInDays: null, lockedDays: null, bridgePending: false, syncRefused: false, webLocked: false,
-    billingStart: null, notInterestedAt: null,
+    billingStart: null, notInterestedAt: null, desktopOnly: NOT_DESKTOP_ONLY,
   };
   // A587 (decision 5): "Disable web access" switches a client off AT ONCE — a business the rules govern (a date, a plan or a
   // trial): web paused, sync refused, no POS joins, nothing invoiced. ("End trial" is the same switch on a trial.) A
@@ -240,7 +310,9 @@ export function cloudStanding(f: CloudFacts, now: number = Date.now()): CloudSta
   }
   if (!dated) {
     if (onTrial || f.onPlan) return { ...blank, gated: true, state: 'no_date' };
-    return { ...blank, state: f.webHosting === true ? 'no_expiry' : 'not_on_plan' };
+    if (f.webHosting === true) return { ...blank, state: 'no_expiry' };
+    // A601: desktop only — the one state the cut-off concerns.
+    return { ...blank, state: 'not_on_plan', desktopOnly: desktopOnlyFor(f, now, cutoffAt) };
   }
   const paidUntil = f.expiresAt as string;
   let due: string; let billingStart: string | null; let bridgePending = false;
@@ -278,7 +350,25 @@ export function standingView(s: CloudStanding) {
     days_left: s.daysLeft, unpaid_days: s.unpaidDays, lock_in_days: s.lockInDays, locked_days: s.lockedDays,
     bridge_pending: s.bridgePending, sync_refused: s.syncRefused, web_locked: s.webLocked,
     not_interested_at: s.notInterestedAt,   // A587: "Not interested (since …)" — and, while unpaid, when it would be
+    desktop_only: desktopOnlyView(s.desktopOnly),   // A601
   };
+}
+
+/** A601: the desktop-only cut-off as the admin portal reads it (snake_case); null when the business is not desktop-only. */
+export function desktopOnlyView(d: DesktopOnly) {
+  return d.is ? {
+    phase: d.phase, cutoff_at: d.cutoffAt, exempt: d.exempt, updates_released: d.updatesReleased,
+    backup_off: d.backupOff, updates_held: d.updatesHeld, notice: d.notice,
+  } : null;
+}
+
+/**
+ * A601: what /api/pos/init tells a POS (`cloudBackup`) — on: the cloud takes its backup; phase: 'notice' / 'cut' for the
+ * manager's notice ('none' when there is nothing to say: not desktop-only, exempt, or no date set); cutoffAt: the date.
+ */
+export function cloudBackupWire(s: Pick<CloudStanding, 'desktopOnly'>): { on: boolean; phase: DesktopOnlyPhase; cutoffAt: string | null } {
+  const d = s.desktopOnly;
+  return d.notice ? { on: !d.backupOff, phase: d.phase, cutoffAt: d.cutoffAt } : { on: true, phase: 'none', cutoffAt: null };
 }
 
 /**
@@ -371,6 +461,43 @@ export function lapseGateApplies(surface: string | null | undefined, method: str
   return !OPEN_WHILE_LAPSED.some((re) => re.test(p));
 }
 
+/**
+ * A601: a desktop-only POS's BACKUP writes, refused from the cut-off (503 CLOUD_BACKUP_OFF): sales and their voids /
+ * refunds, the sync push (shifts, floats, expenses, trading days, kitchen voids, the heartbeat), a drawer's close,
+ * force-close, confirmations and its read-only POSTs for the web's part (foreign-cash / foreign-orders), the web's day-close
+ * acknowledgement and a credit sale's offline replay. Everything else stays open: sign-in and enrolment (/api/auth/*),
+ * the technician, support logs, the update state, the catalogue and staff changes (/api/changes, a station's categories,
+ * prices, wastage, a logo), the branch server's join code, a manager's screens, and every read.
+ */
+export const BACKUP_WRITES: RegExp[] = [
+  /^\/api\/orders(\/|$)/,
+  /^\/api\/sync\/push$/,
+  /^\/api\/sync\/backfill$/,   // A602: the sales history in bulk
+  /^\/api\/shifts\/[^/]+\/(close|force-close|foreign-cash|foreign-orders|confirm|manager-confirm)$/,
+  /^\/api\/day-close\/ack$/,
+  /^\/api\/credit\/sales\/[^/]+\/replay$/,
+];
+/** A601: is this one of a POS's backup writes? Only a desktop surface's writes, never a read. */
+export function backupGateApplies(surface: string | null | undefined, method: string, path: string): boolean {
+  if (surface !== 'desktop') return false;
+  if (!WRITES.has(String(method).toUpperCase())) return false;
+  const p = cleanPath(path);
+  return BACKUP_WRITES.some((re) => re.test(p));
+}
+
+/**
+ * A601: the 503 a desktop-only POS's backup write gets from the cut-off. 503 (not 402): every POS version keeps a 503'd
+ * record queued, never failed or parked (A581) — a POS before A601 keeps its sales for A602's "going online later"; from
+ * A601 the code tells the POS to stop sending quietly.
+ */
+export function backupRefusalBody(s: Pick<CloudStanding, 'desktopOnly'>): { error: string; code: 'CLOUD_BACKUP_OFF'; cutoffAt: string | null } {
+  return {
+    error: `This POS no longer backs up to the ZapTill cloud: the business has no online licence. Its sales stay on the POS. To keep online backup and the web dashboard, ask ZapTill about the online licence (${ZAPTILL_PHONE}).`,
+    code: 'CLOUD_BACKUP_OFF',
+    cutoffAt: s.desktopOnly.cutoffAt,
+  };
+}
+
 /** A584: the web pause covers every web request (reads too) but sign-in housekeeping (/api/auth/* — sign out, renew). */
 export function webGateApplies(surface: string | null | undefined, path: string): boolean {
   if (surface === 'desktop' || surface === 'kds') return false;
@@ -442,7 +569,8 @@ export async function readCloudFacts(businessIds: string[]): Promise<Map<string,
     supabase.from('cloud_plans').select('*').in('business_id', businessIds),
     supabase.from('business_settings').select('business_id, value').eq('key', CLOUD_TRIAL_KEY).in('business_id', businessIds),
     supabase.from('businesses').select('id, name, owner_id, email, status, web_access_expires_at').in('id', businessIds),
-    supabase.from('feature_flags').select('business_id, enabled').eq('key', 'web_hosting').in('business_id', businessIds),
+    // A601: the cut-off's two flags ride the same read (no extra query).
+    supabase.from('feature_flags').select('business_id, key, enabled').in('key', ['web_hosting', CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG]).in('business_id', businessIds),
   ]);
   // Plans unreadable (migration 170 not applied, a timeout): every dated business reads as not yet bridged — never locked.
   if (plans.error) warnOnce('cloud_plans', plans.error.message);
@@ -450,13 +578,17 @@ export async function readCloudFacts(businessIds: string[]): Promise<Map<string,
   const planBy = new Map(((plans.data ?? []) as CloudPlanRow[]).map((p) => [p.business_id, p]));
   const trialBy = new Map<string, CloudTrial>();
   for (const r of (trials.data ?? []) as Array<{ business_id: string; value: unknown }>) { const t = cleanTrial(r.value); if (t) trialBy.set(r.business_id, t); }
-  const flagBy = new Map(((flags.data ?? []) as Array<{ business_id: string; enabled: boolean }>).map((f) => [f.business_id, f.enabled === true]));
+  const flagRows = (flags.data ?? []) as Array<{ business_id: string; key?: string; enabled: boolean }>;
+  const flagOf = (key: string) => new Map(flagRows.filter((f) => (f.key ?? 'web_hosting') === key).map((f) => [f.business_id, f.enabled === true]));
+  const flagBy = flagOf('web_hosting');
+  const backupBy = flagOf(CLOUD_BACKUP_FLAG), updatesBy = flagOf(DESKTOP_UPDATES_FLAG);   // A601
   for (const b of (bizs.data ?? []) as Array<{ id: string; name: string; owner_id: string | null; email: string | null; status: string | null; web_access_expires_at: string | null }>) {
     const plan = planBy.get(b.id) ?? null;
     out.set(b.id, {
       onPlan: !!plan, planCreatedAt: plan?.created_at ?? null, billingFrom: plan?.billing_from ?? null, plan, trial: trialBy.get(b.id) ?? null,
       expiresAt: b.web_access_expires_at ?? null, webHosting: flagBy.has(b.id) ? flagBy.get(b.id)! : null,
       suspended: b.status === 'suspended', name: b.name, ownerId: b.owner_id, email: b.email,
+      cloudBackup: backupBy.has(b.id) ? backupBy.get(b.id)! : null, desktopUpdates: updatesBy.has(b.id) ? updatesBy.get(b.id)! : null,
     });
   }
   return out;
@@ -484,16 +616,63 @@ export async function cloudBusinessIds(): Promise<string[]> {
 export const gatedBusinessIds = cloudBusinessIds;
 
 /**
+ * A593: the facts of every business the billing rules concern (cloudBusinessIds + readCloudFacts: 8 reads), kept up to
+ * 30 minutes (A598 — 10 before, the watchdog's own interval, so a run every 10 minutes always found them just expired
+ * and read them again) while nothing is written with no business of its own (an admin portal write, a job's) and
+ * nothing forgot a standing (a payment, a plan, web access — forgetStanding). The standing is still worked out at the
+ * caller's own time. A change made straight in SQL: within 30 minutes. A591_MEMO=off: read every time, as before.
+ */
+export const GOVERNED_QUIET_MS = 30 * 60_000;
+let governedKept: { at: number; gen: string; fg: number; facts: Map<string, CloudFactsRow> } | null = null;
+export async function governedFacts(now: number = Date.now()): Promise<Map<string, CloudFactsRow>> {
+  const gen = writeGen('*');   // no business is named '*': the generation every business shares
+  if (memoEnabled() && governedKept && governedKept.gen === gen && governedKept.fg === factsGeneration && now - governedKept.at < GOVERNED_QUIET_MS) {
+    return governedKept.facts;
+  }
+  const fg = factsGeneration;
+  const facts = await readCloudFacts(await cloudBusinessIds());
+  // kept even when none is governed (the common case — 8 reads for nothing every 10 minutes otherwise)
+  if (memoEnabled() && fg === factsGeneration) governedKept = { at: now, gen, fg, facts };
+  return facts;
+}
+
+/**
  * The businesses whose tills the cloud refuses now (locked). The watchdog and the owner's alerts leave their tills out of
  * "on but not syncing" — that is the plan's decision, not a fault. A failed read: none.
  */
-export async function lapsedBusinessIds(now: number = Date.now()): Promise<Set<string>> {
+export async function lapsedBusinessIds(now: number = Date.now(), candidates?: readonly string[]): Promise<Set<string>> {
   const out = new Set<string>();
   try {
-    const facts = await readCloudFacts(await cloudBusinessIds());
+    const facts = await governedFacts(now);   // A593: kept while nothing is written (8 reads every watchdog run before)
     for (const [id, f] of facts) if (!f.suspended && cloudStanding(f, now).syncRefused) out.add(id);
+    // A601: from the cut-off, a desktop-only business's POSs send no backup on purpose — not "not syncing". The watchdog
+    // names the businesses it is about to check (`candidates`): one not governed (no plan, date, trial or web access) is
+    // desktop only; one governed is checked by its standing; the cloud_backup flag keeps it in (one read, kept as above).
+    const cutoff = desktopOnlyCutoffAt();
+    // (no governed business read at all = the read failed: nobody is taken as desktop only on it)
+    if (candidates?.length && facts.size > 0 && cutoffPhase(cutoff, now) === 'cut') {
+      const exempt = await backupExemptIds(now);
+      for (const id of new Set(candidates)) {
+        if (!id || out.has(id) || exempt.has(id)) continue;
+        const f = facts.get(id);
+        if (!f || (!f.suspended && cloudStanding(f, now, cutoff).desktopOnly.backupOff)) out.add(id);
+      }
+    }
   } catch (e) { console.warn('[cloud-plan] lapsed businesses not read:', (e as Error)?.message ?? e); }
   return out;
+}
+
+/** A601: the businesses whose cloud_backup flag is on — kept like governedFacts (30 minutes while nothing is written). */
+let exemptKept: { at: number; gen: string; fg: number; ids: Set<string> } | null = null;
+async function backupExemptIds(now: number): Promise<Set<string>> {
+  const gen = writeGen('*');
+  if (memoEnabled() && exemptKept && exemptKept.gen === gen && exemptKept.fg === factsGeneration && now - exemptKept.at < GOVERNED_QUIET_MS) return exemptKept.ids;
+  const fg = factsGeneration;
+  const { data, error } = await supabase.from('feature_flags').select('business_id').eq('key', CLOUD_BACKUP_FLAG).eq('enabled', true).limit(10000);
+  if (error) throw new Error(`cloud_backup flags not read: ${error.message}`);   // never skip a business on a failed read
+  const ids = new Set(((data ?? []) as Array<{ business_id: string }>).map((r) => r.business_id));
+  if (memoEnabled() && fg === factsGeneration) exemptKept = { at: now, gen, fg, ids };
+  return ids;
 }
 
 /**
@@ -519,6 +698,27 @@ export async function billingDigestLines(now: number = Date.now()): Promise<stri
     if (unpaid.length) lines.push(`💳 Cloud unpaid (${unpaid.length}):`, ...unpaid.map((x) => `• ${x}`));
     if (noExpiry) lines.push(`💳 ${noExpiry} client${noExpiry === 1 ? '' : 's'} with web access and no expiry set — put them on a plan (admin portal › Clients › No expiry set).`);
     return lines;
+  } catch { return []; }
+}
+
+/**
+ * A589: the same clients as billingDigestLines — locked and unpaid — as rows of the daily billing summary's table
+ * (lib/adminAlertPolicy.ts billingSummaryEmail): client | invoice | amount | due | status. A failed read: none.
+ */
+export async function billingStandingRows(now: number = Date.now()): Promise<Array<{ client: string; invoice: string | null; amount: number | null; currency: string; due: string | null; status: string }>> {
+  try {
+    const facts = await readCloudFacts(await cloudBusinessIds());
+    const rows: Array<{ client: string; invoice: string | null; amount: number | null; currency: string; due: string | null; status: string }> = [];
+    for (const [, f] of facts) {
+      if (f.suspended) continue;
+      const s = cloudStanding(f, now);
+      if (s.state === 'not_interested' || s.state === 'off') continue;
+      const base = { client: f.name ?? 'a client', invoice: null, amount: f.plan?.amount != null ? Number(f.plan.amount) : null, currency: f.plan?.currency ?? 'KES', due: s.dueAt };
+      const d = (n: number | null | undefined) => `${n ?? 0} day${n === 1 ? '' : 's'}`;
+      if (s.syncRefused) rows.push({ ...base, status: s.state === 'ended' ? 'Trial ended' : `${s.trial ? 'Trial ended, l' : 'L'}ocked ${d(s.lockedDays)}` });
+      else if (s.state === 'unpaid') rows.push({ ...base, status: `Unpaid ${d(s.unpaidDays)} — locks in ${d(s.lockInDays)}` });
+    }
+    return rows;
   } catch { return []; }
 }
 
@@ -587,8 +787,68 @@ function warnOnce(what: string, msg: string): void {
 export const STANDING_TTL_MS = 60_000;
 const memo = new Map<string, { at: number; standing: CloudStanding | null }>();
 
+/**
+ * A593 (owner, 2026-10-26: "logs are full already" — ~82,000 Supabase calls a day): every POS write (its sale, a drawer's
+ * read-only POST every 20 s) and every web request passed this gate, and a minute's memory meant FOUR reads (plan, trial,
+ * business, flag) per business per minute all day. Now the FACTS are kept — the standing is worked out from them at each
+ * request's own time (a grace period runs out by the clock, with no write) — up to 10 minutes while nothing is written for
+ * the business through this server (lib/writeActivity.ts; a payment, a plan, web access changed in the admin portal also
+ * forget it at once, forgetStanding), and when they must be read, ONE read set refreshes every business the gate has
+ * asked about (4 reads for all, not 4 each). A change made straight in SQL: within 10 minutes. A591_MEMO=off: as before.
+ */
+export const STANDING_QUIET_MS = 10 * 60_000;
+const factsKept = new Map<string, { at: number; gen: string; facts: CloudFactsRow | null }>();
+let factsReading: Promise<void> | null = null;
+let factsGeneration = 0;
+let standingClock: () => number = () => Date.now();   // A593: a test seam
+export function _setStandingClock(fn: (() => number) | null): void { standingClock = fn ?? (() => Date.now()); }
+/** Test seam. */
+export function _resetStanding(): void { memo.clear(); factsKept.clear(); governedKept = null; exemptKept = null; factsGeneration++; }
+const standingOf = (f: CloudFactsRow | null, now: number): CloudStanding | null => (f && !f.suspended ? cloudStanding(f, now) : null);
+
+async function refreshFacts(businessId: string, now: number): Promise<void> {
+  const ids = [businessId, ...[...factsKept.keys()].filter((k) => k !== businessId)].slice(0, 200);
+  const gens = new Map(ids.map((id) => [id, writeGen(id)]));   // before the read
+  const fg = factsGeneration;
+  let read: Map<string, CloudFactsRow> | null = null;
+  try { read = await readCloudFacts(ids); }
+  catch (e) { console.warn('[cloud-plan] standing read failed — not gated this time:', (e as Error)?.message ?? e); }
+  if (fg !== factsGeneration) return;   // forgotten meanwhile: not kept (the next ask reads again)
+  // Nothing at all came back for any of them: the read failed (bizs unreadable) — not gated, asked again in a minute.
+  const failed = !read || (read.size === 0 && ids.length > 0);
+  for (const id of ids) {
+    factsKept.delete(id);
+    factsKept.set(id, { at: now, gen: failed ? '' : gens.get(id)!, facts: failed ? null : (read!.get(id) ?? null) });
+  }
+  while (factsKept.size > 5000) { const first = factsKept.keys().next().value; if (first === undefined) break; factsKept.delete(first); }
+}
+
+/** A593: a job about to ask the standing of many businesses (ownerAlerts' tick) — ONE read set for all that are not kept. */
+export async function primeStandings(businessIds: string[], now: number = standingClock()): Promise<void> {
+  if (!memoEnabled() || !businessIds.length) return;
+  const stale = businessIds.filter((id) => {
+    const e = factsKept.get(id);
+    return !(e && (now - e.at < STANDING_TTL_MS || (e.gen !== '' && e.gen === writeGen(id) && now - e.at < STANDING_QUIET_MS)));
+  });
+  if (!stale.length) return;
+  for (const id of stale.slice(1)) if (!factsKept.has(id)) factsKept.set(id, { at: 0, gen: '', facts: null });   // asked with it
+  await refreshFacts(stale[0], now);
+}
+
 /** The standing for the gates, remembered a minute. A failed read answers null (never refuse on a failed read). */
-export async function standingFor(businessId: string, now: number = Date.now()): Promise<CloudStanding | null> {
+export async function standingFor(businessId: string, now: number = standingClock()): Promise<CloudStanding | null> {
+  if (memoEnabled()) {   // A593
+    const fresh = (e: { at: number; gen: string } | undefined) => !!e && (now - e.at < STANDING_TTL_MS
+      || (e.gen !== '' && e.gen === writeGen(businessId) && now - e.at < STANDING_QUIET_MS));
+    let e = factsKept.get(businessId);
+    if (!fresh(e)) {
+      if (!factsReading) factsReading = refreshFacts(businessId, now).finally(() => { factsReading = null; });
+      await factsReading;
+      e = factsKept.get(businessId);
+      if (!fresh(e)) { await refreshFacts(businessId, now); e = factsKept.get(businessId); }   // read for others meanwhile
+    }
+    return standingOf(e?.facts ?? null, now);
+  }
   const hit = memo.get(businessId);
   if (hit && now - hit.at < STANDING_TTL_MS) return hit.standing;
   let standing: CloudStanding | null = null;
@@ -606,7 +866,8 @@ export async function standingFor(businessId: string, now: number = Date.now()):
 
 /** A payment, a plan or web access changed — the next request reads afresh (this server; another one within a minute). */
 export function forgetStanding(businessId?: string): void {
-  if (businessId) memo.delete(businessId); else memo.clear();
+  factsGeneration++;   // A593: a read already under way is not kept
+  if (businessId) { memo.delete(businessId); factsKept.delete(businessId); } else { memo.clear(); factsKept.clear(); }
 }
 
 /** The refusal for a till's write, or null when it may go. */
@@ -621,11 +882,15 @@ export async function lapseRefusal(businessId: string | null | undefined, surfac
  * → 403 CLOUD_ACCESS_PAUSED (a trial: CLOUD_TRIAL_ENDED). null when it may go.
  */
 export async function accessRefusal(businessId: string | null | undefined, surface: string | null | undefined, method: string, path: string):
-  Promise<{ status: 503; body: ReturnType<typeof syncRefusalBody> } | { status: 403; body: ReturnType<typeof webRefusalBody> } | null> {
+  Promise<{ status: 503; body: ReturnType<typeof syncRefusalBody> } | { status: 503; body: ReturnType<typeof backupRefusalBody> }
+    | { status: 403; body: ReturnType<typeof webRefusalBody> } | null> {
   if (!businessId) return null;
   if (lapseGateApplies(surface, method, path)) {
     const s = await standingFor(businessId);
-    return s && s.syncRefused ? { status: 503, body: syncRefusalBody(s) } : null;
+    if (s && s.syncRefused) return { status: 503, body: syncRefusalBody(s) };
+    // A601: a desktop-only business from the cut-off — its POS's backup writes only (setup, changes, logs stay open).
+    if (s && s.desktopOnly.backupOff && backupGateApplies(surface, method, path)) return { status: 503, body: backupRefusalBody(s) };
+    return null;
   }
   if (webGateApplies(surface, path)) {
     const s = await standingFor(businessId);

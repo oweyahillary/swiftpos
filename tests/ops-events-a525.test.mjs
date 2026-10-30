@@ -155,7 +155,9 @@ try {
     await tick(300);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].to, 'ops@zaptill.test');
-    for (const s of ['Production still runs 000000000000', 'Expected: 111111111111', 'Running: 000000000000', 'Open Render and deploy.', 'actions/runs/1']) assert.ok(sent[0].html.includes(s), s);
+    // A592: the email's layout puts each label and value in their own cells; the text part reads "Label: value".
+    for (const s of ['Production still runs 000000000000', '111111111111', '000000000000', 'Open Render and deploy.', 'actions/runs/1']) assert.ok(sent[0].html.includes(s), s);
+    for (const s of ['Expected: 111111111111', 'Running: 000000000000', 'Open run: https://github.com/x/y/actions/runs/1']) assert.ok(sent[0].text.includes(s), s);
   });
   await ok('a failing alert never fails the request', async () => {
     reset();

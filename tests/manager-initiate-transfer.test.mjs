@@ -3,8 +3,7 @@
  * Server: POST /transfers requires SOURCE access + a valid in-business DESTINATION
  *         (no longer access to both), so a branch manager can send from their own
  *         branch to another; owners keep any→any via assertBranchAccess.
- * UI: manager create form posts from_branch_id = their own branch (source locked),
- *     picks a destination from the other branches, and can despatch (in_transit).
+ * UI: (the manager portal's create form — retired with the web manager portal, A608 2026-10-29).
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -13,7 +12,6 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const srv = fs.readFileSync(path.join(root, 'apps/server/src/routes/stock.ts'), 'utf8');
-const ui  = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); pass++; console.log(`PASS  ${name}`); } catch (e) { fail++; console.log(`FAIL  ${name}\n       ${e.message}`); } };
@@ -35,34 +33,9 @@ ok('A218 server: destination is validated as a real in-business branch', () => {
   assert.match(C, /Destination branch not found in this business/);
 });
 
-// ── UI ──────────────────────────────────────────────────────────────────────
-ok('A218 UI: create posts from the manager\'s OWN branch (source locked)', () => {
-  assert.match(ui, /posApi\.post\('\/api\/stock\/transfers'/);
-  assert.match(ui, /from_branch_id: branchId, to_branch_id: destId/);
-});
-ok('A218 UI: destination list excludes the manager\'s own branch', () => {
-  assert.match(ui, /br\.filter\(b => b\.id !== branchId\)/);
-});
-ok('A218 UI: only quantities > 0 are sent as items', () => {
-  assert.match(ui, /\.filter\(i => i\.quantity > 0\)/);
-});
-ok('A218 UI: a pending outgoing transfer can be despatched (in_transit)', () => {
-  assert.match(ui, /status: 'in_transit'/);
-  assert.match(ui, /despatchTransfer/);
-});
-
-// ── A218 stock-picker enhancement ─────────────────────────────────────────────
-ok('A218+: picker sources live per-branch stock from /api/inventory', () => {
-  assert.match(ui, /posApi\.get<InvRow\[\]>\(`\/api\/inventory/);
-});
-ok('A218+: each quantity input is capped at what is in stock', () => {
-  assert.match(ui, /max=\{p\.stock \?\? undefined\}/);   // A506: null while being counted
-  assert.match(ui, /in stock: \$\{p\.stock\}/);
-});
-ok('A218+: sending more than stock is rejected before POST', () => {
-  assert.match(ui, /i\.quantity > i\.stock/);
-  assert.match(ui, /only \$\{over\.stock\} in stock/);
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; 
+// the UI half (ManagerReceivingTab's send-a-transfer form and its stock picker) is gone; the dashboard's Stock ›
+// Transfers page is where a transfer is raised now. The server half above still holds.
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);

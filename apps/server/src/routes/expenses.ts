@@ -71,7 +71,9 @@ router.get('/categories', async (req, res) => {
 });
 
 // POST /api/expenses/categories
-router.post('/categories', requirePermission('expenses.manage'), async (req, res) => {
+// A595 (docs/PERMISSIONS-AUDIT.md F17): expense types, and changing or removing a recorded expense, are their own parts of
+// expenses.manage (expenses.types, expenses.edit — migration 176 gave both to every holder); adding one stays the parent.
+router.post('/categories', requirePermission('expenses.types'), async (req, res) => {
   const { name } = req.body as { name: string };
   if (!name?.trim()) { res.status(400).json({ error: 'name is required' }); return; }
 
@@ -86,7 +88,7 @@ router.post('/categories', requirePermission('expenses.manage'), async (req, res
 });
 
 // PATCH /api/expenses/categories/:id
-router.patch('/categories/:id', requirePermission('expenses.manage'), async (req, res) => {
+router.patch('/categories/:id', requirePermission('expenses.types'), async (req, res) => {   // A595
   const { name } = req.body as { name: string };
   if (!name?.trim()) { res.status(400).json({ error: 'name is required' }); return; }
 
@@ -104,7 +106,7 @@ router.patch('/categories/:id', requirePermission('expenses.manage'), async (req
 });
 
 // DELETE /api/expenses/categories/:id
-router.delete('/categories/:id', requirePermission('expenses.manage'), async (req, res) => {
+router.delete('/categories/:id', requirePermission('expenses.types'), async (req, res) => {   // A595
   // Guard: do not delete if expenses are still linked
   const { count } = await supabase
     .from('expenses')
@@ -270,7 +272,7 @@ router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSch
 });
 
 // PATCH /api/expenses/:id
-router.patch('/:id', requirePermission('expenses.manage'), async (req, res) => {
+router.patch('/:id', requirePermission('expenses.edit'), async (req, res) => {   // A595: rewrites the books
   const {
     expense_category_id, description, amount,
     paid_by, receipt_url, expense_date,
@@ -305,7 +307,7 @@ router.patch('/:id', requirePermission('expenses.manage'), async (req, res) => {
 });
 
 // DELETE /api/expenses/:id
-router.delete('/:id', requirePermission('expenses.manage'), async (req, res) => {
+router.delete('/:id', requirePermission('expenses.edit'), async (req, res) => {   // A595
   // A494: another branch's expense was deletable by id.
   const { data: cur } = await supabase.from('expenses').select('id, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (!cur) { res.status(404).json({ error: 'Expense not found' }); return; }

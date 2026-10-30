@@ -12,6 +12,7 @@
  */
 
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { isChunkLoadError, reloadForNewBuild } from '../lib/staleBuild';
 
 interface Props {
   children: ReactNode;
@@ -22,6 +23,8 @@ interface Props {
 interface State {
   hasError: boolean;
   error:    Error | null;
+  /** A610: a page of an older build that could not load — the page reloads for the new one instead of this screen. */
+  reloading?: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -38,6 +41,8 @@ export class ErrorBoundary extends Component<Props, State> {
     // In production, send to your error tracking service here
     // e.g. Sentry.captureException(error, { extra: info });
     console.error('[ErrorBoundary] Uncaught error:', error, info.componentStack);
+    // A610: a stale tab after a deploy (lib/staleBuild.ts) — load the new build once, by itself.
+    if (isChunkLoadError(error) && reloadForNewBuild()) this.setState({ reloading: true });
   }
 
   handleReload = () => window.location.reload();
@@ -45,6 +50,9 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.hasError) return this.props.children;
 
+    if (this.state.reloading) {
+      return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400 text-sm">Loading the latest version…</div>;
+    }
     if (this.props.fallback) return this.props.fallback;
 
     return (
@@ -59,6 +67,12 @@ export class ErrorBoundary extends Component<Props, State> {
             <pre className="text-left text-red-400 text-xs bg-gray-950 rounded-lg p-3 mb-6 overflow-auto max-h-40">
               {this.state.error.message}
             </pre>
+          )}
+          {/* A610: one line of what broke, so a screenshot says it (no data, just the error's own words). */}
+          {!import.meta.env.DEV && this.state.error && (
+            <p className="text-gray-500 text-xs mb-6 break-words" data-testid="error-detail">
+              {window.location.pathname} · {(this.state.error.message || this.state.error.name || 'Error').slice(0, 160)}
+            </p>
           )}
           <button
             onClick={this.handleReload}

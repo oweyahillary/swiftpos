@@ -430,6 +430,28 @@ await ok('a big cash difference at confirm: once per shift, specific subject', a
   assert.equal(SENT.length, 0);
 });
 
+await ok('A591: nothing written since a run that left nothing to tell → the next run does not re-read 48 h of voids and drawers; a write → read, and the new void told', async () => {
+  const WA = require(path.join(DIST, 'lib/writeActivity.js'));
+  reset(); WA._resetWrites(); WA._setTracking(true); J._resetOwnerQuiet();
+  try {
+    db.business_settings.push({ id: 'st', business_id: BZ, key: 'owner_alerts_state', value: { seeded: true, sent: {}, not_syncing: {} } });
+    await J.alertsForBusiness(biz, schedule(), NOW);
+    const reads = [];
+    FAIL = (t) => { reads.push(t); return null; };
+    await J.alertsForBusiness(biz, schedule(), at('2026-10-14T12:15:00Z'));
+    assert.ok(!reads.includes('orders'), JSON.stringify(reads));
+    assert.ok(!reads.includes('shifts') && !reads.includes('user_devices'), 'the tills and open drawers from memory too (the clock decides on them again)');
+    db.orders.push(voidOrder({ id: 'v-after' }));
+    WA.noteWrite(BZ);
+    await J.alertsForBusiness(biz, schedule(), at('2026-10-14T12:30:00Z'));
+    assert.equal(SENT.length, 1, 'the void written since is told');
+    assert.ok(reads.includes('user_devices'), 'and the tills read again');
+    reads.length = 0;
+    await J.alertsForBusiness(biz, schedule(), at('2026-10-14T19:00:00Z'));
+    assert.ok(reads.includes('orders'), 'read again at least every 6 hours');
+  } finally { WA._setTracking(false); FAIL = () => null; }
+});
+
 console.log('\nThe weekly summary\n');
 await ok('Monday 08:05 EAT with it on: last week against the week before, once; off → nothing', async () => {
   reset();
@@ -544,6 +566,30 @@ await ok('the job runs every 15 min from the server; the page has the three sect
   const page = read('apps/dashboard/src/pages/settings/ReportSchedulerTab.tsx');
   for (const t of ['What the daily email includes', 'Alerts as they happen', 'Weekly summary', 'Branch managers always hear about points of sale not closed']) assert.ok(page.includes(t), t);
   assert.match(page, /bg-swift-strong/);
+});
+
+console.log('\nA595 — owner decision D3 (2026-10-27): the e-mails go out once a recipient is set\n');
+await ok('the daily report goes to the recipients set in the scheduler, even with its switch never turned on', async () => {
+  reset();
+  db.business_settings.push({ id: 'rs', business_id: BZ, key: 'report_schedule', value: JSON.stringify(schedule({ enabled: false, send_time: '00:00', recipients: ['books@biz.test'] })) });
+  await DS.runDailySummary(new Date());
+  assert.equal(SENT.length, 1, 'sent');
+  assert.ok(to(SENT[0]).includes('books@biz.test') && to(SENT[0]).includes('owner@biz.test'), SENT[0].to);
+  reset();
+  db.business_settings.push({ id: 'rs', business_id: BZ, key: 'report_schedule', value: JSON.stringify(schedule({ enabled: false, send_time: '00:00', recipients: [] })) });
+  await DS.runDailySummary(new Date());
+  assert.equal(SENT.length, 0, 'no recipient and the switch off: nothing');
+});
+await ok('a low-stock alert goes to the owner AND the scheduler\'s recipients (it went to the owner alone)', async () => {
+  reset();
+  const LS = require(path.join(DIST, 'jobs/lowStockChecker.js'));
+  db.business_settings.push({ id: 'rs', business_id: BZ, key: 'report_schedule', value: JSON.stringify(schedule({ recipients: ['stock@biz.test'] })) });
+  db.stock_levels.push({ product_id: 'p-milk', branch_id: BR1, quantity: 1, low_stock_threshold: 5 });
+  db.products.push({ id: 'p-milk', business_id: BZ, name: 'Milk' });
+  await LS.checkLowStock(BZ, BR1, ['p-milk']);
+  const mail = SENT.find((m) => /Low stock/.test(m.subject ?? ''));
+  assert.ok(mail, 'a low-stock e-mail: ' + JSON.stringify(SENT.map((m) => m.subject)));
+  assert.deepEqual(to(mail), ['owner@biz.test', 'stock@biz.test']);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

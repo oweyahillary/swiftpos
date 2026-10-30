@@ -25,6 +25,7 @@
  */
 import { supabase } from './supabase';
 import { worksAtBranch } from './branchAccess';
+import { splitsPending } from './permissionsState';   // A595
 
 export const CREDIT_APPROVERS_KEY = 'credit_sale_approvers';
 /** At most this many approvers per branch (a list a person picks from, never a whole staff). */
@@ -214,11 +215,35 @@ export async function isPartnerAtOwnBranch(req: any): Promise<boolean> {
 }
 
 /**
- * May this person give, change or remove a customer's credit limit: the owner, the built-in Manager or General Manager
- * role (A585, A587), or a partner acting at one of their branches (A587).
+ * A595 (owner, 2026-10-26: "break down any right that you feel is too big"; docs/PERMISSIONS-AUDIT.md F14): setting
+ * credit limits is a right like any other — customers.credit_limit — instead of a rule by role NAME. Migration 176 gives it
+ * to exactly the roles the name rule named (the built-in Manager and General Manager), so the same people set limits the
+ * day after. A person holding the owner's role by PIN (isOwner without being the owner) still never sets one, as before;
+ * a till never.
  */
+export function holdsLimitKey(req: { isOwner?: unknown; isTill?: unknown; permissionKeys?: unknown }): boolean {
+  if (req.isOwner === true || req.isTill === true) return false;
+  return Array.isArray(req.permissionKeys) && (req.permissionKeys as unknown[]).includes('customers.credit_limit');
+}
+
+/** A595: until migration 176 is recorded — or for a token made before A595 — the A585 / A587 role-name rule still decides. */
+export function limitsByRoleName(req: { permissionParts?: unknown }): boolean {
+  return splitsPending() || req.permissionParts !== true;
+}
+
+/**
+ * May this person give, change or remove a customer's credit limit: the owner; whoever holds customers.credit_limit (A595 —
+ * a partner only at one of their branches, as A587); before 176, the built-in Manager or General Manager role by name
+ * (A585, A587); or a partner acting at one of their branches whatever their role (A587 — kept until the owner's decision
+ * D4, docs/PERMISSIONS-DEFAULTS-177-DRAFT.sql).
+ */
+export const PARTNER_SETS_LIMITS_AT_THEIR_BRANCH = true;   // A595: owner decision D4 (recommended: false — the key alone)
 export async function maySetCreditLimits(req: any): Promise<boolean> {
-  return (await isTheOwner(req)) || (await isBuiltInManager(req)) || (await isPartnerAtOwnBranch(req));
+  if (await isTheOwner(req)) return true;
+  if (req?.isTill === true) return false;
+  if (holdsLimitKey(req)) return req?.webPartner === true ? isPartnerAtOwnBranch(req) : true;
+  if (limitsByRoleName(req) && await isBuiltInManager(req)) return true;
+  return PARTNER_SETS_LIMITS_AT_THEIR_BRANCH && isPartnerAtOwnBranch(req);
 }
 
 /**

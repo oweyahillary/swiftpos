@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
+import { meteredFetch } from './supabaseMeter';   // A591: every Supabase answer's size, by route or job
 
 const url            = process.env.SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -19,6 +20,7 @@ export const supabase = createClient(url, serviceRoleKey, {
   // @types/ws's WebSocket and supabase-js's WebSocketLikeConstructor describe the
   // same runtime object with incompatible event typings. Structural only.
   realtime: { transport: ws as unknown as never },
+  global:   { fetch: meteredFetch() as unknown as typeof fetch },
 });
 
 // ── Auth-only client ──────────────────────────────────────────────────────────
@@ -30,5 +32,6 @@ export const authClient = anonKey
   ? createClient(url, anonKey, {
       auth:     { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       realtime: { transport: ws as unknown as never },
+      global:   { fetch: meteredFetch() as unknown as typeof fetch },
     })
   : supabase;

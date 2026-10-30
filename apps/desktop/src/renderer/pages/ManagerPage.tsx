@@ -27,6 +27,9 @@ import CreditSalesTab from '../components/CreditSalesTab';   // A545
 import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';   // A441
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
+import BackupPanel from '../components/BackupPanel';   // A600
+import HistoryUploadPanel from '../components/HistoryUploadPanel';   // A602
+import CustomerScreenPanel from '../components/CustomerScreenPanel';   // A606
 import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
 import { can, canAny, isOwner as isOwnerSession, mayMoveMoney, mayMpesa, SELL_REFUSAL } from '../lib/access';   // A490: the one rule (+ A492)
 import { buildManagerNav, relabelCatalogue, groupOf, openGroup, firstTab, type TabKey, type GroupKey } from '../lib/managerNav';
@@ -2056,6 +2059,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canSettings: hasAny('settings.business', 'settings.payments') || mayMpesa(staff),   // A492: the branch's M-Pesa number
     canPrinting: has('stations.manage') || canManageReceipt,
     canStaff: hasAny('staff.view', 'staff.edit'),
+    canBackup: hasAny('settings.business', 'shifts.close_branch'),   // A600: the owner or a manager
     showStock,
     canWaste: has('inventory.waste'),   // A414
     online,   // A460
@@ -2105,7 +2109,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'orders':  return <OrdersTab currency={currency} rights={{ void: has('sales.void'), refund: has('sales.refund') }} />;
       case 'shift':   return <ShiftTab currency={currency} />;
       case 'expenses': return <ExpensesTab currency={currency} canAddType={has('expenses.manage')}
-                                           canRecord={mayMoveMoney(staff, noMoneyOut)} />;
+                                           canRecord={has('expenses.record') || mayMoveMoney(staff, noMoneyOut)} />;   // A594: Record expenses
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} businessName={businessName} />;
       // Tabs of Sales (A351): Shift report, Item Mix (restaurant).
@@ -2118,8 +2122,10 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'combos':  return online ? <CombosTab  currency={currency} /> : <RetailOverview currency={currency} />;   // A460
       case 'import':  return <ImportTab  currency={currency} what={words.importWhat} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} canEdit={has('staff.edit')} />;   // A490
-      case 'settings': return <SettingsPanel canBusiness={has('settings.business')} canPayments={has('settings.payments')}
-                                             canMpesa={mayMpesa(staff)} isOwner={isOwnerSession(staff)} />;   // 0.6.30; A490: each panel by its key
+      case 'backup':  return <><BackupPanel /><HistoryUploadPanel /></>;   // A600: the nightly backup on this PC, the folder and restore; A602: the history upload
+      case 'settings': return <><SettingsPanel canBusiness={has('settings.business')} canPayments={has('settings.payments')}
+                                             canMpesa={mayMpesa(staff)} isOwner={isOwnerSession(staff)} />{/* 0.6.30; A490: each panel by its key */}
+        {has('settings.business') && <CustomerScreenPanel className="max-w-xl mt-6" />}{/* A606: this PC's customer screen */}</>;
       // PrintersScreen (A83/A90): sub-tabs under one "Printing" nav item —
       // Stations, Printers, Exclusions (all stations.manage) and Receipt
       // (receipt.manage/settings.manage). Per-tab gating passed in below.

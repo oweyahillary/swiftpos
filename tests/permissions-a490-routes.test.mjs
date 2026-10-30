@@ -91,7 +91,8 @@ supabase.rpc = async () => ({ data: null, error: null });
 const sign = (p) => jwt.sign({ sessionId: id(), permissionsVersion: 0, surface: 'web', userId: USER, businessId: BZ, branchId: BR, isOwner: false, ...p },
   process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '15m' });
 const holding = (keys) => sign({ permissionKeys: keys });
-const allBut = (...keys) => holding(P.PERMISSION_KEYS.filter((k) => !keys.includes(k)));
+// A595: a token made from A595 on (`parts: true`) — an older one would give the parent's parts back (the part refused here).
+const allBut = (...keys) => sign({ permissionKeys: P.PERMISSION_KEYS.filter((k) => !keys.includes(k)), parts: true });
 const OWNER_T = sign({ userId: OWNER, isOwner: true, branchId: null, permissionKeys: ['*'] });
 
 // ── the app ───────────────────────────────────────────────────────────────────
@@ -122,20 +123,21 @@ const call = async (method, p, token, body) => {
 const refusedFor = (r) => r.status === 403 && /Missing permission|MANAGER_ONLY|Only the owner decides/.test(JSON.stringify(r.body ?? ''));
 
 // ── the table: [method, path, key, body?, alternatives that also open it] ─────
+// A595: a row names the PART of a split key where the route now checks the part (shared/permissions.ts SPLITS).
 const ROUTES = [
   ['POST', '/api/categories', 'menu.edit', { name: 'x' }],
   ['PATCH', `/api/categories/${X}`, 'menu.edit', {}],
-  ['DELETE', `/api/categories/${X}`, 'menu.edit'],
+  ['DELETE', `/api/categories/${X}`, 'menu.delete'],   // A595
   ['POST', '/api/combos', 'menu.edit', {}],
   ['POST', '/api/modifiers/groups', 'menu.edit', {}],
   ['POST', '/api/variants/groups', 'menu.edit', {}],
-  ['POST', '/api/variants/bulk', 'menu.edit', { rows: [] }],
+  ['POST', '/api/variants/bulk', 'menu.bulk', { rows: [] }],   // A595
   ['POST', '/api/products', 'menu.edit', {}],
-  ['DELETE', `/api/products/${X}`, 'menu.edit'],
-  ['PATCH', '/api/products/bulk-tax/by-ids', 'menu.edit', {}],
-  ['PATCH', '/api/products/bulk-track/by-ids', 'menu.edit', {}],
-  ['POST', '/api/products/bulk', 'menu.edit', { rows: [] }],
-  ['PATCH', '/api/products/bulk-cost/by-ids', 'menu.costs', {}],
+  ['DELETE', `/api/products/${X}`, 'menu.delete'],   // A595
+  ['PATCH', '/api/products/bulk-tax/by-ids', 'menu.bulk', {}],   // A595
+  ['PATCH', '/api/products/bulk-track/by-ids', 'menu.bulk', {}],   // A595
+  ['POST', '/api/products/bulk', 'menu.bulk', { rows: [] }],   // A595
+  ['PATCH', '/api/products/bulk-cost/by-ids', 'menu.costs_edit', {}],   // A595
   ['POST', '/api/products/bulk-price', 'menu.prices', {}],
   ['POST', '/api/branch-prices/sync', 'menu.prices', {}],
   ['POST', '/api/recipes/bulk', 'menu.recipes', {}],
@@ -144,20 +146,20 @@ const ROUTES = [
   ['POST', '/api/offers', 'menu.offers', {}],
   ['POST', '/api/discounts', 'menu.offers', {}],
   ['POST', '/api/promotions', 'menu.promotions', {}],   // A502: its own key (a promotion runs at every branch)
-  ['POST', '/api/discounts/apply', 'sales.discount', {}],
+  ['POST', '/api/discounts/apply', 'sales.discount_preset', {}],   // A595
   ['POST', '/api/payment-methods', 'settings.payments', {}],
   ['POST', '/api/stations', 'stations.manage', {}],
   ['POST', '/api/printers', 'stations.manage', {}],
   ['GET', '/api/tables/all', 'tables.manage'],
   ['POST', '/api/tables', 'tables.manage', {}],
-  ['GET', '/api/devices/fleet', 'devices.approve'],
+  ['GET', '/api/devices/fleet', 'devices.view'],   // A595
   ['PATCH', `/api/devices/${X}/approve`, 'devices.approve', {}],
   ['GET', '/api/etims/config', 'etims.manage'],
   ['GET', '/api/etims/invoices', 'reports.tax'],
-  ['POST', '/api/webhooks', 'settings.integrations', {}],
+  ['POST', '/api/webhooks', 'settings.webhooks', {}],   // A595
   ['PATCH', '/api/qr/settings', 'settings.integrations', {}],
   // A585: PATCH /api/credit/customer/:id/limit is the OWNER's alone now (no key opens it) — tests/credit-owner-a585.test.mjs.
-  ['POST', `/api/credit/customer/${X}/payment`, 'customers.credit', {}],
+  ['POST', `/api/credit/customer/${X}/payment`, 'customers.credit_payment', {}],   // A595
   ['PATCH', `/api/loyalty/customer/${X}`, 'customers.edit', {}],
   ['POST', '/api/loyalty/customer', 'customers.edit', {}, ['customers.view']],
   ['GET', '/api/mpesa/exceptions', 'reports.payments'],
@@ -169,7 +171,7 @@ const ROUTES = [
   ['GET', '/api/reservations', 'reservations.manage'],
   ['POST', '/api/reservations', 'reservations.manage', {}],
   ['GET', '/api/parking-sessions', 'parking.manage'],
-  ['POST', '/api/fuel-tanks', 'fuel.manage', {}],
+  ['POST', '/api/fuel-tanks', 'fuel.setup', {}],   // A595
   ['PATCH', `/api/pumps/${X}/idle`, 'fuel.manage', {}],
   ['GET', '/api/pumps', 'fuel.manage', undefined, ['reports.fuel', 'orders.create']],
   // reports — one key each (the Overview's three also admit reports.overview)
@@ -189,8 +191,8 @@ const ROUTES = [
   ['GET', '/api/reports/tax', 'reports.tax'],
   ['GET', '/api/reports/food-cost', 'reports.costs'],
   ['GET', '/api/reports/splh', 'reports.labour'],
-  ['GET', `/api/reports/monthly?month=2026-10&branch_id=${BR}`, 'reports.monthly_pack', undefined, ['expenses.manage']],
-  ['GET', `/api/reports/monthly/movements?month=2026-10&branch_id=${BR}`, 'reports.monthly_pack', undefined, ['expenses.manage', 'expenses.view']],
+  ['GET', `/api/reports/monthly?month=2026-10&branch_id=${BR}`, 'reports.monthly_pack', undefined, ['expenses.monthly']],   // A595
+  ['GET', `/api/reports/monthly/movements?month=2026-10&branch_id=${BR}`, 'reports.monthly_pack', undefined, ['expenses.monthly', 'expenses.view']],   // A595
   ['GET', '/api/orders/turnover', 'orders.view_all'],
   ['GET', '/api/orders/turnover/report', 'reports.sales'],
   ['POST', `/api/orders/${X}/void`, 'sales.void', { reason: 'x' }],
@@ -199,18 +201,18 @@ const ROUTES = [
   ['GET', '/api/staff', 'staff.view'],
   ['GET', `/api/branches/${BR}/staff`, 'staff.view'],
   ['POST', '/api/staff', 'staff.edit', {}],
-  ['PATCH', `/api/staff/${X}`, 'staff.edit', {}],
+  ['PATCH', `/api/staff/${X}`, 'staff.edit', {}, ['staff.pay']],   // A595: the pay rate alone is staff.pay
   ['DELETE', `/api/staff/${X}`, 'staff.edit'],
   ['PUT', `/api/staff/roles/${X}/permissions`, 'staff.roles', { keys: [] }],
   ['POST', '/api/staff/roles', 'staff.roles', {}],
   ['PATCH', `/api/staff/roles/${X}`, 'staff.roles', {}],
   ['DELETE', `/api/staff/roles/${X}`, 'staff.roles'],
   // settings
-  ['PATCH', '/api/business', 'settings.business', {}],
+  ['PATCH', '/api/business', 'settings.business', {}, ['settings.tax']],   // A595: the tax rates alone
   ['PUT', `/api/branches/${BR}`, 'settings.branches', {}],
   ['DELETE', `/api/branches/${X}`, 'settings.branches'],
-  ['GET', '/api/changes', 'changes.approve'],
-  ['POST', `/api/changes/${X}/decide`, 'changes.approve', { approve: true }],
+  ['GET', '/api/changes', 'changes.approve', undefined, ['changes.approve_staff']],   // A595: staff changes alone
+  ['POST', `/api/changes/${X}/decide`, 'changes.approve', { approve: true }, ['changes.approve_staff']],   // A595
   ['PUT', '/api/controls/pos/delivery_fee', 'settings.pos', { enabled: true }],
   ['PUT', '/api/controls/loyalty', 'settings.pos', { enabled: true }],
   ['PUT', '/api/flags/anything', 'settings.business', { enabled: true }],
@@ -218,6 +220,7 @@ const ROUTES = [
 
 try {
   state._setPermissionsMigrated(true);   // after migration 134: the open keys are the roles' own
+  state._setSplitsMigrated?.(true);      // A595: and after 176 — a part is checked as itself
 
   console.log('\n1. Each route refuses without its fine key, and is not refused with it\n');
   for (const [method, p, key, body, alts = []] of ROUTES) {

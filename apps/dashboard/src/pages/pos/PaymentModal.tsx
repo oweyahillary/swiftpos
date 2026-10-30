@@ -99,6 +99,9 @@ interface Props {
    *  from this shift's drawer, sent as delivery_fee with delivery_free. */
   deliveryFree?: boolean;
   riderFee?: number;
+  /** A607: the customer's details for this sale (SaleCustomerPanel): the name, the buyer's KRA PIN, a saved customer, and
+   *  the number for the M-Pesa prompt (masked: shown masked to this person). */
+  buyer?: { sale: { customer_name?: string; customer_phone?: string; buyer_kra_pin?: string; customer_id?: string }; stkPhone: string | null; masked?: boolean } | null;
 }
 
 function fmt(n: number) {
@@ -120,6 +123,7 @@ export default function PaymentModal({
   deliveryFee = 0,
   deliveryFree = false,
   riderFee = 0,
+  buyer = null,
 }: Props) {
   // 0.6.33: what the order records as the delivery fee — the rider's; on a free delivery the customer pays none of it.
   const free = deliveryFree && riderFee > 0;
@@ -178,6 +182,8 @@ export default function PaymentModal({
   // A194: optional free-text customer name for a walk-in (call-ahead / named
   // collection). Falls back to an attached loyalty customer's name if left blank.
   const [customerName, setCustomerName] = useState('');
+  // A607: the name from the customer's details for this sale, when the cashier took them (SaleCustomerPanel).
+  useEffect(() => { const n = buyer?.sale.customer_name; if (n) setCustomerName((c) => c || n); }, [buyer?.sale.customer_name]);
 
   // After a sale completes, fiscalisation runs async server-side. Poll a few
   // times for the signed KRA record and patch it onto the receipt if it arrives.
@@ -208,7 +214,9 @@ export default function PaymentModal({
   const { session, hasPermission } = usePOSAuth();
   // A490: giving a discount on a sale is sales.discount — without it no manual discount (a promo code) reaches the
   // sale; offers (automatic) are not a discount the cashier gives and still come off.
-  const mayDiscount = hasPermission('sales.discount');
+  // A595 (owner decision D6): a set-up discount or promo code is sales.discount_preset (typing an amount stays sales.discount;
+  // this screen applies set-up ones only — the cloud checks the discount named and its amount).
+  const mayDiscount = hasPermission('sales.discount') || hasPermission('sales.discount_preset');
 
   // Double-submit protection. chargingRef blocks a second call synchronously
   // (before React re-renders the button as disabled — a fast touchscreen
@@ -344,9 +352,10 @@ export default function PaymentModal({
       discount_id:     mayDiscount ? (discountState?.discount.id ?? null) : null,
       total:           chargedTotal,
       tip_amount:      tipAmount,
-      customer_id:     loyaltyState?.customer.id ?? null,
+      customer_id:     loyaltyState?.customer.id ?? buyer?.sale.customer_id ?? null,
       customer_name:   (customerName.trim() || loyaltyState?.customer.name) ?? null,
-      customer_phone:  loyaltyState?.customer.phone ?? null,
+      customer_phone:  loyaltyState?.customer.phone ?? buyer?.sale.customer_phone ?? null,
+      ...(buyer?.sale.buyer_kra_pin ? { buyer_kra_pin: buyer.sale.buyer_kra_pin } : {}),   // A607: on the invoice and to KRA
       points_redeemed: pointsRedeemed,
       shift_id:        shiftId ?? null,
       // Petrol attribution (audit B5). The server reads req.body.pump_id and
@@ -381,6 +390,7 @@ export default function PaymentModal({
       discount_id:     mayDiscount ? (discountState?.discount.id ?? null) : null,
       tip_amount:      tipAmount,
       ...feeFields,   // 0.6.33: + delivery_free (the cloud then leaves the fee out of the amount due)
+      ...(buyer?.sale.buyer_kra_pin ? { buyer_kra_pin: buyer.sale.buyer_kra_pin } : {}),   // A607
     };
   }
 
@@ -539,6 +549,7 @@ export default function PaymentModal({
         payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
         tableNumber,
         orderNote,   // A367
+        buyerPin: buyer?.sale.buyer_kra_pin,   // A607
       });
       const biz = buildReceiptBusinessConfig(resolvedBusiness, printerSettings.footerMessage, 0,
         { branchName, header: receiptHeader, footerText: receiptFooter, logoRaster: receiptLogo, pay: receiptPay, posFeatures });   // A530
@@ -631,6 +642,7 @@ export default function PaymentModal({
               promoDiscount={promoDiscount}
               promoName={discountState?.discount.name}
               customerName={customerName.trim() || loyaltyState?.customer.name}
+              buyerPin={buyer?.sale.buyer_kra_pin}   // A607
               footerMessage={printerSettings.footerMessage}
               compact={posFeatures?.receipt_compact_layout === true}   // A538: compact only when the client opted in (A534 had classic)
               pay={receiptPay}   // A547: "Payment Details: Buy Goods - <number>" heads the payment block, as on the thermal receipt
@@ -655,7 +667,7 @@ export default function PaymentModal({
                     // For now — show inline info message (no blocking alert)
                     setWaMsg('WhatsApp receipt: set WHATSAPP_PROVIDER in server .env to enable.');
                   }}
-                  className="flex-shrink-0 text-xs bg-[rgb(var(--act-strong,37_99_235))] hover:bg-[rgb(var(--act-strong,59_130_246))] text-white px-3 py-1 rounded-lg font-medium transition-colors">
+                  className="flex-shrink-0 text-xs bg-[rgb(var(--act-strong,37_99_235))] hover:bg-[rgb(var(--act-strong,59_130_246))] text-[rgb(var(--act-on,255_255_255))] px-3 py-1 rounded-lg font-medium transition-colors">
                   Send
                 </button>
               )}
@@ -694,6 +706,7 @@ export default function PaymentModal({
             total={grandTotal}
             currency={currency}
             orderId={mpesaPending.orderId}
+            phone={buyer?.stkPhone} masked={buyer?.masked}   // A607
             onSuccess={handleMpesaSuccess}
             onCancel={handleMpesaCancel}
           />

@@ -25,26 +25,27 @@ const ok = (n, c, d = '') => { if (c) { pass++; console.log(`PASS  ${n}`); } els
 
 const conf = read('apps/dashboard/src/components/ShiftConfirmations.tsx');
 const close = read('apps/dashboard/src/components/CountedCloseModal.tsx');
-const mgr = read('apps/dashboard/src/pages/manager/ManagerShiftTab.tsx');
+// A608 (2026-10-29): the web manager portal is retired — its Shifts tab (ManagerShiftTab.tsx) halves are gone; the
+// owner's / manager's Open drawers page (OpenShiftsPage.tsx) halves below still cover each check.
 const own = read('apps/dashboard/src/pages/OpenShiftsPage.tsx');
 const pos = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
 const orders = read('apps/server/src/routes/orders.ts');
 
 console.log('\nConfirming on the web\n');
-ok('the manager\'s Shifts tab confirms shifts (their own sign-in), as the owner\'s Open drawers page does',
-  /<ShiftConfirmations key=\{confirmKey\} client=\{posApi as any\} currency=\{currency\} \/>/.test(mgr) && /<ShiftConfirmations key=\{confirmKey\} currency=\{currency\} \/>/.test(own));   // A471: the owner's page passes the business currency
+ok('the Open drawers page confirms shifts',
+  /<ShiftConfirmations key=\{confirmKey\} currency=\{currency\} \/>/.test(own));   // A471: the owner's page passes the business currency
 ok('the expected figure beside each count and the difference as typed (the cloud sends them to a manager / the owner)',
   /const showExpected = !!view\.expected;/.test(conf) && /data-testid=\{`expected-\$\{m\}`\}/.test(conf) && /data-testid=\{`variance-\$\{m\}`\}/.test(conf));
 ok('…read through whichever sign-in the page holds (the web POS manager, or the owner)',
   /client\.get<[\s\S]{0,200}\/confirm-view`\)/.test(conf) && /client\.post\(`\/api\/shifts\/\$\{target\.id\}\/confirm`/.test(conf));
 
 console.log('\nClosing gracefully — with a count, not forced\n');
-ok('"Close with count" on the manager\'s Shifts tab and the owner\'s Open drawers page', /data-testid=\{`count-close-\$\{s\.id\}`\}/.test(mgr) && /data-testid=\{`count-close-\$\{s\.id\}`\}/.test(own));
+ok('"Close with count" on the Open drawers page', /data-testid=\{`count-close-\$\{s\.id\}`\}/.test(own));
 ok('it counts each method beside what the shift expects, and closes counted (POST /close with the count, the other methods, a note)',
   /client\.get<any>\(`\/api\/shifts\/\$\{shift\.id\}\/zreport`\)/.test(close)
   && /client\.post\(`\/api\/shifts\/\$\{shift\.id\}\/close`, \{ closing_float: cash, declared_methods: others, notes:/.test(close));
 ok('…a cash difference needs a note (the cloud\'s own rule, asked before sending)', /if \(cashOff && !note\.trim\(\)\)/.test(close));
-ok('force-close stays — for a drawer nobody can count', /force-close/.test(mgr) && /Force close/.test(own));
+ok('force-close stays — for a drawer nobody can count', /Force close/.test(own));
 
 console.log('\nA closed drawer cascades to the web POS\n');
 ok('the web POS learns within 20 s that its drawer was closed elsewhere, and asks for a new shift',

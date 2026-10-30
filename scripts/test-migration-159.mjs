@@ -57,7 +57,13 @@ const put = async (table, row) => {
 const { pathToFileURL } = await import('node:url');
 const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const NAMES = ['General Manager', 'Operations Manager', 'Finance Manager', 'Auditor', 'Kitchen Manager'];
-const ROLES = NAMES.map((n) => P.BUILT_IN_ROLES.find((r) => r.name === n));
+// A594: keys a LATER migration registers and gives (175: shifts.cash_out, expenses.record — the General Manager gets them
+// there, test-migration-175.mjs); 159 is applied in production and is not changed, so it is compared without them.
+// A595: and the 36 narrower rights 176 registers and carries over (test-migration-176.mjs).
+// A599: and the attendance rights 180 registers and gives (test-migration-180.mjs).
+const LATER_KEYS = ['shifts.cash_out', 'expenses.record', ...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices'];
+const ROLES = NAMES.map((n) => P.BUILT_IN_ROLES.find((r) => r.name === n))
+  .map((r) => r && ({ ...r, keys: r.keys.filter((k) => !LATER_KEYS.includes(k)) }));
 
 console.log('\nMigration 159 (A550 built-in roles) — PGlite, every migration\n');
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
@@ -127,8 +133,8 @@ await ok('the Accountant (A514) and the owner\'s role are untouched', async () =
   assert.equal((await rolesOf(A)).filter((r) => r.name.toLowerCase() === 'accountant').length, 1);
 });
 await ok('the General Manager holds every catalogue key; the Auditor exactly the view keys', async () => {
-  assert.deepEqual(await keysOf((await roleNamed(B, 'General Manager')).id), sorted(P.PERMISSION_KEYS));
-  assert.deepEqual(await keysOf((await roleNamed(B, 'Auditor')).id), sorted(P.VIEW_KEYS));
+  assert.deepEqual(await keysOf((await roleNamed(B, 'General Manager')).id), sorted(P.PERMISSION_KEYS.filter((k) => !LATER_KEYS.includes(k))));
+  assert.deepEqual(await keysOf((await roleNamed(B, 'Auditor')).id), sorted(P.VIEW_KEYS.filter((k) => !LATER_KEYS.includes(k))));
 });
 await ok('159 runs twice, records itself once, and a role the owner deleted is not brought back', async () => {
   const w = await roleNamed(A, 'Auditor');

@@ -26,7 +26,9 @@ router.use(requireAuth);
 // Audit 2026-10-14: adding, changing, deleting and test-firing a webhook were open to any signed-in user — a cashier could
 // point every completed order at their own URL. They need settings.manage (the owner and '*' pass in rbac); the lists
 // stay readable to the business's signed-in users.
-const canManage = requirePermission('settings.integrations');
+// A595 (docs/PERMISSIONS-AUDIT.md F3): webhooks send every sale, with customer details, to any address — their own part of
+// settings.integrations (settings.webhooks — migration 176 gave it to every holder; QR ordering stays the parent).
+const canManage = requirePermission('settings.webhooks');
 
 const VALID_EVENTS = ['order.completed', 'order.voided'];
 

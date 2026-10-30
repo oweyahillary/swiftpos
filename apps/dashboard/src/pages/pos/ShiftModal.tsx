@@ -22,6 +22,7 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '@zaptill/core/shiftConfirm';
 import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
 import { reasonsNeeded, missingReasons, REASON_MAX } from '@zaptill/core/confirmReasons';
+import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, cashInAddsText, cashMovementNeedsApprover } from '@zaptill/core/posFeatures';   // A594
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,8 @@ interface Props {
   onShiftOpened?: (shift: Shift) => void;
   onShiftClosed?: (shift: Shift) => void;
   onFloatRecorded?: () => void;
+  /** A594: may record a cash in with nobody approving it (shifts.cash_movements). Otherwise a manager's PIN for each. */
+  mayCashIn?: boolean;
   onClockRecorded?: () => void;
   onClose: () => void;
   currency?: string;
@@ -78,11 +81,12 @@ export default function ShiftModal({
   onShiftOpened,
   onShiftClosed,
   onFloatRecorded,
+  mayCashIn = false,
   onClockRecorded,
   onClose,
   currency = 'KES',
 }: Props) {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
   // 0.6.23: a manager signed in on the web POS confirms as themselves — no PIN.
   const signedInManager = maySignedInConfirm(session);
 
@@ -127,6 +131,8 @@ export default function ShiftModal({
   const [floatAmount, setFloatAmount] = useState('');
   const [floatReason, setFloatReason] = useState('');
   const [floatDone, setFloatDone]   = useState(false);
+  // A594: a cash in is confirmed ("This ADDS …"), and again when the cloud says it looks like a drawer count.
+  const [floatStep, setFloatStep]   = useState<'form' | 'adds' | 'count'>('form');
   // 0.6.37 (A388): a pay-out and an expense need a manager — signed in (no PIN), or their PIN typed here.
   const [approvePin, setApprovePin] = useState('');
 
@@ -317,12 +323,17 @@ export default function ShiftModal({
     }
   };
 
-  const handleFloat = async () => {
+  // A594: who needs a manager — a cash out always (A388), a cash in unless they hold "Record cash in".
+  const floatNeedsPin = cashMovementNeedsApprover(floatType, mayCashIn) && !signedInManager;
+  const handleFloat = async (countAck = false) => {
     if (!shiftId) return;
     const amount = parseFloat(floatAmount);
     if (isNaN(amount) || amount <= 0) { setError('Enter an amount greater than zero'); return; }
-    const needPin = floatType === 'float_out' && !signedInManager;
-    if (needPin && !approvePin.trim()) { setError('A manager must approve a pay out — enter a manager’s PIN.'); return; }
+    if (!floatReason.trim()) { setError(CASH_MOVEMENT_REASON_REQUIRED); return; }
+    if (floatNeedsPin && !approvePin.trim()) {
+      setError(floatType === 'float_out' ? 'A manager must approve a pay out — enter a manager’s PIN.' : CASH_MOVEMENT_ASK_MANAGER); return;
+    }
+    if (floatType === 'float_in' && floatStep === 'form') { setError(''); setFloatStep('adds'); return; }
 
     setLoading(true);
     setError('');
@@ -330,18 +341,23 @@ export default function ShiftModal({
       await posApi.post(`/api/shifts/${shiftId}/float`, {
         type: floatType,
         amount,
-        reason: floatReason || null,
-        ...(needPin ? { pin: approvePin.trim() } : {}),   // 0.6.37 (A388)
+        reason: floatReason.trim(),
+        ...(floatNeedsPin ? { pin: approvePin.trim() } : {}),   // 0.6.37 (A388); A594: a cash in too
+        ...(countAck ? { count_ack: true } : {}),               // A594
       });
       setApprovePin('');
+      setFloatStep('form');
       setFloatDone(true);
       onFloatRecorded?.();
     } catch (e: any) {
+      if (e?.code === DRAWER_COUNT_CODE) { setFloatStep('count'); return; }   // A594: nothing written yet
+      setFloatStep('form');
       setError(e?.message ?? 'Failed to record float transaction');
     } finally {
       setLoading(false);
     }
   };
+
 
   // A362: the types list is readable by any signed-in account (A360); an empty list still lets the expense through untyped.
   useEffect(() => {
@@ -726,15 +742,15 @@ export default function ShiftModal({
             <div style={s.toggle}>
               <button
                 style={{ ...s.toggleBtn, ...(floatType === 'float_in' ? s.toggleActive : {}) }}
-                onClick={() => setFloatType('float_in')}
+                onClick={() => { setFloatType('float_in'); setFloatStep('form'); }}
               >
-                ↓ Float In
+                ↓ Cash In
               </button>
               <button
                 style={{ ...s.toggleBtn, ...(floatType === 'float_out' ? s.toggleActive : {}) }}
-                onClick={() => setFloatType('float_out')}
+                onClick={() => { setFloatType('float_out'); setFloatStep('form'); }}
               >
-                ↑ Float Out
+                ↑ Cash Out
               </button>
             </div>
 
@@ -750,31 +766,47 @@ export default function ShiftModal({
               autoFocus
             />
 
-            <label style={s.label}>Reason (optional)</label>
+            {/* A594: without the right, a manager approves each one here (their PIN). */}
+            {!signedInManager && !(floatType === 'float_in' ? mayCashIn : hasPermission('shifts.cash_out')) && <p style={s.subtitle} data-testid="cash-ask-manager">{CASH_MOVEMENT_ASK_MANAGER}</p>}
+
+            <label style={s.label}>Reason (required)</label>
             <input
               style={s.input}
               type="text"
+              maxLength={200}
+              data-testid="float-reason"
+              disabled={floatStep !== 'form'}
               placeholder={floatType === 'float_in' ? 'e.g. Change top-up' : 'e.g. Banking run'}
               value={floatReason}
               onChange={e => setFloatReason(e.target.value)}
             />
 
-            {/* 0.6.37 (A388): a manager approves a pay out on the spot. */}
-            {floatType === 'float_out' && !signedInManager && (
+            {/* 0.6.37 (A388): a manager approves a pay out on the spot. A594: and a cash in by anyone without the right. */}
+            {floatNeedsPin && (
               <>
-                <label style={s.label}>Manager PIN (approves the pay out)</label>
+                <label style={s.label}>Manager PIN (approves the {floatType === 'float_out' ? 'cash out' : 'cash in'})</label>
                 <input style={s.input} type="password" inputMode="numeric" autoComplete="off" value={approvePin}
                   onChange={e => setApprovePin(e.target.value.replace(/\D/g, '').slice(0, 8))} data-testid="payout-pin" />
               </>
             )}
 
+            {/* A594: the cash in confirmations. */}
+            {floatStep === 'adds' && (
+              <p style={{ ...s.subtitle, color: '#fcd34d' }} data-testid="cash-in-adds">{cashInAddsText(fmt(parseFloat(floatAmount) || 0, currency))}</p>
+            )}
+            {floatStep === 'count' && (
+              <p style={{ ...s.subtitle, color: '#fca5a5', fontWeight: 600 }} data-testid="cash-in-count-warning">
+                {DRAWER_COUNT_WARNING} To count the drawer, use End Shift. Record this only if it really is cash put into the drawer.
+              </p>
+            )}
+
             {error && <p style={s.error}>{error}</p>}
 
             <div style={s.actions}>
-              <button style={s.cancelBtn} onClick={onClose} disabled={loading}>Cancel</button>
-              <button style={s.primaryBtn} onClick={handleFloat} disabled={loading}>
+              <button style={s.cancelBtn} onClick={floatStep === 'form' ? onClose : () => setFloatStep('form')} disabled={loading}>{floatStep === 'form' ? 'Cancel' : 'Back'}</button>
+              <button style={s.primaryBtn} onClick={() => void handleFloat(floatStep === 'count')} disabled={loading} data-testid="float-record">
                 {loading && <span className="spin-dot" aria-hidden />}
-                {loading ? 'Saving…' : 'Record'}
+                {loading ? 'Saving…' : floatStep === 'adds' ? 'Yes, add it' : floatStep === 'count' ? 'Yes, it is a cash in' : 'Record'}
               </button>
             </div>
           </>
@@ -831,6 +863,7 @@ export default function ShiftModal({
             {/* 0.6.37 (A388): a manager approves every expense on the spot. */}
             {!signedInManager && (
               <>
+                {!hasPermission('expenses.record') && <p style={s.subtitle} data-testid="expense-ask-manager">{EXPENSE_ASK_MANAGER}</p>}   {/* A594 */}
                 <label style={s.label}>Manager PIN (approves the expense)</label>
                 <input style={s.input} type="password" inputMode="numeric" autoComplete="off" value={approvePin}
                   onChange={e => setApprovePin(e.target.value.replace(/\D/g, '').slice(0, 8))} data-testid="expense-pin" />
@@ -915,7 +948,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   primaryBtn: {
     flex: 1, padding: '11px 0', background: 'rgb(var(--act-strong, 59 130 246))', border: 'none',
-    borderRadius: 10, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+    borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontWeight: 700, fontSize: 14, cursor: 'pointer',
   },
   toggle: { display: 'flex', gap: 8, marginBottom: 16 },
   toggleBtn: {

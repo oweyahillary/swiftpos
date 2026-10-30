@@ -28,6 +28,47 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** Each entry: the canonical copy first, then every copy that must match it. */
 const SHARED = [
   {
+    // A606: the customer screen — the slideshow rules, the cleaned state the customer sees, the premium gate, the screen.
+    name: 'customerScreen.ts',
+    copies: [
+      'shared/customerScreen.ts',
+      'apps/server/src/lib/customerScreen.ts',       // the owner's slideshow save, served with pos/init
+      'apps/desktop/src/main/customerScreen.ts',     // main cleans what the POS sends, gates the content, picks the screen
+      'apps/desktop/src/shared/customerScreen.ts',   // the customer screen page
+      'apps/dashboard/src/lib/customerScreen.ts',    // the Branding page's slideshow and the web customer screen
+    ],
+  },
+  {
+    // A607: the customer's details at the counter — phone / KRA PIN rules, the request to and the answer from a
+    // customer-facing form, the consent plan, the M-Pesa prompt as both screens show it, who gets what.
+    name: 'customerDetails.ts',
+    copies: [
+      'shared/customerDetails.ts',
+      'apps/server/src/lib/customerDetails.ts',       // the sale's buyer PIN (orders), the POS's M-Pesa prompt
+      'apps/desktop/src/main/customerDetails.ts',     // main checks what the customer screen sends back, the STK prompt
+      'apps/desktop/src/shared/customerDetails.ts',   // the POS's forms and the customer screen page
+      'apps/dashboard/src/lib/customerDetails.ts',    // the web POS's forms and its customer screen
+    ],
+  },
+  {
+    // A606: the customer screen's view — one drawing for the desktop's second window and the web POS's. Each copy sits
+    // beside a customerScreen.ts and a themes.ts copy (it imports ./customerScreen and ./themes).
+    name: 'CustomerScreenView.tsx',
+    copies: [
+      'apps/desktop/src/shared/CustomerScreenView.tsx',
+      'apps/dashboard/src/lib/CustomerScreenView.tsx',
+    ],
+  },
+  {
+    // A607: the form the customer fills in (the customer screen, and "Customer types it" on the cashier's screen) and the
+    // M-Pesa prompt's banner. Each copy sits beside a customerDetails.ts copy.
+    name: 'CustomerAskForm.tsx',
+    copies: [
+      'apps/desktop/src/shared/CustomerAskForm.tsx',
+      'apps/dashboard/src/lib/CustomerAskForm.tsx',
+    ],
+  },
+  {
     // 0.6.23: the mouse wheel never changes a number field (the till and the web).
     name: 'numberInputs.ts',
     copies: [

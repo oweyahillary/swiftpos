@@ -21,6 +21,8 @@ export interface PermissionMap {
  * older map is expanded with them) never make a person back office on their own: they include sales.history_all and
  * staff.view, which are not shop-floor keys, so without this every cashier would land on the manager portal.
  */
+// A608 (owner, 2026-10-29, "yes to all"): the web manager portal is retired — '/manager' is kept as the SIGNAL "back
+// office" (the web POS refuses their PIN, POSLoginScreen; the route itself redirects to the dashboard, App.tsx).
 export function resolveRoute(
   permissions: PermissionMap | null | undefined,
   _role?: string | null,

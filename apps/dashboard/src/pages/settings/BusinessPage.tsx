@@ -66,11 +66,15 @@ export function VerticalSetupRoute() {
 
 // Integrations tab — outbound webhooks + scheduled report email, both moved out
 // of the old Staff Management page.
+// A595 (owner decision D3, 2026-10-27): webhooks are the owner's (or someone the owner gave settings.webhooks); who receives
+// the report e-mails is the owner's and the partners' (the cloud's mayReportEmails).
 export function IntegrationsRoute() {
+  const { can, isOwner } = usePermissions();
+  const webhooks = isOwner || can('settings.webhooks');
   return (
     <div className="p-4 sm:p-6 space-y-10">
-      <WebhooksTab />
-      <div className="border-t border-gray-800" />
+      {webhooks && <WebhooksTab />}
+      {webhooks && <div className="border-t border-gray-800" />}
       <ReportSchedulerTab />
     </div>
   );

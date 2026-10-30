@@ -42,3 +42,16 @@ export function reportPresets(now: Date = new Date()): PeriodPreset[] {
     { label: 'Last month', from: localDateStr(lastMonthFirst),  to: localDateStr(lastMonthEnd) },
   ];
 }
+
+/**
+ * Which ONE preset to light up (owner, 2026-10-26: "Today" and "This week" both lit on a Monday). Presets can cover the
+ * same days — on a Monday This week = Today, on the 1st This month = Today — so the one the person clicked wins while
+ * its days are still the range; dates typed or set elsewhere light the first preset that matches; none matches: none.
+ */
+export function activePreset(presets: PeriodPreset[], range: { from: string; to: string } | null, picked: string | null): string | null {
+  if (!range) return null;
+  const same = (p: PeriodPreset) => p.from === range.from && p.to === range.to;
+  const mine = picked ? presets.find((p) => p.label === picked) : undefined;
+  if (mine && same(mine)) return mine.label;
+  return presets.find(same)?.label ?? null;
+}

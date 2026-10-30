@@ -3,14 +3,19 @@ import { useAuth }     from '../context/AuthContext';
 import { useBusiness } from '../context/BusinessContext';
 import { useTheme }    from '../context/ThemeContext';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import BranchSelector from './BranchSelector';
 import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
 import { usePermissions } from '../context/PermissionsContext';   // A550
 import { relative } from '../lib/format';
+import { whenVisible } from '../lib/visiblePoll';   // A591: the badges are not asked while the tab is hidden
 import CloudTrialNotice from './CloudTrialNotice';   // A569: the owner's notice in the trial's last 7 days
 import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '@zaptill/core/businessTerms';   // A573
+import { useBrandLook } from './ThemeLayer';   // A597: the shop's logo and colours (themes on)
+import { brandBand } from '../lib/themeVars';
+import { showAttendanceNav } from '../lib/attendanceView';   // A599
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
 // One curated stroke path per nav concept, in place of the mixed emoji the web
@@ -62,6 +67,7 @@ const ICONS: Record<string, string> = {
   summary:   'M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z',
   bell:      'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
   dot:       'M12 12h.01',
+  clock:     'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',   // A599: Attendance
 };
 
 function NavIcon({ name, className, size = 18 }: { name: string; className?: string; size?: number }) {
@@ -118,7 +124,10 @@ const NAV: NavEntry[] = [
   { to: '/dashboard/analytics', label: 'Analytics', icon: 'summary' },
   // A576: loss-prevention alerts — unusual voids, discounts, cash differences … for the owner and managers (never the till).
   { to: '/dashboard/watch-list', label: 'Watch list', icon: 'warning' },
-  { to: '/dashboard/pos',      label: 'POS',      icon: 'till' },
+  // A599: Attendance (premium — the admin portal's 'attendance' switch; OFF, the item is not there at all), punches from the
+  // attendance device. Shown to the owner, partners and holders of attendance.view (showAttendanceNav).
+  { to: '/dashboard/attendance', label: 'Attendance', icon: 'clock' },
+  { to: '/dashboard/pos',      label: 'Open POS', icon: 'till' },   // A608: opens the web POS as the signed-in person
   // KDS moved out of Settings — it is a live operational screen, not a setting.
   { to: '/kds',                label: 'KDS',      icon: 'kds', verticals: FOOD_VERTICALS },
   { to: '/dashboard/inventory',    label: 'Inventory',   icon: 'inventory', badgeKey: 'inventory' },
@@ -225,7 +234,7 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/orders':                ['orders.view_all'],
   '/dashboard/expenses':              ['expenses.view', 'expenses.manage'],
   '/dashboard/reports':               REPORT_KEYS,
-  '/dashboard/analytics':             ['reports.sales'],   // A558: the cloud's own gate for every /api/analytics route
+  '/dashboard/analytics':             ['reports.analytics'],   // A558: the cloud's own gate for every /api/analytics route (A595: its own part of reports.sales)
   '/dashboard/watch-list':            ['reports.voids'],   // A576: the cloud's own gate for /api/loss-alerts
   '/dashboard/shift-reports':         ['reports.shifts', 'shifts.confirm'],
   '/dashboard/turnover':              ['orders.view_all'],
@@ -233,9 +242,10 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/tills-days':            ['shifts.close_day', 'shifts.force_close'],
   '/dashboard/customers':             ['customers.view'],
   '/dashboard/customers/credit':      ['customers.credit', 'customers.view'],
-  '/dashboard/settings/devices':      ['devices.approve', 'stations.manage'],
+  '/dashboard/settings/devices':      ['devices.view', 'devices.approve', 'stations.manage'],   // A595: seeing the POS devices
   '/dashboard/settings/business':     ['settings.business', 'settings.branches', 'settings.payments', 'settings.reversals',
-    'settings.integrations', 'settings.pos', 'receipt.manage', 'tables.manage', 'etims.manage'],
+    'settings.integrations', 'settings.pos', 'receipt.manage', 'tables.manage', 'etims.manage',
+    'settings.tax', 'settings.sales_rules', 'settings.webhooks', 'settings.report_emails'],   // A595: the parts
 };
 
 const TYPE_ICON: Record<string, string> = {
@@ -274,7 +284,7 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
                 || group.items.some(s => s.to !== item.to && s.to.startsWith(item.to + '/')))}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                  isActive ? 'bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  isActive ? 'nav-active bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
                 }`
               }>
               <NavIcon name={item.icon} className="flex-shrink-0" />
@@ -295,10 +305,26 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
 export default function DashboardLayout() {
   const { signOut } = useAuth();
   const { business } = useBusiness();
+  // A597: the shop's own look in the chrome — its logo above its name and a band in its colours. null (themes off, or
+  // nothing chosen) → exactly the header as before.
+  const look = useBrandLook();
+  const band = brandBand(look);
+  // A605: the logo on the surface that suits it — a light logo (on a transparent background) on a dark chip, else white.
+  const logoChip = look?.logoChip === 'dark' ? 'logo-chip-dark' : 'logo-chip-light';
   const { activeBranchId } = useBranch();
-  const { can } = usePermissions();   // A550
+  const { can, isOwner, isPartner } = usePermissions();   // A550
+  // A599: the business's 'attendance' flag (ZapTill's, premium) — read once per business; until it is known, off (hidden).
+  const [attendanceOn, setAttendanceOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setAttendanceOn(false);
+    if (business?.id) api.get<Record<string, boolean>>('/api/flags').then((f) => { if (live) setAttendanceOn(f?.attendance === true); }).catch(() => {});
+    return () => { live = false; };
+  }, [business?.id]);
   const mayOpen = (to: string): boolean => {
-    const keys = NAV_KEYS[to.split('?')[0]];
+    const path = to.split('?')[0];
+    if (path === '/dashboard/attendance') return showAttendanceNav({ flagOn: attendanceOn, isOwner, isPartner, can });
+    const keys = NAV_KEYS[path];
     return !keys || keys.some((k) => can(k));
   };
 
@@ -428,6 +454,18 @@ export default function DashboardLayout() {
   const [unreadCount, setUnreadCount]     = useState(0);
   const [bellOpen, setBellOpen]           = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
+  // A609 (owner, 2026-10-29: the notification "unreadable on a mobile browser"): on a phone the panel was drawn inside the
+  // drawer (its transform made `fixed` mean the 256-px drawer) — now it is placed on the page itself, full width with a
+  // 12-px gutter, its list scrolling inside the screen; from md up it stays the dropdown under the bell.
+  const bellPanelRef = useRef<HTMLDivElement>(null);
+  const [isPhone, setIsPhone] = useState(() => { try { return window.matchMedia('(max-width: 767px)').matches; } catch { return false; } });
+  useEffect(() => {
+    let mq: MediaQueryList;
+    try { mq = window.matchMedia('(max-width: 767px)'); } catch { return; }
+    const on = () => setIsPhone(mq.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -441,13 +479,13 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60_000);
+    const interval = setInterval(whenVisible(fetchNotifications), 60_000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node) && !bellPanelRef.current?.contains(e.target as Node)) {
         setBellOpen(false);
       }
     }
@@ -460,7 +498,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     const check = () => { api.get<{ count: number }>('/api/changes/count').then((r) => setApprovalsCount(Number(r?.count) || 0)).catch(() => {}); };
     check();
-    const interval = setInterval(check, 60_000);
+    const interval = setInterval(whenVisible(check), 60_000);
     return () => clearInterval(interval);
   }, []);
   // ── A545: credit sales waiting for a manager's confirmation (0 for anyone who may not see them) ──
@@ -468,7 +506,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     const check = () => { api.get<{ awaiting: number }>('/api/credit/sales/count').then((r) => setCreditCount(Number(r?.awaiting) || 0)).catch(() => {}); };
     check();
-    const interval = setInterval(check, 120_000);
+    const interval = setInterval(whenVisible(check), 120_000);
     return () => clearInterval(interval);
   }, []);
   // ── A564: requests from other branches waiting for an answer (0 for anyone who does not handle transfers) ──
@@ -476,7 +514,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     const check = () => { api.get<{ incoming: number }>('/api/stock/requests/count').then((r) => setBranchRequestsCount(Number(r?.incoming) || 0)).catch(() => {}); };
     check();
-    const interval = setInterval(check, 120_000);
+    const interval = setInterval(whenVisible(check), 120_000);
     return () => clearInterval(interval);
   }, []);
   const badges: Record<string, number> = { approvals: approvalsCount, credit: creditCount, branchRequests: branchRequestsCount };
@@ -495,7 +533,7 @@ export default function DashboardLayout() {
       } catch { /* non-critical */ }
     }
     checkLowStock();
-    const interval = setInterval(checkLowStock, 5 * 60_000); // every 5 min
+    const interval = setInterval(whenVisible(checkLowStock), 5 * 60_000); // every 5 min
     return () => clearInterval(interval);
   }, []);
 
@@ -515,16 +553,74 @@ export default function DashboardLayout() {
     } catch { /* silent */ }
   };
 
+  // A609: the notification panel — a dropdown under the bell from md up; on a phone a sheet across the top of the screen
+  // (12-px gutter, never wider than the screen, the list scrolls inside it), with larger type and readable greys.
+  const bellPanel = (
+    <div ref={bellPanelRef} data-testid="notification-panel" role="dialog" aria-label="Notifications"
+      className={`${isPhone
+        ? 'fixed inset-x-3 top-3 z-[70] max-h-[calc(100dvh-24px)]'
+        : 'absolute left-0 top-full mt-2 w-80 z-50 max-h-[min(28rem,calc(100dvh-6rem))]'} flex flex-col bg-gray-900 border border-gray-800 rounded-xl shadow-2xl overflow-hidden animate-pop-in`}>
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-800 flex-shrink-0">
+        <p className="text-white text-sm font-semibold">Notifications</p>
+        <div className="flex items-center gap-3">
+          {unreadCount > 0 && (
+            <button onClick={markAllRead} className="text-sm md:text-xs font-medium text-swift-text hover:text-swift-text-hover transition-colors">
+              Mark all read
+            </button>
+          )}
+          {isPhone && (
+            <button onClick={() => setBellOpen(false)} aria-label="Close notifications"
+              className="-mr-1 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        {notifications.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <div className="flex justify-center mb-2 text-gray-500"><NavIcon name="bell" size={28} /></div>
+            <p className="text-gray-400 text-sm">No notifications yet</p>
+          </div>
+        ) : notifications.map(n => (
+          <div key={n.id} onClick={() => { if (!n.read_at) markRead(n.id); }}
+            className={`flex gap-3 px-4 py-3 border-b border-gray-800/50 cursor-pointer hover:bg-gray-800/40 ${!n.read_at ? 'bg-action-500/5' : ''}`}>
+            <NavIcon name={TYPE_ICON[n.type] ?? TYPE_ICON.default} className="flex-shrink-0 mt-0.5 text-gray-400" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <p className={`text-sm md:text-xs font-medium leading-snug break-words ${n.read_at ? 'text-gray-300' : 'text-white'}`}>{n.title}</p>
+                {!n.read_at && <span className="flex-shrink-0 w-2 h-2 rounded-full bg-action-500 mt-1.5 md:mt-1" />}
+              </div>
+              {n.message && <p className="text-gray-400 text-[13px] md:text-xs leading-snug mt-0.5 line-clamp-3 md:line-clamp-2 break-words">{n.message}</p>}
+              <p className="text-gray-500 text-xs mt-1">{relative(n.created_at)}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="px-4 py-2.5 border-t border-gray-800 flex-shrink-0">
+        <button onClick={() => { setBellOpen(false); fetchNotifications(); }}
+          className="text-sm md:text-xs text-gray-400 hover:text-white transition-colors">
+          Refresh
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-[100dvh] bg-gray-950 text-white overflow-hidden">
       {navOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden animate-fade-in" onClick={() => setNavOpen(false)} aria-hidden />}
       <aside data-testid="dashboard-sidebar"
         className={`fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0
-          ${navOpen ? 'translate-x-0' : '-translate-x-full'} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col`}>
+          ${navOpen ? 'translate-x-0' : '-translate-x-full'} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col${look?.primary ? ' brand-sidebar' : ''}`}>
 
+        {band && <div aria-hidden className="h-1 flex-shrink-0" style={{ background: band }} data-testid="dashboard-brand-band" />}
         {/* Logo + bell */}
-        <div className="px-5 py-5 border-b border-gray-800 flex items-center justify-between">
+        <div className="px-5 py-5 border-b border-gray-800 brand-divider flex items-center justify-between">
           <div className="min-w-0">
+            {look?.logo && (
+              <img src={look.logo} alt="" data-testid="dashboard-brand-logo"
+                className={`mb-2 max-h-10 max-w-[140px] object-contain rounded-md p-1 ${logoChip}`} />
+            )}
             <p className="text-white font-bold text-lg truncate">{business?.name ?? '…'}</p>
             <BranchSelector />
           </div>
@@ -541,45 +637,8 @@ export default function DashboardLayout() {
                 </span>
               )}
             </button>
-            {bellOpen && (
-              <div className="fixed left-3 right-3 top-16 md:absolute md:left-0 md:right-auto md:top-full md:mt-2 md:w-80 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-pop-in">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-                  <p className="text-white text-sm font-semibold">Notifications</p>
-                  {unreadCount > 0 && (
-                    <button onClick={markAllRead} className="text-xs text-action-500 hover:text-action-400 transition-colors">
-                      Mark all read
-                    </button>
-                  )}
-                </div>
-                <div className="max-h-80 overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <div className="px-4 py-8 text-center">
-                      <div className="flex justify-center mb-2 text-gray-600"><NavIcon name="bell" size={28} /></div>
-                      <p className="text-gray-500 text-sm">No notifications yet</p>
-                    </div>
-                  ) : notifications.map(n => (
-                    <div key={n.id} onClick={() => { if (!n.read_at) markRead(n.id); }}
-                      className={`flex gap-3 px-4 py-3 border-b border-gray-800/50 cursor-pointer hover:bg-gray-800/40 ${!n.read_at ? 'bg-action-500/5' : ''}`}>
-                      <NavIcon name={TYPE_ICON[n.type] ?? TYPE_ICON.default} className="flex-shrink-0 mt-0.5 text-gray-400" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={`text-xs font-medium leading-tight ${n.read_at ? 'text-gray-400' : 'text-white'}`}>{n.title}</p>
-                          {!n.read_at && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-action-500 mt-1" />}
-                        </div>
-                        {n.message && <p className="text-gray-500 text-xs mt-0.5 line-clamp-2">{n.message}</p>}
-                        <p className="text-gray-600 text-xs mt-1">{relative(n.created_at)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="px-4 py-2.5 border-t border-gray-800">
-                  <button onClick={() => { setBellOpen(false); fetchNotifications(); }}
-                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
-                    Refresh
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* A609: on a phone the panel goes to the page itself (createPortal) — see bellPanelRef above. */}
+            {bellOpen && (isPhone ? createPortal(bellPanel, document.body) : bellPanel)}
           </div>
         </div>
 
@@ -594,7 +653,7 @@ export default function DashboardLayout() {
               <NavLink key={entry.to} to={entry.to} title={entry.hint} end={entry.end ?? entry.to === '/dashboard'}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isActive ? 'bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    isActive ? 'nav-active bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
                   }`
                 }>
                 <NavIcon name={entry.icon} className="flex-shrink-0" />
@@ -637,14 +696,16 @@ export default function DashboardLayout() {
           100dvh layout into an empty band (the owner on Analytics > Costs: "scroll down to an empty space"). */}
       <main className="relative flex-1 min-w-0 overflow-y-auto flex flex-col" data-testid="dashboard-main">
         {/* A463: the phone's top bar — ☰ opens the menu; the business and its unread notifications at a glance. */}
-        <div className="md:hidden sticky top-0 z-20 flex items-center gap-3 px-3 h-12 bg-gray-900 border-b border-gray-800">
+        <div className="md:hidden sticky top-0 z-20 flex items-center gap-3 px-3 h-12 bg-gray-900 border-b border-gray-800 brand-divider">
           <button data-testid="nav-open" onClick={() => setNavOpen(true)} aria-label="Open the menu"
             className="p-2 -ml-1 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
+          {look?.logo && <img src={look.logo} alt="" className={`h-7 max-w-[56px] object-contain rounded p-0.5 flex-shrink-0 ${logoChip}`} />}
           <p className="flex-1 min-w-0 truncate text-sm font-semibold text-white">{business?.name ?? 'ZapTill'}</p>
+          {/* A609: opens the panel over the page (no longer through the menu drawer). */}
           {unreadCount > 0 && (
-            <button onClick={() => { setNavOpen(true); setBellOpen(true); }} aria-label="Notifications"
+            <button onClick={() => setBellOpen(true)} aria-label="Notifications"
               className="min-w-[1.5rem] h-6 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold">{unreadCount > 99 ? '99+' : unreadCount}</button>
           )}
         </div>

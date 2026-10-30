@@ -6,8 +6,8 @@
  *   GET    /api/staff/roles                       — each role: keys (fine), is_owner_role, assignable, editable, members
  *   GET    /api/staff/permissions                 — the catalogue (key, label, description, group, surface)
  *   GET    /api/staff/permission-groups           — its groups, in order
- *   PUT    /api/staff/roles/:id/permissions {keys}
- *   POST   /api/staff/roles {name, description?, keys?, copy_from?}
+ *   PUT    /api/staff/roles/:id/permissions {keys, parts: true}   (A595: the keys exactly as ticked)
+ *   POST   /api/staff/roles {name, description?, keys?, copy_from?, parts: true}
  *   PATCH  /api/staff/roles/:id {name?, description?}
  *   DELETE /api/staff/roles/:id                   — 409 ROLE_IN_USE { members } while anyone holds it
  * The owner's role is everything ('*') and is never edited here.
@@ -114,7 +114,9 @@ export default function RolesTab({ onRolesChange }: Props) {
     if (!editingRole) return;
     setSaving(true); setSaveMsg(null);
     try {
-      await api.put(`/api/staff/roles/${editingRole.id}/permissions`, { keys: [...draft].filter((k) => k !== '*') });
+      // A595: `parts: true` — these keys are exactly what is meant (a part left unticked stays off; an older screen's
+      // parent alone brings its parts on the cloud).
+      await api.put(`/api/staff/roles/${editingRole.id}/permissions`, { keys: [...draft].filter((k) => k !== '*'), parts: true });
       const fresh = await fetchRoles();
       const r = fresh.find((x) => x.id === editingRole.id);
       if (r) setDraft(roleKeys(r));
@@ -132,6 +134,7 @@ export default function RolesTab({ onRolesChange }: Props) {
         name: newName.trim(),
         ...(newDesc.trim() ? { description: newDesc.trim() } : {}),
         ...(copyFrom ? { copy_from: copyFrom } : { keys: [] }),
+        parts: true,   // A595
       });
       setShowNew(false); setNewName(''); setNewDesc(''); setCopyFrom('');
       const fresh = await fetchRoles();

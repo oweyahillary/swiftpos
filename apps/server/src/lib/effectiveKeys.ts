@@ -11,19 +11,20 @@ export interface OverrideRow { granted?: boolean | null; permissions?: { key?: s
 
 /** The person's fine keys from their role's grants and their own overrides (an override wins for its key). */
 export function keysFromGrants(roleGrants: GrantRow[] | null | undefined, overrides: OverrideRow[] | null | undefined,
-  openBefore: boolean): Set<string> {
+  openBefore: boolean, partsBefore = false): Set<string> {
   const map: Record<string, boolean> = {};
   for (const g of roleGrants ?? []) { const k = g?.permissions?.key; if (k) map[k] = true; }
   for (const o of overrides ?? []) { const k = o?.permissions?.key; if (k) map[k] = o.granted === true; }
-  return expandMap(map, openBefore);
+  // A595: until migration 176 is recorded (partsBefore) a broad key still brings its parts (shared permissions.ts SPLITS).
+  return expandMap(map, openBefore, partsBefore);
 }
 
 /** A users row selected with its role's grants and its overrides. The owner's role holds '*'. */
 export function keysForRow(row: {
   roles?: { name?: string | null; role_permissions?: GrantRow[] | null } | null;
   user_permissions?: OverrideRow[] | null;
-} | null | undefined, openBefore: boolean): Set<string> {
+} | null | undefined, openBefore: boolean, partsBefore = false): Set<string> {
   if (!row) return new Set();
   if (isOwnerRoleName(row.roles?.name)) return new Set(['*']);
-  return keysFromGrants(row.roles?.role_permissions, row.user_permissions, openBefore);
+  return keysFromGrants(row.roles?.role_permissions, row.user_permissions, openBefore, partsBefore);
 }

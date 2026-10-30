@@ -21,16 +21,17 @@ const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`);
 await ok('the rule: a PIN is checked like a shift confirmation; a manager signed in approves as themselves; else refused', () => {
   const a = read('apps/server/src/lib/payoutApproval.ts');
   // A494: behind the one PIN limiter first.
-  assert.match(a, /if \(pin\) \{[\s\S]{0,400}?if \(pinLocked\(key\)\)[\s\S]{0,200}?const who = await confirmerByPin\(req\.businessId!, pin,/);
+  assert.match(a, /if \(pin\) \{[\s\S]{0,400}?if \(pinLocked\(key\)\)[\s\S]{0,500}?const who = await confirmerByPin\(req\.businessId!, pin,[^\n]*key: 'shifts\.approve_payout'/);   // A595: its own approval
   assert.match(a, /: \{ ok: false, status: 403, error: PIN_NOT_RECOGNISED, code: 'INVALID_CONFIRMER_PIN' \}/);
-  assert.match(a, /if \(callerMayConfirm\(req\) && req\.userId\) \{/);
+  assert.match(a, /if \(callerMayApprove\(req, 'shifts\.approve_payout'\) && req\.userId\) \{/);   // A595
   assert.match(a, /return \{ ok: false, status: 403, error: APPROVAL_REQUIRED, code: 'PAYOUT_APPROVAL_REQUIRED' \};/);
 });
 
 await ok('web POS: a pay out needs a manager (a pay in does not); every expense does; the approver is stored', () => {
   const s = read('apps/server/src/routes/shifts.ts');
   // A495: the approver is asked for the drawer's branch.
-  assert.match(s, /if \(type === 'float_out'\) \{\s*const a = await payoutApprover\(req, shift\.branch_id \?\? null\);[^\n]*\s*if \(a\.ok === false\) \{ res\.status\(a\.status\)/);
+  // A594: a cash out always, a cash in without "Record cash in" (cashMovementNeedsApprover — tests/cash-movements-a594).
+  assert.match(s, /if \(cashMovementNeedsApprover\(type, mayMoveMoney\(req as any, await businessPosFeatures\(req\.businessId\)\)\)\) \{\s*const a = await payoutApprover\(req, shift\.branch_id \?\? null\);[^\n]*\s*if \(a\.ok === false\) \{ res\.status\(a\.status\)/);
   assert.match(s, /approved_by: approver\?\.id \?\? null,/);
   assert.match(s, /const approval = await payoutApprover\(req, \(shift as \{ branch_id\?: string \| null \}\)\.branch_id \?\? null\);[^\n]*\s*if \(approval\.ok === false\)/);
   assert.match(s, /approved_by:\s+approval\.approver\.id,/);
@@ -52,8 +53,9 @@ await ok('migration 118: nullable, no foreign key, recorded', () => {
 
 await ok('the web POS asks for the PIN (pay out, expense) unless a manager is signed in', () => {
   const w = read('apps/dashboard/src/pages/pos/ShiftModal.tsx');
-  assert.match(w, /const needPin = floatType === 'float_out' && !signedInManager;/);
-  assert.match(w, /\.\.\.\(needPin \? \{ pin: approvePin\.trim\(\) \} : \{\}\),/);
+  // A594: a cash in too, for someone without "Record cash in".
+  assert.match(w, /const floatNeedsPin = cashMovementNeedsApprover\(floatType, mayCashIn\) && !signedInManager;/);
+  assert.match(w, /\.\.\.\(floatNeedsPin \? \{ pin: approvePin\.trim\(\) \} : \{\}\),/);
   assert.match(w, /\.\.\.\(!signedInManager \? \{ pin: approvePin\.trim\(\) \} : \{\}\),/);
   assert.match(w, /data-testid="payout-pin"/);
   assert.match(w, /data-testid="expense-pin"/);

@@ -6,7 +6,7 @@
  * ONE page with tabs across the top (one tap, the sidebar never moves under the cashier's finger):
  *
  *   Overview · Sales [Orders · Item Mix · Current shift · Shift report · Monthly pack] · Expenses · Close [Close Day · Close Branch]
- *   · Menu · Settings [General · Printing · Staff] · Stock
+ *   · Menu · Settings [General · Printing · Staff · Backup (A600)] · Stock
  *
  * Rules:
  *   - A490: every tab is gated by its own FINE key (NavAccess); a group shows only the tabs the person may open,
@@ -21,7 +21,7 @@
 export type TabKey =
   | 'overview' | 'orders' | 'items' | 'shift' | 'zreport' | 'expenses' | 'dayclose' | 'branchclose'
   | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers' | 'monthly'
-  | 'credit' | 'branchstock' | 'labels';
+  | 'credit' | 'branchstock' | 'labels' | 'backup';
 
 export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 'settings' | 'stock';
 
@@ -66,6 +66,9 @@ export interface NavAccess {
   canPrinting: boolean;
   /** staff.view — Staff (adding and changing them is staff.edit, on the page). */
   canStaff: boolean;
+  /** A600: settings.business or shifts.close_branch (the owner, a manager) — Backup: the nightly backup, the folder and
+   *  restore (restore itself the owner's; main/backupService.ts checks again). Absent = no Backup tab (an older caller). */
+  canBackup?: boolean;
   /** Web POS on, something stock-tracked (A346) and inventory.view. */
   showStock: boolean;
   /** A414: inventory.waste — record wastage on the till. */
@@ -111,6 +114,7 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
       ...(a.canSettings ? [{ key: 'settings' as TabKey, label: 'General' }] : []),
       ...(a.canPrinting ? [{ key: 'printers' as TabKey, label: 'Printing' }] : []),
       ...(a.canStaff ? [{ key: 'staff' as TabKey, label: 'Staff' }] : []),
+      ...(a.canBackup ? [{ key: 'backup' as TabKey, label: 'Backup' }] : []),   // A600
     ] },
     { key: 'stock', label: 'Stock', tabs: [
       ...(a.showStock ? [{ key: 'stock' as TabKey, label: 'Stock' }] : []),

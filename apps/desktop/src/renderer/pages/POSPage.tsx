@@ -22,7 +22,9 @@ import type { PaymentResult } from '../components/PaymentModal';
 import PrinterSettingsModal from '../components/PrinterSettingsModal';
 import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
-import VoidModal from '../components/VoidModal';
+// A595: a void / refund is opened rarely — kept out of the main chunk (lazy-load-a517: ≤ 450 kB) to make room for the split
+// rights' catalogue the POS reads (shared/permissions.ts).
+const VoidModal = lazy(() => import('../components/VoidModal'));
 import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
 import { reverseActionFor, isRefunded, ageMinutes, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
 import { can, SELL_REFUSAL } from '../lib/access';   // A490: the one rule
@@ -39,7 +41,8 @@ import { NO_FREEZE, isFrozen, frozenMessage, type StockCountFreeze } from '@zapt
 import { NO_STOCK_VIEW, showsSoldOut, hiddenOutOfStock, stockRefusals, type OutOfStockMode, type StockView } from '@zaptill/core/stockGate';   // A563
 import type { ZReport } from '../lib/posApi';
 import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
-import KitchenVoidModal from '../components/KitchenVoidModal';
+// A607: the kitchen-void dialog loads when it opens (room in the main chunk for the customer's details — lazy-load-a517).
+const KitchenVoidModal = lazy(() => import('../components/KitchenVoidModal'));
 import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '@zaptill/core/kitchenLines';
 import { onGrid } from '@zaptill/core/productDays';
 import { exactFirst } from '@zaptill/core/paginate';   // A472
@@ -51,11 +54,16 @@ import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, 
 const FindInBranches = lazy(() => import('../components/BranchStockTab').then((m) => ({ default: m.FindInBranches })));
 import { mayCheckOtherBranches, outHereMatches, outHereNote } from '../lib/branchCheck';   // A566
 import { useOnlineLicence } from '../lib/onlineLicence';   // A566 (A460)
+// A606: the customer screen's feed — its own chunk, loaded on the first sale change (the POS's main chunk stays small).
+const loadDisplayFeed = () => import('../lib/customerDisplayFeed');
+import type { PayDraft } from '../lib/customerDisplayFeed';
 import { businessTerms } from '@zaptill/core/businessTerms';   // A573: Menus / Departments / Groups
 import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '@zaptill/core/menuHours';   // A578: menus by time of day; A580: Later
 import { useMenuHours } from '../lib/useMenuHours';   // A578
 // A577: items sold by weight — the keypad loads on its first use (the main chunk's budget, lazy-load-a517).
 const WeightModal = lazy(() => import('../components/WeightModal'));
+// A595 (owner decision D1): add a customer with their KRA PIN — loaded when opened (the main chunk budget).
+const SaleCustomer = lazy(() => import('../components/SaleCustomer'));   // A607: the customer for this sale (A595's + Customer inside)
 import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, weightUnitOf, formatWeight, type ScaleSettings, type WeighedLine } from '@zaptill/core/scaleBarcode';   // A577
 
 interface Props {
@@ -417,6 +425,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // Printing
   const { settings: printerSettings } = usePrinterSettings();
   const [showPrinters, setShowPrinters] = useState(false);
+  const [showNewCustomer, setShowNewCustomer] = useState(false);   // A595 D1
+  const [buyer, setBuyer] = useState<any>(null);   // A607: the customer's details for this sale (components/SaleCustomer.tsx)
+  const [canAddCustomer, setCanAddCustomer] = useState(false);
 
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
@@ -469,15 +480,20 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     nodeRefused?: SyncStatusLike['nodeRefused']; nodeBacklog?: SyncStatusLike['nodeBacklog'];
     cloudUnreachable?: SyncStatusLike['cloudUnreachable'];   // A529: "the cloud cannot be reached" in the quiet notice
     cloudLapsed?: SyncStatusLike['cloudLapsed'];   // A581: the business's cloud plan lapsed — the manager's notice says so
+    cloudBackup?: SyncStatusLike['cloudBackup'];   // A601: the desktop-only cut-off — the manager's notice says so
   }>({ online: true, pendingCount: 0, failedCount: 0 });
   // A363: the manager's bottom notice (null when nothing waits); `noticeBusy` while its button runs.
   const notice = canSeeSync ? syncNotice(syncStatus) : null;
+  // A601: the desktop-only notice closes with its button until the POS is opened again (then the usual notices show).
+  const [backupNoticeClosed, setBackupNoticeClosed] = useState(false);
+  const shownNotice = notice?.action === 'dismiss' && backupNoticeClosed ? syncNotice(syncStatus, new Date(), { backupNoticeClosed: true }) : notice;
   const [noticeBusy, setNoticeBusy] = useState(false);
   const runNotice = async () => {
-    if (!notice) return;
+    if (!shownNotice) return;
+    if (shownNotice.action === 'dismiss') { setBackupNoticeClosed(true); return; }
     setNoticeBusy(true);
     try {
-      if (notice.action === 'retry-failed') await posApi.sync.retryFailed();
+      if (shownNotice.action === 'retry-failed') await posApi.sync.retryFailed();
       else await posApi.sync.trigger();
     } catch { /* the refreshed status says what is still waiting */ }
     finally { setSyncStatus(await posApi.sync.status()); setNoticeBusy(false); }
@@ -603,6 +619,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       setCanForceClose(can(ss, 'shifts.force_close'));
       setCanViewStock(can(ss, 'inventory.view'));   // A566: "Check other branches" (A564's key)
       setCanShowAllMenus(can(ss, 'menu.edit'));     // A578: "Show all" menus outside their hours (the menu permission)
+      setCanAddCustomer(can(ss, 'customers.edit') || can(ss, 'customers.view'));   // A595 D1
     }).catch(() => {});
     posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});
     posApi.pos.paymentMethodsEnabled().then((r) => setEnabledMethods(r?.enabled ?? null)).catch(() => {});   // A429
@@ -900,7 +917,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   };
 
   // The order surface back to empty. Internal: after a sale, a hold, or a kitchen void of everything sent.
-  const resetOrder = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setDeliveryFee(''); setDeliveryIsFree(false); setDeliveryMsg(''); setOrderNote(''); };
+  const resetOrder = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setDeliveryFee(''); setDeliveryIsFree(false); setDeliveryMsg(''); setOrderNote(''); setBuyer(null); };
 
   // The Clear button. 0.6.28: an order with items on a kitchen ticket is cleared only by voiding them — Clear was the
   // quiet way to make a sent (and paid-in-cash) order disappear. Hold keeps it instead.
@@ -1249,6 +1266,17 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const toPay = Math.round((subtotal - offerOff) * 100) / 100;
   const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(toPay, vatRate, ctlRate);
 
+  // A606: the customer screen (a dual-screen POS) follows the sale — idle, the items as they are rung up, the payment,
+  // "Thank you". Only these fields leave; main cleans them again (customerScreen.ts) before the customer screen sees them.
+  const [payView, setPayView] = useState<PayDraft | null>(null);
+  useEffect(() => { if (!showPayment) setPayView(null); }, [showPayment]);
+  useEffect(() => {
+    const v = { paid: completedOrder?.payment ?? null, paying: showPayment, cart, pay: payView, mode: flags.mode, currency,
+      table: flags.isRestaurant && orderType === 'dine_in' ? tableNumber : null, byLine: offerResult.byLine, subtotal, toPay, offerOff };
+    void loadDisplayFeed().then((m) => m.feedCustomerDisplay(v)).catch(() => {});
+  }, [cart, completedOrder, showPayment, payView, flags.mode, currency, tableNumber, orderType, offerResult, subtotal, toPay, offerOff]);
+  useEffect(() => () => { void loadDisplayFeed().then((m) => m.feedCustomerDisplay(null)).catch(() => {}); }, []);
+
   // ── Payment ────────────────────────────────────────────
 
   const handleCharge = async (payment: PaymentResult) => {
@@ -1340,6 +1368,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         })),
         // A367: the note on the whole order.
         notes: orderNote.trim() || null,
+        ...buyer?.sale,   // A607: the name, the buyer's KRA PIN (eTIMS), the saved customer
         payments: payment.legs,
         // A552: a sale on account — the customer; the approver's PIN when the seller does not approve it themselves.
         ...(payment.credit ? { customer_id: payment.credit.customerId, ...(payment.credit.pin ? { credit_pin: payment.credit.pin } : {}) } : {}),
@@ -1550,20 +1579,21 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       )}
 
       {/* A363: the manager's notice — only when something waits; red when the cloud refused a record or sales failed. */}
-      {notice && (
+      {shownNotice && (
         <div
           data-testid="sync-notice"
           style={{ bottom: 'calc(0.75rem + var(--update-banner-h, 0px))' }}
           className={`fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 rounded-lg shadow-lg text-xs max-w-[90vw] border animate-slide-up ${
-            notice.tone === 'alert' ? 'bg-red-950 border-red-700 text-red-100' : 'bg-gray-900 border-gray-700 text-gray-200'}`}
+            shownNotice.tone === 'alert' ? 'bg-red-950 border-red-700 text-red-100' : 'bg-gray-900 border-gray-700 text-gray-200'}`}
         >
-          <span className="truncate" title={notice.text}>{notice.text}</span>
+          {/* A601: the desktop-only notice is read whole (it wraps); the others stay one line */}
+          <span className={shownNotice.action === 'dismiss' ? '' : 'truncate'} title={shownNotice.text}>{shownNotice.text}</span>
           <button
             onClick={runNotice}
             disabled={noticeBusy}
-            className={`shrink-0 px-2 py-1 rounded font-medium ${notice.tone === 'alert' ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'} disabled:opacity-50`}
+            className={`shrink-0 px-2 py-1 rounded font-medium ${shownNotice.tone === 'alert' ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'} disabled:opacity-50`}
           >
-            {noticeBusy ? 'Syncing…' : notice.action === 'retry-failed' ? 'Retry' : 'Sync now'}
+            {shownNotice.action === 'dismiss' ? 'OK' : noticeBusy ? 'Syncing…' : shownNotice.action === 'retry-failed' ? 'Retry' : 'Sync now'}
           </button>
         </div>
       )}
@@ -1677,6 +1707,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             title={canVoid ? 'Order history / void / refund' : 'Order history'}
           >
             History
+          </button>
+          {/* A595 D1 / A607: the customer for this sale — typed by the cashier or the customer; saved only with consent */}
+          <button onClick={() => setShowNewCustomer(true)} className="text-xs text-gray-300 hover:text-white transition-colors" title="The customer's details" data-testid="pos-new-customer">
+            {buyer ? `👤 ${buyer.label}` : '+ Customer'}
           </button>
           {/* Printer settings */}
           <button
@@ -2175,7 +2209,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
       {/* 0.6.28: sent items come back only as a recorded kitchen void. */}
       {kitchenVoid && orderNumber && (
-        <KitchenVoidModal
+        <Suspense fallback={null}><KitchenVoidModal
           orderNumber={orderNumber}
           orderType={flags.isRestaurant ? orderType : 'retail'}
           tableNumber={orderType === 'dine_in' ? tableNumber : undefined}
@@ -2191,7 +2225,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
               (r.skipped.length ? `The VOID ticket did not print for: ${r.skipped.join(', ')} — tell the kitchen.` : 'The kitchen has a VOID ticket.'));
             refreshLostKitchen();
           }}
-        />
+        /></Suspense>
       )}
 
       {/* A577: the weight of an item sold by weight */}
@@ -2247,7 +2281,14 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           onAccount={onAccount}
           onConfirm={handleCharge}
           onClose={() => { setShowPayment(false); setPayError(''); }}
+          onDisplay={setPayView}
+          stkPhone={buyer?.stkPhone} stkMasked={buyer?.masked}
         />
+      )}
+
+      {showNewCustomer && (
+        <Suspense fallback={null}><SaleCustomer canSave={canAddCustomer} total={toPay} currency={currency} value={buyer}
+          onDone={(b) => { setBuyer(b); setShowNewCustomer(false); }} onClose={() => setShowNewCustomer(false)} /></Suspense>
       )}
 
       {/* Printer settings */}
@@ -2556,7 +2597,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
       {/* ── Void confirmation modal ────────────────────────────────── */}
       {voidTarget && (
-        <VoidModal
+        <Suspense fallback={null}><VoidModal
           order={voidTarget}
           currency={currency}
           windowMin={voidWindowMin}
@@ -2567,7 +2608,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             loadHistory().catch(() => {});
           }}
           onClose={() => setVoidTarget(null)}
-        />
+        /></Suspense>
       )}
     </div>
   );

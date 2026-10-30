@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pd = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/printDocument.ts'), 'utf8');
 const po = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/stock/PurchaseOrdersPage.tsx'), 'utf8');
-const rx = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx'), 'utf8');
+const tp = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/stock/StockTransfersPage.tsx'), 'utf8');
 // A234 extracted the doc-spec builders (docType strings + columns) into a shared
 // module; the page files keep the print WIRING. The docType/column assertions read
 // documentSpecs.ts; the wiring assertions still read the page files.
@@ -44,16 +44,13 @@ ok('PO page prints a GOODS RECEIVED NOTE after receiving', () => {
 });
 
 // ── Transfers: despatch note ────────────────────────────────────────────────
-ok('Manager tab prints a STOCK TRANSFER NOTE', () => {
-  assert.match(rx, /import \{ printDocument \}/);
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; 
+// the manager tab's print wiring (printTransferNote / printReceivedNote / submitTransfer(true)) lived in
+// ManagerReceivingTab.tsx. The shared spec and the dashboard's Stock › Transfers page wiring are still pinned.
+ok('Transfers page prints a STOCK TRANSFER NOTE / TRANSFER RECEIVED NOTE through the shared spec', () => {
+  assert.match(tp, /import \{ printDocument \} from '\.\.\/\.\.\/lib\/printDocument'/);
+  assert.match(tp, /printDocument\(transferDocSpec\(/);
   assert.match(ds, /docType: i\.received \? 'TRANSFER RECEIVED NOTE' : 'STOCK TRANSFER NOTE'/);
-  assert.match(rx, /printTransferNote\(t\)/);
-});
-
-ok('Manager tab prints a TRANSFER RECEIVED NOTE (sent vs received) on receipt', () => {
-  assert.match(ds, /'TRANSFER RECEIVED NOTE'/);
-  assert.match(rx, /printReceivedNote\(/);
-  assert.match(rx, /submitTransfer\(true\)/);        // "Confirm & print"
   assert.match(ds, /\{ label: 'Variance', align: 'right' \}/);   // A234: column in the shared spec
 });
 

@@ -19,6 +19,8 @@ import { TenantBrand, UnknownTenantAddress } from '../../components/TenantBrand'
 import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../../lib/otpTrust';   // A391
 import OtpCodeStep, { type OtpPrompt } from '../../components/OtpCodeStep';
 const BASE_URL = API_URL;
+/** A608: said when the cloud gives no words of its own. */
+const DASHBOARD_NOTE = 'Managers sign in to the web dashboard with their email and password, then use Open POS — no PIN on the web. Your PIN still works on the desktop POS.';
 const PIN_MIN = 4;
 const PIN_MAX = 6;
 
@@ -48,6 +50,9 @@ export default function POSLoginScreen() {
   const [otpCode, setOtpCode]   = useState('');
   const [remember, setRemember] = useState(true);
   const [otpPass, setOtpPass]   = useState('');   // lets the branch choice that follows sign in without a second code
+  // A608 (owner, 2026-10-29: "they don't key in a PIN on the web POS; PIN on the web strictly remains for cashiers"): a
+  // manager's PIN is refused here (the cloud's USE_WEB_DASHBOARD) — they are told to sign in to the web dashboard.
+  const [useDashboard, setUseDashboard] = useState('');
 
   // If the terminal was kicked back here by a token expiry, tell the cashier why
   // (set by POSAuthContext on the 'swiftpos:session-expired' signal).
@@ -61,13 +66,15 @@ export default function POSLoginScreen() {
   // ── If already logged in, route immediately based on role ─────────────────
   useEffect(() => {
     if (!session) return;
+    if (session.fromDashboard) { navigate('/pos/cashier', { replace: true }); return; }   // A608: opened from the dashboard
     const dest = resolveRoute(session.permissions, session.role);
     if (dest === '/') {
       // Owner needs Supabase — clear POS session and go to dashboard login
       // Don't clearCashierSession here; they may want POS later
       navigate('/', { replace: true });
     } else {
-      navigate(dest, { replace: true });
+      // A608: the web manager portal is retired — an old manager PIN session goes to the dashboard (its sign-in when signed out).
+      navigate(dest === '/manager' ? '/dashboard' : dest, { replace: true });
     }
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -115,6 +122,7 @@ export default function POSLoginScreen() {
         // Server signals device gating via `code` (not `device_status`).
         if (data.code === 'DEVICE_REJECTED')       { setDeviceRejected(true); return; }
         if (data.code === 'DEVICE_NOT_REGISTERED')  { setDevicePending(true);  return; }
+        if (data.code === 'USE_WEB_DASHBOARD')      { setPin(''); setUseDashboard(data.error ?? DASHBOARD_NOTE); return; }   // A608
         triggerError(data.error ?? 'Login failed');
         return;
       }
@@ -156,6 +164,13 @@ export default function POSLoginScreen() {
     // Owner goes to full dashboard — no POS session needed
     if (dest === '/') {
       navigate('/');
+      return;
+    }
+    // A608: never the web manager portal from a PIN — managers sign in to the web dashboard (the cloud refuses their PIN
+    // here; this is for a cloud that does not yet).
+    if (dest === '/manager') {
+      localStorage.removeItem('swiftpos_pos_token'); localStorage.removeItem('swiftpos_pos_refresh_token');
+      setStep('login'); setSuccessName(''); setPin(''); setUseDashboard(DASHBOARD_NOTE);
       return;
     }
 
@@ -320,6 +335,25 @@ export default function POSLoginScreen() {
     );
   }
 
+  // A608: a manager — the web dashboard, by email and password.
+  if (useDashboard) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
+        <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-sm w-full text-center space-y-4" data-testid="pos-use-dashboard">
+          <h2 className="text-white font-bold text-lg">Sign in to the web dashboard, then Open POS</h2>
+          <p className="text-gray-400 text-sm">{useDashboard}</p>
+          <a href="/login" className="block w-full bg-swift hover:bg-swift-light text-gray-950 rounded-xl py-2.5 text-sm font-semibold">
+            Go to the dashboard sign-in
+          </a>
+          <button onClick={() => { setUseDashboard(''); setError(''); }}
+            className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // A391: the code step (owners and managers).
   if (otp) {
     return (
@@ -434,7 +468,7 @@ const st: Record<string, React.CSSProperties> = {
   dot: { width: 14, height: 14, borderRadius: '50%', border: '2px solid #334155', background: 'transparent', transition: 'all 0.15s ease' },
   dotFilled: { background: 'rgb(var(--act-fill, 59 130 246))', borderColor: 'rgb(var(--act-fill, 59 130 246))', boxShadow: '0 0 8px rgb(var(--act-fill, 59 130 246) / 0.5)' },
   dotSuccess: { background: '#22c55e', borderColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.5)' },
-  confirmBtn: { marginBottom: 8, padding: '8px 24px', background: 'rgb(var(--act-strong, 29 78 216))', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
+  confirmBtn: { marginBottom: 8, padding: '8px 24px', background: 'rgb(var(--act-strong, 29 78 216))', border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
   errorText: { fontSize: 12, color: '#f87171', marginBottom: 4, height: 16, transition: 'opacity 0.2s', textAlign: 'center' },
   successText: { fontSize: 14, color: '#4ade80', marginBottom: 8, fontWeight: 600, textAlign: 'center' },
   keypad: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'clamp(6px, 1vh, 8px)', marginTop: 'clamp(6px, 1.2vh, 12px)', width: '100%', transition: 'opacity 0.2s' },

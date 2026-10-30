@@ -7,9 +7,10 @@ import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import { v4 as uuid } from 'uuid';
 import { syncPush, learnBeforeLock } from '../syncEngine';
-import { signedIn as sessionPerson, signedInCan, mayMoveMoney } from '../tillAccess';
-import { getDeviceConfig, getPosFeatures } from '../deviceConfig';
-import { currentShiftReport, getStaleShift, blindClose, blindReport } from '../shiftService';
+import { signedInCan } from '../tillAccess';
+import { getDeviceConfig } from '../deviceConfig';
+import { currentShiftReport, getStaleShift, blindClose, blindReport, computeZReport } from '../shiftService';
+import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, looksLikeDrawerCount } from '@zaptill/core/posFeatures';   // A594
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, mayCloseDay, mayCloseBranch, getConflictedShifts, retryConflictedShift, businessDateNow } from '../dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from '../branchClose';
 import { executeShiftMoney, createShiftMoneyInstruction, cancelShiftMoneyInstruction, SHIFT_MONEY_CLOSED, type ShiftMoneyPayload } from '../branchClose';   // A465
@@ -150,24 +151,32 @@ export function registerDayCloseHandlers(ctx: IpcShared) {
   // records on its own books — its Z-report, its push and Close Branch stay one story. The server's own drawer: at once.
   handle('branchClose:shiftMoney', async (_e, payload) => {
     const p = assertPayload<{ device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number;
-      reason?: string; description?: string; expense_category_id?: string; category_name?: string; payment_method?: string }>({
+      reason?: string; description?: string; expense_category_id?: string; category_name?: string; payment_method?: string; count_ack?: boolean }>({
       device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] },
       amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true },
       expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true },
+      count_ack: { t: 'boolean', optional: true },   // A594
     }, payload);
     try {
       const cfg = getDeviceConfig();
       if (!isNodeRole(cfg?.device_role)) return { ok: false, error: 'Only the branch server records money on another POS\'s shift.' };
-      // A manager signed in here approves it as themselves (A388); A453's manager-only switch always lets a manager through.
-      // A490: approving is shifts.confirm; recording money is shifts.cash_movements (before migration 134, the switch rule).
+      // A manager signed in here approves it as themselves (A388) — every row carries them as its approver. A594: approving
+      // (shifts.confirm) is the check, as on a till (a cash in / out by someone without shifts.cash_movements is approved).
       const me = signedInConfirmer();
-      if (!me || !mayMoveMoney(sessionPerson(), getPosFeatures().cashier_no_money_out)) return { ok: false, error: 'Only a manager who may approve and record cash movements, signed in here, can do this.' };
+      if (!me) return { ok: false, error: 'Only a manager who may approve cash movements, signed in here, can do this.' };
       const amount = Math.round(Number(p.amount) * 100) / 100;
       if (!(amount > 0)) return { ok: false, error: 'Enter an amount greater than zero.' };
       if (p.kind === 'expense' && !String(p.description ?? '').trim()) return { ok: false, error: 'Description is required.' };
+      if (p.kind !== 'expense' && !String(p.reason ?? '').trim()) return { ok: false, error: CASH_MOVEMENT_REASON_REQUIRED };   // A594
       const isSelf = p.device_id === cfg?.device_id;
+      // A594: the drawer's figures, for the "looks like a drawer count" check of a cash in (the manager sees them anyway).
+      let figures: { openingFloat: number; cashSales: number; expected: number } | null = null;
       if (isSelf) {
         if (!ownOpenShift(p.shift_id)) return { ok: false, error: SHIFT_MONEY_CLOSED };
+        try {
+          const z = computeZReport(p.shift_id);
+          figures = { openingFloat: Number(z.shift.opening_float) || 0, cashSales: Number(z.totals.cashSales) || 0, expected: Number(z.totals.expectedCash) || 0 };
+        } catch { /* no figures — no warning */ }
       } else {
         // Only to a till whose last report shows this shift open. A521 (#13, owner 2026-10-17: "never wait on an absent
         // till … queue the rest for when it reconnects"): a till that is off is no longer refused — the row waits for it
@@ -178,7 +187,13 @@ export function registerDayCloseHandlers(ctx: IpcShared) {
         let st: PeerDayState | null = null;
         try { st = JSON.parse(row.state); } catch { /* unreadable */ }
         if (!st?.shifts) return { ok: false, error: 'That POS is on an older version — update it to record money on it from here.' };
-        if (!st.shifts.some((s) => s.id === p.shift_id && s.state === 'open')) return { ok: false, error: 'That shift is no longer open on its POS.' };
+        const peer = st.shifts.find((s) => s.id === p.shift_id && s.state === 'open');
+        if (!peer) return { ok: false, error: 'That shift is no longer open on its POS.' };
+        figures = { openingFloat: Number(peer.cash?.opening_float) || 0, cashSales: Number(peer.cash?.cash_sales) || 0, expected: Number(peer.expected?.cash) || 0 };
+      }
+      // A594: a cash in of what the drawer should hold is a count in the wrong place — the screen asks again (count_ack).
+      if (p.kind === 'float_in' && p.count_ack !== true && figures && looksLikeDrawerCount(amount, figures)) {
+        return { ok: false, error: DRAWER_COUNT_WARNING, code: DRAWER_COUNT_CODE };
       }
       const instr: ShiftMoneyPayload = {
         row_id: uuid(), shift_id: p.shift_id, kind: p.kind, amount,

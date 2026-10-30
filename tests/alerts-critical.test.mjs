@@ -101,11 +101,15 @@ await ok('a muted (acknowledged) critical alert is not reminded; it stays open',
   const muted = R.planRun([alert], [{ ...row, acknowledged_at: new Date(at(300)).toISOString() }], NOW);
   assert.equal(muted.remind.length, 0); assert.equal(muted.stillOpen.length, 1);
 });
-await ok('the digest and "resolved" go to Telegram only; new and still-happening critical ones are emailed', () => {
+// A589 (owner, 2026-10-25: "till not closed should not come as an email for each client"): the system emergencies are
+// still emailed one each; the client problems and "resolved" go to ONE Telegram message (email: false) — who hears what
+// is lib/adminAlertPolicy.ts routeRun, run for real in tests/admin-alerts-a589.test.mjs.
+await ok('the digest and "resolved" go to Telegram only; new and still-happening system emergencies are emailed', () => {
   const w = read('apps/server/src/jobs/watchdog.ts');
-  assert.match(w, /await notifyAdmin\(`ZapTill resolved: \$\{row\.title\}`, alertText\('resolved', row, row\.first_seen_at, now\), \{ email: false \}\);/);
-  assert.match(w, /await notifyAdmin\(`ZapTill daily check — \$\{now\.toISOString\(\)\.slice\(0, 10\)\}`, text, \{ email: false \}\);/);
-  assert.match(w, /if \(critical\) await notifyAdmin\(`ZapTill alert: \$\{a\.title\}`, alertText\('new', a\)\);/);
+  // A592: each message rendered (lib/alertFormat.ts) and sent as it is (notifyRendered).
+  assert.match(w, /if \(routed\.telegramGroup\) telegram = \(await notifyRendered\(routed\.telegramGroup, \{ email: false \}\)\)\.telegram;/);
+  assert.match(w, /const tg = digestTelegram\(rows, counters, now, billing, links\);\s*await notifyRendered\(tg, \{ email: false \}\);/);
+  assert.match(w, /for \(const m of routed\.instantEach\) \{\s*const r = await notifyRendered\(m\);/);
   assert.match(w, /repeatedSignInFailures\(recentSignInFailures\(\), now\)/);
   assert.match(w, /return tillSyncRefused\(attempts, now, nm, tills\);/);
 });
@@ -113,7 +117,8 @@ await ok('notifyAdmin({ email: false }) never emails, whatever is set', async ()
   process.env.ADMIN_ALERT_EMAIL = 'me@x.co.ke'; delete process.env.TELEGRAM_BOT_TOKEN;
   const N = await import(pathToFileURL(path.join(ROOT, 'apps/server/src/lib/alertNotify.ts')).href).catch(() => null);
   const src = read('apps/server/src/lib/alertNotify.ts');
-  assert.match(src, /const ch = \{ telegram: all\.telegram, email: all\.email && opts\.email !== false \};/);
+  // A589: and telegram: false (an email only — the digest's table, the billing summary).
+  assert.match(src, /const ch = \{ telegram: all\.telegram && opts\.telegram !== false, email: all\.email && opts\.email !== false \};/);
   if (N) {
     const r = await N.notifyAdmin('s', 't', { email: false });
     assert.deepEqual(r, { telegram: false, email: false });

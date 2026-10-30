@@ -33,6 +33,21 @@ export interface SyncStatusLike {
   cloudUnreachable?: { since: string; why: string } | null;
   /** A581: the cloud refuses this business's sync — its ZapTill cloud plan lapsed (records stay queued on the till). */
   cloudLapsed?: { since: string; message?: string } | null;
+  /** A601: the desktop-only cut-off as the POS knows it (main/cloudBackup.ts): on = still backed up; phase 'notice' before
+   *  the date, 'cut' from it; null / 'none' = nothing to say. */
+  cloudBackup?: { on: boolean; phase: 'none' | 'notice' | 'cut'; cutoffAt: string | null } | null;
+  /** A602: going online later — the older sales going up in bulk in quiet hours (main/historyUpload.ts); null: none. */
+  historyUpload?: { active: boolean; progress: string; remaining: number; running?: boolean; why?: string | null } | null;
+}
+
+/**
+ * A602: "History upload: 45% (12,300 of 27,000 sales), in quiet hours" — null when no history is going up. The words of the
+ * manager's notice, the Backup tab and the Tech page.
+ */
+export function historyUploadLine(h: SyncStatusLike['historyUpload']): string | null {
+  if (!h || !h.active) return null;
+  const how = h.running ? 'uploading now' : /^paused/.test(String(h.why ?? '')) ? 'paused while a sale is under way' : 'in quiet hours';
+  return `History upload: ${h.progress}, ${how}`;
 }
 
 /** A501: records waiting this long for the branch server are worth a manager's line (the beat sends every 15 s). */
@@ -71,10 +86,30 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 export type SyncNotice =
   | { tone: 'alert'; text: string; action: 'retry-failed' | 'sync' }
-  | { tone: 'quiet'; text: string; action: 'sync' };
+  | { tone: 'quiet'; text: string; action: 'sync' }
+  /** A601: the desktop-only notice — words only; its button just closes it (until the POS is opened again). */
+  | { tone: 'quiet'; text: string; action: 'dismiss' };
+
+const LONG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** A601: "1 December 2026" — the cut-off's day in Nairobi (ZapTill sets it as a Nairobi day). */
+export function cutoffDateLabel(iso: string | null | undefined): string {
+  const t = iso ? Date.parse(iso) : Number.NaN;
+  if (!Number.isFinite(t)) return 'the date ZapTill set';
+  const d = new Date(t + 3 * 3_600_000);
+  return `${d.getUTCDate()} ${LONG_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/**
+ * A601 (owner, 2026-10-28): the words a manager reads before and after the desktop-only cut-off — plain, no pressure: what
+ * changes, that the sales are safe on this PC, and who to ask. null when there is nothing to say.
+ */
+export function cloudBackupNotice(c: SyncStatusLike['cloudBackup']): string | null {
+  if (!c || (c.phase !== 'notice' && c.phase !== 'cut')) return null;
+  return `From ${cutoffDateLabel(c.cutoffAt)}, this POS no longer backs up to the ZapTill cloud. Your sales stay on this PC and are backed up on it every night. To keep online backup and the web dashboard, ask ZapTill about the online licence.`;
+}
 
 /** The manager's bottom notice, or null when nothing waits. Refusals first — they need a person; failures next. */
-export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotice | null {
+export function syncNotice(s: SyncStatusLike, now: Date = new Date(), opts: { backupNoticeClosed?: boolean } = {}): SyncNotice | null {
   const last = `last synced ${lastSyncedLabel(s.lastSyncedAt, now)}`;
   // A581: the business's cloud plan lapsed — the cloud refuses its sync until it is paid; nothing is lost.
   if (s.cloudLapsed) {
@@ -85,11 +120,17 @@ export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotic
   if (s.nodeRefused) {
     return { tone: 'alert', action: 'sync', text: `${nodeRefusalText(s.nodeRefused.reason)} · ${last}` };
   }
-  if ((s.parkedCount ?? 0) > 0) {
+  // A601: the desktop-only cut-off — the notice (before and after the date) until the manager closes it. After the date
+  // nothing goes to the cloud on purpose, so what waits for it is never a notice of its own; the branch server's lines
+  // (the shop network) still are.
+  const backupText = cloudBackupNotice(s.cloudBackup);
+  if (backupText && !opts.backupNoticeClosed) return { tone: 'quiet', action: 'dismiss', text: backupText };
+  const cut = s.cloudBackup?.on === false && s.cloudBackup.phase === 'cut';
+  if (!cut && (s.parkedCount ?? 0) > 0) {
     return { tone: 'alert', action: 'sync',
       text: `The cloud refused ${plural(s.parkedCount!, 'record')}${s.parkedReason ? `: ${s.parkedReason}` : ''} · ${last}` };
   }
-  if (s.failedCount > 0) {
+  if (!cut && s.failedCount > 0) {
     return { tone: 'alert', action: 'retry-failed',
       text: `${plural(s.failedCount, 'sale')} failed to sync${s.failedReason ? `: ${s.failedReason}` : ''} · ${last}` };
   }
@@ -100,12 +141,16 @@ export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotic
   }
   const nodeWaiting = s.nodeBacklog && s.nodeBacklog.pending > 0 && s.nodeBacklog.oldestPendingAt
     && now.getTime() - new Date(s.nodeBacklog.oldestPendingAt).getTime() > NODE_BACKLOG_QUIET_MS ? s.nodeBacklog.pending : 0;
-  if (s.pendingCount > 0) {
+  // A602: the older sales going up in quiet hours are progress, not "waiting": what waits besides them, then the line.
+  const history = historyUploadLine(s.historyUpload);
+  const waiting = history ? Math.max(0, s.pendingCount - Math.max(0, s.historyUpload?.remaining ?? 0)) : s.pendingCount;
+  if (!cut && history && waiting === 0) return { tone: 'quiet', action: 'sync', text: `${history} · ${last}` };
+  if (!cut && waiting > 0) {
     // A529 (owner, 2026-10-19: "the could not sync error some clients did not like it"): an outage is quiet — what waits,
     // that the cloud cannot be reached, and when it last synced. Red is only for a refusal by our cloud (above).
     const why = !s.online ? ' (offline)' : s.cloudUnreachable ? ' · the cloud cannot be reached' : '';
     return { tone: 'quiet', action: 'sync',
-      text: `${plural(s.pendingCount, 'record')} waiting to sync${why}${nodeWaiting ? ` · ${nodeWaiting} waiting for the branch server` : ''} · ${last}` };
+      text: `${plural(waiting, 'record')} waiting to sync${why}${nodeWaiting ? ` · ${nodeWaiting} waiting for the branch server` : ''}${history ? ` · ${history}` : ''} · ${last}` };
   }
   // A501: the cloud has everything, but the branch server has not had some of it for a while (it is off, or refusing).
   if (nodeWaiting) {

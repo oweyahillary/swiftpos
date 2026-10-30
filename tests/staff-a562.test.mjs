@@ -246,7 +246,8 @@ try {
   });
   await ok('the form: the select is the picker\'s (locked when it says), an edit starts on the person\'s role, an unchanged role is never sent', () => {
     assert.match(tab, /const \[roleId, setRoleId\] = useState\(editing\?\.roles\?\.id \?\? defaultRoleId\(roles\)\);/);
-    assert.match(tab, /<select value=\{roleId\} onChange=\{e => handleRoleChange\(e\.target\.value\)\} disabled=\{picker\.locked\}/);
+    // A595: and locked for someone who may only set pay rates (staff.pay without staff.edit).
+    assert.match(tab, /<select value=\{roleId\} onChange=\{e => handleRoleChange\(e\.target\.value\)\} disabled=\{picker\.locked \|\| payOnly\}/);
     assert.match(tab, /\{picker\.options\.map\(r => <option key=\{r\.id\} value=\{r\.id\}>\{r\.name\}<\/option>\)\}/);
     assert.match(tab, /\.\.\.\(roleChanged \? \{ role_id: roleId \} : \{\}\)/);
     assert.match(tab, /const roleChanged = !editing \|\| roleId !== \(editing\.roles\?\.id \?\? ''\);/);
@@ -313,7 +314,9 @@ try {
   });
 
   console.log('\n4. The screens\n');
-  await ok('the shared switch: approval_pin, off unless a real true; set in the admin portal (never the owner — not an owner POS option)', () => {
+  // A594 (owner, 2026-10-26: "I like your proposal"): the approval PIN moved to the owner (POS options, the owner alone);
+  // the admin portal lists it read-only and its write is refused OWNER_SETS.
+  await ok('the shared switch: approval_pin, off unless a real true; set by the owner (A594 — an owner-only POS option)', () => {
     assert.ok(F.POS_FEATURE_KEYS.includes('approval_pin'));
     assert.deepEqual([...F.STAFF_OPTION_KEYS], ['approval_pin']);
     assert.equal(F.parsePosFeatures(null).approval_pin, false);
@@ -321,18 +324,21 @@ try {
     assert.equal(F.approvalPinOn({ approval_pin: true }), true);
     assert.match(F.POS_FEATURES.find((f) => f.key === 'approval_pin').description, /^A separate approval PIN for managers \(instead of their sign-in PIN\)\./);
     const controls = read('apps/server/src/routes/controls.ts');
-    assert.doesNotMatch(controls.match(/export const OWNER_POS_KEYS = \[[^\]]*\]/)[0], /approval_pin/);
+    assert.match(controls.match(/export const OWNER_POS_KEYS = \[[^\]]*\]/)[0], /approval_pin/);
+    assert.match(controls.match(/export const OWNER_ONLY_POS_KEYS = \[[^\]]*\]/)[0], /approval_pin/);
   });
-  await ok('the admin portal switches it (Staff options, a toggle — not the read-only POS list)', () => {
+  await ok('the admin portal shows it read-only (A594: listed with the owner\'s POS switches, no toggle, no Staff options)', () => {
     const ap = read('apps/admin/src/AdminPortal.tsx');
-    assert.match(ap, /if \(\(STAFF_OPTION_KEYS as readonly string\[\]\)\.includes\(pf\.key\)\) return null;   \/\/ A562: switched below/);
-    assert.match(ap, /\{STAFF_OPTION_KEYS\.map\(key => \{[\s\S]*?data-testid=\{`staff-feature-\$\{key\}`\}[\s\S]*?\{toggle\(on, \(\) => toggleFeature\(key, !on\), sf\?\.label \?\? key\)\}/);
+    assert.doesNotMatch(ap, /STAFF_OPTION_KEYS\.map/);
+    assert.doesNotMatch(ap, /if \(\(STAFF_OPTION_KEYS as readonly string\[\]\)\.includes\(pf\.key\)\) return null;/);
+    assert.match(read('apps/admin/src/ownerSettings.ts'), /'approval_pin'\] as const;/);
   });
   await ok('the web form: the approval PIN only while the switch is on; switched off, a PIN set before may be removed; a new one is never sent then', () => {
     assert.match(tab, /api\.get<Record<string, boolean>>\('\/api\/flags'\)/);
     assert.match(tab, /setApprovalPin\(approvalPinOn\(flags\)\);/);
-    assert.match(tab, /\{approvalPin && \(\s*<div data-testid="approval-pin">/);
-    assert.match(tab, /\{!approvalPin && editing && hasApprovalPin && \(\s*<p className="text-xs text-gray-500" data-testid="approval-pin-left">/);
+    // A595: an approval PIN is set or removed by someone holding staff.pins.
+    assert.match(tab, /\{approvalPin && rights\.pins && !webOnly && \(\s*<div data-testid="approval-pin">/);
+    assert.match(tab, /\{\(!approvalPin \|\| webOnly\) && editing && hasApprovalPin && rights\.pins && \([^\n]*\s*<p className="text-xs text-gray-500" data-testid="approval-pin-left">/);
     assert.match(tab, /clearOverride \? \{ override_pin: '' \}\s*: approvalPin && overridePin && mayApprove \? \{ override_pin: overridePin \}\s*: \{\};/);
   });
   await ok('the till\'s add form: the approval PIN only while the switch is on, and never sent otherwise', () => {

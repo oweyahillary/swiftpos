@@ -21,6 +21,7 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 export const TILL_WRITES: RegExp[] = [
   /^\/api\/orders(\/|$)/,                 // sales push, /:id/void, /:id/refund (incl. 0.6.30 offline replays)
   /^\/api\/sync\/push$/,                  // business_days / shifts / floats / expenses / kitchen voids
+  /^\/api\/sync\/backfill$/,              // A602: the sales history in bulk (the same rules as the two above)
   /^\/api\/branch-prices\/sync$/,         // price reconciliation
   // shift close / force-close (server-reconciled), A365 confirm (the till replays a manager's confirmation), A342
   // foreign-cash / foreign-orders (read-only POSTs for the web's part of the drawer). NOT a blanket /api/shifts: a shift
@@ -81,6 +82,7 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/credit\/sales\/[^/]+\/(confirm|dispute)$/,         // A545: Manager › Credit sales — confirm / dispute as themselves (customers.credit)
   /^\/api\/products\/labels\/settings$/,                    // A571: Manager › Stock › Labels — the business's label (menu.edit)
   /^\/api\/products\/barcodes\/(generate|settings)$/,       // A574: Labels — generate missing codes before printing, the numbering (menu.edit)
+  /^\/api\/loyalty\/customer$/,                              // A595 D1: + Customer on the POS — a person adds a customer (customers.edit / .view)
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';

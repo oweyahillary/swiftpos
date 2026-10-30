@@ -62,14 +62,16 @@ function packMonth(req: any, res: any): string | null {
 // A481 (owner, 2026-10-14: "the monthly pack ones I can't see them" — signed in as a Manager): the books' keeper reads them
 // too. Managers keep the books (Record for the books = expenses.manage, A455) but are denied reports.financial by default
 // (migration 82: Tax, Food Cost), so the pack was hidden from the very people who keep it.
-router.get('/', requireAnyPermission('reports.monthly_pack', 'expenses.manage'), async (req: any, res) => {
+// A595: the monthly pack's entries are their own part of expenses.manage (expenses.monthly — migration 176 gave it to every
+// holder), which also opens the pack it writes to, as expenses.manage did.
+router.get('/', requireAnyPermission('reports.monthly_pack', 'expenses.monthly'), async (req: any, res) => {
   const branch = packBranch(req, res); if (!branch) return;
   const month = packMonth(req, res); if (!month) return;
   try { res.json(await loadPack(req.businessId, branch, month)); }
   catch (err: any) { if (err?.status) { res.status(err.status).json({ error: err.message }); return; } sendError(res, err, { message: 'Could not build the monthly pack' }); }
 });
 
-router.get('/export', requireAnyPermission('reports.monthly_pack', 'expenses.manage'), async (req: any, res) => {
+router.get('/export', requireAnyPermission('reports.monthly_pack', 'expenses.monthly'), async (req: any, res) => {   // A595
   const branch = packBranch(req, res); if (!branch) return;
   const month = packMonth(req, res); if (!month) return;
   try {
@@ -86,7 +88,7 @@ router.get('/export', requireAnyPermission('reports.monthly_pack', 'expenses.man
   } catch (err: any) { if (err?.status) { res.status(err.status).json({ error: err.message }); return; } sendError(res, err, { message: 'Could not build the monthly pack' }); }
 });
 
-router.get('/movements', requireAnyPermission('reports.monthly_pack', 'expenses.view', 'expenses.manage'), async (req: any, res) => {
+router.get('/movements', requireAnyPermission('reports.monthly_pack', 'expenses.view', 'expenses.monthly'), async (req: any, res) => {   // A595
   const branch = packBranch(req, res); if (!branch) return;
   const month = packMonth(req, res); if (!month) return;
   const days = monthDays(month);
@@ -101,7 +103,7 @@ router.get('/movements', requireAnyPermission('reports.monthly_pack', 'expenses.
   res.json(data ?? []);
 });
 
-router.post('/movements', requirePermission('expenses.manage'), async (req: any, res) => {
+router.post('/movements', requirePermission('expenses.monthly'), async (req: any, res) => {   // A595
   const c = cleanMovement(req.body);
   if (c.ok === false) { res.status(400).json({ error: c.error }); return; }
   if (!assertBranchAccess(req, c.value.branch_id)) { res.status(403).json({ error: 'That branch is not yours.' }); return; }
@@ -116,7 +118,7 @@ router.post('/movements', requirePermission('expenses.manage'), async (req: any,
   res.status(201).json(data);
 });
 
-router.delete('/movements/:id', requirePermission('expenses.manage'), async (req: any, res) => {
+router.delete('/movements/:id', requirePermission('expenses.monthly'), async (req: any, res) => {   // A595
   const { data: row } = await supabase.from('money_movements').select('id, branch_id')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (!row) { res.status(404).json({ error: 'Not found' }); return; }

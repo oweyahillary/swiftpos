@@ -74,7 +74,7 @@ await ok('A538: receipt_classic_layout is retired — a stale row in production 
   assert.deepEqual(B.buildReceiptBusinessConfig(biz, undefined, 0, { posFeatures: { receipt_classic_layout: true } }).receiptClassic,
     { spacing: false, fullLogo: false, compactLayout: false, extraFeed: false });
   // The cloud asks feature_flags for POS_FEATURE_KEYS only (pos/init, posFeatureFlags) — a stale row never travels.
-  assert.match(read('apps/server/src/routes/pos.ts'), /\.in\('key', \[\.\.\.POS_FEATURE_KEYS\]\)/);
+  assert.match(read('apps/server/src/routes/pos.ts'), /\.in\('key', \[\.\.\.POS_FEATURE_KEYS, ATTENDANCE_FLAG(?:, 'etims_enabled')?\]\)[\s\S]{0,300}parsePosFeatures\(rows\.filter\(\(r\) => r\.key !== ATTENDANCE_FLAG(?: && r\.key !== 'etims_enabled')?\)\)/);   // A599: + the attendance flag, kept out of the switches; A607: + eTIMS, likewise
   assert.match(read('apps/server/src/lib/posFeatureFlags.ts'), /\.in\('key', \[\.\.\.POS_FEATURE_KEYS\]\)/);
   const ap = read('apps/admin/src/AdminPortal.tsx');
   assert.equal((ap.match(/!\(RETIRED_POS_FEATURE_KEYS as readonly string\[\]\)\.includes\(f\.key\)/g) ?? []).length, 2, 'Other flags skips it');

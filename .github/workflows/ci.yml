@@ -485,6 +485,16 @@ jobs:
           node --no-warnings tests/partner-login-a550.test.mjs
           node --no-warnings tests/partner-roles-a550.test.mjs
 
+      # A603: "Partner" in the Role list of + Add Staff — the owner's alone: the General Manager role and web dashboard
+      # access in one step (the same grant as "Give web access"), all or nothing; the dashboard's list RUN from source.
+      - name: Partner from the Role list (A603)
+        run: node --no-warnings tests/partner-add-a603.test.mjs
+
+      # A608: sign-in by role — Partner / General Manager email only, a Manager email (web dashboard) and a PIN for the
+      # desktop POS, a Cashier a PIN; the web POS refuses a manager's PIN (USE_WEB_DASHBOARD), the desktop's /verify-pin untouched.
+      - name: Staff sign-in by role (A608)
+        run: node --no-warnings tests/staff-signin-by-role-a608.test.mjs
+
       # A582 — "All my branches": a partner of SOME branches (two or more) reads them combined, never another branch. The
       # whole cloud (routes/index.js behind the real requireAuth) over HTTP: X-Branch-Id 'mine' → exactly their list (never
       # null / every branch), forged values (another branch, 'all', '', NO_BRANCH) never reach it; ~120 reads (reports and
@@ -624,6 +634,157 @@ jobs:
       # the loop too; named here so a failure says what broke.
       - name: Web POS petrol - shop items and nozzles (A588)
         run: node --no-warnings tests/petrol-pos-web-a588.test.mjs
+
+      # A589 — "till not closed should not come as an email for each client; let it be a notification on the admin portal
+      # … or a table … also invoices": seven clients with a day not closed → 0 emails, 7 bell notifications, ONE Telegram,
+      # the morning digest ONE email with ONE table of 7 rows; invoices and billing notices → the bell and ONE daily billing
+      # summary (a table), the client's invoice unchanged; system emergencies (5xx burst, overloaded, database unreachable
+      # once, backup failed / missed) emailed at once; the super admin's settings respected. Migration 174 replayed into
+      # PGlite. Then the nightly backup (00:00 Nairobi): the workflows pinned (no artifact, no secret echoed, the report
+      # always), the backup script run with stand-in PostgreSQL tools and real gpg (encrypt before upload, decrypts, 30
+      # daily + 12 monthly, a failure uploads and prunes nothing), the report and the alert when the server cannot take it,
+      # the restore's production guard, the notifier. Need the server build. Run in the loop too; named here so a failure
+      # says what broke.
+      - name: Admin alerts grouped, nightly backup and the down check (A589) and migration 174
+        run: |
+          node --no-warnings tests/admin-alerts-a589.test.mjs
+          node --no-warnings tests/nightly-backup-a589.test.mjs
+          node --no-warnings scripts/test-migration-174.mjs
+
+      # A591 — Supabase over the Free plan's 5 GB egress (projects restricted from 20 Nov 2026), log ingestion 0.8 of 1 GB:
+      # the meter (every Supabase answer counted by the route or job that asked — the System page's Supabase card, over
+      # the real supabase-js client), the write generation, a drawer's web sales read only when changed and only the sales
+      # the answer holds (the same answer as the old full read), the 5 s change-log read once a minute when nothing is
+      # written, the catalogue version and /init kept while nothing changes, a till's whole-menu pull from one read of the
+      # business's choices, the hourly loss run skipped when nothing changed. Needs the server build. In the loop too;
+      # named here so a failure says what broke.
+      - name: Supabase egress and calls (A591)
+        run: node --no-warnings tests/supabase-egress-a591.test.mjs
+
+      # A593 — "logs are full already" (~82,000 Supabase calls a day; the target ~15,000): the sign-in check's row kept 5
+      # minutes while nothing is written (a write, a block, A591_MEMO=off: as before); the cloud-plan gate's facts read
+      # once for every business (the standing still worked out at each ask's time); a GET route's write moves its own
+      # business only; a branch server's drawers from 2 reads a beat (the SAME answer as the reads before — the three
+      # drawer lists, the 50 awaiting, a cut-short page read as before); a repeat poll of shifts/state, day-close/pending,
+      # test-data-clears, stations: 0 calls, the same answer; ownerAlerts, the watchdog and dailySummary read every
+      # business at once; the System page's calls-a-day target and its top 5. Needs the server build. In the loop too.
+      - name: Supabase calls cut (A593)
+        run: TZ=UTC node --no-warnings tests/supabase-calls-a593.test.mjs
+
+      # A598 — "Calls a day" 24,226 of 15,000, job:watchdog the largest source (2,200): its quiet run 14 calls → 7 — the
+      # billing facts kept 30 minutes (10 before: the watchdog's own interval, so always just expired), the clients' and
+      # branches' names 30 minutes, an open problem's "still seen" stamp once an hour. Needs the server build.
+      - name: Watchdog calls cut (A598)
+        run: TZ=UTC node --no-warnings tests/supabase-calls-a598.test.mjs
+
+      # A592 — "How can we make these messages look better": every admin Telegram message and email laid out the same —
+      # Telegram HTML (a client "A&B <Shop>" escaped, valid), URL buttons ("Close it remotely", "Open run", "Guide"), a 400
+      # "can't parse entities" sent again as plain text; "8 days 22 h" not "214 h", "Mon 26 Oct 13:07 EAT"; client problems
+      # as the owner's rows (Client | Problem | Since | What to do — every rule has a todo of 60 characters or less); the
+      # digest 15 rows then "+N more"; the emails Gmail-safe with a text part; notify-admin.sh and report.sh run against a
+      # local Telegram/Resend stand-in (escaping with sed, the JSON reply_markup, the 400 retry, the backup step in plain
+      # words). Needs the server build. In the loop too; named here so a failure says what broke.
+      - name: Admin alert messages (A592)
+        run: node --no-warnings tests/alert-format-a592.test.mjs
+
+      # A594 — "we need to turn off that option for cashiers by default unless allowed" (a cashier typed the drawer counts
+      # into Cash in): cash in / cash out / expenses as three rights (Record cash in = shifts.cash_movements, shifts.cash_out,
+      # expenses.record — none a cashier default); a cashier's cash in needs a manager on the spot (PIN), the approver kept;
+      # every one gives a reason; a cash in of the cash sales / expected / float + cash sales (± 1) is asked again (409
+      # CASH_IN_LOOKS_LIKE_COUNT, no figures back); Shift Reports' breakdown of expected cash (drawer-figure viewers only,
+      # rendered); approval PIN the owner's alone. Migration 175 (the carry-over) replayed into PGlite. Needs the server
+      # build. In the loop too; named here so a failure says what broke.
+      - name: Cash in / cash out rights and the drawer-count warning (A594) and migration 175
+        run: |
+          node --no-warnings tests/cash-movements-a594.test.mjs
+          node --no-warnings scripts/test-migration-175.mjs
+
+      # A595 — "break down any right that you feel is too big and exposes data": 36 narrower rights (shared/permissions.ts
+      # SPLITS), every route the audit maps checking its part (a parent accepted until migration 176 is recorded, and for a
+      # token made before A595), customers' and staff's phones / e-mails / KRA PIN masked without the contacts rights, the
+      # closed gaps (POS credit list, staff roles, authorizers, the customer search filter), credit limits by key; then the
+      # owner's decisions of 2026-10-27 (D3 report e-mails and webhooks, D4 credit with branches, D8 Overview today, the
+      # KRA PIN). Migrations 176 (carry-over: nobody gains or loses) and 177 (the decided defaults) replayed into PGlite.
+      - name: User rights split, personal data, the owner's decisions (A595) and migrations 176 / 177 / 178
+        run: |
+          TZ=UTC node --no-warnings tests/permissions-split-a595.test.mjs
+          TZ=UTC node --no-warnings tests/owner-decisions-a595.test.mjs
+          node --no-warnings scripts/test-migration-176.mjs
+          node --no-warnings scripts/test-migration-177.mjs
+          node --no-warnings scripts/test-migration-178.mjs
+
+      # A597 — brand colours: the OWNER picks a primary and a secondary colour (any colour) on Branding; premium (the
+      # 'themes' flag). Every job's shade derived from the colour (white, black, yellow, mid-grey: labels and links read in
+      # light and dark); themes off → no variables (today's look); a branch's own theme → the colours give way; the cloud:
+      # owner only (a manager, a partner, a POS 403), themes off 403, a bad value 400, /pos/init serves them only with the
+      # flag, a database before migration 179 keeps working. Migration 179 replayed into PGlite.
+      - name: Brand colours (A597) and migration 179
+        run: |
+          TZ=UTC node --no-warnings tests/brand-colours-a597.test.mjs
+          node --no-warnings scripts/test-migration-179.mjs
+
+      # A605 — the brand palette, professional and clean: one engine (shared/themes.ts brandPalette) for the web dashboard,
+      # the web POS and the desktop POS. A sweep of 476 colours: the base step IS the owner's hex; every label ≥ 4.5, rings
+      # and chart marks ≥ 3, light AND dark; status shades never taken; the four sample colours (yellow, navy, rose, a
+      # green near paid) and their plain-words notes; the copies agree; logo colours from synthetic pixels; the colour map
+      # (both index.css files, the web POS's labels); the Branding page's save bar at the bottom. Runs in the loop too.
+      - name: Brand palette (A605)
+        run: node --no-warnings tests/brand-palette-a605.test.mjs
+
+      # A606 — the customer screen (a dual-screen POS): the owner's slideshow (up to 10 uploaded JPEG / PNG / WebP images,
+      # 3–60 s each), the owner's alone and part of the online licence (a manager, a POS 403; no licence 403, emptying
+      # allowed), served with /pos/init and the 'setup' change; the generic settings write refuses the key; the web POS's
+      # customer screen: the publisher posts only the CLEANED state over the BroadcastChannel and answers hello; the shared
+      # view draws idle / sale / payment / thank you, premium parts only when the gate lets them through. Needs the server build.
+      - name: Customer screen - cloud and web (A606)
+        run: TZ=UTC node --no-warnings tests/customer-screen-a606.test.mjs
+
+      # A607 — customer details at the counter, on both screens: the sale's buyer KRA PIN stored (POST /api/orders and /pay),
+      # a malformed one 400 BAD_BUYER_PIN, the history backfill dropping one and never fiscalising; KRA eTIMS custTin = the
+      # sale's PIN, else the customer's kra_pin, else null (end to end to a stand-in KRA; a database before 181 still
+      # fiscalises); no customer record without "save"; the desktop POS's M-Pesa prompt (POST /api/mpesa/stk-push-pos, a
+      # POS's own session, kept before Safaricom is asked; callback, shortfall, replay, decline; /status masked; 400 / 422 /
+      # 403; the web's /stk-push unchanged); pos/init etimsEnabled; the web POS's form round trip and prompt over the
+      # BroadcastChannel. Migration 181 replayed into PGlite. Needs the server build.
+      - name: Customer details at the counter (A607) and migration 181
+        run: |
+          TZ=UTC node --no-warnings tests/customer-details-a607.test.mjs
+          node --no-warnings scripts/test-migration-181.mjs
+
+      # A599 — Attendance (premium, the 'attendance' flag set in the admin portal): punches only from a ZKTeco device
+      # through the branch server, for everyone. The pairing (in / out alternately in time order, a night shift on the day
+      # it started, an odd last punch a missing punch-out not counted, a 16 h gap never paired); flag off → every route
+      # 403 ATTENDANCE_OFF and no menu item; the web POS PIN clock-in refused with the flag on, as before without it; an
+      # attendance-only person never a users row; the branch server's ingest idempotent, its own branch only; "Not
+      # matched" → link assigns retroactively; corrections keep the original; the rights' defaults; pay only with
+      # staff.pay. Migration 180 replayed into PGlite. Needs the server build. In the loop too.
+      - name: Attendance (A599) and migration 180
+        run: |
+          TZ=UTC node --no-warnings tests/attendance-a599.test.mjs
+          node --no-warnings scripts/test-migration-180.mjs
+
+      # A601 — the desktop-only cut-off (DESKTOP_ONLY_CUTOFF_AT): unset or before the date nothing is refused; from it a
+      # desktop-only POS's backup writes 503 CLOUD_BACKUP_OFF while sign-in, joining a POS, the catalogue / staff changes,
+      # support logs and reads stay; paying, trial, exempt (cloud_backup) and A581-locked clients untouched; pos/init's
+      # cloudBackup; no update offer unless released (desktop_updates); the admin filter and super-admin switches; the
+      # watchdog skip. Needs the server build. In the loop too.
+      - name: Desktop-only cut-off, cloud side (A601)
+        run: TZ=UTC node --no-warnings tests/desktop-only-cutoff-a601.test.mjs
+
+      # A602 — going online later, the cloud's side: POST /api/sync/backfill takes up to 500 sales a call (gzip'd, 12 MB
+      # inflated) with their drawers and days, writes them through the /api/sync/push and /api/orders handlers themselves
+      # (each sale answered exactly as the normal push), idempotent on the POS's order id, refused at the A601 cut and under
+      # A581's lock, one log line a call. Needs the server build. In the loop too.
+      - name: History backfill, cloud side (A602)
+        run: TZ=UTC node --no-warnings tests/history-backfill-a602.test.mjs
+
+      # A604 — "why cant we move this switches to the owners side": the admin portal's Features tab shows the owner's POS
+      # options as plain "On" / "Off" under "POS options (set by the owner)"; the three cashier switches retired into role
+      # permissions are one line, not rows; the three STANDARD keys (always on) one line, never raw toggles, and the cloud
+      # refuses their write (409 ALWAYS_ON); themes, analytics, attendance and the A601 switches stay. Needs the server
+      # build. In the loop too.
+      - name: Admin portal POS options (A604)
+        run: node --no-warnings tests/admin-pos-options-a604.test.mjs
 
       - name: Run offline suites
         run: |
@@ -1026,6 +1187,19 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/payout-approval.test.mjs
 
+      # A594 — on the desktop POS: a cashier without Record cash in types a manager's PIN for a cash in (offline too), the
+      # approver kept; the reason required; the drawer-count warning and countAck; a manager's flow unchanged; expenses
+      # approved, never refused outright; the branch server's remote path (reason, count_ack). Real IPC handlers.
+      - name: Desktop cash in / cash out rights (A594)
+        working-directory: apps/desktop
+        run: node --no-warnings test/cash-movements-a594.test.mjs
+
+      # A595 D4 — credit per branch on the desktop POS, offline: the branch switch and a customer's limit at the branch kept
+      # with the credit list (the branch server hands them on), owed here / owed in total, a masked number never on a sale.
+      - name: Desktop credit per branch (A595)
+        working-directory: apps/desktop
+        run: node --no-warnings test/credit-branch-a595.test.mjs
+
       # 0.6.39 (A401) — a drawer force-closed (or closed) on the web closes on the till too: the till asks the cloud
       # about its open shifts on the 20-s beat and closes each one the cloud closed. Real syncEngine on real SQLite.
       - name: Desktop shift closed on the web
@@ -1310,6 +1484,22 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/lan-tls.test.mjs
 
+      # A599 — attendance from a ZKTeco device (premium; owner 2026-10-27: ZKTeco first, the K90 Pro): the device client
+      # against an in-process simulated device — connect and comm key, users and punches in every record size across
+      # chunked reads, the device clock, user writes (never an admin), timeouts and dropped connections. Mutation-checked.
+      - name: Desktop attendance device client (ZKTeco, simulated)
+        working-directory: apps/desktop
+        run: node --no-warnings test/zkteco.test.mjs
+
+      # A599 — the branch server's attendance job (attendanceSync.ts): ONLY on the branch server, with the 'attendance' flag
+      # on and the cloud reachable (else no cloud call and no device connection at all); the config, each device's state,
+      # its waiting actions (write a user — never an admin — or delete one, each acked), the new punches made UTC with the
+      # config's offset, at most 500 a call, a high-water mark so nothing is re-sent; a silent device posts its error and
+      # the next is done; 409 on punches → state first. Simulated devices and a fake cloud. Mutation-checked.
+      - name: Desktop attendance job (branch server → cloud, simulated devices)
+        working-directory: apps/desktop
+        run: node --no-warnings test/attendance-device-a599.test.mjs
+
       # A496 — tills behind a branch server always get their update: a server holding its own downloaded update still
       # fetches the next one, a stalled download is cancelled and restarted, a till never waits for ever on the server's
       # copy, a copy from before a roll-back is not offered. The Electron half proves the stall and the pinned TLS feed
@@ -1508,6 +1698,37 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/branch-branding-a544.test.mjs
 
+      # A597 — the owner's brand colours on the till: pulled with the branding (no schema bump), an older cloud leaves them,
+      # none with themes off or under a branch's own theme, a database without the columns reads as none, the branch
+      # server relays them; the screens: a primary's shades on every action colour, the lock screen and the strip.
+      - name: Desktop brand colours (A597)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/brand-colours-a597.test.mjs
+
+      # A606 — the customer screen on a dual-screen POS: the second window on the chosen monitor (never the cashier's),
+      # following screens plugged in and out without a crash; the state CLEANED in main (no cost price, staff, PIN or
+      # customer); premium gated (themes: logo and colours; the online licence: the slideshow and M-Pesa) on real SQLite;
+      # the slideshow cache (each image once, by hash; nothing without the licence); idle → sale → payment → thank you →
+      # idle; the words by business type; the page a lazy chunk (main chunk ≤ 452 kB).
+      - name: Desktop customer screen (A606)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/customer-display-a606.test.mjs
+
+      # A607 — customer details on both screens: the phone / KRA PIN / consent rules; the customer screen's form round trip
+      # through main (asked only when allowed, the request cleaned, an answer only from the customer screen's page, only the
+      # typed fields, checked in main, nothing attached until the cashier accepts); "Customer types it" showing only the
+      # form; the M-Pesa prompt with a fake cloud on both screens; premium gating; local schema 78 (orders.buyer_kra_pin) on
+      # real SQLite, the sale and its payload, the receipt's "Buyer PIN"; the eTIMS flag pulled and relayed; the main chunk.
+      - name: Desktop customer details (A607)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/customer-details-a607.test.mjs
+
       # A564 — Manager › Stock › Other branches on the till: the lookup and the requests through the branch server's gateway
       # (A410) with the person's own sign-in; offline "Needs a connection"; a refusal keeps the cloud's words; the keys
       # (inventory.view to look, inventory.transfer to ask and answer) and the online licence; the tab and its count.
@@ -1542,6 +1763,14 @@ jobs:
       - name: Desktop petrol POS - shop items, pumps and gauges (A588)
         working-directory: apps/desktop
         run: node --no-warnings test/petrol-pos-a588.test.mjs
+
+      # A590 (P0) — every arch in the installer loads its SQLite driver: the 32-bit app of every combined installer up to
+      # 1.0.20 had none (better-sqlite3 13 ships no win32-ia32 prebuild; its binding.gyp built nothing on the x64 host).
+      # Pins: npmRebuild off, beforePack builds the ia32 driver, afterPack gates each arch; release.yml builds with
+      # --publish never, gates x64 AND ia32 (unpacked + the installer's payloads), then uploads.
+      - name: Desktop native driver for x64 and ia32 (A590)
+        working-directory: apps/desktop
+        run: node --no-warnings test/native-arch-a590.test.mjs
 
       # A541 — tills and branch servers stuck on an old version since the A513 autostart install their update: a start at
       # Windows sign-in installs an approved, newer, downloaded update before serving (the updater task, else the
@@ -1626,6 +1855,25 @@ jobs:
       - name: Desktop backup folder
         working-directory: apps/desktop
         run: node --no-warnings test/backup-folder.test.mjs
+
+      # A600 — the nightly backup on every PC (a POS on its own too), the Backup panel's rights, and a safe restore.
+      - name: Desktop backup on every PC and restore (A600)
+        working-directory: apps/desktop
+        run: node --no-warnings test/backup-every-pc-a600.test.mjs
+
+      # A601 — the desktop-only cut-off on the POS: told by the catalogue pull, it stops the backup pushes and the polls
+      # that only serve them quietly (queue kept, no probing), keeps the catalogue pull and the changes push, resumes when
+      # told, shows the manager the notice, and takes "released by ZapTill support" as a plain update hold.
+      - name: Desktop-only cut-off on the POS (A601)
+        working-directory: apps/desktop
+        run: node --no-warnings test/desktop-only-cutoff-a601.test.mjs
+
+      # A602 — going online later on the POS: new sales first (with their drawers and days), the history in bulk in quiet
+      # hours (paused by a sale), at most 500 a call, marked synced as the normal push marks a sale, the owner's window
+      # (older sales local_only, never "waiting"), an interrupted run resuming, 100,000 sales in about 200 calls.
+      - name: History upload on the POS (A602)
+        working-directory: apps/desktop
+        run: node --no-warnings test/history-upload-a602.test.mjs
 
       # A465 — a manager on the branch server records cash in / out or an expense on any running shift; the till that
       # holds the drawer records it on its own books.

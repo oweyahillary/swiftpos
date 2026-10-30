@@ -71,16 +71,20 @@ import { signTechToken, generateRevealCode } from '../lib/techToken';
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
 import { resolveOwnerUserId } from '../lib/ownerBusiness';
 import { listDesktopReleasesOrStale } from '../lib/desktopReleases';
-import { ownerSetsFeature } from './controls';        // A490
+import { ownerSetsFeature, alwaysOnFeature } from './controls';        // A490; A604 alwaysOnFeature
 import { checkApprovableVersion } from '../lib/desktopVersionApproval';   // A493: the admin approves till updates
 import { startTrialIfEligible, readTrial, trialPhase, planLabel, planLabelsFor } from '../lib/cloudTrial';   // A569
-import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds, standingView, type CloudStanding } from '../lib/cloudPlan';   // A581, A584
+import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds, standingView, type CloudStanding,
+  CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG, desktopOnlyView, desktopOnlyCutoffAt, cutoffPhase } from '../lib/cloudPlan';   // A581, A584, A601
 import { cleanSubdomain, subdomainProblem } from '@zaptill/core/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '@zaptill/core/support';   // 0.6.35 (A384): a tech's number
-import { alertChannels, notifyAdmin } from '../lib/alertNotify';   // A383: the watchdog's channels
+import { alertChannels, notifyRendered, alertLinks } from '../lib/alertNotify';   // A383: the watchdog's channels
+import { renderMessage, alertsUrl, eatStamp } from '../lib/alertFormat';            // A592: the test alert laid out
 import { digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';   // A392
 import { syncRefusalHint } from '../lib/watchdogRules';   // A392
+import { readAlertSettings, saveAlertSettings } from '../lib/adminAlerts';   // A589
+import { ALERT_CATEGORIES, DEFAULT_ALERT_SETTINGS, normalizeAlertSettings, DIGEST_TIME_RE } from '../lib/adminAlertPolicy';   // A589
 import { otpGate, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, otpDisabled, trustValid } from '../lib/loginOtp';   // A391
 
 const router = safeRouter();
@@ -607,6 +611,17 @@ router.get('/clients', requireAdmin, async (req, res) => {
     onlyIds = [...facts.entries()].filter(([, f]) => !f.suspended && billingFilterMatch(expiry, cloudStanding(f, now))).map(([id]) => id);
     if (!onlyIds.length) { res.json({ clients: [], total: 0 }); return; }
   }
+  // A601: "Desktop only" — every business the billing rules do not concern, or concern as not_on_plan (no plan, no date,
+  // no trial, no web access): the ones the desktop-only cut-off (DESKTOP_ONLY_CUTOFF_AT) is about.
+  if (expiry === 'desktop_only') {
+    const now = Date.now();
+    const governed = await readCloudFacts(await gatedBusinessIds().catch(() => [])).catch(() => new Map());
+    const notDesktop = new Set([...governed.entries()].filter(([, f]) => !cloudStanding(f, now).desktopOnly.is).map(([id]) => id));
+    const { data: all, error: allErr } = await supabase.from('businesses').select('id').limit(10000);
+    if (allErr) { sendError(res, allErr); return; }
+    onlyIds = ((all ?? []) as Array<{ id: string }>).map((b) => b.id).filter((id) => !notDesktop.has(id));
+    if (!onlyIds.length) { res.json({ clients: [], total: 0, cutoff: cutoffView() }); return; }
+  }
 
   let query = supabase
     .from('businesses')
@@ -635,8 +650,17 @@ router.get('/clients', requireAdmin, async (req, res) => {
     const s = cloudStanding(f, now);
     return s.gated || s.state === 'no_expiry' || s.state === 'off' ? standingView(s) : null;
   };
-  res.json({ clients: rows.map((r) => ({ ...r, plan_label: labels.get(r.id) ?? null, cloud: cloud(r.id) })), total: count ?? 0 });
+  // A601: a desktop-only client's cut-off phase (notice / backup off / exempt), null for every other client.
+  const desktopOnly = (id: string) => { const f = facts.get(id); return f && !f.suspended ? desktopOnlyView(cloudStanding(f, now).desktopOnly) : null; };
+  res.json({ clients: rows.map((r) => ({ ...r, plan_label: labels.get(r.id) ?? null, cloud: cloud(r.id), desktop_only: desktopOnly(r.id) })),
+    total: count ?? 0, cutoff: cutoffView() });
 });
+
+/** A601: the desktop-only cut-off as set on this cloud (DESKTOP_ONLY_CUTOFF_AT): its date and where it stands now. */
+function cutoffView(): { at: string | null; phase: 'none' | 'notice' | 'cut' } {
+  const at = desktopOnlyCutoffAt();
+  return { at, phase: cutoffPhase(at, Date.now()) };
+}
 
 router.get('/clients/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
@@ -690,6 +714,9 @@ router.get('/clients/:id', requireAdmin, async (req, res) => {
     recent_orders: recentOrders ?? [],
     revenue_mtd:   revenueMtd,
     features:      flags ?? [],
+    // A601: the desktop-only cut-off for this client (null: on a plan, a trial, a date or web access) and the cloud's date.
+    desktop_only:  await readCloudFacts([String(id)]).then((m) => { const f = m.get(String(id)); return f && !f.suspended ? desktopOnlyView(cloudStanding(f, Date.now()).desktopOnly) : null; }).catch(() => null),
+    desktop_only_cutoff: cutoffView(),
     // A378: the full sign-in address, or null (none set, or TENANT_ROOT_DOMAIN not configured on the cloud).
     sign_in_address:    signInAddress((biz as any).subdomain),
     tenant_root_domain: tenantRootDomain() || null,
@@ -1181,7 +1208,8 @@ router.get('/clients/:id/features', requireAdmin, async (req, res) => {
   res.json(data ?? []);
 });
 
-const PAID_FEATURES = new Set(['web_hosting']);   // A495
+// A495. A601: the desktop-only cut-off's exemption (cloud_backup) and update release (desktop_updates) are paid too.
+const PAID_FEATURES = new Set(['web_hosting', CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG]);
 
 router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   const { id, key } = req.params;
@@ -1190,10 +1218,14 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   // permissions per role. The portal shows them read-only.
   const refusal = ownerSetsFeature(key);
   if (refusal) { res.status(403).json({ error: refusal, code: 'OWNER_SETS' }); return; }
+  // A604: the STANDARD keys are always on (a stored value is ignored) — nothing to store.
+  const alwaysOn = alwaysOnFeature(key);
+  if (alwaysOn) { res.status(409).json({ error: alwaysOn, code: 'ALWAYS_ON' }); return; }
   if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled must be true or false' }); return; }
   // A495: web access is paid (A584: the cloud plan) — switching it is a super admin's call.
   if (PAID_FEATURES.has(key) && req.adminRole !== 'super_admin') {
-    res.status(403).json({ error: 'Only a super admin can switch web access (a paid licence).', code: 'SUPER_ADMIN_REQUIRED' });
+    const what = key === CLOUD_BACKUP_FLAG ? 'the cloud backup' : key === DESKTOP_UPDATES_FLAG ? 'desktop updates' : 'web access (a paid licence)';
+    res.status(403).json({ error: `Only a super admin can switch ${what}.`, code: 'SUPER_ADMIN_REQUIRED' });
     return;
   }
 
@@ -1232,7 +1264,8 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
     .single();
 
   if (error) { sendError(res, error); return; }
-  if (key === 'web_hosting') forgetStanding(String(id));   // A581: the lapse gate reads afresh
+  // A581: the lapse gate reads afresh. A601: and the desktop-only cut-off (backup kept, updates released).
+  if (PAID_FEATURES.has(key)) forgetStanding(String(id));
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -2431,10 +2464,65 @@ router.post('/watchdog/:id/ack', requireAdmin, async (req: any, res) => {
   res.json({ muted: mute });
 });
 
+// ── A589: the admin's alert settings and the bell ─────────────────────────────
+// Owner, 2026-10-25: "till not closed should not come as an email for each client; let it be a notification on the admin
+// portal … or if they must come as an email let it be a table". Every admin reads; a super admin changes what is emailed
+// at once, the digest time and the two daily emails (lib/adminAlertPolicy.ts — public.admin_settings, migration 174).
+router.get('/alert-settings', requireAdmin, async (_req, res) => {
+  res.json({ settings: await readAlertSettings(), defaults: DEFAULT_ALERT_SETTINGS, categories: ALERT_CATEGORIES, channels: alertChannels() });
+});
+
+router.put('/alert-settings', requireAdmin, requireSuperAdmin, async (req: any, res) => {
+  const body = req.body ?? {};
+  if (body.digestTime !== undefined && (typeof body.digestTime !== 'string' || !DIGEST_TIME_RE.test(body.digestTime))) {
+    res.status(400).json({ error: 'The digest time must be HH:MM (24 hours, Nairobi), e.g. 07:00.' }); return;
+  }
+  if (body.instant !== undefined && !Array.isArray(body.instant)) { res.status(400).json({ error: 'instant must be a list of categories' }); return; }
+  const known = new Set(ALERT_CATEGORIES.map((c) => c.id as string));
+  const unknown = (Array.isArray(body.instant) ? body.instant : []).filter((c: unknown) => typeof c !== 'string' || !known.has(c));
+  if (unknown.length) { res.status(400).json({ error: `Unknown categories: ${unknown.join(', ')}` }); return; }
+  const before = await readAlertSettings();
+  const next = normalizeAlertSettings({ ...before, ...body });
+  const saved = await saveAlertSettings(next, req.adminEmail ?? null);
+  if (!saved.ok) { res.status(503).json({ error: 'Could not save — is migration 174 applied?' }); return; }
+  await writeAdminAudit({ adminId: req.adminId, adminEmail: req.adminEmail, action: 'alert_settings.update', resource: 'admin_settings',
+    before, after: next, ip: req.ip });
+  res.json({ settings: next });
+});
+
+// The bell: the newest notifications (?unread=1: the unread only) and how many are unread.
+router.get('/notifications', requireAdmin, async (req, res) => {
+  const unreadOnly = req.query.unread === '1' || req.query.unread === 'true';
+  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+  let q = supabase.from('admin_notifications').select('id, category, business_id, alert_key, title, detail, data, created_at, read_at, read_by');
+  if (unreadOnly) q = q.is('read_at', null);
+  const { data, error } = await q.order('created_at', { ascending: false }).limit(limit);
+  if (error) { res.json({ notifications: [], unread: 0, unavailable: true }); return; }   // before migration 174: an empty bell
+  const counted = await supabase.from('admin_notifications').select('id', { count: 'exact', head: true }).is('read_at', null);
+  res.json({ notifications: data ?? [], unread: Number(counted.count ?? 0) });
+});
+
+// Mark read: { ids: [...] } or { all: true }.
+router.post('/notifications/read', requireAdmin, async (req: any, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: unknown) => typeof x === 'string').slice(0, 500) : [];
+  if (!ids.length && req.body?.all !== true) { res.status(400).json({ error: 'Give ids, or all: true' }); return; }
+  let q = supabase.from('admin_notifications').update({ read_at: new Date().toISOString(), read_by: req.adminEmail ?? null }).is('read_at', null);
+  if (ids.length) q = q.in('id', ids);
+  const { error } = await q;
+  if (error) { res.status(503).json({ error: 'Could not save — is migration 174 applied?' }); return; }
+  res.json({ ok: true });
+});
+
 // A495: requireAdmin first — requireSuperAdmin alone read a role nothing had verified (no token, no role, refused only by luck).
 router.post('/watchdog/test', requireAdmin, requireSuperAdmin, async (req: any, res) => {
   const who = req.adminEmail ?? 'an admin';
-  const sent = await notifyAdmin('ZapTill test alert',
-    `🧪 ZapTill test alert\nSent by ${who} from the admin portal. If you can read this, the watchdog can reach you.`);
+  // A592: laid out like every alert — so the test shows what a real one looks like (HTML, the buttons, the email).
+  const links = alertLinks();
+  const sent = await notifyRendered(renderMessage({
+    tone: 'test', headline: 'Test alert', subject: '🧪 ZapTill test alert',
+    summary: 'If you can read this, the watchdog can reach you.',
+    facts: [['Sent by', String(who)], ['When', eatStamp(new Date())]],
+    buttons: [{ text: 'Open alerts', url: alertsUrl(links) }],
+  }, links));
   res.json({ channels: alertChannels(), sent });
 });

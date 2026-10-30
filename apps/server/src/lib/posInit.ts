@@ -19,6 +19,7 @@
  * (WEB_CONCURRENCY=1): one memory.
  */
 import { traffic } from './trafficStats';
+import { catalogueGen, memoEnabled } from './writeActivity';   // A591
 
 type Err = { message: string; code?: string } | Error;
 export type BuiltInit =
@@ -33,7 +34,14 @@ export function setInitBuilder(b: InitBuilder): void { builder = b; }
 export const INIT_CACHE_MAX_ENTRIES = 200;
 export const INIT_CACHE_MAX_BYTES = 50 * 1024 * 1024;
 export const INIT_CACHE_MAX_AGE_MS = 10 * 60_000;
-interface Kept { body: Record<string, unknown>; opBranch: { id?: string; desktop_licensed?: boolean } | null; bytes: number; at: number }
+/**
+ * A591: tills before 1.0.20 take the whole catalogue every 10 minutes, so a 10-minute memory was rebuilt (~15 reads and
+ * the logo) on almost every ask. An answer is also used up to 60 minutes while NOTHING has been written for the business
+ * through this server since it was built (lib/writeActivity.ts) — a variant edited, a setting changed, anything, and the
+ * 10-minute rule applies again. A change made straight in SQL: up to an hour (a till also takes the whole menu daily).
+ */
+export const INIT_CACHE_QUIET_AGE_MS = 60 * 60_000;
+interface Kept { body: Record<string, unknown>; opBranch: { id?: string; desktop_licensed?: boolean } | null; bytes: number; at: number; gen?: string }
 const kept = new Map<string, Kept>();
 const building = new Map<string, Promise<BuiltInit>>();
 let keptBytes = 0;
@@ -60,7 +68,8 @@ export async function initAnswer(businessId: string, requestedBranchId: string |
   const key = `${businessId}|${requestedBranchId ?? ''}|${version ?? ''}`;
   if (version !== null) {
     const hit = kept.get(key);
-    if (hit && now - hit.at < INIT_CACHE_MAX_AGE_MS && hit.at >= (o.notBefore ?? 0)) {
+    const quiet = !!hit && memoEnabled() && hit.gen === catalogueGen(businessId) && now - hit.at < INIT_CACHE_QUIET_AGE_MS;   // A591
+    if (hit && (now - hit.at < INIT_CACHE_MAX_AGE_MS || quiet) && hit.at >= (o.notBefore ?? 0)) {
       kept.delete(key); kept.set(key, hit);   // most recently used
       traffic.count('init.from_memory');
       return { ok: true, body: hit.body, opBranch: hit.opBranch };
@@ -71,12 +80,13 @@ export async function initAnswer(businessId: string, requestedBranchId: string |
   if (!builder) throw new Error('posInit: no builder (routes/pos.ts not loaded)');
   traffic.count('init.built');
   const startedAt = now;
+  const gen = catalogueGen(businessId);   // A591: taken before the build
   const p = builder({ businessId }, requestedBranchId).then((b) => {
     if (b.ok && version !== null) {
       const good = b as { body: Record<string, unknown>; opBranch: Kept['opBranch'] };
       let bytes = 0;
       try { bytes = Buffer.byteLength(JSON.stringify(good.body)); } catch { bytes = INIT_CACHE_MAX_BYTES + 1; }
-      remember(key, { body: good.body, opBranch: good.opBranch, bytes, at: startedAt });
+      remember(key, { body: good.body, opBranch: good.opBranch, bytes, at: startedAt, gen });
     }
     return b;
   });

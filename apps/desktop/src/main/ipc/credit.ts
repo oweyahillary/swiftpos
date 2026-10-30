@@ -4,7 +4,7 @@ import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import * as creditConfirm from '../creditConfirm';   // A545
 import { readCreditCustomers, onAccountOffered, ensureCreditCustomers, creditListAt, selfApproves, pullCreditCustomers,
-  mayFindCreditCustomers, readCreditApproval } from '../creditSale';   // A552; A559; A585
+  mayFindCreditCustomers, readCreditApproval, readCreditBranch } from '../creditSale';   // A552; A559; A585; A595 D4
 import { signedIn as sessionPerson } from '../tillAccess';
 import { onCataloguePulled } from '../syncEngine';
 import { NO_CONNECTION_MESSAGE } from '../offlineSession';
@@ -87,7 +87,7 @@ export function registerCreditHandlers(ctx: IpcShared) {
     if (!mayFindCreditCustomers(person)) return { offered: false, selfApproves: false, saved_at: null, customers: [] };
     await ensureCreditCustomers().catch(() => { /* the saved list */ });
     const db = getLocalDb();
-    const offered = onAccountOffered(db);
+    const offered = onAccountOffered(db) && readCreditBranch(db).credit_enabled;   // A595 D4: a branch without credit offers none
     const rule = readCreditApproval(db);   // A585: the owner's chosen approvers (kept offline)
     return {
       offered,
@@ -97,6 +97,29 @@ export function registerCreditHandlers(ctx: IpcShared) {
       customers: offered ? readCreditCustomers(db, String(search ?? ''), 30) : [],
     };
   });
+  // A595 (owner decision D1, 2026-10-27): a cashier adds a customer at the POS — name, phone, e-mail and KRA PIN — on the
+  // cloud with their own sign-in (customers.edit or customers.view, as the cloud's POST /api/loyalty/customer). Online only:
+  // a customer is a business-wide record (offline: the plain "needs the connection" message).
+  handle('customer:create', async (_e, payload) => {
+    const p = assertPayload<{ name: string; phone: string; email?: string; kra_pin?: string }>({
+      name: { t: 'string', min: 1 }, phone: { t: 'string', min: 1 }, email: { t: 'string', optional: true },
+      kra_pin: { t: 'string', optional: true },
+    }, payload ?? {});
+    requireKey(['customers.edit', 'customers.view'], 'Your role does not add customers.');
+    const kra = String(p.kra_pin ?? '').replace(/\s+/g, '').toUpperCase();
+    if (kra && !/^[A-Z][0-9]{9}[A-Z]$/.test(kra)) throw new Error('A KRA PIN is a letter, 9 digits and a letter - for example A123456789Z.');
+    if (!p.name.trim() || !p.phone.trim()) throw new Error('A name and a phone number are needed.');
+    try {
+      const out = await manageFetch('/api/loyalty/customer', 'POST', { name: p.name.trim(), phone: p.phone.trim(),
+        ...(p.email?.trim() ? { email: p.email.trim() } : {}), ...(kra ? { kra_pin: kra } : {}) });
+      logLine('sale', 'A595: a customer was added at this POS');
+      return { ok: true, customer: (out as { customer?: unknown })?.customer ?? null };
+    } catch (e: any) {
+      if (creditOffline()) throw new Error(NO_CONNECTION_MESSAGE);
+      throw e;
+    }
+  });
+
   // The list is read with every catalogue pull too (startup, a change), so "On account" appears without a sale first.
   onCataloguePulled(() => { void pullCreditCustomers().catch(() => false); });
 

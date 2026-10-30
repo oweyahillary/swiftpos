@@ -71,7 +71,8 @@ await ok('a day still open 3 hours after its business day ended is critical; 3 h
   assert.strictEqual(R.daysNotClosed([day(170)], NOW).length, 0);
   const a = R.daysNotClosed([day(200)], NOW, names);
   assert.strictEqual(a.length, 1);
-  assert.match(a[0].title, /day 2026-10-02 not closed on T1/);
+  assert.match(a[0].title, /day Fri 2 Oct not closed on T1/);   // A592: "Fri 2 Oct", not "2026-10-02"
+  assert.equal(a[0].label, 'Day not closed'); assert.match(a[0].todo, /Remote Day Close/);
   assert.strictEqual(R.daysNotClosed([{ ...day(500), status: 'closed' }], NOW).length, 0);
 });
 await ok('tills behind the approved version or the schema are a warning; no approved version = only the schema', () => {
@@ -112,16 +113,17 @@ await ok('a problem no longer found is resolved', () => {
   const p = R.planRun([], [openRow('k1', 'critical', 20)], NOW);
   assert.deepStrictEqual(p.resolved.map((r) => r.alert_key), ['k1']);
 });
-await ok('the messages: new, reminder with how long, resolved; the digest lists critical then warnings and the counters', () => {
-  assert.match(R.alertText('new', crit), /^🔴 ZapTill ALERT\nT\nD$/);
-  assert.match(R.alertText('reminder', crit, minAgo(200), NOW), /STILL HAPPENING — for 3 h 20 min/);
-  assert.match(R.alertText('resolved', crit, minAgo(45), NOW), /RESOLVED — T \(lasted 45 min\)/);
-  const d = R.digestText([{ severity: 'warning', title: 'W1', detail: 'x' }, { severity: 'critical', title: 'C1' }],
-    { writeGuard: 3, failedSignIns: 7, serverErrors: 2, since: '2026-10-02T04:45:00Z' }, NOW);
-  assert.ok(d.indexOf('C1') < d.indexOf('W1'));
-  assert.match(d, /Failed sign-ins: 7/);
-  assert.match(d, /\(A159\): 3/);
-  assert.match(R.digestText([], { writeGuard: 0, failedSignIns: 0, serverErrors: 0, since: NOW.toISOString() }, NOW), /All clients look healthy/);
+// A592: the messages themselves (new, "Still open · 9 days", "Resolved after …", the digest) are laid out by
+// lib/alertFormat.ts and worded by lib/adminAlertPolicy.ts — tested in tests/alert-format-a592.test.mjs. Here: the words
+// for time the rules use.
+await ok('the time words: "3 h 20 min", "8 days 22 h" (never "214 h"), "16 days ago", a business date as "Fri 9 Oct"', () => {
+  assert.equal(R.durationLabel(200), '3 h 20 min');
+  assert.equal(R.durationLabel(214 * 60 + 40), '8 days 22 h');
+  assert.equal(R.shortDuration(397 * 60 + 50), '16 days');
+  assert.equal(R.shortDuration(0.4), 'just now');
+  assert.equal(R.shortDuration(30 * 60), '1 day');
+  assert.equal(R.dayLabel('2026-10-09', NOW), 'Fri 9 Oct');
+  assert.equal(R.dayLabel('2025-12-31', NOW), 'Wed 31 Dec 2025');
 });
 await ok('the counters: 5xx kept for the burst rule, sign-in failures recognised, the digest resets them', () => {
   K.recordServerError('/api/x?y=1');
@@ -147,24 +149,29 @@ await ok('wiring: the job starts with the server; 5xx and sign-in failures are c
   const auth = read('apps/server/src/middleware/auth.ts');
   assert.match(auth, /terminalWriteDenied\(req\.surface[^\n]*return false;\n\s*recordWriteGuard\(\);/);
 });
-await ok('the job: every 10 min, digest 07:45 Nairobi, stores what it said, never overlaps, can be turned off', () => {
+// A589: the digest at the admin settings' time (default 07:00 Nairobi, lib/adminAlertPolicy.ts digestDue), checked every
+// 5 minutes; WATCHDOG_DIGEST_CRON, when set, still fixes it (Nairobi).
+await ok('the job: every 10 min, the digest at the settings\' time (or WATCHDOG_DIGEST_CRON), stores what it said, never overlaps, can be turned off', () => {
   const j = read('apps/server/src/jobs/watchdog.ts');
   assert.match(j, /WATCHDOG_CRON \?\? '\*\/10 \* \* \* \*'/);
-  assert.match(j, /WATCHDOG_DIGEST_CRON \?\? '45 7 \* \* \*'/);
+  assert.match(j, /const fixed = process\.env\.WATCHDOG_DIGEST_CRON;/);
+  assert.match(j, /cron\.schedule\('\*\/5 \* \* \* \*', meterJob\('watchdogDigest', async \(\) => \{[\s\S]*?if \(await claimDigest\(\)\) await sendMorning\(\);/);   // A591: metered
   assert.match(j, /timezone: 'Africa\/Nairobi'/);
   assert.match(j, /from\('watchdog_alerts'\)\.insert/);
   assert.match(j, /if \(running\) return;/);
   assert.match(j, /WATCHDOG_ENABLED/);
   assert.match(j, /getDayCutoff\(d\.business_id, d\.branch_id\)/);    // the owner's cut-off (0.6.34) decides when a day ended
 });
-await ok('the notifier: Telegram and email together, plain text, never throws', () => {
+await ok('the notifier: Telegram and email together, HTML with a plain-text retry (A592), never throws', () => {
   const n = read('apps/server/src/lib/alertNotify.ts');
   assert.match(n, /api\.telegram\.org/);
   assert.match(n, /TELEGRAM_BOT_TOKEN/);
   assert.match(n, /TELEGRAM_CHAT_ID/);
   assert.match(n, /ADMIN_ALERT_EMAIL/);
   assert.match(n, /sendEmailChecked/);
-  assert.doesNotMatch(n, /parse_mode\s*:/);
+  // A592: HTML (every value escaped in lib/alertFormat.ts) — and a 400 sends it again as plain text.
+  assert.match(n, /parse_mode: 'HTML'/);
+  assert.match(n, /if \(!r\.ok && r\.status === 400\) \{[\s\S]*?r = await post\(plain\);/);
   assert.match(read('render.yaml'), /key: TELEGRAM_BOT_TOKEN[\s\S]*key: TELEGRAM_CHAT_ID[\s\S]*key: ADMIN_ALERT_EMAIL/);
 });
 await ok('the admin portal: the watchdog card and a test alert (super admin only)', () => {

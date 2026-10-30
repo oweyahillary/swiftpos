@@ -151,7 +151,8 @@ console.log('\nThe screens');
   const pos = fs.readFileSync(path.join(srcDir, 'renderer', 'pages', 'POSPage.tsx'), 'utf8');
   ok('POSPage passes it on', pos.includes('chosen: !!r?.chosenApprovers'));
   const ls = fs.readFileSync(path.join(srcDir, 'main', 'localDb.ts'), 'utf8');
-  ok('no local schema bump for A585 (still 77)', /LOCAL_SCHEMA_VERSION = 77;/.test(ls));
+  // A607 moved the local schema to 78 (orders.buyer_kra_pin); A585 itself bumped nothing.
+  ok('no local schema bump for A585 (77 when it shipped; 78 since A607)', /LOCAL_SCHEMA_VERSION = (77|78);/.test(ls));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

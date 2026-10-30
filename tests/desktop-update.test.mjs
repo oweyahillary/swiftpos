@@ -148,7 +148,8 @@ try {
     const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/release.yml'), 'utf8');
     const create = wf.indexOf('gh release create "$TAG"'), build = wf.indexOf('npx electron-builder --win nsis'), verify = wf.indexOf('releases exist for $TAG');
     assert.ok(create > 0 && build > create && verify > build, 'create → build → verify');
-    assert.match(wf, /--prerelease/); assert.match(wf, /EP_GH_IGNORE_TIME: 'true'/);
+    // A590: electron-builder no longer uploads (--publish never); gh uploads after the native gate, replacing on a re-run.
+    assert.match(wf, /--prerelease/); assert.match(wf, /gh release upload "\$TAG" --repo "\$GITHUB_REPOSITORY" --clobber/);
     assert.match(wf, /\[ "\$COPIES" = "1" \]/);
   });
   await ok('a file that is not an updater file → no asset (the route answers 404)', () => {

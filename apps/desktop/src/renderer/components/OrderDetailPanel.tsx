@@ -7,11 +7,12 @@
  * reprint (a manager); Void / Refund for whoever may reverse a sale (`orders.void`), through the same VoidModal and
  * rules (the void window, the manager's PIN) as History.
  */
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import type { OrderDetail } from '@zaptill/core/orderDetail';
 import { reverseActionFor, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';   // A490
-import VoidModal from './VoidModal';
+// A595: loaded when a void / refund is opened (the main chunk's budget, lazy-load-a517).
+const VoidModal = lazy(() => import('./VoidModal'));
 import MethodDot from './MethodDot';
 
 interface Props {
@@ -167,7 +168,7 @@ export default function OrderDetailPanel({ orderId, currency, rights, windowMin 
     </div>
 
       {reversing && detail && (
-        <VoidModal
+        <Suspense fallback={null}><VoidModal
           order={{ id: detail.id, order_number: detail.order_number, total: detail.total, created_at: detail.created_at,
                    payments: detail.payments.map((p) => ({ method: p.method, amount: p.amount })) }}
           currency={currency}
@@ -175,7 +176,7 @@ export default function OrderDetailPanel({ orderId, currency, rights, windowMin 
           rights={rights}
           onSuccess={() => { setReversing(false); load(); onChanged?.(); }}
           onClose={() => setReversing(false)}
-        />
+        /></Suspense>
       )}
     </>
   );

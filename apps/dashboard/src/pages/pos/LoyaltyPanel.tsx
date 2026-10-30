@@ -49,6 +49,9 @@ export default function LoyaltyPanel({ currency, orderTotal, onCustomerSet, loya
   const [notFound, setNotFound] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  // A595 (owner decision D1, 2026-10-27): a customer added at the POS with their e-mail and KRA PIN too.
+  const [newEmail, setNewEmail] = useState('');
+  const [newKra, setNewKra] = useState('');
   const [error, setError] = useState('');
   const [redeemInput, setRedeemInput] = useState('');
 
@@ -80,7 +83,8 @@ export default function LoyaltyPanel({ currency, orderTotal, onCustomerSet, loya
     try {
       const { customer, tier } = await api.post<{ customer: Customer; tier: Tier }>(
         '/api/loyalty/customer',
-        { name: newName.trim(), phone: phone.trim() }
+        { name: newName.trim(), phone: phone.trim(),
+          ...(newEmail.trim() ? { email: newEmail.trim() } : {}), ...(newKra.trim() ? { kra_pin: newKra.trim().toUpperCase() } : {}) }
       );
       onCustomerSet({ customer, tier, pointsToRedeem: 0, discountAmount: 0 });
       setNotFound(false);
@@ -96,7 +100,7 @@ export default function LoyaltyPanel({ currency, orderTotal, onCustomerSet, loya
     onCustomerSet(null);
     setPhone('');
     setNotFound(false);
-    setNewName('');
+    setNewName(''); setNewEmail(''); setNewKra('');
     setRedeemInput('');
   };
 
@@ -237,6 +241,14 @@ export default function LoyaltyPanel({ currency, orderTotal, onCustomerSet, loya
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-action-500 transition-colors"
             autoFocus
           />
+          <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="E-mail (optional)" data-testid="new-customer-email"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-action-500 transition-colors" />
+          <input type="text" value={newKra} onChange={e => setNewKra(e.target.value.toUpperCase())} placeholder="KRA PIN (optional, e.g. A123456789Z)" maxLength={11}
+            data-testid="new-customer-kra" autoCapitalize="characters"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-action-500 transition-colors" />
+          {newKra.trim() !== '' && !/^[A-Z][0-9]{9}[A-Z]$/.test(newKra.trim()) && (
+            <p className="text-amber-400 text-xs">A KRA PIN is a letter, 9 digits and a letter.</p>
+          )}
           <button
             onClick={handleCreate}
             disabled={creating || !newName.trim()}

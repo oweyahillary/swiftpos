@@ -1,0 +1,127 @@
+# A589: is production up? Checked from OUTSIDE the cloud — a server that is down cannot send its own alert.
+#
+# Owner, 2026-10-25: "[emails] maybe when the server is down or overloaded". The watchdog inside the server tells the
+# admin about overload, server errors and an unreachable database (apps/server/src/jobs/watchdog.ts); this tells them the
+# server itself is not answering.
+#
+# Every 10 minutes (GitHub may start a scheduled run a few minutes late): GET <PROD_URL>/health (must answer 200) and
+# <APP_URL> (the web dashboard, 2xx/3xx). A target is DOWN only after TWO consecutive failed checks, a minute apart
+# (a slow cold start or one dropped request is not an outage).
+#
+# State lives in ONE GitHub issue labelled "production-down", so the admin is told once, not every 10 minutes:
+#   down, no open issue   → open "Production down" + email and Telegram (scripts/ops/notify-admin.sh)
+#   down, issue open      → nothing (already told)
+#   up,   issue open      → close it ("recovered after N min") + email and Telegram, and record the outage on the admin
+#                           portal's System page (POST /api/ops/events kind 'uptime', OPS_INGEST_TOKEN)
+#   up,   no issue        → nothing
+#
+# ── ONE-TIME SETUP (Settings → Secrets and variables → Actions) ──────────────
+#   Secrets: ADMIN_ALERT_EMAIL, RESEND_API_KEY (or SENDGRID_API_KEY), optional ALERT_FROM_EMAIL, TELEGRAM_BOT_TOKEN,
+#            TELEGRAM_CHAT_ID, OPS_INGEST_TOKEN (the same value as on Render). The same values the server uses.
+#   Variables (optional): PROD_URL (default https://api.zaptill.co.ke), APP_URL (default https://app.zaptill.co.ke).
+# GitHub turns a schedule off after 60 days without a commit in the repository — it says so on the Actions tab; enable it
+# again there. docs/BACKUPS.md § "Down check".
+
+name: Uptime check
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: uptime-check
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Production answers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROD_URL: ${{ vars.PROD_URL }}
+      APP_URL: ${{ vars.APP_URL }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      ADMIN_ALERT_EMAIL: ${{ secrets.ADMIN_ALERT_EMAIL }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+      ALERT_FROM_EMAIL: ${{ secrets.ALERT_FROM_EMAIL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      OPS_INGEST_TOKEN: ${{ secrets.OPS_INGEST_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ops
+
+      - name: Check, open or close the "Production down" issue, tell the admin
+        shell: bash
+        run: |
+          set -euo pipefail
+          . scripts/ops/alert-format.sh   # A592: eat_stamp, human_minutes — the words of every admin alert
+          API="${PROD_URL:-https://api.zaptill.co.ke}"; API="${API%/}"
+          APP="${APP_URL:-https://app.zaptill.co.ke}"; APP="${APP%/}"
+          LABEL=production-down
+
+          # One check of both targets: the failing ones, as "name (HTTP code)", on stdout.
+          probe() {
+            local failing="" code
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 45 "$API/health" 2>/dev/null) || code=000
+            [ "$code" = "200" ] || failing="API $API/health (HTTP $code)"
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 45 "$APP/" 2>/dev/null) || code=000
+            case "$code" in 2*|3*) ;; *) failing="${failing:+$failing; }Web $APP (HTTP $code)" ;; esac
+            printf '%s' "$failing"
+          }
+
+          FIRST=$(probe)
+          DOWN=""
+          if [ -n "$FIRST" ]; then
+            echo "First check failed: $FIRST — checking again in 60 s."
+            sleep 60
+            DOWN=$(probe)
+            [ -n "$DOWN" ] && echo "Second check failed: $DOWN" || echo "Second check passed — not an outage."
+          else
+            echo "Both answer: $API/health and $APP."
+          fi
+
+          OPEN=$(gh issue list --label "$LABEL" --state open --limit 1 --json number,createdAt --jq '.[0] // empty')
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EAT=$(date -u -d "@$(( $(date -u +%s) + 10800 ))" '+%d %b %H:%M')   # Nairobi, UTC+3 all year
+
+          if [ -n "$DOWN" ]; then
+            if [ -n "$OPEN" ]; then echo "Already reported (issue #$(jq -r .number <<<"$OPEN")) — not told again."; exit 0; fi
+            gh label create "$LABEL" --color B60205 --description "A589: production is not answering (uptime-check.yml)" --force >/dev/null 2>&1 || true
+            gh issue create --label "$LABEL" --title "Production down — $EAT Nairobi" \
+              --body "$(printf 'The uptime check failed twice, a minute apart, at %s (Nairobi):\n\n- %s\n\nRun: %s\n\nThis issue closes by itself when production answers again. Render: the production service → Events / Logs. Supabase: the project status.' "$EAT" "${DOWN//; /$'\n'- }" "$RUN_URL")" >/dev/null
+            # A592: laid out like every admin alert (scripts/ops/notify-admin.sh: headline, facts, what to do, buttons).
+            bash scripts/ops/notify-admin.sh --tone critical --subject "🔴 Production down · $(eat_day)" \
+              --fact "Not answering|${DOWN//; / · }" --fact "Checked|twice, a minute apart, at $(eat_time)" \
+              --action "Points of sale keep selling offline and send their sales when it is back. Check Render (the production service › Events / Logs) and Supabase. You will be told once more when it recovers." \
+              --button "Open run|$RUN_URL" --button "Render|https://dashboard.render.com" \
+              "Production down — $(eat_stamp)" || true
+            exit 1   # the run shows red; GitHub e-mails too
+          fi
+
+          if [ -n "$OPEN" ]; then
+            NUM=$(jq -r .number <<<"$OPEN"); SINCE=$(jq -r .createdAt <<<"$OPEN")
+            MIN=$(( ( $(date -u +%s) - $(date -u -d "$SINCE" +%s) ) / 60 ))
+            gh issue close "$NUM" --comment "Recovered at $EAT Nairobi — down about $MIN min. Run: $RUN_URL" >/dev/null
+            bash scripts/ops/notify-admin.sh --tone resolved --subject "✅ Production back · down about $(human_minutes "$MIN")" \
+              --fact "Back at|$(eat_stamp)" --fact "Down for|about $(human_minutes "$MIN") (since the first failed check)" \
+              --button "Open run|$RUN_URL" \
+              "Production back · resolved after about $(human_minutes "$MIN")" || true
+            if [ -n "${OPS_INGEST_TOKEN:-}" ]; then
+              EV=$(jq -cn --arg since "$SINCE" --argjson m "$MIN" --arg u "$RUN_URL" --arg t "$API/health, $APP" \
+                '{kind:"uptime",status:"warn",title:("Production was down about " + ($m|tostring) + " min"),details:{down_since:$since,minutes:$m,targets:$t,run_url:$u},source:"github"}')
+              code=$(printf 'header = "Authorization: Bearer %s"\n' "$OPS_INGEST_TOKEN" | curl -sS -o /dev/null -w '%{http_code}' --max-time 30 -K - \
+                -X POST "$API/api/ops/events" -H 'Content-Type: application/json' --data "$EV") || code=000
+              [ "$code" = "201" ] || echo "::warning::the outage was not recorded on the admin portal (HTTP $code)"
+            fi
+          fi
+          echo "Production is up ($NOW)."

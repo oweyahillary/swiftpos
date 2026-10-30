@@ -20,7 +20,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from '@zaptill/core/delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
 import { notePushOk } from './distributionLag';   // A534 (A23): the branch server's distribution lag
@@ -39,6 +39,7 @@ import { readPending as readPendingRouting, overlayPending as overlayPendingRout
 import { executeCloseDay } from './branchClose';
 import { unpackNodeBundle, numOrNull, type AcquiredReference, identityFromWire } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
+import { saleBuyerPin } from './customerDetails';   // A607
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
 import { closesToAdopt, keepOwnExpected, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401, A521
@@ -59,6 +60,10 @@ import { pruneChoices, VARIANT_TABLES, MODIFIER_TABLES } from './choicePrune';  
 import { storeSessionPermissions } from './tillAccess';   // A490
 import { claimOrderNumberForOwnSale } from './billNumber';   // A500
 import { noteActivity } from './activityTracker';   // A508
+import { setCustomerScreenList, syncCustomerSlides } from './customerDisplayWire';   // A606
+import { cloudBackupOffNow, cloudBackupNow, noteBackupRefused, setCloudBackup, cleanCloudBackup, type CloudBackup } from './cloudBackup';   // A601
+import { noteHistoryPass, runHistoryUpload, newFirstCutoff, historyBacklogActive, historyUploadStatus, splitRecentCash, BACKFILL_TIMEOUT_MS,
+  type HistoryDeps, type HistoryUploadStatus } from './historyUpload';   // A602
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
 // table would overwrite unsynced till data with stale/empty server rows). So
@@ -138,11 +143,11 @@ function releaseSyncFlag(me: symbol): void {
 // existing per-call catch already handles (attempts++, escalate to failed).
 // Env-overridable so tests can use a short timeout.
 const SYNC_FETCH_TIMEOUT_MS = Number(process.env.SYNC_FETCH_TIMEOUT_MS) || 20_000;
-async function syncFetch(url: string, opts: any = {}): Promise<Response> {
+async function syncFetch(url: string, opts: any = {}, timeoutMs: number = SYNC_FETCH_TIMEOUT_MS): Promise<Response> {   // A602: the backfill's own limit
   const ctrl = new AbortController();
   let timer = setTimeout(
-    () => ctrl.abort(new Error(`sync fetch timed out after ${SYNC_FETCH_TIMEOUT_MS}ms`)),
-    SYNC_FETCH_TIMEOUT_MS);
+    () => ctrl.abort(new Error(`sync fetch timed out after ${timeoutMs}ms`)),
+    timeoutMs);
   try {
     // A410: on a till with a branch server, through the server — the only machine on the branch that talks to the cloud.
     const res = await cloudFetch(url, { ...opts, signal: ctrl.signal });
@@ -151,8 +156,8 @@ async function syncFetch(url: string, opts: any = {}): Promise<Response> {
     // big menu on a weak link) held the pull, and every pull queued behind it, for good. Read here, handed back whole.
     clearTimeout(timer);
     timer = setTimeout(
-      () => ctrl.abort(new Error(`sync fetch body timed out after ${SYNC_FETCH_TIMEOUT_MS}ms`)),
-      SYNC_FETCH_TIMEOUT_MS);
+      () => ctrl.abort(new Error(`sync fetch body timed out after ${timeoutMs}ms`)),
+      timeoutMs);
     const nullBody = [101, 204, 205, 304].includes(res.status);
     const body = nullBody ? null : await res.arrayBuffer();
     noteCloudPlanAnswer(String(opts?.method ?? 'GET'), res.status, body);   // A581
@@ -179,6 +184,14 @@ function noteCloudPlanAnswer(method: string, status: number, body: ArrayBuffer |
       if (!_cloudLapsed) logLine('sync', `the cloud refused this business's sync: ${message || code} - records stay queued on this till`);
       _cloudLapsed = { since: _cloudLapsed?.since ?? new Date().toISOString(), message };
       _cloudLapsedProbeAt = Date.now();
+      return;
+    }
+    // A601: the desktop-only cut-off — a backup write that went before this POS heard. Off from now on, quietly (no
+    // probe): the cloud says when it is on again (the catalogue pull, a change).
+    if (code === 'CLOUD_BACKUP_OFF') {
+      let cutoffAt: string | null = null;
+      try { const j = JSON.parse(Buffer.from(body).toString('utf8')); cutoffAt = typeof j?.cutoffAt === 'string' ? j.cutoffAt : null; } catch { /* not JSON */ }
+      if (noteBackupRefused(cutoffAt)) logLine('sync', 'the cloud no longer takes this business\'s backup (desktop only, no online licence) - records stay on this POS; nothing more is sent');
       return;
     }
   }
@@ -788,30 +801,38 @@ async function runPushStagesOnce(errors: string[]): Promise<number> {
   await stage('test-data clears', () => testClearsBeforePush());
   // A581: the cloud refuses this business's sync (its plan lapsed) — the queue stays as it is until the next probe.
   if (cloudLapsedHold()) return 0;
+  // A601: the desktop-only cut-off — the backup stages are skipped quietly (no request, no error, no probe); the queue is
+  // kept. The catalogue-side pushes (prices, station routing, wastage) and the shop network (node push) still run.
+  const backup = !cloudBackupOffNow();
+  // A602: going online later — the backup off is remembered; on again after it (or a long queue) starts the history upload.
+  noteHistoryPass(!backup);
   // A338: first, give back to the queue what a sibling drawer's clash parked (0.6.10 and earlier), so it goes in this pass.
   // A363: then what a trading-day clash parked (an offline close-and-reopen), once.
   await stage('requeue', async () => { requeueAfterDayClash(); requeueTransientConflicts(); return requeueAfterDrawerClash(); });
-  await stage('shift push', () => pushLocalRecords(errors));
+  if (backup) await stage('shift push', () => pushLocalRecords(errors));
   await stage('price push', () => pushBranchPriceEdits(errors));
   // A411: station routing saved on this till while the cloud could not be reached.
   await stage('station routing', async () => { await pushStationRoutingNow(); return 0; });
   // A414: wastage recorded on this till while the cloud could not be reached.
   await stage('wastage', async () => { await pushWastageNow(); return 0; });
   // A545: a manager's confirmation / dispute of a credit sale made on this till while the cloud could not be reached.
-  await stage('credit decisions', async () => { await pushCreditDecisionsNow(); return 0; });
-  orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
+  if (backup) await stage('credit decisions', async () => { await pushCreditDecisionsNow(); return 0; });
+  if (backup) orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
+  // A602: then the older history, in bulk, only when the POS is quiet (historyUpload.ts) — after the new sales, before the
+  // reversals and the closes (a drawer whose sales it just sent is closed in this same pass).
+  if (backup && historyBacklogActive()) await stage('history upload', () => runHistoryUpload(historyDeps(), errors));
   // 0.6.30 (A336 stage 3): then the voids and refunds made while offline — after the order push, so the sale is there.
   // Till sync audit (F2): and BEFORE the shift close — a close that reached the cloud ahead of its drawer's offline voids
   // and refunds was computed on the unvoided sales and showed a shortage that was not there.
-  await stage('reversals', () => pushOfflineReversals(errors));
-  await stage('reconcile', () => reconcileClosedShifts(errors));
+  if (backup) await stage('reversals', () => pushOfflineReversals(errors));
+  if (backup) await stage('reconcile', () => reconcileClosedShifts(errors));
   // A365: then a manager's confirmation of a shift whose close is on the cloud.
-  await stage('confirm', () => pushShiftConfirmations(errors));
+  if (backup) await stage('confirm', () => pushShiftConfirmations(errors));
   await stage('node push', () => pushToNode(errors));
   // A579: nothing left to send → an empty push at most every 15 min, so the cloud knows an idle till is up to date.
-  await stage('heartbeat', () => syncHeartbeat());
+  if (backup) await stage('heartbeat', () => syncHeartbeat());
   // A363: the manager's "Last synced" — stamped only when this pass left nothing waiting for the cloud.
-  await stage('last synced', async () => noteSyncedIfClear());
+  if (backup) await stage('last synced', async () => noteSyncedIfClear());
   return orders;
 }
 
@@ -846,7 +867,9 @@ export async function syncHeartbeat(now = Date.now()): Promise<boolean> {
   if (_lastSyncPushAt && now - _lastSyncPushAt < HEARTBEAT_EVERY_MS) return false;
   let s: ReturnType<typeof getSyncStatus>;
   try { s = getSyncStatus(); } catch { return false; }
-  if (s.pendingCount > 0) return false;   // something still waits: the push that sends it is the proof, not this
+  // something still waits: the push that sends it is the proof, not this. A602: but not the history waiting for quiet hours
+  // — days of it, while the POS is up and its new sales go; the heartbeat says so (X-Sync-Pending carries the count).
+  if (s.pendingCount > 0 && !historyBacklogActive()) return false;
   const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
     method: 'POST', headers: { ...pushAuthHeaders(), ...syncQueueHeaders(s) }, body: '{}',
   });
@@ -1273,6 +1296,7 @@ async function drawerBeatHints(): Promise<DrawerBeat | null> {
 let _dayCloseInFlight = false;   // A521: the 90 s beat and the full sync never run it side by side
 async function runDayCloseInstructions(errors: string[]): Promise<void> {
   if (_dayCloseInFlight) return;
+  if (cloudBackupOffNow()) return;   // A601: no web day close for a desktop-only business (its ack is refused)
   _dayCloseInFlight = true;
   try { await runDayCloseInstructionsOnce(errors); } finally { _dayCloseInFlight = false; }
 }
@@ -1351,6 +1375,7 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
 let _pullingWebSales = false;
 export async function pullWebSales(): Promise<number> {
   if (!_serverUrl || !(_staffToken || _accessToken) || !isOnline() || _pullingWebSales) return 0;
+  if (cloudBackupOffNow()) return 0;   // A601: the backup is off — no foreign-orders call (it is refused, and there is no web)
   _pullingWebSales = true;
   let changed = 0;
   let failed = false;
@@ -1405,6 +1430,7 @@ export function onShiftClosedElsewhere(cb: (c: LocalClose) => void): () => void 
 let _pullingShiftCloses = false;
 export async function pullShiftCloses(): Promise<number> {
   if (!_serverUrl || !(_staffToken || _accessToken) || !isOnline() || _pullingShiftCloses) return 0;
+  if (cloudBackupOffNow()) return 0;   // A601: the cloud holds no drawer of this POS's (no web to close one)
   _pullingShiftCloses = true;
   try {
     const db = getLocalDb();
@@ -1464,6 +1490,7 @@ export async function pullShiftCloses(): Promise<number> {
 let _pullingConfirms = false;
 export async function pullShiftConfirmations(): Promise<number> {
   if (!_serverUrl || !(_staffToken || _accessToken) || !isOnline() || _pullingConfirms) return 0;
+  if (cloudBackupOffNow()) return 0;   // A601: no drawer of this POS's on the cloud to confirm
   _pullingConfirms = true;
   try {
     const db = getLocalDb();
@@ -1740,6 +1767,10 @@ export function getSyncStatus(): {
   cloudUnreachable?: { since: string; why: string } | null;
   /** A581: the cloud refuses this business's sync — its ZapTill cloud plan lapsed. Records stay queued; sent when renewed. */
   cloudLapsed?: { since: string; message: string } | null;
+  /** A601: the desktop-only cut-off as this POS knows it (null: never told — backed up as before). */
+  cloudBackup?: CloudBackup | null;
+  /** A602: the history upload while it lasts (null: none) — "History upload: 45% (12,300 of 27,000 sales), in quiet hours". */
+  historyUpload?: HistoryUploadStatus | null;
 } {
   const db = getLocalDb();
   // Till sync audit (F5): a sale whose drawer the cloud refused (shift parked 'conflict') is not sent until the drawer is
@@ -1823,6 +1854,8 @@ export function getSyncStatus(): {
     nodeRefused: hasNode() ? nodeRefusal() : null,
     cloudUnreachable: cloudUnreachableNow(),   // A529
     cloudLapsed: cloudLapsedNow(),   // A581
+    cloudBackup: cloudBackupNow(),   // A601
+    historyUpload: historyBacklogActive() ? historyUploadStatus() : null,   // A602
   };
 }
 
@@ -2067,12 +2100,22 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setScaleBarcodes(c.scaleBarcodes);
   // 0.6.27: the per-client POS switches. undefined = not said → keep.
   setPosFeatures(c.posFeatures);
+  // A599: the 'attendance' flag (premium) — the branch server pulls the attendance devices only while it is on.
+  setAttendanceFlag(c.attendanceDevice);
+  // A607: KRA eTIMS on — the POS asks for the buyer's KRA PIN with the customer's details. undefined = not said → keep.
+  setEtimsFlag(c.etimsEnabled);
+  // A601: the desktop-only cut-off. undefined = not said → keep. Back on: the 30 s push sends what waited.
+  if (setCloudBackup(c.cloudBackup)) logLine('sync', `cloud backup: ${JSON.stringify(c.cloudBackup)}`);
   // 0.6.30: the owner's void window and offline void/refund rules. undefined = not said → keep.
   setReversalRules(c.reversalRules);
   // A450: the business's name and currency follow the cloud (owner: "I changed a business name on the web but the till"
   // kept the old one — it was written only at sign-in). Receipts, reports and the screens read them from `session`.
   applyBusinessIdentity(c.businessName, c.currency);
   setReceiptPay(c.receiptPay);   // A450: undefined = not said → keep
+  // A606: the customer screen's slideshow (undefined = not said → keep); its images are fetched once each, only with the
+  // online licence (just set above) — nothing is fetched when the list and the licence are as they were.
+  setCustomerScreenList(c.customerScreen);
+  void syncCustomerSlides();
 }
 
 /**
@@ -2106,6 +2149,9 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
           // local value is kept rather than cleared — see applyPulledBranding.
           logoReceipt: 'logoReceipt' in _j.branding ? (_j.branding.logoReceipt ?? null) : undefined,
           receiptLogoEnabled: 'receiptLogoEnabled' in _j.branding ? (_j.branding.receiptLogoEnabled === true) : undefined,
+          // A597: the owner's brand colours (null while themes are off); undefined on a cloud before A597 → keep.
+          primaryHex: 'primaryHex' in _j.branding ? (_j.branding.primaryHex ?? null) : undefined,
+          secondaryHex: 'secondaryHex' in _j.branding ? (_j.branding.secondaryHex ?? null) : undefined,
         }
       : null,
     // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
@@ -2117,6 +2163,10 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
     noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
     scaleBarcodes: _j.scaleBarcodes && typeof _j.scaleBarcodes === 'object' ? _j.scaleBarcodes : undefined,   // A577
     posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
+    attendanceDevice: typeof _j.attendanceDevice === 'boolean' ? _j.attendanceDevice : undefined,   // A599: absent → keep
+    etimsEnabled: typeof _j.etimsEnabled === 'boolean' ? _j.etimsEnabled : undefined,   // A607: absent → keep
+    cloudBackup: cleanCloudBackup(_j.cloudBackup),   // A601: absent (an older cloud, a part of an answer) → keep
+    customerScreen: 'customerScreen' in _j ? (_j.customerScreen ?? null) : undefined,   // A606: absent → keep
     reversalRules: _j.reversalRules && typeof _j.reversalRules === 'object' ? _j.reversalRules : undefined,   // 0.6.30
     // A450: the business's name and currency (a rename on the web), and the receipt's Buy Goods / Paybill line.
     businessName: identityFromWire(_j).businessName,
@@ -2904,7 +2954,8 @@ function writeStockRows(db: LocalDbT, rows: any[], gone: string[], branchId: str
 // closed shift's sync_status therefore stays 'pending' after this call; the
 // actual close is reconciled separately once its orders are confirmed synced
 // (see reconcileClosedShifts, called after pushPendingOrders).
-async function pushLocalRecords(errors: string[]): Promise<number> {
+// A602: the reads on their own (readPendingCash) — the history upload sends a batch's drawers and days from the same rows.
+export function readPendingCash(): CashTables {
   const db = getLocalDb();
   // Bound into every collection query below. A till pushes its own records;
   // on a node, pushing a peer's would double-push it — the peer pushes it too,
@@ -2959,6 +3010,18 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     FROM kitchen_voids WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
   `).all(ownDevice) as any[];
 
+  return { business_days, shifts, floats, expenses, kitchen_voids };
+}
+
+async function pushLocalRecords(errors: string[]): Promise<number> {
+  const db = getLocalDb();
+  let pendingCash = readPendingCash();
+  // A602: new first — while the history goes up, a drawer closed before the last 48 hours (with its floats, expenses and
+  // kitchen voids) and a day none of whose sent drawers needs waits for the backfill, which sends it with its sales. An
+  // open drawer, and any drawer of a sale the order push sends now, goes as always (historyUploadRules splitRecentCash).
+  const cutoff = newFirstCutoff();
+  if (cutoff) pendingCash = splitRecentCash(pendingCash, cutoff, recentSaleShiftIds(cutoff)).send;
+  const { shifts, floats, expenses, business_days, kitchen_voids } = pendingCash;
   if (!shifts.length && !floats.length && !expenses.length && !business_days.length && !kitchen_voids.length) return 0;
 
   // Till sync audit (F18): a till long offline must never send one body over the cloud's 1 MB JSON limit (a 413 that
@@ -3032,11 +3095,27 @@ async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTable
       return -1;   // leave rows pending — they retry next pass (a 5xx / 503 is the cloud's passing state: never a conflict)
     }
     const body = await res.json().catch(() => null as any);
+    return applyCashPushAnswer(db, batch, body, errors, res.status);
+  } catch (err: any) {
+    errors.push(`Shift sync: ${err.message}`);
+    logLine('sync', `shift push failed: ${err?.message ?? err}`); // A178: network/schema throw was invisible in the log
+    return -1;
+  }
+}
+
+/**
+ * The cloud's /api/sync/push answer applied to the rows sent: refusals parked, the rest marked synced (F1: only while
+ * still what was sent). The number of rows sent, or -1 when the answer could not be read (nothing marked). A602: shared
+ * with the history upload, whose batch's cash rows the cloud writes through the same handler.
+ */
+export function applyCashPushAnswer(db: ReturnType<typeof getLocalDb>, batch: CashTables, body: any, errors: string[], status = 200): number {
+  const { shifts, floats, expenses, business_days, kitchen_voids } = batch;
+  {
     // Till sync audit (F14): only the cloud's real answer marks anything synced. An empty or foreign body (a proxy's
     // page, a truncated answer) parsed as {} — no `rejected`, so every row was marked synced and never sent again.
     if (!body || body.ok !== true || !body.upserted || typeof body.upserted !== 'object') {
       errors.push('Shift sync: the cloud\'s answer could not be read — the records stay waiting');
-      logLine('sync', `shift push: HTTP ${res.status} without the expected answer - nothing marked synced`);
+      logLine('sync', `shift push: HTTP ${status} without the expected answer - nothing marked synced`);
       return -1;
     }
     notePushOk(db);   // A534: the cloud took this batch (the Tech page's "last successful push")
@@ -3199,10 +3278,6 @@ async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTable
     const pushedCount = shifts.length + floats.length + expenses.length + business_days.length + kitchen_voids.length;
     if (pushedCount) logLine('sync', `pushed ${pushedCount} cash record(s): ${shifts.length} shift, ${floats.length} float, ${expenses.length} expense, ${business_days.length} day, ${kitchen_voids.length} kitchen void`); // A178
     return pushedCount;
-  } catch (err: any) {
-    errors.push(`Shift sync: ${err.message}`);
-    logLine('sync', `shift push failed: ${err?.message ?? err}`); // A178: network/schema throw was invisible in the log
-    return -1;
   }
 }
 
@@ -3284,6 +3359,56 @@ function requeueConnectionFailures(): number {
 // nothing pushed to trigger the re-queue after the batch). Another server's page is not an answer (authTransport.ts).
 let _requeuedForAnswerAt = 0;
 
+/**
+ * S3: "the cloud has this sale" — BOTH rows to 'synced' in one transaction, so a crash between the two writes can never leave
+ * sync_queue and orders disagreeing (and A552: the sale's charge on a customer's account is in the cloud's balance from
+ * this moment, creditSale.ts). A602: exported — the history upload marks each sale the cloud stored with exactly this, so
+ * the normal push never sends it again.
+ */
+let _markSynced: { db: ReturnType<typeof getLocalDb>; run: (queueId: number, orderId: string) => void } | null = null;
+export function markOrderSynced(queueId: number, orderId: string): void {
+  const db = getLocalDb();
+  if (!_markSynced || _markSynced.db !== db) {   // prepared once per database (a restore reopens it)
+    const q = db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1, drawer_wait_at=NULL WHERE id=?`);
+    const o = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
+    const c = db.prepare(`UPDATE customer_credit_transactions SET synced_at=? WHERE order_id=? AND synced_at IS NULL`);
+    _markSynced = { db, run: db.transaction((queueId: number, orderId: string) => { q.run(queueId); o.run(orderId); c.run(new Date().toISOString(), orderId); }) };
+  }
+  _markSynced.run(queueId, orderId);
+}
+
+/** A602: the drawers of the sales the normal push sends now (new first) — the drawer push never holds those back. */
+function recentSaleShiftIds(cutoff: string): string[] {
+  try {
+    // branch-wide: this POS's own queue (sync_queue); its orders by the queued order id, as the order push.
+    return (getLocalDb().prepare(`SELECT DISTINCT o.shift_id AS id FROM sync_queue q JOIN orders o ON o.id = q.order_id
+      WHERE q.status = 'pending' AND o.shift_id IS NOT NULL AND julianday(q.created_at) >= julianday(?)`).all(cutoff) as { id: string }[]).map((r) => r.id);
+  } catch { return []; }
+}
+
+/** A602: what the history upload uses of this engine — its transport, reads, statements and answers (historyUpload.ts). */
+function historyDeps(): HistoryDeps {
+  return {
+    post: async (gz) => {
+      // (no X-Sync-Pending: the cloud reads it on /api/sync/push only — and counting a 100,000-sale queue each call is slow)
+      const headers = () => ({ ...pushAuthHeaders(), 'Content-Encoding': 'gzip',
+        // The POS's own session: the history is the POS's (a person signed in now did not ring last year's sales); each sale
+        // names its cashier, and the cloud checks that claim as for any sale pushed under the POS's session.
+        ...(_accessToken ? { Authorization: `Bearer ${_accessToken}` } : {}) });
+      const send = () => syncFetch(`${_serverUrl}/api/sync/backfill`, { method: 'POST', headers: headers(), body: gz }, BACKFILL_TIMEOUT_MS);
+      let res = await send();
+      if (res.status === 401 && await refreshAccessToken()) res = await send();
+      const body = await res.json().catch(() => null);
+      if (res.ok) { notePushOk(getLocalDb()); _lastSyncPushAt = Date.now(); }   // A534 / A579: the cloud took it (its sync push ran)
+      return { status: res.status, body };
+    },
+    readPendingCash: () => readPendingCash(),
+    applyCashAnswer: (batch, body, errors) => applyCashPushAnswer(getLocalDb(), batch as CashTables, body, errors),
+    markSynced: (queueId, orderId) => markOrderSynced(queueId, orderId),
+    parkedSql: PARKED_DRAWER_SQL,
+  };
+}
+
 async function pushPendingOrders(errors: string[]): Promise<number> {
   const db = getLocalDb();
   const answeredAt = lastCloudAnswerAt();
@@ -3297,6 +3422,10 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   // Up to 50 sales are TRIED per pass. A page leaves out what this pass already tried and the drawers that answered 424 in
   // it, so the sales behind a waiting drawer are reached in the same pass.
   // branch-wide: this till's own sync_queue; orders are looked up by the queued order id.
+  // A602: new first — while the history goes up (historyUpload.ts), only the sales of the last 48 hours, NEWEST first (the
+  // dashboard is live from the first day); the older ones go in bulk in quiet hours. Their drawers: the shift push before
+  // this sends every drawer these need (splitRecentCash keeps an open one and any of a sale sent now); a 424 waits as ever.
+  const cutoff = newFirstCutoff();
   const page = db.prepare(`
     SELECT q.*, (SELECT o.shift_id FROM orders o WHERE o.id = q.order_id) AS _shift_id FROM sync_queue q
      WHERE q.status = 'pending'
@@ -3304,7 +3433,8 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
        AND q.id NOT IN (SELECT value FROM json_each(?))
        -- branch-wide: by the queued order id (this till's own queue)
        AND COALESCE((SELECT o.shift_id FROM orders o WHERE o.id = q.order_id), '') NOT IN (SELECT value FROM json_each(?))
-     ORDER BY (q.drawer_wait_at IS NOT NULL) ASC, q.drawer_wait_at ASC, q.created_at ASC LIMIT ?
+       ${cutoff ? `AND julianday(q.created_at) >= julianday('${cutoff}')` : ''}
+     ORDER BY (q.drawer_wait_at IS NOT NULL) ASC, q.drawer_wait_at ASC, q.created_at ${cutoff ? 'DESC' : 'ASC'} LIMIT ?
   `);
   const drawerWaits = new Set<string>();   // drawers that answered 424 this pass
   const tried: number[] = [];
@@ -3318,17 +3448,8 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
 
   // S3: move BOTH rows to 'synced' in one transaction, so a crash between the
   // two writes can never leave sync_queue and orders disagreeing (queue synced
-  // while the order still reads pending, or vice versa). Prepared once, reused
-  // per row; the same statements the two success branches ran inline before.
-  const _markQueueSynced = db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1, drawer_wait_at=NULL WHERE id=?`);
-  const _markOrderSynced = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
-  // A552: the sale's charge on a customer's account is now in the cloud's balance — from this moment (creditSale.ts).
-  const _markChargeSynced = db.prepare(`UPDATE customer_credit_transactions SET synced_at=? WHERE order_id=? AND synced_at IS NULL`);
-  const markSynced = db.transaction((queueId: number, orderId: string) => {
-    _markQueueSynced.run(queueId);
-    _markOrderSynced.run(orderId);
-    _markChargeSynced.run(new Date().toISOString(), orderId);
-  });
+  // while the order still reads pending, or vice versa) — markOrderSynced above.
+  const markSynced = markOrderSynced;   // A602: the one statement set, shared with the history upload
 
   // Every till pushes its OWN orders to the cloud, including tills that have a
   // branch node.
@@ -3933,14 +4054,26 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
   };
 
   let reconciled = 0;
+  // A602: while the history goes up, a drawer closed before the new-first window that the backfill has not sent yet (none
+  // of its sales on the cloud) is not on the cloud: its close would be a 404 every pass. It is closed once its sales are
+  // up (the backfill sent it with them), or when the history is done (the drawer push sends it, then this closes it).
+  const historyCutoff = newFirstCutoff();
+  // A602: each drawer's sales counted in ONE read for all of them (orders has no shift_id index: a count per drawer read
+  // every order once per drawer — a year's backlog is hundreds of drawers × a hundred thousand orders, every pass).
+  // branch-wide: keyed by this POS's own closed drawers (the read above is scoped to this device).
+  const tally = new Map<string, { unsynced: number; synced: number }>();
+  for (const r of db.prepare(`SELECT shift_id AS id, SUM(CASE WHEN sync_status != 'synced' THEN 1 ELSE 0 END) AS unsynced,
+      SUM(CASE WHEN sync_status = 'synced' THEN 1 ELSE 0 END) AS synced FROM orders
+      WHERE shift_id IN (SELECT value FROM json_each(?)) GROUP BY shift_id`).all(JSON.stringify(closed.map((c) => c.id))) as { id: string; unsynced: number; synced: number }[]) {
+    tally.set(r.id, { unsynced: Number(r.unsynced) || 0, synced: Number(r.synced) || 0 });
+  }
   for (const shift of closed) {
+    const t = tally.get(shift.id) ?? { unsynced: 0, synced: 0 };
+    if (historyCutoff && shift.closed_at && Date.parse(shift.closed_at) < Date.parse(historyCutoff) && t.synced === 0) continue;
     // Skip until every order from this shift is confirmed synced — closing
     // early would make the server read cash sales as short/zero and raise a
     // false variance (see the comment on pushLocalRecords for why).
-    const pending = db.prepare(
-      `SELECT COUNT(*) AS count FROM orders WHERE shift_id=? AND sync_status!='synced'`
-    ).get(shift.id) as { count: number };
-    if (pending.count > 0) continue;
+    if (t.unsynced > 0) continue;
     if (reversalWaits(shift.id)) continue;   // F2
 
     // A forced close has no count to report, so it cannot go through /close —
@@ -4200,6 +4333,12 @@ export function createLocalOrder(orderPayload: any): string {
   // 0.6.33: a FREE delivery — the fee is still the rider's (paid from the drawer below), the customer paid none of it.
   const deliveryFree = isFreeDelivery(orderPayload.order_type, deliveryFee, orderPayload.delivery_free);
   if (deliveryFree) orderPayload.delivery_free = true; else delete orderPayload.delivery_free;
+  // A607: the buyer's KRA PIN for this sale (customer details at the counter) — only a valid PIN, upper case; anything else
+  // is dropped here so the sale never waits on the cloud refusing it. It travels in the payload (the receipt, the cloud,
+  // KRA eTIMS) and on the order row.
+  const pinNow = saleBuyerPin(orderPayload.buyer_kra_pin);
+  const buyerPin = pinNow && pinNow !== 'bad' ? pinNow : null;
+  if (buyerPin) orderPayload.buyer_kra_pin = buyerPin; else delete orderPayload.buyer_kra_pin;
 
   db.transaction(() => {
     // A500: a sale is never refused over its bill number. A branch replica holding it is renamed (its copy here only);
@@ -4211,8 +4350,8 @@ export function createLocalOrder(orderPayload: any): string {
       orderPayload.order_number = claim.number;
     }
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, delivery_free, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, delivery_free, buyer_kra_pin, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
       orderPayload.order_type ?? 'retail',
@@ -4235,6 +4374,7 @@ export function createLocalOrder(orderPayload: any): string {
       cleanNote(orderPayload.notes, ORDER_NOTE_MAX),
       deliveryFee,   // 0.6.27: on top of the bill, in the legs (like the tip); not in total
       deliveryFree ? 1 : 0,   // 0.6.33: free — the shop pays the rider; not in the legs
+      buyerPin,   // A607: the buyer's KRA PIN for this sale (checked above), or NULL
     );
 
     // 0.6.27 (the prospect's request 3): the rider is paid the delivery fee in CASH from this drawer, now — recorded as

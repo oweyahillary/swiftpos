@@ -20,6 +20,9 @@ import { useBusiness } from '../context/BusinessContext';
 import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
 import { money, litres, time, elapsed } from '../lib/format';
+import { whenVisible, refreshOnShow } from '../lib/visiblePoll';   // A591
+import ParkingLivePanel from '../components/ParkingLivePanel';   // A608
+import { businessTerms } from '@zaptill/core/businessTerms';   // A608
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -225,11 +228,14 @@ export default function OverviewPage() {
     }
   }, [business?.id, activeBranchId]);
 
-  // Initial load + 60s auto-refresh
+  // Initial load + 60s auto-refresh — A591: not while the tab is hidden (lib/visiblePoll.ts); shown again, at once if stale.
+  const loadedAt = useRef(0);
   useEffect(() => {
-    if (!businessLoading) load();
-    const t = setInterval(() => { if (!businessLoading) load(); }, 60_000);
-    return () => clearInterval(t);
+    const run = () => { if (!businessLoading) { loadedAt.current = Date.now(); load(); } };
+    run();
+    const t = setInterval(whenVisible(run), 60_000);
+    const off = refreshOnShow(run, () => loadedAt.current, 60_000);
+    return () => { clearInterval(t); off(); };
   }, [load, businessLoading]);
 
   // Supabase realtime — listen for new completed orders
@@ -319,6 +325,12 @@ export default function OverviewPage() {
           </button>
         </div>
       </div>
+
+      {/* ── A608: the parking bays now — parking only (moved here from the retired web manager portal) ── */}
+      {businessTerms(business?.type).type === 'parking' && (
+        <ParkingLivePanel branchId={branches.some(b => b.id === activeBranchId) ? activeBranchId : null}
+          branchName={activeBranch?.name ?? null} currency={currency} />
+      )}
 
       {/* ── Pump Monitor — petrol only ─────────────────────────────────── */}
       {isPetrol && pumpMonitor && (

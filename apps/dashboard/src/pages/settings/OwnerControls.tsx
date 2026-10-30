@@ -23,8 +23,10 @@ import { dateShort } from '../../lib/format';
 import { foodAreas } from '@zaptill/core/businessTerms';   // A573
 import BranchPaymentMethods from './BranchPaymentMethods';
 
-/** The four switches the owner sets here (the admin portal shows them read-only). */
-export const POS_OPTION_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes'] as const;
+/** The switches the owner sets here (the admin portal shows them read-only). A594: + approval_pin (was the admin portal's). */
+export const POS_OPTION_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin'] as const;
+/** A594: only the owner changes these (the cloud refuses anyone else, OWNER_ONLY). */
+export const OWNER_ONLY_POS_OPTION_KEYS: readonly PosOptionKey[] = ['login_codes', 'approval_pin'];
 export type PosOptionKey = (typeof POS_OPTION_KEYS)[number];
 
 export interface Controls {
@@ -135,7 +137,7 @@ export function PosOptionsTab() {
                   {w.description && <div className="mt-0.5 text-xs leading-relaxed text-gray-400">{w.description}</div>}
                 </div>
                 <Switch on={!!data.pos![key]} onClick={() => void flip(key)} label={w.label}
-                  disabled={busy === key || (key === 'login_codes' && !isOwner)} testid={`pos-option-${key}`} />
+                  disabled={busy === key || (OWNER_ONLY_POS_OPTION_KEYS.includes(key) && !isOwner)} testid={`pos-option-${key}`} />
               </div>
             );
           })}
