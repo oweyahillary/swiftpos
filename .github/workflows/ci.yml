@@ -677,6 +677,12 @@ jobs:
       - name: Watchdog calls cut (A598)
         run: TZ=UTC node --no-warnings tests/supabase-calls-a598.test.mjs
 
+      # A611 — branch-drawers 6,575 calls for 2,564 asks with the 5-minute memory on: a POS acking a day close every beat
+      # (refused, or matching no row) moved its business's write generation each time. A 401 / 403 / 429, and a route's
+      # forgetNothing, no longer do. Needs the server build.
+      - name: Refusals keep the memory (A611)
+        run: TZ=UTC node --no-warnings tests/quiet-refusals-a611.test.mjs
+
       # A592 — "How can we make these messages look better": every admin Telegram message and email laid out the same —
       # Telegram HTML (a client "A&B <Shop>" escaped, valid), URL buttons ("Close it remotely", "Open run", "Guide"), a 400
       # "can't parse entities" sent again as plain text; "8 days 22 h" not "214 h", "Mon 26 Oct 13:07 EAT"; client problems
