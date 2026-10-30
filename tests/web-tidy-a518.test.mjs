@@ -1,7 +1,7 @@
 // A518 — web tidy-ups from A506's "left as is" list:
-//   (a) Table turnover (the owner's page and the manager portal's tab) and Printers said nothing when the cloud refused a
+//   (a) Table turnover (the owner's page; the manager portal's tab went with the portal, A608) and Printers said nothing when the cloud refused a
 //       load — they show the cloud's words now (lib/posError's message), like the other pages;
-//   (b) a holder of reports.overview alone saw no sales on the manager Overview — the client asked only with
+//   (b) (the manager Overview is retired with the portal, A608) a holder of reports.overview alone saw no sales on the manager Overview — the client asked only with
 //       reports.sales, though the cloud's /reports/sales and /reports/products admit reports.overview;
 //   (c) the web POS asked the OWNER for a PIN to void or refund, which the cloud never reads for them (A187/A494 — the owner
 //       self-approves); everyone else is still asked.
@@ -10,7 +10,7 @@
 //
 // Reads the pages (they are React; the cloud's gates are read from the routes) and runs the shared catalogue.
 //
-// MUTATIONS TO CONFIRM BITE: a turnover catch back to `catch { /* ignore */ }` → (a) fails; the Overview's /sales back to
+// MUTATIONS TO CONFIRM BITE: a turnover catch back to `catch { /* ignore */ }` → (a) fails; the /sales route back to
 // reports.sales only → (b) fails; the PIN box shown to the owner, or override_pin required of them → (c) fails; the PIN
 // skipped for everyone → "everyone else still enters a PIN" fails.
 import assert from 'node:assert';
@@ -23,8 +23,8 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
-const MGR = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
-const fnBody = (src, name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name); const j = src.indexOf('\nfunction ', i + 10); return src.slice(i, j < 0 ? undefined : j); };
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal halves of (a) and (b)
+// (ManagerDashboard.tsx: ManagerTurnoverTab, OverviewTab, ParkingOverviewTab, PetrolOverviewTab) are gone with it.
 
 console.log('\nA518 — web tidy-ups (A506 left as is)\n');
 
@@ -35,12 +35,7 @@ await ok('(a) the owner\'s Table turnover shows a refused load — no silent cat
   assert.match(t, /setError\(\(e as Error\)\?\.message \|\| 'Could not load the turnover report\.'\)/);
   assert.match(t, /\{error && <p [^>]*data-testid="turnover-error">\{error\}<\/p>\}/);
 });
-await ok('(a) the manager portal\'s Turnover tab shows a refused load', () => {
-  const t = fnBody(MGR, 'ManagerTurnoverTab');
-  assert.ok(!/catch \{ \/\* ignore \*\/ \}/.test(t), 'a silent catch is left');
-  assert.equal((t.match(/setError\(\(e as Error\)\?\.message \|\|/g) ?? []).length, 2);
-  assert.match(t, /data-testid="turnover-error"/);
-});
+// A608: "(a) the manager portal's Turnover tab" removed — the owner's Table turnover page (above) is the web's only one.
 await ok('(a) Printers shows a refused load (it had no catch: the rejection went nowhere)', () => {
   const p = read('apps/dashboard/src/pages/settings/PrintersPage.tsx');
   const load = p.slice(p.indexOf('const load = useCallback'), p.indexOf('useEffect(() => { load(); }, [load]);'));
@@ -55,17 +50,9 @@ await ok('(b) the cloud admits reports.overview on /reports/sales and /reports/p
   assert.match(r, /router\.get\('\/hourly', requirePermission\('reports\.sales'\)/);
   assert.match(r, /router\.get\('\/products-v2', requirePermission\('reports\.items'\)/);
 });
-await ok('(b) the manager Overview loads the day\'s figures and the top items for reports.overview alone; the hourly chart stays reports.sales', () => {
-  const o = fnBody(MGR, 'OverviewTab');
-  assert.match(o, /const seesDay = hasPermission\('reports\.sales'\) \|\| hasPermission\('reports\.overview'\);/);
-  assert.match(o, /seesDay \? posApi\.get<SalesSummary>\(`\/api\/reports\/sales\?\$\{params\}`\)/);
-  assert.match(o, /hasPermission\('reports\.sales'\) \? posApi\.get<\{ series: HourlyRow\[\] \}>\(`\/api\/reports\/hourly/);
-  assert.match(o, /: hasPermission\('reports\.overview'\) \? posApi\.get<\{ products: TopProduct\[\] \}>\(`\/api\/reports\/products\?\$\{params\}`\)/);
-  assert.match(o, /\{seesDay && \(/, 'the KPI cards');
-  assert.ok(!/\{hasPermission\('reports\.sales'\) && \(/.test(o), 'the KPI cards are no longer reports.sales only');
-  // The parking Overview's revenue and the petrol Overview's pump monitor read the same admitted routes.
-  assert.match(fnBody(MGR, 'ParkingOverviewTab'), /const seesSales = hasPermission\('reports\.sales'\) \|\| hasPermission\('reports\.overview'\);/);
-  assert.match(fnBody(MGR, 'PetrolOverviewTab'), /if \(seesFuel \|\| hasPermission\('reports\.overview'\)\) \{ try \{ const pm = await posApi\.get<any>\(`\/api\/reports\/pump-monitor/);
+// A608: the manager Overview's fetches (OverviewTab / ParkingOverviewTab / PetrolOverviewTab in ManagerDashboard.tsx) are gone;
+// the cloud's admission above and the Accountant's key below remain.
+await ok('(b) the Accountant holds reports.overview (what the cloud admits on /reports/sales and /reports/products)', () => {
   // The Overview tab opens for reports.overview (the Accountant holds it).
   assert.ok(P.BUILT_IN_ROLES.find((r) => r.name === 'Accountant').keys.includes('reports.overview'));
 });

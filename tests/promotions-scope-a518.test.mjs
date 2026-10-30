@@ -135,7 +135,7 @@ await ok('pos/init sends the promotions with the offers; the catalogue version m
   assert.match(read('apps/server/src/routes/orders.ts'), /promotionOffersByIds\(businessId,/);
   assert.match(read('migrations/144_promotions_at_sale.sql'), /ADD COLUMN IF NOT EXISTS applies_at_sale boolean NOT NULL DEFAULT false/);
 });
-await ok('the page picks products and categories (search, chips), saves them and shows them; the manager portal passes its client', () => {
+await ok('the page picks products and categories (search, chips), saves them and shows them', () => {
   const page = read('apps/dashboard/src/pages/PromotionsPage.tsx');
   assert.match(page, /client\.get<any\[\]>\('\/api\/products'\)/);
   assert.match(page, /client\.get<any\[\]>\('\/api\/categories'\)/);
@@ -146,7 +146,8 @@ await ok('the page picks products and categories (search, chips), saves them and
   assert.match(page, /product_ids:\s+p\.product_ids \?\? \[\]/, 'shown when editing');
   assert.match(page, /applies_at_sale: true/);
   assert.match(page, /data-testid="promotion-not-charged"/);
-  assert.match(read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), /<PromotionsPage client=\{posApi\} \/>/);
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; "the manager portal passes its
+  // client" pinned ManagerDashboard.tsx; the page itself (above) is still pinned.
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

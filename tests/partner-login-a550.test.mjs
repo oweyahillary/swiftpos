@@ -315,12 +315,19 @@ try {
   });
 
   // ── 3. What is the owner's alone — refused to a partner holding EVERY key ────────────────────────────────────────
-  await ok('owner-only: giving, re-sending, listing and taking away web dashboard access', async () => {
-    for (const [m, p] of [['POST', `/api/staff/${CASH}/web-access`], ['DELETE', `/api/staff/${OPS}/web-access`], ['GET', '/api/staff/web-access']]) {
-      const r = await call(m, p, gina.accessToken, m === 'POST' ? {} : undefined);
-      assert.equal(r.status, 403, `${m} ${p}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, 'OWNER_ONLY');
-    }
-    assert.equal(partnersOf(B)[CASH], undefined); assert.equal(partnersOf(B)[OPS].status, 'active');
+  // A608 part 3 (owner, 2026-10-29, "yes to all"): web dashboard access is no longer the owner's alone — a partner who
+  // edits staff gives, re-sends, lists and takes it away for someone within their keys and branches (never their own,
+  // never a General Manager). The full rules: tests/staff-signin-by-role-a608.test.mjs section 9.
+  await ok('a partner who edits staff gives, lists and takes away web dashboard access (A608) — never their own', async () => {
+    const list = await call('GET', '/api/staff/web-access', gina.accessToken);
+    assert.equal(list.status, 200, JSON.stringify(list.body)); assert.equal(list.body[OPS].status, 'active');
+    const give = await call('POST', `/api/staff/${CASH}/web-access`, gina.accessToken, {});
+    assert.equal(give.status, 200, JSON.stringify(give.body)); assert.equal(partnersOf(B)[CASH].status, 'invited');
+    const own = await call('DELETE', `/api/staff/${GM}/web-access`, gina.accessToken);
+    assert.equal(own.status, 403, JSON.stringify(own.body)); assert.equal(own.body.code, 'OWN_WEB_ACCESS');
+    const off = await call('DELETE', `/api/staff/${CASH}/web-access`, gina.accessToken);
+    assert.equal(off.status, 200, JSON.stringify(off.body)); assert.equal(partnersOf(B)[CASH].status, 'revoked');
+    assert.equal(partnersOf(B)[OPS].status, 'active'); assert.equal(partnersOf(B)[GM].status, 'active');
   });
   await ok('owner-only: the owner\'s staff record, the owner\'s role, the owner\'s sign-in code reset', async () => {
     const own = await call('PATCH', `/api/staff/${OWNER}`, gina.accessToken, { name: 'Not the owner' });

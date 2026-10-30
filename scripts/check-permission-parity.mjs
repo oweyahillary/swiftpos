@@ -249,6 +249,24 @@ const { found: ui, files: uiFiles } = scan(UI_DIRS, [
   /(?<![.\w])has\(\s*['"]([\w]+\.[\w]+)['"]/g,
 ]);
 
+// A608 part 3 (2026-10-30): the web dashboard's menu gates — DashboardLayout's NAV_KEYS (each entry shown to a partner only
+// when they hold one of its keys) and the REPORT_KEYS list it names. They were invisible to the four spellings above
+// while the web manager portal (deleted, A608) named the same keys in its NAV_ITEMS `permission:` fields; with the portal
+// gone the keys still have their gate — this reads it, and only that block (from REPORT_KEYS to the end of NAV_KEYS).
+{
+  const file = join(ROOT, 'apps/dashboard/src/components/DashboardLayout.tsx');
+  const src = stripComments(readFileSync(file, 'utf8'));
+  const from = src.indexOf('const REPORT_KEYS');
+  const navAt = src.indexOf('const NAV_KEYS');
+  const to = navAt < 0 ? -1 : src.indexOf('\n};', navAt);
+  if (from >= 0 && to > from) {
+    const re = /['"]([a-z_]+\.[a-z_]+)['"]/g;
+    re.lastIndex = from;
+    let m;
+    while ((m = re.exec(src)) && m.index < to) record(ui, m[1], file, m.index, src);
+  }
+}
+
 // ── 3b. GRANTED — which keys any non-owner role is actually given ──────────
 // A key that no migration grants to any role can only ever be held by the owner
 // (who carries '*'), so no screen can meaningfully gate on it and its absence

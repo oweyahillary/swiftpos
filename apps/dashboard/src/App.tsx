@@ -33,7 +33,6 @@ const ProductsPage            = lazy(() => import('./pages/products/ProductsPage
 const LabelsPage              = lazy(() => import('./pages/products/LabelsPage'));   // A571
 const POSPage                 = lazy(() => import('./pages/pos/POSPage'));
 const POSEntryPage            = lazy(() => import('./pages/pos/POSEntryPage'));
-const ManagerDashboard        = lazy(() => import('./pages/manager/ManagerDashboard'));
 const InventoryPage           = lazy(() => import('./pages/inventory/InventoryPage'));
 // Settings › three sections (register A133). Container pages default-export;
 // their child route wrappers are named exports pulled via the {default} shim so
@@ -130,14 +129,10 @@ export default function App() {
                 </ErrorBoundary>
               } />
 
-              {/* ── Manager surface — PIN auth ───────────────────────── */}
-              <Route path="/manager" element={
-                <ErrorBoundary>
-                  <POSAuthProvider>
-                    <ManagerDashboard />
-                  </POSAuthProvider>
-                </ErrorBoundary>
-              } />
+              {/* ── A608 (owner, 2026-10-29, "yes to all"): the web manager portal is retired — managers sign in to the web
+                  dashboard by email and password (and sell with Open POS). An old link or bookmark goes to the dashboard;
+                  signed out, its guard (ProtectedRoute) sends them to /login. ─────────────────────────────────────── */}
+              <Route path="/manager/*" element={<Navigate to="/dashboard" replace />} />
 
               {/* ── Owner dashboard — Supabase session ──────────────── */}
               <Route path="*" element={

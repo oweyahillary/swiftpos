@@ -243,8 +243,8 @@ await ok('the screens that had their own formatter now use lib/format', () => {
   const users = ['components/CountedCloseModal.tsx', 'components/Expiry.tsx', 'components/OrderItems.tsx', 'components/ShiftConfirmations.tsx',
     'components/StockCounts.tsx', 'components/SupplierAccount.tsx', 'components/Wastage.tsx', 'components/DashboardLayout.tsx',
     'pages/OverviewPage.tsx', 'pages/OrdersPage.tsx', 'pages/OpenShiftsPage.tsx', 'pages/QRMenuPage.tsx', 'pages/ShiftReportsPage.tsx',
-    'pages/ReportsPage.tsx', 'pages/manager/ManagerReportsPage.tsx', 'pages/manager/ManagerDashboard.tsx', 'pages/manager/ManagerShiftTab.tsx',
-    'pages/manager/ManagerMenuTab.tsx', 'pages/customers/CreditAccountsPage.tsx', 'pages/expenses/ExpensesPage.tsx',
+    // A608 (2026-10-29): the web manager portal is retired — its four pages (pages/manager/*) left this list.
+    'pages/ReportsPage.tsx', 'pages/customers/CreditAccountsPage.tsx', 'pages/expenses/ExpensesPage.tsx',
     'pages/stock/IngredientsPage.tsx', 'pages/stock/PurchaseOrdersPage.tsx', 'pages/stock/SuppliersPage.tsx', 'pages/products/CombosPage.tsx',
     'pages/settings/DevicesTab.tsx', 'pages/crm/CustomersPage.tsx', 'pages/reports/MonthlyPackTab.tsx'];
   const missing = users.filter((f) => !/from '(?:\.\.?\/)+lib\/format'/.test(read(f)));

@@ -8,7 +8,7 @@
 // RUNS the shared helper (shared/businessTerms.ts and its web copy), the web dashboard's sidebar (DashboardLayout, bundled
 // with esbuild, its contexts stubbed, rendered with react-dom/server inside a MemoryRouter), the Menus page, Settings ›
 // Business's setup tab, Devices and printers, and the web POS's MenuBar / CategoryPanel; pins the wiring that is one
-// line in a big screen (the manager portal, the web POS, the roles screen, POS options). And scans every app's source for
+// line in a big screen (the web POS, the roles screen, POS options). And scans every app's source for
 // a user-visible "hotel".
 //
 //   node tests/business-terms-a573.test.mjs
@@ -277,7 +277,7 @@ try {
     assert.match(oc, /POS_OPTION_KEYS\.filter\(\(key\) => posOptionShown\(key, business\?\.type, !!data\.pos!\[key\]\)\)\.map/);
   });
 
-  console.log('\nP. the web POS and the manager portal\n');
+  console.log('\nP. the web POS\n');
   const CP = await bundle('src/pages/pos/cashier/CategoryPanel.tsx', 'panel.mjs');
   await ok('the top tabs and the panel say Departments / All departments when told', () => {
     const tabsArr = [{ id: 'all', name: 'All menus', color: null, icon: null }, { id: 'g', name: 'Groceries', color: null, icon: null }];
@@ -301,13 +301,8 @@ try {
     assert.match(mp, /const WORDS = businessTerms\('minimart'\);/);
     assert.match(mp, /menusLabel=\{WORDS\.menus\} allMenusLabel=\{WORDS\.allMenus\}/);
   });
-  await ok('the manager portal: "Products" for a shop\'s catalogue, no Table Turnover at a shop', () => {
-    const md = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
-    assert.match(md, /if \(key === 'turnover'\) return foodAreas\(businessType\)\.tableTurnover;/);
-    assert.match(md, /navAllowed\(i, held, isPetrol\) && managerItemShown\(i\.key, session\.businessType\)/);
-    assert.match(md, /<span className="truncate">\{words\.catalogue\}<\/span>/);
-    assert.match(read('apps/dashboard/src/pages/manager/ManagerMenuTab.tsx'), /<h2 className="text-white text-lg font-semibold">\{words\.catalogue\}<\/h2>/);
-  });
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's "Products" / no Table
+  // Turnover pins (ManagerDashboard.tsx, ManagerMenuTab.tsx) are gone; the owner sidebar's pins (N) still cover the dashboard.
 
   console.log('\nX. no user-visible "hotel" anywhere in the apps\n');
   await ok('no user-visible "hotel" (comments may tell the owner\'s words; strings and screen text may not)', () => {

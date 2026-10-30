@@ -468,7 +468,8 @@ try {
     assert.match(page, /\$\{words\.removedItems\}`/);
     assert.match(page, /\{words\.voidsNote\} Refunds/);
     assert.match(page, /businessType=\{business\?\.type \?\? null\}/);
-    assert.match(read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), /<Analytics client=\{posApi\} ownerView=\{false\} currency=\{currency\} branchName=\{session\.branchName\} businessType=\{session\.businessType\} \/>/);
+    // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's Analytics tab
+    // (ManagerDashboard.tsx, ownerView=false) is gone; the dashboard's AnalyticsPage businessType pin above still holds.
   });
 } finally {
   try { fs.rmSync(bundleDir, { recursive: true, force: true }); } catch { /* */ }

@@ -10,12 +10,8 @@ const r = p => fs.readFileSync(path.join(root, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log('PASS ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n   ' + e.message); } };
 
-ok('A258: Overview puts Top Items + Payment Methods in a 2-col grid (no blank)', () => {
-  const d = r('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
-  assert.match(d, /grid grid-cols-1 lg:grid-cols-2 gap-4">\s*\n\s*\{hourly\.length > 0/);
-  assert.match(d, /Payment methods — beside Top Items/);
-  assert.doesNotMatch(d, /grid grid-cols-1 sm:grid-cols-3 gap-4/); // payment methods restacked for the narrower column
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; the manager Overview half of A258
+// (ManagerDashboard.tsx) is gone; the owner Overview (next) pins the same pairing.
 ok('A258: the OWNER Overview also pairs Payment methods with Top sellers (not stacked)', () => {
   // The original A258 fix only reached the manager Overview; the owner OverviewPage still
   // stacked them (found in the 2026-09-09 browser pass). Guard the owner path too: within
@@ -84,13 +80,8 @@ ok('A259b: staff report attributes via shift.cashier_id when the order cashier i
   assert.match(rep, /staff_name:\s+v\.name/);
   assert.match(rep, /avg_order_value: v\.orders \? v\.revenue \/ v\.orders : 0/);
 });
-ok('A263: report period selector — one active preset, no Apply button, Today default', () => {
-  const rp = r('apps/dashboard/src/pages/manager/ManagerReportsPage.tsx');
-  assert.match(rp, /const \[active, setActive\] = useState<string>/);
-  assert.match(rp, /active === p\.label \? 'bg-swift-strong text-white'/);   // A329: the active preset is SwiftPOS teal (was blue-600)
-  assert.doesNotMatch(rp, /'Apply'/);                                   // Apply button gone (auto-applies)
-  assert.doesNotMatch(rp, /useState\(weekAgo\(\)\)/);               // Today is the default range
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; A263 pinned the manager Reports
+// period selector (ManagerReportsPage.tsx) only.
 
 ok('A262: shift report reuses the shared renderer + prints via the bridge, wired to a button', () => {
   const e = r('scripts/escpos-renderer/entry.ts');
@@ -101,7 +92,8 @@ ok('A262: shift report reuses the shared renderer + prints via the bridge, wired
   const srv = r('apps/server/src/routes/shifts.ts');
   assert.match(srv, /by_method: byMethod/);           // endpoint returns the breakdown
   assert.match(srv, /expected_cash_computed/);
-  const tab = r('apps/dashboard/src/pages/manager/ManagerShiftTab.tsx');
+  // A608 (2026-10-29): the button moved from the retired manager Shifts tab to the dashboard's Open drawers page.
+  const tab = r('apps/dashboard/src/pages/OpenShiftsPage.tsx');
   assert.match(tab, /printShiftReport\(s\.id\)/);
   assert.match(tab, /Shift report/);
 });

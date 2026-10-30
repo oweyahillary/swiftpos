@@ -187,7 +187,6 @@
 :root:not(.dark) .border-gray-800\/40:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(219,226,234,0.6) !important; }
 :root:not(.dark) .border-gray-800\/50:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(219,226,234,0.6) !important; }
 :root:not(.dark) .border-gray-800\/60:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(219,226,234,0.6) !important; }
-:root:not(.dark) .divide-gray-700\/50 > * + *:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(219,226,234,0.6) !important; }
 :root:not(.dark) .divide-gray-800\/50 > * + *:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(219,226,234,0.6) !important; }
 :root:not(.dark) .hover\:bg-gray-800\/20:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.2) !important; }
 :root:not(.dark) .hover\:bg-gray-800\/30:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.3) !important; }
@@ -203,8 +202,6 @@
 :root:not(.dark) .text-amber-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e !important; }
 :root:not(.dark) .text-amber-300\/90:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400ee6 !important; }
 :root:not(.dark) .text-amber-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e !important; }
-:root:not(.dark) .text-amber-400\/50:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e80 !important; }
-:root:not(.dark) .text-amber-400\/60:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e99 !important; }
 :root:not(.dark) .text-amber-400\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400eb3 !important; }
 :root:not(.dark) .text-amber-400\/80:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400ecc !important; }
 :root:not(.dark) .text-amber-400\/90:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400ee6 !important; }
@@ -220,7 +217,6 @@
 :root:not(.dark) .text-green-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534 !important; }
 :root:not(.dark) .text-green-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534 !important; }
 :root:not(.dark) .text-green-400\/80:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534cc !important; }
-:root:not(.dark) .text-green-500:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534 !important; }
 :root:not(.dark) .text-green-500\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534b3 !important; }
 :root:not(.dark) .text-orange-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #9a3412 !important; }
 :root:not(.dark) .text-pink-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #be185d !important; }
@@ -228,8 +224,6 @@
 :root:not(.dark) .text-purple-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #7e22ce !important; }
 :root:not(.dark) .text-red-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c !important; }
 :root:not(.dark) .text-red-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c !important; }
-:root:not(.dark) .text-red-400\/50:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c80 !important; }
-:root:not(.dark) .text-red-400\/60:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c99 !important; }
 :root:not(.dark) .text-red-400\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1cb3 !important; }
 :root:not(.dark) .text-red-500:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c !important; }
 :root:not(.dark) .text-rose-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #be123c !important; }

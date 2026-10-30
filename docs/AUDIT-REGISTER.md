@@ -161,8 +161,8 @@ in a PIN on the web POS; PIN on the web strictly remains for cashiers. On the de
   PIN. [Ask the owner to give you web dashboard access.] Your PIN still works on the desktop POS." (`web_access`, `login:
   '/login'`), no token, no code. A wrong PIN still gets the same 401 as anyone. POSLoginScreen.tsx shows it with "Go to the
   dashboard sign-in" (/login), and never navigates to /manager from a PIN.
-- **/manager kept reachable** (App.tsx unchanged): nobody new reaches it from a PIN; a session already open runs to its
-  expiry. Gaps it still covers that the dashboard does not: the parking bays live overview, and a manager without the
+- **/manager kept reachable** (App.tsx unchanged) at first — retired in part 3 below: nobody new reaches it from a PIN; a
+  session already open runs to its expiry. Gaps it still covers that the dashboard does not: the parking bays live overview, and a manager without the
   owner's web-access grant (the web POS for a manager — the follow-up below).
 
 **Decision (owner, 2026-10-29), follow-up built the same day.** Managers MUST sell on the web POS — option (b): someone
@@ -215,13 +215,95 @@ test uses the owner's role, and a manager gets USE_WEB_DASHBOARD), staff-a562 (t
 (2 e-mail fields), e2e manager-login smoke. Green: partner-add-a603 (18), staff-role-ceiling, web-a506, permissions-web-a490,
 login-otp, auth-surface, tenant-signin, till-own-signin.
 
+**Decisions (owner, 2026-10-29, "yes to all"), part 3 built 2026-10-30.**
+1. **The web manager portal is retired.** Before it went, what only it showed moved to the dashboard: the parking bays
+   live overview (components/ParkingLivePanel.tsx — total, occupied, free, occupancy, over 8 hours, the vehicles in the
+   bays; /api/parking-sessions and /api/tables as before, every 30 s while the page is shown) on the Overview of a
+   **parking** business only (`businessTerms(type).type === 'parking'`; every other type never renders it; "All
+   branches" asks for a branch), and its "Shift report" print (lib/printShiftReport.ts, the branch receipt printer) on
+   Open drawers. Then `/manager` (and anything under it) redirects to /dashboard — its guard sends a signed-out visitor
+   to /login (App.tsx); an old manager PIN session on /pos goes to /dashboard too (POSLoginScreen); CashierScreen's
+   "← Manager portal" is gone. **Deleted:** apps/dashboard/src/pages/manager/ (ManagerDashboard, ManagerHistoryTab,
+   ManagerMenuTab, ManagerReceivingTab, ManagerReportsPage, ManagerShiftTab, RemoteDayClose — nothing else imported them)
+   and components/SupplierBills.tsx (only the portal used it; Stock › Suppliers shows the bills through the same
+   SupplierAccount). Every shared piece they used stays (StaffTab, PrintersPage, BranchBrandingSection, TillsAndDays,
+   CountedCloseModal, ShiftConfirmations, StockCounts, Wastage, Expiry, OffersManager, PromotionsPage,
+   VoidRefundRulesTab, WatchListPanel, SupplierAccount…). `resolveRoute`'s '/manager' stays as the "back office" signal.
+   **Tests updated on purpose** (each removal noted "A608 (2026-10-29): the web manager portal is retired…"): 6 portal-only
+   files deleted (manager-create-po, manager-history, manager-menu-readonly, manager-nav-grouped, manager-portal-2026-09-05,
+   manager-shift-tab — no CI or script referred to them); 6 kept with their non-portal checks (manager-batch-2026-09-05b,
+   manager-initiate-transfer, manager-printers-branch, manager-receiving, pos-manager-open, pos-back-to-portal → "←
+   Dashboard"); 27 mixed files lost only their portal checks, some repointed to the new homes (grn-note-and-date →
+   PurchaseOrdersPage, print-documents → StockTransfersPage, ui-reports-fixes and z-report → OpenShiftsPage); the
+   back-office colour baseline lost the deleted files' entries; e2e notes say no one reaches /manager.
+   **Coverage the portal had and the dashboard does not** (for the owner — none of it was moved): receiving a transfer
+   line by line with a note (the portal's form sent received quantities; Stock › Transfers marks it received whole); the
+   remote day close with a counted figure (/api/day-close/instruct — Tills & days closes through /close-day); the A4
+   "Print Z" of the portal's Reports (the receipt-printer shift report is on Open drawers); the manager credit-limit box
+   (lib/creditApprovers limitBoxForRole is now unused).
+2. **Web dashboard access given by more than the owner** (lib/webAccessGivers.ts, routes/staff.ts). Who gives, resends,
+   lists and takes it away: the owner (anyone, as before), and a **partner holding staff.edit** (the right that adds and
+   edits staff — on the web every non-owner on the dashboard is a partner session, so this is a partner or a manager the
+   owner let in). Never a till, a PIN sign-in on one, a web POS session or a plain staff token (403 OWNER_ONLY, as
+   before). A partner only for someone who: is not themselves (OWN_WEB_ACCESS); is not on the General Manager role — a
+   General Manager with web access IS a partner, and a partner stays the owner's to make (PARTNER_OWNER_ONLY; adding with
+   `partner: true` stays the owner's, "Only the owner can add a partner."); is not on the owner's role (OWNER_ROLE); holds
+   nothing beyond them (BEYOND_YOU — the role ceiling, lib/roleCeiling.ts); works only at branches of theirs, a person of
+   every branch only by a giver of every branch (OTHER_BRANCH). The person's keys and branches are read afresh. Adding
+   someone with `web_access: true` follows the same rules (their keys and branches already checked by the add). A revoke by
+   a partner is recorded `revoked_by_staff`. **Dashboard:** Users and access passes `webAccess={isOwner || (isPartner &&
+   can('staff.edit'))}` and `partners={isOwner}` (Partner in the Role list the owner's alone); the Give / Resend / Revoke
+   buttons and the card's web access section show only for someone on a role this user may give, not themselves, not a
+   General Manager (`mayGiveWeb`); a non-owner never sends a General Manager's invitation when adding (the card asks for a
+   PIN instead).
+3. **Recorded, no change:** a Supervisor counts as a manager by its keys (isBackOffice) — the web POS refuses their PIN
+   when their keys go beyond the shop floor, exactly as the web used to send them to the manager portal.
+**Tests (part 3).** `tests/staff-signin-by-role-a608.test.mjs` now 42: who gives it (pure); a manager with web access
+gives, resends, lists and revokes a cashier's; refused for someone holding more, the owner's role, themselves, another
+branch, a person of every branch (and allowed to a partner of every branch), a General Manager (the owner gives it);
+no staff.edit / a plain token refused; adding with web_access by a manager (their branch), never a General Manager, never
+a Partner; the dashboard wiring; /manager redirect and the deleted pages; the parking panel (gating, endpoints, the
+occupancy rule run) and the shift report on Open drawers. `partner-login-a550`'s "owner-only" check became "a partner who
+edits staff gives, lists and takes away… never their own"; `partner-add-a603` pins `partners={isOwner}`. **Mutations**
+(each failed, put back): no ceiling → 1; no branch check → 1; any session a giver → 7. `check-permission-parity` reads
+the dashboard menu's gates too (DashboardLayout NAV_KEYS / REPORT_KEYS — the portal's NAV_ITEMS had named the same keys):
+ungated 16 → 7, baseline lowered. `partner-my-branches-a582`'s watch-list alerts are dated today (they were 2026-10-22 and
+fell out of the 7-day list a week later).
+**The indirect partner closed (owner, 2026-10-29: making a Partner is the owner's alone).** Someone with live web access
+(invited or active) moved ONTO the General Manager role becomes a partner as surely as a General Manager given web access.
+Someone other than the owner is refused 403 PARTNER_OWNER_ONLY (lib/webAccessGivers.ts `makesPartnerRefusal`, the same
+partner rule — the General Manager role by name; routes/staff.ts `makesPartner`, fails closed) on both role-change paths:
+a person's role (PATCH /api/staff/:id role_id) and renaming the role they hold to General Manager (PATCH
+/api/staff/roles/:roleId). Changing a role's keys (PUT /roles/:roleId/permissions) makes no partner — the partner rule is
+the role's name, not its keys. There is no bulk role change. Someone without web access moved to General Manager follows
+the ordinary ceiling (roleAssignRefusal). The owner is unaffected. Tests (staff-signin-by-role-a608, now 45): a General
+Manager partner moving a web-access holder to General Manager refused, the owner allowed; without web access the
+ceiling as before (a GM partner may, a Manager may not); the rename refused, a role without web-access members renamed,
+the owner allowed. **Mutation:** makesPartnerRefusal → null: 2 fail.
+**The portal's four features — owner's decision (2026-10-30).** Only one is needed and it is back: **receiving a transfer
+line by line on the dashboard.** Stock › Transfers' "Mark received" (it recorded everything sent as arrived, in one go) now
+opens the receive step the portal had: each line's sent and received (received starts at sent, may be lowered to 0; 0..sent
+checked — lib/transferReceipt.ts `receiptLines`, the line named — the cloud checks the same), an optional note, then
+`status: 'received'` with `received_items` and `receipt_note` (routes/stock.ts records what arrived, not what was sent);
+"Confirm & print" prints the received note (transferDocSpec, received: true). The same rights and branch rule as before:
+the page is inventory.transfer's, and the cloud lets only the receiving branch confirm (NOT_DESTINATION); the despatcher
+override (A203) is said in the step and recorded. The column word is the business's (businessTerms `product`). The other
+three are not needed: the day close with a count is on Tills & days; the credit limit is on Credit accounts for managers and
+partners; the A4 "Print Z" is not wanted. Tests: transfer-received-qty (10 — the rule run, the wiring) and
+manager-receiving (2 — on the dashboard, the receiving branch). **Mutations:** receiptLines accepting more than sent → 1
+fail; accepting below 0 → 1 fail. build-light-colours --check, check-web-pos-green, check-back-office-colour clean.
+
 **Owner check (after the cloud and dashboard deploy).** + Add Staff › Role General Manager: only name, email, phone and
 branches; Add and send invite → the invitation arrives. Role Manager: email and "PIN for the desktop POS"; the invitation
 arrives; that manager's email and PIN on /pos says to sign in to the web dashboard and use Open POS; the same PIN signs in
 on the desktop POS. Signed in to the dashboard as that manager: Open POS → the POS of their branch, no PIN; make a sale;
 "← Dashboard" goes back, Lock goes back to the dashboard. The owner: Open POS → pick a branch → sell. Add a cashier with an
 hourly rate → the rate shows on their card. A cashier signs in on /pos as before. **Before the deploy: give web access to
-every manager who uses the web today** (their PIN stops opening the web POS).
+every manager who uses the web today** (their PIN stops opening the web POS). Part 3: /manager in the address bar → the dashboard (or
+its sign-in); a parking business's Overview shows "Parking bays now" for the branch picked; Open drawers › Shift report
+prints on the branch printer (print server on); signed in as a manager with web access, Users and access › Staff shows
+Give web access on a cashier of their branch (not on a General Manager, not on themselves, not on someone of another
+branch), and + Add Staff has no Partner in the Role list.
 
 ### A607 · P2 · FEATURE BUILT 2026-10-28 (desktop + cloud + web; migration 181 — orders.buyer_kra_pin and mpesa_stk_requests; local schema 77 → 78, REQUIRED_DESKTOP_SCHEMA with it; no new permission key; the desktop part needs the next desktop release) · Customer details at the counter, on both screens: the cashier's and the customer screen; the M-Pesa prompt from the desktop POS; the buyer's KRA PIN to eTIMS
 

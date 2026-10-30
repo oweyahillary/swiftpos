@@ -68,9 +68,10 @@ ok('it posts to the cloud refund with a reason and the manager\'s PIN, and shows
   assert.match(tab, /setRefundMsg\(\{ id: order\.id, text: e\?\.message \?\? 'Refund failed', ok: false \}\);/);
   assert.match(tab, /placeholder="Manager or owner PIN"/);
 });
-ok('both web places a manager uses render this list (web POS drawer, manager dashboard)', () => {
+ok('the web POS drawer renders this list', () => {
   assert.match(read('apps/dashboard/src/pages/pos/POSDrawer.tsx'), /'orders\.view_all': \(\{ currency \}\) => <POSOrderHistoryTab currency=\{currency\} \/>/);
-  assert.match(read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), /case 'orders':\s+return <POSOrderHistoryTab currency=\{currency\} \/>;/);
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's Orders tab
+  // (ManagerDashboard.tsx) is gone; the web POS drawer (above) is where this list is shown now.
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

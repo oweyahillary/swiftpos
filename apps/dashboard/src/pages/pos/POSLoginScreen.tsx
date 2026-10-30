@@ -73,7 +73,8 @@ export default function POSLoginScreen() {
       // Don't clearCashierSession here; they may want POS later
       navigate('/', { replace: true });
     } else {
-      navigate(dest, { replace: true });
+      // A608: the web manager portal is retired — an old manager PIN session goes to the dashboard (its sign-in when signed out).
+      navigate(dest === '/manager' ? '/dashboard' : dest, { replace: true });
     }
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 

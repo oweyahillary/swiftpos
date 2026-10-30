@@ -15,6 +15,7 @@ import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, 
 import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf, withNewParentParts, overridePartsOf } from '../lib/roleKeys';
 import { useEmailCodes } from '../lib/loginOtp';   // A391
 import { keysBeyond } from '../lib/permissions';   // A494
+import { webAccessGiverKind, webAccessTargetRefusal, isPartnerRoleName, PARTNER_OWNER_ONLY, makesPartnerRefusal } from '../lib/webAccessGivers';   // A608
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { revokePersonSessions } from '../lib/tillSessions';   // A494
 import { worksAtBranch } from '../lib/branchAccess';   // A494
@@ -158,6 +159,21 @@ async function refuseIfProprietor(targetUserId: string, businessId: string): Pro
     return 'The business owner account can only be changed by the owner';
   }
   return null;
+}
+
+/**
+ * A608 part 3: would this change make a partner — someone with live web dashboard access (invited or active) moved onto
+ * the General Manager role — by someone other than the owner (lib/webAccessGivers.ts makesPartnerRefusal)? `userIds`: the
+ * people the change moves; `newRoleName` / `oldRoleName`: the role they end on and the one they were on. Fails closed.
+ */
+async function makesPartner(req: any, userIds: string[], newRoleName: unknown, oldRoleName: unknown): Promise<[number, object] | null> {
+  const owner = webAccessGiverKind(req, true) === 'owner';
+  if (owner || !userIds.length || !isPartnerRoleName(newRoleName) || isPartnerRoleName(oldRoleName)) return null;
+  const { map, error } = await readPartners(req.businessId);
+  if (error) return [503, { error: 'Could not check web dashboard access — please try again' }];
+  const live = userIds.some((id) => partnerLive(map[id], map[id]?.auth_user_id));
+  const r = makesPartnerRefusal({ owner, newRoleName, oldRoleName, liveWebAccess: live });
+  return r ? [403, r] : null;
 }
 
 /** A490: a non-owner manages only someone holding nothing beyond them (replaces "a manager may not touch a manager"). */
@@ -471,9 +487,17 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
   // A608 (owner, 2026-10-29: "For top management let it be email only, they access the dashboard. Change the shop manager
   // to use email on web"): a General Manager or Manager added on the owner's dashboard gets web dashboard access in this
   // same step — the same grant as "Give web access", all or nothing as for a partner. The owner's alone (A550).
+  // A608 part 3 (owner, 2026-10-29, "yes to all"): a partner holding staff.edit sends it too — for someone within their
+  // keys and branches (checked below, as for anyone they add), never a General Manager (that is a partner: the owner's).
   const withWeb = !partner && req.body.web_access === true;
   if (withWeb) {
-    if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+    const giver = webGiver(req);
+    if (!giver) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+    if (giver === 'staff') {
+      const { data: r } = role_id ? await supabase.from('roles').select('name').eq('id', role_id).maybeSingle() : { data: null };
+      if (!r) { res.status(403).json({ error: 'You are not allowed to assign this role' }); return; }
+      if (isPartnerRoleName((r as { name?: string }).name)) { res.status(403).json(PARTNER_OWNER_ONLY); return; }
+    }
     if (!String(email ?? '').includes('@')) {
       res.status(400).json({ error: 'An email address is required — it is how they sign in to the web dashboard.', code: 'NO_EMAIL' });
       return;
@@ -754,6 +778,13 @@ router.patch('/:id', requireAnyPermission('staff.edit', 'staff.pay'), validate(U
     if (role_id) {
       const roleRefusal = await roleAssignRefusal(req, role_id);
       if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
+      // A608 part 3: someone with web access moved onto General Manager is a partner — the owner's to make.
+      const [{ data: to }, { data: cur }] = await Promise.all([
+        supabase.from('roles').select('name').eq('id', role_id).maybeSingle(),
+        supabase.from('users').select('roles ( name )').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle(),
+      ]);
+      const mp = await makesPartner(req, [req.params.id], (to as { name?: string } | null)?.name, (cur as any)?.roles?.name);
+      if (mp) { res.status(mp[0]).json(mp[1]); return; }
     }
     const beyond = await refuseIfBeyondCaller(req, req.params.id);
     if (beyond) { res.status(403).json({ error: beyond }); return; }
@@ -923,14 +954,36 @@ router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
 
 /** The owner, signed in as themselves (not a till, not a PIN sign-in on one, never a partner — who is never isOwner). */
 const ownerOnly = (req: any): boolean => req.isOwner === true && !req.isTill && !req.pinSignIn && req.webPartner !== true;
-const OWNER_ONLY_ACCESS = { error: 'Only the owner gives or takes away web dashboard access.', code: 'OWNER_ONLY' } as const;
+const OWNER_ONLY_ACCESS = { error: 'Only the owner gives or takes away web dashboard access.', code: 'OWNER_ONLY' } as const;   // A608: or a partner who edits staff
 /** A603: a partner is made by the owner alone — a partner never makes another, a manager never makes one. */
 const OWNER_ONLY_PARTNER = { error: 'Only the owner can add a partner.', code: 'OWNER_ONLY' } as const;
 const NO_PARTNER_ROLE = { error: 'A partner is given the General Manager role, and this business has none. Add a role named General Manager with every permission, then add the partner.', code: 'NO_PARTNER_ROLE' } as const;
 
+/** A608 part 3: who may give / resend / take away web dashboard access — the owner, or a partner holding staff.edit. */
+const webGiver = (req: any) => webAccessGiverKind(req, can(req, 'staff.edit'));
+
+/**
+ * A608 part 3: why this giver may not give or take away this person's web access (lib/webAccessGivers.ts) — the owner
+ * never refused here; a partner only for someone within their keys and branches, never themselves, never a General
+ * Manager. The person's keys and branches are read afresh. Returns [status, body], or null.
+ */
+async function webTargetRefusal(req: any, targetId: string): Promise<[number, { error: string; code?: string }] | null> {
+  if (webGiver(req) === 'owner') return null;
+  let facts: Awaited<ReturnType<typeof personKeys>>;
+  try { facts = await personKeys(req.businessId, targetId); } catch { return [503, { error: 'Could not check this staff member — please try again' }]; }
+  if (!facts) return [404, { error: 'Staff member not found' }];
+  const { data: rows, error } = await supabase.from('user_branches').select('branch_id').eq('user_id', targetId);
+  if (error) return [503, { error: 'Could not check this staff member — please try again' }];
+  const r = webAccessTargetRefusal(
+    { userId: req.userId ?? null, held: callerHeld(req), allBranches: req.allBranches === true, branchIds: req.partnerBranches ?? [] },
+    { id: targetId, roleName: facts.roleName, keys: facts.keys, branchIds: ((rows ?? []) as Array<{ branch_id: string }>).map((b) => b.branch_id) });
+  return r ? [403, r] : null;
+}
+
 // GET /api/staff/web-access — each person's web dashboard access: invited (not signed in yet), active, revoked.
+// A608 part 3: the owner's, and a partner's holding staff.edit (who gives it too).
 router.get('/web-access', async (req, res) => {
-  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  if (!webGiver(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
   const { map, error } = await readPartners(req.businessId);
   if (error) { sendError(res, error as Error); return; }
   const out: Record<string, { status: string; granted_at: string; activated_at: string | null; revoked_at: string | null }> = {};
@@ -979,7 +1032,9 @@ async function sendPartnerInvite(to: string, name: string | null, businessName: 
 // POST /api/staff/:id/web-access — give web dashboard access (or send the invite again). The person must be an active
 // member of the staff with an e-mail address, and never on the owner's role.
 router.post('/:id/web-access', async (req, res) => {
-  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  if (!webGiver(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  const refused = await webTargetRefusal(req, String(req.params.id));   // A608 part 3
+  if (refused) { res.status(refused[0]).json(refused[1]); return; }
   const { data: target, error: tErr } = await supabase.from('users')
     .select('id, name, email, status, business_id, roles ( name )').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (tErr) { sendError(res, tErr); return; }
@@ -1070,9 +1125,12 @@ async function undoNewStaff(businessId: string, userId: string): Promise<boolean
 
 // DELETE /api/staff/:id/web-access — take web dashboard access away: they are signed out everywhere at once.
 router.delete('/:id/web-access', async (req, res) => {
-  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  const giver = webGiver(req);
+  if (!giver) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  const refused = await webTargetRefusal(req, String(req.params.id));   // A608 part 3
+  if (refused) { res.status(refused[0]).json(refused[1]); return; }
   try {
-    const ended = await endPartnerAccess(req.businessId, req.params.id, 'revoked_by_owner');
+    const ended = await endPartnerAccess(req.businessId, req.params.id, giver === 'owner' ? 'revoked_by_owner' : 'revoked_by_staff');
     if (!ended) { res.status(404).json({ error: 'This staff member has no web dashboard access.' }); return; }
     res.json({ status: 'revoked' });
   } catch (e) { sendError(res, e as Error); }
@@ -1228,6 +1286,13 @@ router.patch('/roles/:roleId', requirePermission('staff.roles'), async (req, res
     const clean = typeof name === 'string' ? name.trim() : '';
     if (!clean || clean.length > 60) { res.status(400).json({ error: 'name must be 1–60 characters' }); return; }
     if (isOwnerRoleName(clean)) { res.status(403).json({ error: 'That name belongs to the owner\'s role — choose another.' }); return; }
+    // A608 part 3: renaming a role to General Manager makes a partner of each member with web access — the owner's to do.
+    if (isPartnerRoleName(clean) && !isPartnerRoleName(role.name)) {
+      const { data: members, error: mErr } = await supabase.from('users').select('id').eq('role_id', role.id).eq('business_id', req.businessId);
+      if (mErr) { sendError(res, mErr); return; }
+      const mp = await makesPartner(req, ((members ?? []) as Array<{ id: string }>).map((m) => m.id), clean, role.name);
+      if (mp) { res.status(mp[0]).json(mp[1]); return; }
+    }
     updates.name = clean;
   }
   if (description !== undefined) updates.description = description ? String(description) : null;

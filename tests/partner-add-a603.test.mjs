@@ -332,11 +332,12 @@ try {
     assert.equal(D.withPartnerOption(LIST, true).find((r) => r.name === 'Partner').id, D.PARTNER_VALUE);
     assert.deepEqual(D.withPartnerOption([], true).map((r) => r.name), ['Partner']);
   });
-  await ok('only the owner\'s dashboard asks: partnerOption is webAccess (isOwner) and adding — never the manager portal', () => {
-    assert.match(tab, /partnerOption=\{webAccess && !editing\}/);
-    assert.match(read('apps/dashboard/src/pages/settings/UsersAccessPage.tsx'), /<StaffTab[^>]*webAccess=\{isOwner\}/);
-    const mgr = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx').match(/<StaffTab[^>]*>/g) ?? [];
-    assert.ok(mgr.length && mgr.every((t) => !/webAccess/.test(t)), 'the manager portal never passes webAccess');
+  // A608 part 3 (owner, 2026-10-29, "yes to all"): a partner who edits staff gives web access too (webAccess), but adding a
+  // Partner stays the owner's — its own prop, `partners={isOwner}`. The web manager portal is retired (no StaffTab there).
+  await ok('only the owner\'s dashboard asks: partnerOption is `partners` (isOwner) and adding', () => {
+    assert.match(tab, /partnerOption=\{partners && !editing\}/);
+    assert.match(read('apps/dashboard/src/pages/settings/UsersAccessPage.tsx'), /<StaffTab[^>]*partners=\{isOwner\}/);
+    assert.ok(!fs.existsSync(path.join(ROOT, 'apps/dashboard/src/pages/manager/ManagerDashboard.tsx')), 'the manager portal is gone');
     assert.match(tab, /const isPartner = partnerOption && !editing && roleId === PARTNER_VALUE;/);
     assert.match(tab, /options: withPartnerOption\(basePicker\.options, partnerOption && !editing\)/);
     assert.match(tab, /\{picker\.options\.map\(r => <option/);

@@ -8,7 +8,7 @@ import { paginate } from '../../lib/paginate';
 import { expandKeys, isBackOffice, OPEN_BEFORE_A490 } from '../../lib/permissions';   // A490
 import PermissionPicker, { usePermissionCatalogue, keyDifferences, type CatalogueKey, type CatalogueGroup } from '../../components/PermissionPicker';
 import { approvalPinOn } from '../../lib/posFeatures';   // A562
-import { staffSignIn, emailHint, pinLabel } from '../../lib/staffSignIn';   // A608
+import { staffSignIn, emailHint, pinLabel, isGeneralManagerRole } from '../../lib/staffSignIn';   // A608
 
 interface Branch { id: string; name: string; }
 /** A490: a role as GET /api/staff/roles answers it — its FINE keys, whether it is the owner's, whether this user may give it. */
@@ -43,6 +43,8 @@ interface Props {
   canEdit?: boolean;
   /** A550: the owner gives, re-sends and takes away web dashboard access (partner login) — the owner's dashboard only. */
   webAccess?: boolean;
+  /** A603 / A608: "Partner" in the Role list — the owner's alone (a partner or a manager never makes one). */
+  partners?: boolean;
   /** A595: does the signed-in person hold this key — for the parts of staff.edit (staff.pins, staff.access, staff.pay).
    *  Not given: everything (the owner's dashboard before A550). */
   can?: (key: string) => boolean;
@@ -98,7 +100,7 @@ const STATUS_COLORS: Record<string, string> = {
   inactive: 'bg-gray-700 text-gray-500',
 };
 
-export default function StaffTab({ branches, canResetSignIn, canEdit = true, webAccess = false, can }: Props) {
+export default function StaffTab({ branches, canResetSignIn, canEdit = true, webAccess = false, partners = false, can }: Props) {
   const rights = staffRights(canEdit, can);   // A595
   const { activeBranchId } = useBranch();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
@@ -115,6 +117,12 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
   const [web, setWeb] = useState<Record<string, WebAccessState>>({});   // A550
   const [webNote, setWebNote] = useState('');
   const [approvalPin, setApprovalPin] = useState(false);   // A562: the admin portal's 'approval_pin' switch
+  // A608 part 3: whose web access this user gives / resends / takes away — the owner anyone's; a partner who edits staff
+  // only someone on a role they may give (within their keys, lib/roleCeiling.ts — the cloud's `assignable`), never their
+  // own, never a General Manager (a partner: the owner's). Presentation only — the cloud decides (lib/webAccessGivers.ts),
+  // the branches too.
+  const mayGiveWeb = (p: StaffMember): boolean => partners
+    || (!p.is_self && !isGeneralManagerRole(p.roles?.name) && roles.some(r => r.id === p.roles?.id));
 
   const fetchAll = async () => {
     try {
@@ -287,7 +295,7 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* A550: web dashboard access — the owner's; never for the owner's own role, someone inactive or without email */}
-                  {webAccess && s.status === 'active' && s.email && !role?.is_owner_role && (() => {
+                  {webAccess && s.status === 'active' && s.email && !role?.is_owner_role && mayGiveWeb(s) && (() => {
                     const w = web[s.id];
                     const live = w && w.status !== 'revoked';
                     return (
@@ -347,9 +355,10 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
           branches={branches}
           approvalPin={approvalPin}
           rights={rights}
-          web={webAccess && editing ? web[editing.id] ?? null : undefined}
-          partnerOption={webAccess && !editing}
+          web={webAccess && editing && mayGiveWeb(editing) ? web[editing.id] ?? null : undefined}
+          partnerOption={partners && !editing}
           invites={webAccess}
+          ownerView={partners}
           onRefresh={fetchAll}
           onWebGive={(again) => editing && giveWeb(editing, again)}
           onWebRevoke={() => editing && revokeWeb(editing)}
@@ -389,13 +398,15 @@ interface ModalProps {
   web?: WebAccessState | null;
   onWebGive: (again: boolean) => void;
   onWebRevoke: () => void;
-  /** A603: "Partner" in the Role list — only on the owner's dashboard (webAccess), only when adding someone. */
+  /** A603: "Partner" in the Role list — only on the owner's dashboard (`partners`), only when adding someone. */
   partnerOption?: boolean;
   /** A603: reload the list (a partner who could not be fully added). */
   onRefresh?: () => void;
-  /** A608: adding a Partner, General Manager or Manager sends the web dashboard invitation in the same step — the owner's
-   *  dashboard only (webAccess: the cloud gives web access for the owner alone). */
+  /** A608: adding a Partner, General Manager or Manager sends the web dashboard invitation in the same step — whoever gives
+   *  web access (webAccess: the owner, and from part 3 a partner who edits staff). */
   invites?: boolean;
+  /** A608 part 3: the owner's dashboard — a partner who edits staff invites too, but never a General Manager (a partner). */
+  ownerView?: boolean;
   onClose: () => void;
   onSaved: (note?: string) => void;
 }
@@ -452,7 +463,7 @@ export function isPartnerAccess(w: { status?: string } | null | undefined): bool
 // saved email and password. Every email here is autoComplete="off" and every PIN "new-password" — the form starts empty.
 // A562: one column of plain steps — name and role, email, PIN, (approval PIN when switched on), branches, hourly rate,
 // permissions, web dashboard access.
-function StaffModal({ editing, roles, allRoles, catalogue, branches, approvalPin, rights, web, onWebGive, onWebRevoke, partnerOption = false, onRefresh, invites = false, onClose, onSaved }: ModalProps) {
+function StaffModal({ editing, roles, allRoles, catalogue, branches, approvalPin, rights, web, onWebGive, onWebRevoke, partnerOption = false, onRefresh, invites: invitesProp = false, ownerView = false, onClose, onSaved }: ModalProps) {
   // A595: staff.pay without staff.edit — the card opens to set the pay rate only.
   const payOnly = !!editing && !rights.edit && rights.pay;
   // A595: the cloud masked their e-mail and phone (no staff.contacts) — shown as sent, read-only, never sent back.
@@ -512,6 +523,8 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, approvalPin
     backOffice: backOfficeKeys(effectiveKeys) });
   // Email only — when the web invitation goes with adding them (the owner's dashboard), or on their card later. Someone
   // else adding a General Manager gives a PIN as before (only the owner gives web access, A550).
+  // A608 part 3: someone other than the owner never sends a General Manager's invitation (that makes a partner).
+  const invites = invitesProp && (ownerView || signIn !== 'web');
   const webOnly = signIn === 'web' && (!!editing || invites);
   // A608: adding a Partner, General Manager or Manager on the owner's dashboard sends the web invitation in the same step.
   const sendsInvite = !editing && invites && signIn !== 'pin';

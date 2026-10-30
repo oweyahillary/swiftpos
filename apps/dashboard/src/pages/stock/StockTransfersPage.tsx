@@ -7,6 +7,8 @@ import { useBranch } from '../../context/BranchContext';
 import { printDocument } from '../../lib/printDocument';
 import { transferDocSpec } from '../../lib/documentSpecs';
 import { dateShort } from '../../lib/format';
+import { receiptSeed, receiptLines } from '../../lib/transferReceipt';   // A608 part 3
+import { businessTerms } from '../../lib/businessTerms';   // A608 part 3
 
 interface Product { id: string; name: string; }
 interface Branch  { id: string; name: string; }
@@ -84,6 +86,16 @@ export default function StockTransfersPage() {
   const [sameUserPrompt, setSameUserPrompt] = useState<{ t: Transfer; status: 'in_transit' | 'received' | 'cancelled'; msg: string } | null>(null);
   // A204: cancelling needs a reason; capture it in an in-app modal (no native confirm).
   const [cancelPrompt, setCancelPrompt] = useState<{ t: Transfer; reason: string } | null>(null);
+  // A608 part 3 (owner, 2026-10-30: receiving a transfer line by line is the one feature of the retired manager portal the
+  // dashboard needs): the receive step — each line's sent and received (received starts at sent, may be lowered to 0), a
+  // note, then what arrived is recorded (stock gets what arrived, not what was sent). Its printed received note too.
+  const [rxTarget, setRxTarget] = useState<Transfer | null>(null);
+  const [rxLines, setRxLines]   = useState<Record<string, string>>({});
+  const [rxNote, setRxNote]     = useState('');
+  const [rxError, setRxError]   = useState('');
+  const [rxBusy, setRxBusy]     = useState(false);
+  const [rxSameUser, setRxSameUser] = useState(false);   // A203: they despatched it — receiving is recorded as an override
+  const words = businessTerms(business?.type);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,15 +172,51 @@ export default function StockTransfersPage() {
   // never fire the allowSameUser=false request, so the server's 409 (and any
   // native dialog that could gate it) is never reached. A different user marks it
   // received straight through. Makes the flow impossible to hang on a dialog.
+  // A608 part 3: "Mark received" opens the receive step (it used to record everything sent as arrived, in one go).
   const markReceived = (t: Transfer) => {
-    if (t.despatched_by && user?.id && t.despatched_by === user.id) {
-      setSameUserPrompt({
-        t, status: 'received',
-        msg: 'You despatched this transfer, so ideally someone else confirms it arrived. Proceeding is recorded on the transfer.',
+    setRxLines(receiptSeed(t.stock_transfer_items.map(it => ({ product_id: it.product_id, quantity: it.quantity }))));
+    setRxNote(''); setRxError('');
+    setRxSameUser(!!(t.despatched_by && user?.id && t.despatched_by === user.id));
+    setRxTarget(t);
+  };
+
+  const printReceivedNote = (t: Transfer, receivedById: Record<string, number>, note: string) => {
+    printDocument(transferDocSpec({
+      number: t.transfer_number, date: new Date().toLocaleDateString('en-KE'),
+      from: t.from_branch_name, to: t.to_branch_name, status: 'received', received: true,
+      business: business ?? { name: 'ZapTill' },
+      lines: t.stock_transfer_items.map(it => ({
+        name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0, received: receivedById[it.product_id] ?? 0,
+      })),
+      note: note || undefined,
+    }));
+  };
+
+  const submitReceipt = async (alsoPrint = false) => {
+    const t = rxTarget;
+    if (!t) return;
+    // 0..sent on each line — the cloud checks the same; this says which line first.
+    const lines = receiptLines(t.stock_transfer_items.map(it => ({ product_id: it.product_id, quantity: it.quantity, name: it.products?.name })), rxLines);
+    if (lines.ok === false) { setRxError(lines.error); return; }
+    const note = rxNote.trim();
+    setRxBusy(true); setRxError('');
+    try {
+      await api.patch(`/api/stock/transfers/${t.id}/status`, {
+        status: 'received', received_items: lines.received_items, receipt_note: note || undefined,
+        ...(rxSameUser ? { allow_same_user: true } : {}),
       });
-    } else {
-      void advance(t, 'received');
-    }
+      if (alsoPrint) {
+        const byId: Record<string, number> = {};
+        lines.received_items.forEach(r => { byId[r.product_id] = r.quantity_received; });
+        printReceivedNote(t, byId, note);
+      }
+      setRxTarget(null);
+      await load();
+    } catch (e: any) {
+      // A203: the cloud knows who despatched it — say so, and the next Confirm records the override.
+      if (e?.code === 'same_user_receipt' && !rxSameUser) { setRxSameUser(true); setRxError(e?.message ?? 'You despatched this transfer.'); }
+      else setRxError(e?.message ?? 'Could not receive the transfer');
+    } finally { setRxBusy(false); }
   };
   const removeLine = (i: number) => setLines(l => l.filter((_, idx) => idx !== i));
   const updateLine = (i: number, field: string, val: string) =>
@@ -323,6 +371,55 @@ export default function StockTransfersPage() {
           );
         })}
       </div>
+
+      {/* ── A608 part 3: RECEIVE STEP — line by line ─────────────────────────────── */}
+      {rxTarget && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" data-testid="transfer-receive">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-800 flex-shrink-0">
+              <div className="min-w-0">
+                <h2 className="text-white font-semibold text-base">Receive {rxTarget.transfer_number}</h2>
+                <p className="text-gray-500 text-xs mt-0.5">From {rxTarget.from_branch_name} to {rxTarget.to_branch_name} — enter what arrived</p>
+              </div>
+              <button onClick={() => setRxTarget(null)} disabled={rxBusy} className="text-gray-500 hover:text-white text-lg">✕</button>
+            </div>
+            <div className="overflow-auto flex-1 px-6 py-5 space-y-3">
+              <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-[10px] uppercase tracking-wider text-gray-500">
+                <span>{words.product}</span><span className="text-right w-14">Sent</span><span className="text-right w-20 pr-1">Received</span>
+              </div>
+              {rxTarget.stock_transfer_items.map((it, i) => (
+                <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-sm">
+                  <span className="text-gray-300 min-w-0 truncate">{it.products?.name ?? 'Item'}</span>
+                  <span className="text-gray-400 tabular-nums text-right w-14">{it.quantity}</span>
+                  <input type="number" min={0} max={it.quantity} step="any" data-testid="transfer-received-qty"
+                    value={rxLines[it.product_id] ?? ''}
+                    onChange={e => setRxLines(prev => ({ ...prev, [it.product_id]: e.target.value }))}
+                    className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right outline-none focus:border-swift" />
+                </div>
+              ))}
+              <textarea value={rxNote} onChange={e => setRxNote(e.target.value)} rows={2} data-testid="transfer-receipt-note"
+                placeholder="Note (optional) — e.g. 2 short, one carton damaged in transit"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-swift" />
+              {rxSameUser && (
+                <p className="text-amber-400 text-xs">You despatched this transfer, so ideally someone else confirms it arrived. Proceeding is recorded on the transfer.</p>
+              )}
+              {rxError && <p className="text-red-400 text-xs" data-testid="transfer-receive-error">{rxError}</p>}
+            </div>
+            <div className="flex flex-wrap gap-2 justify-end px-6 py-4 border-t border-gray-800">
+              <button onClick={() => setRxTarget(null)} disabled={rxBusy}
+                className="text-xs px-3 py-1.5 rounded-lg text-gray-400 hover:text-white disabled:opacity-40 transition-colors">Cancel</button>
+              <button onClick={() => void submitReceipt(false)} disabled={rxBusy}
+                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 transition-colors">
+                {rxBusy ? 'Receiving…' : 'Confirm received'}
+              </button>
+              <button onClick={() => void submitReceipt(true)} disabled={rxBusy}
+                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white transition-colors">
+                {rxBusy ? 'Receiving…' : 'Confirm & print'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── CREATE MODAL ──────────────────────────────────────────────────────── */}
       {showCreate && (

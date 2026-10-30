@@ -25,6 +25,15 @@
  *   - /pos-session without the sell check                       → "no right to sell" fails
  *   - /pos-session without the branch check                     → "a branch not theirs" fails
  *   - POST /api/staff not storing hourly_rate                   → "the hourly rate typed when adding" fails
+ *
+ * A608 part 3 (owner, 2026-10-29, "yes to all"): the web manager portal is retired (its parking bays overview moved to the
+ * Overview, its shift report print to Open drawers, /manager redirects to the dashboard); web dashboard access is given,
+ * resent and taken away by a partner who edits staff too — within their keys and branches, never their own, never a
+ * General Manager (a partner stays the owner's to make). Mutations (each made, a test failed, put back):
+ *   - webAccessTargetRefusal without the ceiling (BEYOND_YOU)     → "never someone holding more" fails
+ *   - webAccessTargetRefusal without the branch check            → "never at a branch not theirs" fails
+ *   - webAccessGiverKind taking any session                      → "who gives it" fails
+ *   - makesPartnerRefusal always null (the indirect partner)      → "never moved onto General Manager" and the rename fail
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -62,6 +71,7 @@ mailer.sendEmail = async (o) => { mails.push(o); return true; };
 const authCache = require(path.join(DIST, 'lib/authCache.js'));
 const attempts = require(path.join(DIST, 'lib/pinAttempts.js'));
 const W = require(path.join(DIST, 'lib/webPosSignIn.js'));
+const G = require(path.join(DIST, 'lib/webAccessGivers.js'));   // A608 part 3
 const permState = require(path.join(DIST, 'lib/permissionsState.js'));
 const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
 const S = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/staffSignIn.ts')).href);
@@ -446,12 +456,12 @@ try {
     assert.match(page, /const held = dashboardPosSession\(branchId\);\s*if \(held\) \{ navigate\('\/pos\/cashier'\)/, 'a POS already open goes straight back');
     assert.doesNotMatch(page, /<Navigate to="\/pos"/);
   });
-  await ok('inside the POS: signing out, locking or closing the drawer returns them to the dashboard; "← Dashboard" instead of the manager portal', () => {
+  await ok('inside the POS: signing out, locking or closing the drawer returns them to the dashboard; "← Dashboard" (the manager portal is gone)', () => {
     const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
     assert.match(cs, /const exitTo = fromDashboard \? '\/dashboard' : '\/pos';/);
     assert.doesNotMatch(cs, /clearCashierSession\(\);\s*navigate\('\/pos'\)/);
     assert.equal((cs.match(/navigate\(exitTo\)/g) ?? []).length, 3);
-    assert.match(cs, /const hasManagerPortal = !fromDashboard && /);
+    assert.doesNotMatch(cs, /hasManagerPortal|navigate\('\/manager'\)|Manager portal/, 'A608 part 3: the web manager portal is retired');
     assert.match(cs, /← Dashboard/);
     assert.match(cs, /if \(dest === '\/' && !session\.fromDashboard\) navigate/);
     const ctx = read('apps/dashboard/src/context/POSAuthContext.tsx');
@@ -464,6 +474,171 @@ try {
   await ok('the desktop is untouched: /verify-pin and the branch server never call /pos-session', () => {
     const desktop = ['apps/desktop/src/main/ipc/signIn.ts', 'apps/desktop/src/main/ipc/shared.ts'].map(read).join('\n');
     assert.doesNotMatch(desktop, /pos-session/);
+  });
+  // ── 9. A608 part 3: web dashboard access given by a partner who edits staff ─────────────────────────────────────────
+  console.log('\nA608 part 3 — who gives web dashboard access; the manager portal retired\n');
+  const KIM = u(9), BEA = u(10), GAIL = u(11), NOBR = u(12);
+  const beyond = P.PERMISSION_KEYS.find((k) => !keysOf('Manager').includes(k));
+  const addPeople = () => {
+    const kim = person(KIM, 'Kim', 'kim@pollo.test', R_CASH); kim.user_branches = [{ branch_id: BR2, branches: BRANCH2 }];
+    const bea = person(BEA, 'Bea', 'bea@pollo.test', R_CASH); bea.user_permissions = [{ granted: true, permissions: { key: beyond } }];
+    const nobr = person(NOBR, 'Nia', 'nia@pollo.test', R_CASH); nobr.user_branches = [];
+    mem.db.users.push(kim, bea, person(GAIL, 'Gail', 'gail@pollo.test', R_GM), nobr);
+    mem.db.user_branches.push({ user_id: KIM, branch_id: BR2 }, { user_id: BEA, branch_id: BR }, { user_id: GAIL, branch_id: BR });
+  };
+  const gmToken = (id = GAIL) => jwt.sign({ userId: id, businessId: B, branchId: null, isOwner: false, webPartner: true, partnerBranches: [BR, BR2],
+    allBranches: true, permissionKeys: keysOf('General Manager'), permissionsVersion: 1, sessionId: `s-${id}`, surface: 'web', parts: true },
+    process.env.JWT_SECRET, { expiresIn: '5m' });
+  const give = (t, id) => call('POST', `/api/staff/${id}/web-access`, t, {});
+  const take = (t, id) => call('DELETE', `/api/staff/${id}/web-access`, t);
+
+  await ok('who gives it: the owner, and a partner who edits staff — never a till, a PIN sign-in, a POS or a plain staff session', () => {
+    assert.equal(G.webAccessGiverKind({ isOwner: true }, false), 'owner');
+    assert.equal(G.webAccessGiverKind({ webPartner: true }, true), 'staff');
+    assert.equal(G.webAccessGiverKind({ webPartner: true }, false), null, 'a partner without staff.edit');
+    assert.equal(G.webAccessGiverKind({ isOwner: true, pinSignIn: true }, true), null);
+    assert.equal(G.webAccessGiverKind({ isTill: true, isOwner: true }, true), null);
+    assert.equal(G.webAccessGiverKind({ isOwner: false }, true), null, 'a web POS or a plain staff session');
+  });
+  reset(); addPeople();
+  await ok('a manager with web access (staff.edit, their branch) gives, lists, resends and takes away a cashier\'s web access', async () => {
+    assert.ok(keysOf('Manager').includes('staff.edit'));
+    const t = partnerToken(MGR, 'Manager');
+    const g = await give(t, CASH);
+    assert.equal(g.status, 200, JSON.stringify(g.body)); assert.equal(partnersOf()[CASH].status, 'invited');
+    assert.ok(mails.some((m) => m.to === JOE), 'the invitation sent');
+    const again = await give(t, CASH);
+    assert.equal(again.status, 200, 'resend');
+    const list = await call('GET', '/api/staff/web-access', t);
+    assert.equal(list.status, 200); assert.equal(list.body[CASH].status, 'invited');
+    const off = await take(t, CASH);
+    assert.equal(off.status, 200, JSON.stringify(off.body)); assert.equal(partnersOf()[CASH].status, 'revoked');
+    assert.equal(partnersOf()[CASH].revoked_reason, 'revoked_by_staff');
+  });
+  await ok('never someone holding more than them (BEYOND_YOU), never the owner\'s role, never their own', async () => {
+    const t = partnerToken(MGR, 'Manager');
+    const b = await give(t, BEA);
+    assert.equal(b.status, 403, JSON.stringify(b.body)); assert.equal(b.body.code, 'BEYOND_YOU'); assert.equal(partnersOf()[BEA], undefined);
+    const o = await give(t, OWNER);
+    assert.equal(o.status, 403); assert.equal(o.body.code, 'OWNER_ROLE');
+    const me = await give(t, MGR);
+    assert.equal(me.status, 403); assert.equal(me.body.code, 'OWN_WEB_ACCESS');
+  });
+  await ok('never at a branch not theirs (OTHER_BRANCH) — a person of every branch needs a giver of every branch', async () => {
+    const t = partnerToken(MGR, 'Manager');
+    const k = await give(t, KIM);
+    assert.equal(k.status, 403, JSON.stringify(k.body)); assert.equal(k.body.code, 'OTHER_BRANCH'); assert.equal(partnersOf()[KIM], undefined);
+    const n = await give(t, NOBR);
+    assert.equal(n.status, 403); assert.equal(n.body.code, 'OTHER_BRANCH');
+    const all = await give(gmToken(), KIM);
+    assert.equal(all.status, 200, JSON.stringify(all.body), 'a partner of every branch');
+    const kTake = await take(t, KIM);
+    assert.equal(kTake.status, 403); assert.equal(kTake.body.code, 'OTHER_BRANCH'); assert.equal(partnersOf()[KIM].status, 'invited', 'not taken away');
+  });
+  await ok('a partner never makes a partner: a General Manager\'s web access is the owner\'s (PARTNER_OWNER_ONLY); the owner gives it', async () => {
+    const r = await give(gmToken(SUP), GAIL);
+    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'PARTNER_OWNER_ONLY');
+    const owner = await give(ownerToken(), GAIL);
+    assert.equal(owner.status, 200, JSON.stringify(owner.body));
+    const off = await take(gmToken(SUP), GAIL);
+    assert.equal(off.status, 403); assert.equal(off.body.code, 'PARTNER_OWNER_ONLY'); assert.equal(partnersOf()[GAIL].status, 'invited');
+  });
+  await ok('no staff.edit (an Accountant with web access), a plain staff token, a web POS session → 403 OWNER_ONLY', async () => {
+    assert.equal(keysOf('Accountant').includes('staff.edit'), false);
+    for (const t of [partnerToken(ACC, 'Accountant'), managerToken()]) {
+      const r = await give(t, CASH);
+      assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'OWNER_ONLY');
+      const l = await call('GET', '/api/staff/web-access', t);
+      assert.equal(l.status, 403);
+    }
+  });
+  reset();
+  await ok('adding someone with web_access: a manager with web access may (a cashier at their branch), never a General Manager, never a Partner', async () => {
+    const t = partnerToken(MGR, 'Manager');
+    const r = await call('POST', '/api/staff', t, { name: 'Sam', email: SAM, role_id: R_CASH, pin: '1357', web_access: true });
+    assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(partnersOf()[byEmail(SAM).id]?.status, 'invited');
+    assert.deepEqual(mem.db.user_branches.filter((b) => b.user_id === byEmail(SAM).id).map((b) => b.branch_id), [BR], 'their own branch');
+    const gm = await call('POST', '/api/staff', gmToken(SUP), { name: 'Gus', email: 'gus@pollo.test', role_id: R_GM, web_access: true });
+    assert.equal(gm.status, 403, JSON.stringify(gm.body)); assert.equal(gm.body.code, 'PARTNER_OWNER_ONLY'); assert.equal(byEmail('gus@pollo.test'), undefined);
+    const p = await call('POST', '/api/staff', gmToken(SUP), { name: 'Pia', email: 'pia@pollo.test', partner: true });
+    assert.equal(p.status, 403); assert.equal(p.body.error, 'Only the owner can add a partner.');
+    const over = await call('POST', '/api/staff', t, { name: 'Ola', email: 'ola@pollo.test', role_id: R_GM, pin: '1357', web_access: true });
+    assert.equal(over.status, 403, 'a manager never gives a General Manager');
+  });
+
+  // ── 9b. The indirect partner: someone with web access moved onto General Manager is a partner — the owner's ──────
+  const liveFor = (ids) => (mem.db.business_settings = mem.db.business_settings.filter((r) => r.key !== 'web_partners')).push({ id: 'bs-1',
+    business_id: B, key: 'web_partners', value: Object.fromEntries(ids.map((id) => [id, { auth_user_id: `auth-${id}`, status: 'active', granted_at: '2026-10-29T08:00:00Z', granted_by: OWNER }])) });
+  const roleOf = (id) => mem.db.users.find((x) => x.id === id).role_id;
+  reset(); addPeople();
+  await ok('a General Manager partner never moves someone with web access onto General Manager (PARTNER_OWNER_ONLY); the owner may', async () => {
+    liveFor([CASH]);
+    const r = await call('PATCH', `/api/staff/${CASH}`, gmToken(SUP), { role_id: R_GM });
+    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'PARTNER_OWNER_ONLY'); assert.equal(roleOf(CASH), R_CASH);
+    const own = await call('PATCH', `/api/staff/${CASH}`, ownerToken(), { role_id: R_GM });
+    assert.equal(own.status, 200, JSON.stringify(own.body)); assert.equal(roleOf(CASH), R_GM);
+    assert.equal(G.makesPartnerRefusal({ owner: false, newRoleName: 'general_manager', oldRoleName: 'Cashier', liveWebAccess: true })?.code, 'PARTNER_OWNER_ONLY');
+    assert.equal(G.makesPartnerRefusal({ owner: true, newRoleName: 'General Manager', liveWebAccess: true }), null);
+    assert.equal(G.makesPartnerRefusal({ owner: false, newRoleName: 'General Manager', liveWebAccess: false }), null);
+    assert.equal(G.makesPartnerRefusal({ owner: false, newRoleName: 'Manager', liveWebAccess: true }), null);
+  });
+  reset(); addPeople();
+  await ok('…someone WITHOUT web access moved onto General Manager follows the ordinary ceiling (no partner is made)', async () => {
+    const r = await call('PATCH', `/api/staff/${KIM}`, gmToken(SUP), { role_id: R_GM });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(roleOf(KIM), R_GM);
+    const m = await call('PATCH', `/api/staff/${CASH}`, partnerToken(MGR, 'Manager'), { role_id: R_GM });
+    assert.equal(m.status, 403, JSON.stringify(m.body)); assert.equal(m.body.error, 'You are not allowed to assign this role', 'the ceiling, as before');
+    assert.equal(roleOf(CASH), R_CASH);
+  });
+  reset(); addPeople();
+  await ok('nor by renaming the role they hold to General Manager; a role with no web-access members may be renamed; the owner may', async () => {
+    liveFor([CASH]);
+    const r = await call('PATCH', `/api/staff/roles/${R_CASH}`, gmToken(SUP), { name: 'General Manager' });
+    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'PARTNER_OWNER_ONLY');
+    assert.equal(mem.db.roles.find((x) => x.id === R_CASH).name, 'Cashier');
+    const other = await call('PATCH', `/api/staff/roles/${R_ACC}`, gmToken(SUP), { name: 'General  manager' });
+    assert.equal(other.status, 200, JSON.stringify(other.body), 'its members have no web access');
+    const own = await call('PATCH', `/api/staff/roles/${R_CASH}`, ownerToken(), { name: 'General Manager' });
+    assert.equal(own.status, 200, JSON.stringify(own.body));
+  });
+
+  // ── 10. The dashboard: who sees the controls; the manager portal retired ─────────────────────────────────────────
+  await ok('the dashboard: web access controls for the owner and a partner who edits staff; Partner in the list the owner\'s alone', () => {
+    const page = read('apps/dashboard/src/pages/settings/UsersAccessPage.tsx');
+    assert.match(page, /webAccess=\{isOwner \|\| \(isPartner && can\('staff\.edit'\)\)\} partners=\{isOwner\}/);
+    assert.match(tab, /partnerOption=\{partners && !editing\}/);
+    assert.match(tab, /const mayGiveWeb = \(p: StaffMember\): boolean => partners\s*\|\| \(!p\.is_self && !isGeneralManagerRole\(p\.roles\?\.name\) && roles\.some\(r => r\.id === p\.roles\?\.id\)\);/);
+    assert.match(tab, /\{webAccess && s\.status === 'active' && s\.email && !role\?\.is_owner_role && mayGiveWeb\(s\) && /);
+    assert.match(tab, /web=\{webAccess && editing && mayGiveWeb\(editing\) \?/);
+    assert.match(tab, /const invites = invitesProp && \(ownerView \|\| signIn !== 'web'\);/, 'never a General Manager\'s invitation but the owner\'s');
+  });
+  await ok('the manager portal is retired: /manager redirects to the dashboard (its sign-in when signed out); its pages are gone', () => {
+    const app = read('apps/dashboard/src/App.tsx');
+    assert.match(app, /<Route path="\/manager\/\*" element=\{<Navigate to="\/dashboard" replace \/>\} \/>/);
+    assert.doesNotMatch(app, /ManagerDashboard/);
+    assert.ok(!fs.existsSync(path.join(ROOT, 'apps/dashboard/src/pages/manager')), 'pages/manager deleted');
+    assert.ok(!fs.existsSync(path.join(ROOT, 'apps/dashboard/src/components/SupplierBills.tsx')), 'its Supplier bills (Stock › Suppliers has them)');
+    const login = read('apps/dashboard/src/pages/pos/POSLoginScreen.tsx');
+    assert.match(login, /navigate\(dest === '\/manager' \? '\/dashboard' : dest, \{ replace: true \}\)/, 'an old manager PIN session to the dashboard');
+  });
+  await ok('what only the portal had moved: the parking bays on a parking business\'s Overview, the shift report on Open drawers', () => {
+    const ov = read('apps/dashboard/src/pages/OverviewPage.tsx');
+    assert.match(ov, /\{businessTerms\(business\?\.type\)\.type === 'parking' && \(\s*<ParkingLivePanel /, 'parking only — every other type never renders it');
+    const panel = read('apps/dashboard/src/components/ParkingLivePanel.tsx');
+    assert.match(panel, /\/api\/parking-sessions\?branch_id=\$\{branchId\}&status=open/);
+    assert.match(panel, /\/api\/tables\?branch_id=\$\{branchId\}&slot_type=parking_bay/);
+    assert.match(panel, /if \(!branchId\) \{/, '"All branches": pick one');
+    assert.match(panel, /setInterval\(whenVisible\(/);
+    const ts = createRequire(path.join(ROOT, 'apps/dashboard/package.json'))('typescript');
+    const fn = panel.slice(panel.indexOf('export function bayOccupancy'), panel.indexOf('export default function'));
+    const js = ts.transpileModule(`${fn.replace('export ', '')}\nmodule.exports = { bayOccupancy };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+    const m = { exports: {} }; new Function('module', 'exports', js)(m, m.exports);
+    assert.deepEqual(m.exports.bayOccupancy(20, 5), { free: 15, pct: 25 });
+    assert.deepEqual(m.exports.bayOccupancy(0, 0), { free: 0, pct: 0 });
+    assert.deepEqual(m.exports.bayOccupancy(3, 4), { free: 0, pct: 133 });
+    const os = read('apps/dashboard/src/pages/OpenShiftsPage.tsx');
+    assert.match(os, /printShiftReport\(s\.id\)/); assert.match(os, /'Shift report'/);
+    assert.doesNotMatch(panel + ov, /\btill\b/i);
   });
 } finally {
   server.close();

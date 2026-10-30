@@ -170,13 +170,9 @@ export default function CashierScreen() {
   const canSetPrinters = hasPermission('stations.manage');
   const { business } = useBusiness();
 
-  // A manager reached the cashier screen via "Open POS" from their portal, so give
-  // them a way back (parity with the desktop app). Cashiers have no portal, so this
-  // is hidden for them. resolveRoute is the same signal that sends them to /manager
-  // (A490: by permission — isBackOffice of their keys — never by the role's name).
-  // A608: opened from the web dashboard ("Open POS") — back to the dashboard, never the manager portal or the PIN pad.
+  // A608: opened from the web dashboard ("Open POS") — "← Dashboard" back, and signing out goes there, never the PIN pad.
+  // The web manager portal is retired (owner, 2026-10-29, "yes to all"): its way back to the portal is gone.
   const fromDashboard = session?.fromDashboard === true;
-  const hasManagerPortal = !fromDashboard && !!session && resolveRoute(session.permissions, session.role) === '/manager';
   const exitTo = fromDashboard ? '/dashboard' : '/pos';
 
   // Guard — only the OWNER is redirected off the cashier screen (they use the full
@@ -1361,15 +1357,6 @@ export default function CashierScreen() {
               style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginLeft: 8 }}
             >
               ← Dashboard
-            </button>
-          )}
-          {hasManagerPortal && (
-            <button
-              onClick={() => navigate('/manager')}
-              title="Back to the manager portal"
-              style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginLeft: 8 }}
-            >
-              ← Manager portal
             </button>
           )}
         </div>

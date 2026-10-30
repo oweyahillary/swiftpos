@@ -559,7 +559,7 @@ console.warn = warn; console.error = logErr;
 // ── W. no cashier surface; the pages ─────────────────────────────────────────
 log('\nW. no cashier surface; the pages\n');
 const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (e.name === 'node_modules' ? [] : walk(path.join(dir, e.name))) : [path.join(dir, e.name)]);
-await ok('the till (apps/desktop) and the web POS (pages/pos) never call /api/loss-alerts nor show a loss alert; the manager portal shows it behind reports.voids', () => {
+await ok('the till (apps/desktop) and the web POS (pages/pos) never call /api/loss-alerts nor show a loss alert; the dashboard shows it behind reports.voids', () => {
   const files = [...walk(path.join(ROOT, 'apps/desktop/src')), ...walk(path.join(ROOT, 'apps/dashboard/src/pages/pos'))]
     .filter((f) => /\.(ts|tsx)$/.test(f));
   const hits = files.filter((f) => /loss-alerts|loss_alert|WatchList/i.test(fs.readFileSync(f, 'utf8')));
@@ -567,10 +567,8 @@ await ok('the till (apps/desktop) and the web POS (pages/pos) never call /api/lo
   // The dashboard's nav shows the Watch list only with reports.voids; the route is the web's only (requireWebSurface).
   const layout = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/components/DashboardLayout.tsx'), 'utf8');
   assert.match(layout, /'\/dashboard\/watch-list':\s*\['reports\.voids'\]/);
-  // The manager portal (/manager, a manager's own sign-in) shows it as a page gated by the same key — not the till's screen.
-  const portal = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), 'utf8');
-  assert.match(portal, /key: 'watch',[^\n]*permission: 'reports\.voids'/);
-  assert.ok(portal.includes('<WatchListPanel client={posApi} isOwner={false} portal />'));
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's Watch list tab
+  // (ManagerDashboard.tsx) is gone; the dashboard's nav gate (above) is the web's only Watch list now.
   const route = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/lossAlerts.ts'), 'utf8');
   assert.match(route, /router\.use\(requireWebSurface\)/);
 });

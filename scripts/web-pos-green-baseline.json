@@ -6,6 +6,7 @@
   "layouts"
  ],
  "files": {
+  "components/ParkingLivePanel.tsx": 4,
   "components/Toast.tsx": 6,
   "pages/pos/CashierScreen.tsx": 25,
   "pages/pos/DiscountPanel.tsx": 5,
