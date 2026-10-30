@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KITCHEN_VOID_REASONS, KITCHEN_VOID_NOTE_MAX } from '../../lib/kitchenLines';
+import { KITCHEN_VOID_REASONS, KITCHEN_VOID_NOTE_MAX } from '@zaptill/core/kitchenLines';
 
 /**
  * KitchenVoidModal (web POS) — 0.6.28: taking back items already sent to the kitchen (an open order on the cloud).

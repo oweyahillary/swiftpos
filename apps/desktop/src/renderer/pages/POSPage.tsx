@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo, memo, lazy, Suspense, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { applyOffers, type Offer } from '../../shared/offers';   // A445
+import { applyOffers, type Offer } from '@zaptill/core/offers';   // A445
 import { posApi } from '../lib/posApi';
 import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
 import type { CartItem } from '../lib/cart';
@@ -31,16 +31,16 @@ import { filterSummary, emptyGridMessage } from '../lib/posFilter';
 import { syncNotice, type SyncStatusLike } from '../lib/syncNotice';
 import ShiftPanel from './ShiftPanel';
 import NoteModal from '../components/NoteModal';
-import { noteLines } from '../../shared/orderNotes';
+import { noteLines } from '@zaptill/core/orderNotes';
 import { historyView, historyChoices, orderMethod, historyTotal, historyByCashier, orderCashierName, type HistorySort } from '@zaptill/core/historyView';
-import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, customerDeliveryFee, autoFreeDelivery } from '../../shared/delivery';
-import { noPosFeatures, type PosFeatures } from '../../shared/posFeatures';
+import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, customerDeliveryFee, autoFreeDelivery } from '@zaptill/core/delivery';
+import { noPosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';
 import { NO_FREEZE, isFrozen, frozenMessage, type StockCountFreeze } from '@zaptill/core/stockCountFreeze';   // A394
 import { NO_STOCK_VIEW, showsSoldOut, hiddenOutOfStock, stockRefusals, type OutOfStockMode, type StockView } from '@zaptill/core/stockGate';   // A563
 import type { ZReport } from '../lib/posApi';
 import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
 import KitchenVoidModal from '../components/KitchenVoidModal';
-import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '../../shared/kitchenLines';
+import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '@zaptill/core/kitchenLines';
 import { onGrid } from '@zaptill/core/productDays';
 import { exactFirst } from '@zaptill/core/paginate';   // A472
 import { useGridWindow } from '../hooks/useGridWindow';   // A472
@@ -56,7 +56,7 @@ import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView 
 import { useMenuHours } from '../lib/useMenuHours';   // A578
 // A577: items sold by weight — the keypad loads on its first use (the main chunk's budget, lazy-load-a517).
 const WeightModal = lazy(() => import('../components/WeightModal'));
-import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, weightUnitOf, formatWeight, type ScaleSettings, type WeighedLine } from '../../shared/scaleBarcode';   // A577
+import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, weightUnitOf, formatWeight, type ScaleSettings, type WeighedLine } from '@zaptill/core/scaleBarcode';   // A577
 
 interface Props {
   business: { id: string; name: string; currency: string };

@@ -5,13 +5,13 @@
  * Businesses are set up the way they are in production before 134 — roles holding the broad keys (reports.view,
  * orders.void, products.manage, settings.manage, …), people with overrides of broad keys, the two cashier switches on in
  * one business — then 134 runs. Every role's keys afterwards are compared with the SHARED catalogue's own expansion
- * (shared/permissions.ts, loaded as it is: Node 24 runs the TypeScript), so the migration and the cloud's runtime
+ * (packages/core/src/permissions.ts, loaded as it is: Node 24 runs the TypeScript), so the migration and the cloud's runtime
  * expansion can never disagree about what a broad key stood for.
  *
  * MUTATIONS TO CONFIRM BITE: a mapping row removed from 134 → "every role keeps exactly what it had" fails; the
  * switch condition dropped → "a business that limited its cashiers keeps them limited" fails; the legacy DELETE removed →
  * "no broad key is stored any more" fails; the policy loop removed → "owners' sessions only read" fails; a key edited in
- * shared/permissions.ts without regenerating 134 → "134 registers exactly the catalogue" fails.
+ * packages/core/src/permissions.ts without regenerating 134 → "134 registers exactly the catalogue" fails.
  */
 import fs from 'node:fs'; import path from 'node:path'; import { createRequire } from 'node:module';
 import assert from 'node:assert'; import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -19,7 +19,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 let PGlite;
 try { ({ PGlite } = require('@electric-sql/pglite')); } catch { console.error('\n@electric-sql/pglite not installed — cannot run.\n'); process.exit(1); }
-const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const MIG = path.join(ROOT, 'migrations');
 const num = (f) => +f.split('_')[0];
 const files = fs.readdirSync(MIG).filter(f => f.endsWith('.sql') && Number.isFinite(num(f))).sort((a, b) => num(a) - num(b) || a.localeCompare(b));
@@ -127,7 +127,7 @@ const expected = (r, switchesOn) => {
   return out;
 };
 
-await ok('134 registers exactly the catalogue: every fine key with the catalogue\'s words (generated from shared/permissions.ts)', async () => {
+await ok('134 registers exactly the catalogue: every fine key with the catalogue\'s words (generated from packages/core/src/permissions.ts)', async () => {
   const rows = await q(`SELECT key, label, module, description FROM public.permissions WHERE module <> 'legacy'`);
   const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
   // A511: a later migration (beyond what this test replays) may reword a key — 140 sets customers.credit's description

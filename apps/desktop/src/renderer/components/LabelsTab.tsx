@@ -23,8 +23,8 @@ import { posApi, type LabelSetup, type LabelPrinter, type LabelPath } from '../l
 import {
   encodeBarcode, isGeneratedCode, lacksBarcode, cleanBarcodeNumbering, numberingPreview, CODE128N_MIN_LENGTH, CODE128N_MAX_LENGTH,
   type BarcodeNumbering, type NumberingFormat,
-} from '../../shared/barcode';
-import { cleanLabelSettings, labelSvg, layoutLabel, LABEL_SIZE_PRESETS, type LabelSettings } from '../../shared/labels';
+} from '@zaptill/core/barcode';
+import { cleanLabelSettings, labelSvg, layoutLabel, LABEL_SIZE_PRESETS, type LabelSettings } from '@zaptill/core/labels';
 import { businessTerms } from '@zaptill/core/businessTerms';   // A574: every business type in its own words
 import { labelsIntro } from '../lib/labelsWords';
 

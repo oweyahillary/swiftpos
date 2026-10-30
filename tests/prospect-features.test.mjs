@@ -35,8 +35,8 @@ const lib = (f) => import(pathToFileURL(path.join(ROOT, 'apps/server/src/lib', f
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n       ${e.message}`); } };
 
-const F = await lib('posFeatures.ts');
-const D = await lib('delivery.ts');
+const F = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/posFeatures.ts')).href);
+const D = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/delivery.ts')).href);
 const X = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/expenseMethod.ts')).href);   // shared-components step 2: in packages/core
 // shared-components step 1: confirmReasons lives in packages/core (imported as @zaptill/core/confirmReasons), not copied.
 const Q = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/confirmReasons.ts')).href);

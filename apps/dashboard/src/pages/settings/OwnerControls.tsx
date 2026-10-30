@@ -16,7 +16,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { usePermissions } from '../../context/PermissionsContext';   // A550
-import { POS_FEATURES } from '../../lib/posFeatures';
+import { POS_FEATURES } from '@zaptill/core/posFeatures';
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';
 import { OUT_OF_STOCK_MODES, type OutOfStockMode } from '@zaptill/core/stockGate';   // A563
 import { dateShort } from '../../lib/format';

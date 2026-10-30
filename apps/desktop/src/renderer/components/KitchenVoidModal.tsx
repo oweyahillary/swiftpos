@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { posApi, type KitchenLinePayload } from '../lib/posApi';
-import { KITCHEN_VOID_REASONS, KITCHEN_VOID_NOTE_MAX } from '../../shared/kitchenLines';
+import { KITCHEN_VOID_REASONS, KITCHEN_VOID_NOTE_MAX } from '@zaptill/core/kitchenLines';
 
 interface Props {
   orderNumber: string;

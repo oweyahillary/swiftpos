@@ -50,7 +50,7 @@ Module._resolveFilename = function (req, parent, ...rest) { return req === 'elec
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 
-const FC = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'forecourt.ts')).href);
+const FC = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'forecourt.ts')).href);
 const MODE = await import(pathToFileURL(path.join(desktop, 'src', 'renderer', 'lib', 'posMode.ts')).href);
 
 // The REAL PumpsView, bundled for Node and rendered to HTML (no browser): window.swiftpos is a stand-in bridge.
@@ -292,7 +292,7 @@ try {
       const inMain = (rel) => mods(main).some((m) => m.endsWith(`/src/${rel}`));
       const kb = (main.code.length / 1024).toFixed(1);
       console.log(`  (built: main chunk ${kb} kB; PumpsView ${((chunks.find((c) => c.name === 'PumpsView')?.code.length ?? 0) / 1024).toFixed(1)} kB)`);
-      ok('PumpsView is its own chunk — not in the main one (nor the forecourt rules)', !inMain('renderer/components/PumpsView.tsx') && !inMain('shared/forecourt.ts')
+      ok('PumpsView is its own chunk — not in the main one (nor the forecourt rules)', !inMain('renderer/components/PumpsView.tsx') && !mods(main).some((m) => m.endsWith('/packages/core/src/forecourt.ts'))
         && chunks.some((c) => c.isDynamicEntry && mods(c).some((m) => m.endsWith('/src/renderer/components/PumpsView.tsx'))));
       ok('the branch lookup (BranchStockTab) is not in the main chunk', !inMain('renderer/components/BranchStockTab.tsx'));
       ok('the POS still in the main chunk (POSPage, the payment, the cart)', ['renderer/pages/POSPage.tsx', 'renderer/components/PaymentModal.tsx', 'renderer/lib/cart.ts'].every(inMain));

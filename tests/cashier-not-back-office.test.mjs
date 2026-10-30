@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n       ${e.message}`); } };
 const keysOf = (map) => [...P.expandMap(map)].filter((k) => !P.OPEN_BEFORE_A490.includes(k));

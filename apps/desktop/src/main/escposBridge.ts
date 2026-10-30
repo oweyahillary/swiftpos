@@ -27,9 +27,9 @@
  * reinstall, which is the entire point: the first hardware test must not be
  * able to take the counter down.
  */
-import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
+import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
 import { getLocalDb } from './localDb';
-import { isSoldByWeight, weightUnitOf } from './scaleBarcode';   // A577
+import { isSoldByWeight, weightUnitOf } from '@zaptill/core/scaleBarcode';   // A577
 import { getDeviceConfig, saveDeviceConfig } from './deviceConfig';
 import { queueTickets } from './print/printWorker';
 import type { PrintContext, StationConfig, OrderLine, OrderUnit,

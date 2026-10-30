@@ -13,7 +13,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { describeNumbering, type BarcodeNumbering } from '../../lib/barcode';
+import { describeNumbering, type BarcodeNumbering } from '@zaptill/core/barcode';
 
 type Preview = { count: number; already: number; sample: string[]; remaining?: number; numbering?: BarcodeNumbering; error?: string };
 

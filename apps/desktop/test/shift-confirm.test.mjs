@@ -4,7 +4,7 @@
 // to both … on all payment method not just mpesa"; a manager's own shift: "allowed, flagged".
 //
 // Drives the REAL compiled dist/main (shiftService, dayService, syncEngine) on a REAL SQLite file, electron shimmed,
-// against a stand-in cloud; then the real shared helper src/shared/shiftConfirm.ts (type-stripped) and pins the
+// against a stand-in cloud; then the real shared helper packages/core/src/shiftConfirm.ts (bundled) and pins the
 // screens that use it (React is not run).
 //
 //   cd apps/desktop && npx tsc -b tsconfig.main.json && node test/shift-confirm.test.mjs
@@ -187,7 +187,7 @@ ok('a later pass sends nothing again', cloud.confirms.length === before);
 // A490: shiftConfirm.ts imports ./permissions (maySignedInConfirm is permission-based) — an extensionless import that
 // type-stripping cannot resolve, so it is bundled with esbuild (as theme-vars.test.mjs) and the bundle imported.
 const shiftConfirmOut = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-shiftconfirm-')), 'shiftConfirm.mjs');
-createRequire(import.meta.url)('esbuild').buildSync({ entryPoints: [path.join(here, '..', 'src/shared/shiftConfirm.ts')], bundle: true,
+createRequire(import.meta.url)('esbuild').buildSync({ entryPoints: [path.join(here, '..', '..', '..', 'packages/core/src/shiftConfirm.ts')], bundle: true,
   format: 'esm', outfile: shiftConfirmOut, logLevel: 'silent' });
 const H = await import(pathToFileURL(shiftConfirmOut).href);
 ok('0.6.23 — methods to declare: only those the shift recorded money on, never cash (a method at 0 does not appear)',

@@ -77,7 +77,7 @@ const TYPES = ['restaurant', 'cafe', 'retail', 'minimart', 'parking', 'petrol_st
 
 try {
   const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/businessTerms.ts')).href);
-  const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+  const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   const { MemoryRouter, Routes, Route } = require('react-router-dom');

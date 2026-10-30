@@ -6,11 +6,11 @@
 // Owner, 2026-10-22: "we do not have barcode generation mechanism, what does it entail can we add it?" — then: "for now
 // i cant tell what my clients will use as their printer or the label size can we do all?"
 //
-//   E  encoders (shared/barcode.ts): GS1 check digits, EAN-13 / UPC-A decoded back with the published L/G/R tables and
+//   E  encoders (packages/core/src/barcode.ts): GS1 check digits, EAN-13 / UPC-A decoded back with the published L/G/R tables and
 //      first-digit parity, the Code 128 table (every symbol 11 modules, an even bar sum, all distinct), known values and
 //      checksums, subset B/C switching, module strings decoded back to symbol values.
 //   G  in-store codes: prefix 20, the check digit, the next free number, 21–29 and manufacturer codes left alone.
-//   L  layout (shared/labels.ts): every preset size and a custom one — the text and the bars inside the label, rows not
+//   L  layout (packages/core/src/labels.ts): every preset size and a custom one — the text and the bars inside the label, rows not
 //      overlapping, whole-dot modules, the quiet zones on the label; the sheet grid; "start at label N".
 //   P  the printer languages: TSPL and ZPL golden strings, the ESC/POS bytes (GS k EAN-13, CODE128 subsets, raster).
 //   H  the web's print page: one SVG per label and @page the label's size; sheets on A4 with the cells where they belong.
@@ -26,7 +26,7 @@
 //   B  no barcode toggle: cleanLabelSettings forces showBarcode true; neither settings screen offers the switch.
 //   N  a row without a barcode is never rendered bar-less, on all four paths — the browser page (HTML/SVG, roll), the
 //      sheet, TSPL / ZPL, ESC/POS; a code that cannot be encoded as EAN / UPC still prints as Code 128; EAN-8 drawn.
-//   M  barcode numbering (shared/barcode.ts): each format, length, prefix, start, check digit, the range used up.
+//   M  barcode numbering (packages/core/src/barcode.ts): each format, length, prefix, start, check digit, the range used up.
 //   W  the web page generates the missing codes before printing (source), and prints the rest without menu.edit.
 //   C+ the cloud: GET/PUT /api/products/barcodes/settings (cleaned, PUT menu.edit only); generate follows the numbering
 //      (format, prefix, start, after the highest used); a range used up refuses before anything is written.
@@ -64,10 +64,10 @@ const DIST = path.join(ROOT, 'apps/server/dist');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.stack?.split('\n').slice(0, 3).join('\n      ') ?? e.message}`); } };
-if (!fs.existsSync(path.join(DIST, 'lib/barcode.js'))) { console.log('\nBuild the server first:\n  cd apps/server && npm run build\n'); process.exit(1); }
+if (!fs.existsSync(path.join(DIST, 'routes/products.js'))) { console.log('\nBuild the server first:\n  cd apps/server && npm run build\n'); process.exit(1); }
 
-const BC = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/barcode.ts')).href);
-const LB = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/labels.ts')).href);
+const BC = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/barcode.ts')).href);
+const LB = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/labels.ts')).href);
 const PG = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/paginate.ts')).href);
 
 // ── independent references (published tables, not the module's own) ──

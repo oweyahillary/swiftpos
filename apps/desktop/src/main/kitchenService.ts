@@ -17,7 +17,7 @@ import { v4 as uuid } from 'uuid';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
 import { getDeviceConfig, getPosFeatures } from './deviceConfig';
-import { cleanVoidReason, cleanVoidNote, summariseKitchenVoids, type KitchenVoidSummary } from './kitchenLines';
+import { cleanVoidReason, cleanVoidNote, summariseKitchenVoids, type KitchenVoidSummary } from '@zaptill/core/kitchenLines';
 
 const qty = (n: unknown) => Math.max(0, Math.round((Number(n) || 0) * 1000) / 1000);
 const money = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;

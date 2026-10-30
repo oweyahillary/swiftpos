@@ -93,7 +93,7 @@ export { renderToStaticMarkup } from 'react-dom/server';`);
   console.log('\nF. The fuel entry');
   {
     const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-    const FC = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/forecourt.ts')).href);
+    const FC = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/forecourt.ts')).href);
     ok('500 / 1,000 / 2,000 (the till\'s) and Full tank → litres', JSON.stringify(FC.QUICK_AMOUNTS) === '[500,1000,2000]' && cs.includes('{QUICK_AMOUNTS.map(q => (')
       && cs.includes("onClick={() => { setFuelEdited('litres'); setFuelLitresStr(''); }}>") && cs.includes('Full tank'));
     ok('litres shown to 3 decimals', cs.includes("{litres ? litres.toFixed(3) : '0.000'} {unit}") && cs.includes("(litres ? litres.toFixed(3) : '')"));

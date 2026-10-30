@@ -21,8 +21,8 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, requireAnyPermission, can, branchFilter, byBranch } from '../middleware/rbac';
-import { lacksBarcode, cleanBarcodeNumbering, nextNumberedCodes, rangeFullMessage, BARCODE_SETTINGS_KEY, type BarcodeNumbering } from '../lib/barcode';   // A571, A574
-import { cleanLabelSettings, LABEL_SETTINGS_KEY } from '../lib/labels';           // A571
+import { lacksBarcode, cleanBarcodeNumbering, nextNumberedCodes, rangeFullMessage, BARCODE_SETTINGS_KEY, type BarcodeNumbering } from '@zaptill/core/barcode';   // A571, A574
+import { cleanLabelSettings, LABEL_SETTINGS_KEY } from '@zaptill/core/labels';           // A571
 import { stripCostsUnlessAllowed } from '../lib/costAccess';
 import { idsOfBusiness } from '../lib/branchGuard';   // A494   // A490
 import { supabase }  from '../lib/supabase';

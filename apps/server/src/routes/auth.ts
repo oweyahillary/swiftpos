@@ -59,7 +59,7 @@ import crypto        from 'crypto';
 import { worksAtBranch } from '../lib/branchAccess';   // A426
 import { effectiveKeysForRow, tokenKeys, clientPermissionMap } from '../lib/effectivePermissions';   // A490
 import { isOwnerRoleName } from '../lib/ownerRole';   // A490
-import { isBackOffice } from '../lib/permissions';   // A490
+import { isBackOffice } from '@zaptill/core/permissions';   // A490
 import { permissionsOpenBefore } from '../lib/permissionsState';   // A490
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY, accountLocked, noteAccountFailure, noteAccountSuccess, ACCOUNT_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494

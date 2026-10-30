@@ -58,7 +58,7 @@ import type { Product, Category, Menu } from '../../types';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar } from './cashier/CategoryPanel';   // A537; A566
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
 import { exactFirst } from '@zaptill/core/paginate';   // A472
-import { parseScaleBarcode, findScaleProduct, scaleLine, weighedLine, isSoldByWeight, weightUnitOf, formatWeight, scaleSettingsOrDefault, type ScaleSettings, type WeighedLine } from '../../lib/scaleBarcode';   // A577
+import { parseScaleBarcode, findScaleProduct, scaleLine, weighedLine, isSoldByWeight, weightUnitOf, formatWeight, scaleSettingsOrDefault, type ScaleSettings, type WeighedLine } from '@zaptill/core/scaleBarcode';   // A577
 import { businessTerms } from '@zaptill/core/businessTerms';   // A573
 
 /** A573: this screen is the minimart's (CashierScreen opens it for a minimart only) — Departments, not Menus. */

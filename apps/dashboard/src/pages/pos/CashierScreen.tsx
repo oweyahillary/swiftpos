@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { applyOffers, type AppliedOffer } from '../../lib/offers';   // A445
+import { applyOffers, type AppliedOffer } from '@zaptill/core/offers';   // A445
 import { POSLoadingSkeleton } from './cashier/POSSkeletons';
 import { usePOSData }         from './cashier/usePOSData';
 import { useCart }            from './cashier/useCart';
@@ -27,15 +27,15 @@ import { type BranchPrinter } from '../../lib/printKOT';
 import { printRoutedStations } from '../../lib/printRouted';
 import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
-import { noteLines } from '../../lib/orderNotes';
+import { noteLines } from '@zaptill/core/orderNotes';
 import MinimartPOS from './MinimartPOS';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton } from './cashier/CategoryPanel';   // A537; A566; A580
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
-import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/delivery';
+import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '@zaptill/core/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
-import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
-import { maySignedInConfirm } from '../../lib/shiftConfirm';
-import { mayRecordMoneyMovement } from '../../lib/posFeatures';   // A453
+import { maySendBeforePay, voidReasonLabel } from '@zaptill/core/kitchenLines';
+import { maySignedInConfirm } from '@zaptill/core/shiftConfirm';
+import { mayRecordMoneyMovement } from '@zaptill/core/posFeatures';   // A453
 import { onGrid } from '@zaptill/core/productDays';
 import { exactFirst } from '@zaptill/core/paginate';   // A472
 import { useGridWindow } from '../../hooks/useGridWindow';   // A472
@@ -50,8 +50,8 @@ import { getWebDayCutoff } from '../../lib/webDayCutoff';   // A578: hours past 
 import Toast from '../../components/Toast';
 import WeightModal from './WeightModal';   // A577: items sold by weight
 import { FuelStrip, PumpGrade, type PumpTank } from './cashier/Forecourt';   // A588: the grades as nozzles, a pump's grade and tank
-import { QUICK_AMOUNTS } from '../../lib/forecourt';   // A588: 500 / 1,000 / 2,000 (and Full tank)
-import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, formatWeight } from '../../lib/scaleBarcode';   // A577
+import { QUICK_AMOUNTS } from '@zaptill/core/forecourt';   // A588: 500 / 1,000 / 2,000 (and Full tank)
+import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, formatWeight } from '@zaptill/core/scaleBarcode';   // A577
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

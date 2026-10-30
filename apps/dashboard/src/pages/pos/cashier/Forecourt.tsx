@@ -8,7 +8,7 @@
  *   - PumpGrade: on a pump's card, its grade's colour and name and, when the cloud holds its tank, the tank's level as a
  *     small gauge ("x L left"; red under 20 % or at the reorder level). No tank linked → no gauge (nothing made up).
  */
-import { gradeColour, gradeGauge, LOW_PCT, type ForecourtData } from '../../../lib/forecourt';
+import { gradeColour, gradeGauge, LOW_PCT, type ForecourtData } from '@zaptill/core/forecourt';
 
 interface FuelProduct { id: string; name: string; base_price: number | string; category_color?: string | null; fuel_unit?: string | null }
 export interface PumpTank { id: string; name?: string; current_level: number | string; capacity_litres: number | string; reorder_level?: number | string | null }

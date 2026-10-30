@@ -6,7 +6,7 @@ import { getOpenShift } from '../syncEngine';
 import { signedIn as sessionPerson } from '../tillAccess';
 import { getPosFeatures } from '../deviceConfig';
 import { recordKitchenSend, recordKitchenVoid, openKitchenOrders } from '../kitchenService';
-import { voidReasonLabel } from '../kitchenLines';
+import { voidReasonLabel } from '@zaptill/core/kitchenLines';
 import { sellRefusal, isOpenBill } from '../sellGate';
 import { openBills, type IpcShared } from './shared';
 

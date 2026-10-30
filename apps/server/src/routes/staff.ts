@@ -10,10 +10,10 @@ import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
 import { callerHeld, canAssignRole, roleEditRefusal, overridesBeyondCaller } from '../lib/roleCeiling';
 import { isOwnerRoleName } from '../lib/ownerRole';
-import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey } from '../lib/permissions';
+import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey } from '@zaptill/core/permissions';
 import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf } from '../lib/roleKeys';
 import { useEmailCodes } from '../lib/loginOtp';   // A391
-import { keysBeyond } from '../lib/permissions';   // A494
+import { keysBeyond } from '@zaptill/core/permissions';   // A494
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { revokePersonSessions } from '../lib/tillSessions';   // A494
 import { worksAtBranch } from '../lib/branchAccess';   // A494
@@ -23,7 +23,7 @@ import { forgetUser } from '../lib/authCache';   // A550
 import { sendEmailChecked } from '../lib/mailer';   // A550
 import { signInAddress } from '../lib/tenant';   // A550
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A562
-import { approvalPinOn } from '../lib/posFeatures';   // A562
+import { approvalPinOn } from '@zaptill/core/posFeatures';   // A562
 
 const router = safeRouter();
 router.use(requireAuth);

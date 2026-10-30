@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { cleanOffer, offerRunsAt, offerWhatLabel, offerWhenLabel, type Offer, type OfferKind, type MealPart } from '../../shared/offers';
+import { cleanOffer, offerRunsAt, offerWhatLabel, offerWhenLabel, type Offer, type OfferKind, type MealPart } from '@zaptill/core/offers';
 
 type Row = Offer & { editable?: boolean; created_by_name?: string | null };
 interface Named { id: string; name: string }

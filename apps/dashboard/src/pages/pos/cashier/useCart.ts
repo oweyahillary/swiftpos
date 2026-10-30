@@ -10,7 +10,7 @@
 
 import { useState, useCallback } from 'react';
 import type { CartItem, Product, VariantGroup, VariantOption } from './types';
-import { weightUnitOf, type WeighedLine } from '../../../lib/scaleBarcode';   // A577
+import { weightUnitOf, type WeighedLine } from '@zaptill/core/scaleBarcode';   // A577
 
 export interface CartActions {
   // Cart contents

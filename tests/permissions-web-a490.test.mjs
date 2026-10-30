@@ -46,7 +46,7 @@ const bundle = async (entry, name) => {
   return import(pathToFileURL(outfile).href);
 };
 const Routing = await bundle('lib/posRouting.ts', 'routing');
-const Perms = await bundle('lib/permissions.ts', 'permissions');
+const Perms = await bundle('../../../packages/core/src/permissions.ts', 'permissions');
 const Refund = await bundle('pages/orderRefund.ts', 'refund');
 const Picker = await bundle('components/PermissionPicker.tsx', 'picker');
 const KEYS = new Set(Perms.PERMISSION_KEYS);
@@ -70,8 +70,8 @@ await ok('routing: a pre-A490 cashier (no marker — the open keys are added) st
 
 // ── No role-name checks anywhere on the web ─────────────────────────────────────────────────────────────────────────
 const ALLOW = [
-  // the one place a role NAME decides (the owner's role is the owner) — a shared file (shared/shiftConfirm.ts)
-  { file: 'lib/shiftConfirm.ts', has: "['owner', 'admin'].includes(" },
+  // (the one place a role NAME decides — the owner's role is the owner — is packages/core/src/shiftConfirm.ts since
+  // shared-components batch D, outside this scan; its lib/shiftConfirm.ts copy is gone, so its entry left this list.)
 ];
 await ok('no role-name checks remain in apps/dashboard/src (display of the role\'s name is fine)', () => {
   const hits = [];
@@ -231,7 +231,7 @@ await ok('Float / Expense: shifts.cash_movements (the old switch still applies o
 await ok('POS Menu: built from the catalogue — four real screens, no private key lists, no "not built yet" pages', () => {
   const d = read('pages/pos/POSDrawer.tsx');
   assert.doesNotMatch(d, /KEY_LABELS|ALL_KNOWN_KEYS|GenericPermissionView|hasn't been built yet/);
-  assert.match(d, /import \{ PERMISSIONS, PERMISSION_GROUPS, hasAnyPermission \} from '\.\.\/\.\.\/lib\/permissions';/);
+  assert.match(d, /import \{ PERMISSIONS, PERMISSION_GROUPS, hasAnyPermission \} from '@zaptill\/core\/permissions';/);
   for (const k of ["'reports'", "'orders.view_all'", "'inventory.view'", "'customers.view'"]) assert.ok(d.includes(`${k}:`), k);
   assert.match(d, /\{ id: 'reports',\s+icon: '[^']+', rail: 'Reports',\s+keys: POS_REPORT_KEYS \}/);
   assert.match(read('pages/pos/POSReportsTab.tsx'), /export const POS_REPORT_KEYS: readonly string\[\] = \['reports\.sales'\];/);

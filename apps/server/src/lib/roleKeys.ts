@@ -7,7 +7,7 @@
  *   personKeys(userId)    a person's effective fine keys (role + overrides; the owner's role '*')
  */
 import { supabase } from './supabase';
-import { expandKeys, isPermissionKey } from './permissions';
+import { expandKeys, isPermissionKey } from '@zaptill/core/permissions';
 import { PERMISSION_CATALOGUE } from './permissionCatalogue';
 import { effectiveKeysForRow } from './effectivePermissions';
 

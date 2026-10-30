@@ -327,7 +327,7 @@ try {
 
   // ── R. roles ───────────────────────────────────────────────────────────────
   log('\nR. Waiter, Kitchen and Kitchen Manager: a restaurant\'s or café\'s only\n');
-  const PM = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+  const PM = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
   const seed = require(path.join(DIST, 'lib/defaultRolePermissions.js'));
   const KITCHEN_ROLES = ['Waiter', 'Kitchen', 'Kitchen Manager'];
   await ok('every business type: a restaurant and a café get them; a shop, a petrol station, a car park and "other" do not — Cashier, Supervisor, Manager for all', () => {

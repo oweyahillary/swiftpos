@@ -6,10 +6,10 @@ import { checkTypeName } from '../lib/expenseTypes';
 import type { ZReport, OpenKitchenOrder } from '../lib/posApi';
 import ZReportView from '../components/ZReportView';
 import ConfirmShiftModal from '../components/ConfirmShiftModal';
-import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
+import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '@zaptill/core/shiftConfirm';
 import { expenseLabel } from '@zaptill/core/expenseMethod';
 import { methodLabel } from '@zaptill/core/paymentCatalogue';   // A442
-import { MONEY_MOVEMENT_MANAGER_ONLY } from '../../shared/posFeatures';   // A453
+import { MONEY_MOVEMENT_MANAGER_ONLY } from '@zaptill/core/posFeatures';   // A453
 import { mayMoveMoney, type SessionLike } from '../lib/access';   // A490: shifts.cash_movements (the main process's rule)
 
 /** 0.6.27: what an expense can be paid with — cash, M-Pesa, card and the business's own methods. */

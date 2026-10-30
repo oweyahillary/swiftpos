@@ -11,9 +11,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const shared = join(here, '../../../shared');
-const L = await import(pathToFileURL(join(shared, 'labels.ts')).href);
-const B = await import(pathToFileURL(join(shared, 'barcode.ts')).href);
+const core = join(here, '../../../packages/core/src');   // shared-components batch C: the label code lives in packages/core
+const L = await import(pathToFileURL(join(core, 'labels.ts')).href);
+const B = await import(pathToFileURL(join(core, 'barcode.ts')).href);
 
 // The demo shop's items. The codes are ZapTill's own in-store numbers (prefix 20, the next free numbers, A571), as
 // "Generate barcodes" gives them to products that have none.

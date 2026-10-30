@@ -2,8 +2,8 @@ import { forwardRef } from 'react';
 import { methodLabel } from '@zaptill/core/paymentCatalogue';   // A429: every method by its name
 import type { ZReport } from '../lib/posApi';
 import { zBackupNote } from '../lib/syncNotice';
-import { confirmationPrintLines } from '../../shared/shiftConfirm';
-import { kitchenVoidText } from '../../shared/kitchenLines';
+import { confirmationPrintLines } from '@zaptill/core/shiftConfirm';
+import { kitchenVoidText } from '@zaptill/core/kitchenLines';
 
 interface Props {
   report: ZReport;

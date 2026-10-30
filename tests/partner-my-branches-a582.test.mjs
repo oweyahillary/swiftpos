@@ -67,7 +67,7 @@ const rbac = require(path.join(DIST, 'middleware/rbac.js'));
 const { requireAuth } = require(path.join(DIST, 'middleware/auth.js'));
 const WP = require(path.join(DIST, 'lib/webPartners.js'));
 const ANALYTICS = require(path.join(DIST, 'routes/analytics.js'));
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const quiet = { warn: console.warn, error: console.error };
 console.warn = () => {}; console.error = () => {};
 

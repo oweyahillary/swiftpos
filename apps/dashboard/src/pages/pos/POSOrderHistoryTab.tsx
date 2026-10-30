@@ -11,7 +11,7 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';
 import { canRefundOrder, canVoidOrder, isRefunded, REFUND_REASONS } from '../orderRefund';
 import { historyView, orderMethod, type HistorySort } from '@zaptill/core/historyView';
-import { orderTypeLabel, customerDeliveryFee } from '../../lib/delivery';
+import { orderTypeLabel, customerDeliveryFee } from '@zaptill/core/delivery';
 import { businessDateLocal } from '@zaptill/core/businessDay';   // 0.6.34
 import { getWebDayCutoff } from '../../lib/webDayCutoff';   // 0.6.33: + free delivery
 import OrderItems from '../../components/OrderItems';   // A444

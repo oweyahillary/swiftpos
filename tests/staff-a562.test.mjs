@@ -54,7 +54,7 @@ const pinAttempts = require(path.join(DIST, 'lib/pinAttempts.js'));
 const ceiling = require(path.join(DIST, 'lib/roleCeiling.js'));
 const { applyChange } = require(path.join(DIST, 'lib/changeApply.js'));
 const { moveOwnerRowEmail } = require(path.join(DIST, 'routes/admin.js'));
-const F = require(path.join(DIST, 'lib/posFeatures.js'));
+const F = require('@zaptill/core/posFeatures');
 const bcrypt = require('bcrypt');
 
 const B = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222';

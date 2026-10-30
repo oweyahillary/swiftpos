@@ -20,9 +20,9 @@ try { ({ PGlite } = require('@electric-sql/pglite')); }
 catch { console.error('\n@electric-sql/pglite not installed — cannot run.\n'); process.exit(1); }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// A490: the catalogue is shared/permissions.ts (permissionCatalogue.ts builds its rows from it): the fine keys plus the
+// A490: the catalogue is packages/core/src/permissions.ts (permissionCatalogue.ts builds its rows from it): the fine keys plus the
 // broad keys it replaced, which stay registered. Loaded as it is — Node 24 runs the TypeScript.
-const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const CAT_KEYS = [...CAT.PERMISSION_KEYS, ...Object.keys(CAT.LEGACY)];
 
 let pass = 0, fail = 0;

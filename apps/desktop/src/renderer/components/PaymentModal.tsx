@@ -3,9 +3,9 @@ import { methodColour, methodSolid, methodTint } from '@zaptill/core/paymentColo
 import { useEffect, useMemo, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
-import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
+import { cleanDeliveryFee, amountDue as amountDueWithFee } from '@zaptill/core/delivery';
 import { enabledFromSetting, paymentButtons } from '@zaptill/core/paymentCatalogue';   // A429
-import type { AppliedOffer } from '../../shared/offers';   // A445
+import type { AppliedOffer } from '@zaptill/core/offers';   // A445
 import { posApi, type CreditCustomerView } from '../lib/posApi';   // A552
 
 // Payment modal — split tender + discount + tip.

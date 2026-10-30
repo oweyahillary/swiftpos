@@ -91,8 +91,8 @@ console.log('The setting syncs (two POS switches, one choice)');
   ok('hide wins when both are on', G.tillStockView().mode === 'hide');
   ok('the cloud\'s choice → the switches it writes, and back', S.outOfStockMode(S.outOfStockFlags('hide')) === 'hide'
     && S.outOfStockMode(S.outOfStockFlags('sold_out')) === 'sold_out' && S.outOfStockMode(S.outOfStockFlags('sell')) === 'sell');
-  const posF = fs.readFileSync(path.join(srcDir, 'shared', 'posFeatures.ts'), 'utf8');
-  ok('both are POS switches (shared/posFeatures.ts) — pos/init, the change log (topic money) and a branch server carry them',
+  const posF = fs.readFileSync(path.join(srcDir, '..', '..', '..', 'packages', 'core', 'src', 'posFeatures.ts'), 'utf8');
+  ok('both are POS switches (packages/core/src/posFeatures.ts) — pos/init, the change log (topic money) and a branch server carry them',
     posF.includes("key: 'stock_zero_sold_out'") && posF.includes("key: 'stock_zero_hide'"));
 }
 

@@ -21,7 +21,7 @@ import { chunkIn, pageAll } from '../lib/pgQuery';
 import { getDayCutoff } from '../lib/dayCutoff';
 import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { keysForRow } from '../lib/effectiveKeys';
-import { hasPermission } from '../lib/permissions';
+import { hasPermission } from '@zaptill/core/permissions';
 import { isOwnerRoleName } from '../lib/ownerRole';
 import { readPartners } from '../lib/webPartners';
 import { cashDifference } from './ownerAlertsDecision';

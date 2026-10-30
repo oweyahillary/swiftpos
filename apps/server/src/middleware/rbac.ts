@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { isPermissionKey } from '../lib/permissions';
+import { isPermissionKey } from '@zaptill/core/permissions';
 import { tillMay } from '../lib/tillScope';
 
 // A490: every check names a FINE key (shared permissions.ts). A broad key (reports.view, settings.manage, …) here would

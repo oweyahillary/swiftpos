@@ -4,7 +4,7 @@ import { assertPayload } from '../ipcValidate';
 import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import { getOpenShift } from '../syncEngine';
-import { MONEY_MOVEMENT_MANAGER_ONLY } from '../posFeatures';
+import { MONEY_MOVEMENT_MANAGER_ONLY } from '@zaptill/core/posFeatures';
 import { signedIn as sessionPerson, personCan, mayMoveMoney } from '../tillAccess';
 import { getDeviceConfig, getPosFeatures } from '../deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, forceCloseShift, listShifts, awaitingConfirmation, confirmShift, shiftCloseRights, blindClose, blindReport, confirmView } from '../shiftService';

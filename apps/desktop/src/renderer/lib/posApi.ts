@@ -1,8 +1,8 @@
-import type { PosFeatures } from '../../shared/posFeatures';
+import type { PosFeatures } from '@zaptill/core/posFeatures';
 import type { StockCountFreeze } from '@zaptill/core/stockCountFreeze';
 import type { StockView, OutOfStockMode } from '@zaptill/core/stockGate';   // A563
-import type { LabelSettings } from '../../shared/labels';   // A571
-import type { BarcodeNumbering } from '../../shared/barcode';   // A574
+import type { LabelSettings } from '@zaptill/core/labels';   // A571
+import type { BarcodeNumbering } from '@zaptill/core/barcode';   // A574
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
@@ -584,7 +584,7 @@ declare global {
         /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
         paymentMethodsEnabled: () => Promise<{ enabled: string[] | null }>;
         /** A445: the branch's offers as the till holds them, and its branch (an offer may be for chosen branches). */
-        offers: () => Promise<{ offers: import('../../shared/offers').Offer[]; branchId: string | null }>;
+        offers: () => Promise<{ offers: import('@zaptill/core/offers').Offer[]; branchId: string | null }>;
         onCatalogueChanged: (cb: () => void) => () => void;   // A278
       };
       order: {
@@ -852,9 +852,9 @@ declare global {
         /** A365: a manager's blind recount of every payment method, approved with their own PIN. */
         confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')? */
-        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('../../shared/shiftConfirm').CashBreakdown | null }>;   // A527: cash = the manager's four cash lines
+        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('@zaptill/core/shiftConfirm').CashBreakdown | null }>;   // A527: cash = the manager's four cash lines
         /** A433: another till's shift — confirmed on the cloud by the signed-in manager (or a manager's PIN). */
-        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('../../shared/shiftConfirm').CashBreakdown | null }>;
+        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('@zaptill/core/shiftConfirm').CashBreakdown | null }>;
         remoteConfirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
         canConfirm: () => Promise<boolean>;
@@ -937,7 +937,7 @@ declare global {
         getMpesa: () => Promise<{ own: MpesaReceiveLite | null; inherited: MpesaReceiveLite | null; canEdit: boolean }>;
         setMpesa: (v: { kind?: 'buy_goods' | 'paybill'; number?: string; account?: string; clear?: boolean }) => Promise<any>;
         /** A445: Manager › Offers — the cloud's offers (each with `editable`), save (new or changed), delete. */
-        offers: () => Promise<Array<import('../../shared/offers').Offer & { editable?: boolean; created_by_name?: string | null }>>;
+        offers: () => Promise<Array<import('@zaptill/core/offers').Offer & { editable?: boolean; created_by_name?: string | null }>>;
         saveOffer: (offer: unknown) => Promise<any>;
         deleteOffer: (id: string) => Promise<any>;
         getCashierHistoryMethods: () => Promise<{ methods: string[] }>;

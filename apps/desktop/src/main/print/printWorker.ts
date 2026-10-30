@@ -31,7 +31,7 @@ import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@s
 import { printHtmlSilent } from '../printService';   // A454: the Z-report on the Windows receipt printer
 import { getBranding } from '../localDb';
 import { getPosFeatures } from '../deviceConfig';   // A530
-import { receiptClassicFrom, kitchenFontBFrom } from '../posFeatures';   // A530; A543/A551
+import { receiptClassicFrom, kitchenFontBFrom } from '@zaptill/core/posFeatures';   // A530; A543/A551
 import { noteActivity, setPrintPendingProbe } from '../activityTracker';   // A508
 import { signedInCan } from '../tillAccess';   // A490
 import { getActiveSession } from '../techService';   // A490: a technician sets printers up before anyone signs in

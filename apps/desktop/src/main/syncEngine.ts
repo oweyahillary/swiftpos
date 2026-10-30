@@ -10,7 +10,7 @@
 
 import { overlayLocalChanges } from './localChanges';   // A448
 import { nodeChangeVersion } from './nodeClient';   // A448
-import { cleanOffer, type Offer } from './offers';   // A445
+import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
 import type { ChangeEntry } from '@zaptill/core/syncTopics';   // A531
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme, applyPulledBranchBranding } from './localDb';
@@ -18,8 +18,8 @@ import { logLine, describeResponse, getLogPath, authLog } from './logFile';
 import { getMacAddressCached, identityHeaders } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, readDeviceSecret, writeDeviceSecret } from './tokenStore';
 import { deviceGrantBody } from './sessionRecovery';   // A407
-import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
+import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
+import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from '@zaptill/core/delivery';
 import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names

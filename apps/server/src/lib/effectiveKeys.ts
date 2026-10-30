@@ -3,7 +3,7 @@
  * environment), so the approver / drawer-confirm rules that use it stay pure and their tests load them as they are.
  * lib/effectivePermissions.ts wraps these with the live "before migration 134" state.
  */
-import { expandMap } from './permissions';
+import { expandMap } from '@zaptill/core/permissions';
 import { isOwnerRoleName } from './ownerRole';
 
 export interface GrantRow { permissions?: { key?: string | null } | null }

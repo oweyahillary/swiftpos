@@ -1,11 +1,11 @@
 // IPC: a sale (order:create) and its tickets — kitchen exclusions, production tickets, reprints.
 // Registered from ipcHandlers.ts (D10).
-import { cleanOffer, type Offer } from '../offers';   // A445
+import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
 import { kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from '../escposBridge';
 import { expectStringArray } from '../ipcValidate';
 import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
-import { applyOffers } from '../offers';   // A494: the offer discount a sale claims, re-checked on the till's own offers
+import { applyOffers } from '@zaptill/core/offers';   // A494: the offer discount a sale claims, re-checked on the till's own offers
 import { syncPush, createLocalOrder } from '../syncEngine';
 import { tillBranchId } from '../deviceConfig';   // A446
 import { signedIn as sessionPerson, signedInCan, personCan } from '../tillAccess';

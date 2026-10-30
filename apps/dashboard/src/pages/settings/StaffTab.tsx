@@ -5,9 +5,9 @@ import { useBusiness } from '../../context/BusinessContext';   // A573
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '@zaptill/core/paginate';
-import { expandKeys, isBackOffice, OPEN_BEFORE_A490 } from '../../lib/permissions';   // A490
+import { expandKeys, isBackOffice, OPEN_BEFORE_A490 } from '@zaptill/core/permissions';   // A490
 import PermissionPicker, { usePermissionCatalogue, keyDifferences, type CatalogueKey, type CatalogueGroup } from '../../components/PermissionPicker';
-import { approvalPinOn } from '../../lib/posFeatures';   // A562
+import { approvalPinOn } from '@zaptill/core/posFeatures';   // A562
 
 interface Branch { id: string; name: string; }
 /** A490: a role as GET /api/staff/roles answers it — its FINE keys, whether it is the owner's, whether this user may give it. */

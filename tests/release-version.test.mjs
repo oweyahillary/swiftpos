@@ -2,7 +2,7 @@
  * release-version.test.mjs — 0.6.28: every surface says which release it runs (owner, 2026-10-01: "can we add versioning
  * on the website also so that i can tell which one i am running?").
  *
- * The release number lives in shared/release.ts (copied to the cloud, the dashboard and the admin portal) and MUST equal
+ * The release number lives in packages/core/src/release.ts (imported as @zaptill/core/release by the cloud, the dashboard and the admin portal) and MUST equal
  * the till's version (apps/desktop/package.json) — the release is one number. Runs the BUILT cloud route.
  *
  *   node tests/release-version.test.mjs          (build apps/server first — this runs its dist/)
@@ -35,7 +35,7 @@ process.env.ADMIN_JWT_SECRET = randomBytes(24).toString('hex');
 process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 process.env.RENDER_GIT_COMMIT = '47a86c9adbede633e6d99817be3b5daf8bde9fea';
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
-const R = require(path.join(DIST, 'lib/release.js'));
+const R = require('@zaptill/core/release');
 // A495: requireAdmin re-reads the admin's account on every request — the test's admin exists and is active.
 {
   const { supabase } = require(path.join(DIST, 'lib/supabase.js'));

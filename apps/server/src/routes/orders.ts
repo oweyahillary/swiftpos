@@ -28,18 +28,18 @@ import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
 import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
 import { sendReceiptWhatsApp } from '../lib/whatsapp';
-import { cleanNote, ORDER_NOTE_MAX } from '../lib/orderNotes';
+import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { callerMayConfirm, replayTime } from '../lib/shiftConfirm';
 import { ownHistoryOnly, holds } from '../lib/historyScope';   // A490
-import { cleanDeliveryFee, customerDeliveryFee, isFreeDelivery } from '../lib/delivery';
+import { cleanDeliveryFee, customerDeliveryFee, isFreeDelivery } from '@zaptill/core/delivery';
 import { payRider, returnRiderPayout } from '../lib/riderPayout';
-import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
+import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '@zaptill/core/kitchenLines';
 import { confirmerByPin, confirmerRows, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from '../lib/confirmerLookup';
 import { businessReversalRules } from '../lib/reversalSettings';
 import { voidWindowOpen, windowLabel } from '@zaptill/core/reversalRules';
 import { frozenAtBranch } from '../lib/stockTakeAccess';
-import { applyOffers, cleanOffer, type AppliedOffer, type OfferLine } from '../lib/offers';   // A445
+import { applyOffers, cleanOffer, type AppliedOffer, type OfferLine } from '@zaptill/core/offers';   // A445
 import { promotionOffersByIds } from '../lib/promotionOffers';   // A518
 import { chunkIn } from '../lib/pgQuery';
 import { settleLateRows } from '../lib/lateRows';   // A522
@@ -48,7 +48,7 @@ import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } fr
 import { isTillOwnSalePush } from '../lib/tillScope';   // A545
 import { webSaleStockRefusal } from '../lib/stockGateStore';   // A563
 import { recordCreditSale } from '../lib/creditConfirm';   // A545
-import { isSoldByWeight, weighedAmountAccepted } from '../lib/scaleBarcode';   // A577
+import { isSoldByWeight, weighedAmountAccepted } from '@zaptill/core/scaleBarcode';   // A577
 import { loadCreditRule, onApproverList, type CreditApprovalRule } from '../lib/creditApprovers';   // A585
 
 const router = safeRouter();

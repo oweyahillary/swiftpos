@@ -5,9 +5,9 @@ import { offersForBranch } from './offers';   // A445
 import { promotionOffersFor } from '../lib/promotionOffers';   // A518
 import { enabledFromSetting } from '@zaptill/core/paymentCatalogue';   // A429
 import { sendError } from '../lib/sendError';
-import { parseNotePicks } from '../lib/orderNotes';
+import { parseNotePicks } from '@zaptill/core/orderNotes';
 import { parseReversalRules, REVERSAL_SETTING_KEYS } from '@zaptill/core/reversalRules';
-import { parsePosFeatures, POS_FEATURE_KEYS } from '../lib/posFeatures';
+import { parsePosFeatures, POS_FEATURE_KEYS } from '@zaptill/core/posFeatures';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -37,7 +37,7 @@ import { menusForPos } from '../lib/menus';                                    /
 import { servedBranchBranding } from '../lib/branchBrandingStore';             // A544
 import { businessOutOfStockMode, branchStockView } from '../lib/stockGateStore';  // A563
 import { assertBranchAccess } from '../middleware/rbac';                        // A563
-import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
+import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */

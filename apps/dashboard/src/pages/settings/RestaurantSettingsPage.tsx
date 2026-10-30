@@ -2,7 +2,7 @@
  * RestaurantSettingsPage.tsx
  * Route: /dashboard/settings/restaurant
  */
-import { parseNotePicks, PICKS_MAX } from '../../lib/orderNotes';
+import { parseNotePicks, PICKS_MAX } from '@zaptill/core/orderNotes';
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';

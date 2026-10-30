@@ -1,5 +1,5 @@
 import MethodDot from '../../components/MethodDot';
-import type { AppliedOffer } from '../../lib/offers';   // A445
+import type { AppliedOffer } from '@zaptill/core/offers';   // A445
 import { enabledFromSetting, paymentButtons } from '@zaptill/core/paymentCatalogue';   // A429
 import { methodColour, methodSolid, methodTint } from '@zaptill/core/paymentColours';
 import type { MonoRaster } from '../../lib/escposRenderer';

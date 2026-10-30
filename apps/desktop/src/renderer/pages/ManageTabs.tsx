@@ -21,7 +21,7 @@ import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import { parseCsvRows, csvBool } from '../lib/csv';
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '@zaptill/core/paginate';
-import { approvalPinOn } from '../../shared/posFeatures';   // A562
+import { approvalPinOn } from '@zaptill/core/posFeatures';   // A562
 import { businessTerms } from '@zaptill/core/businessTerms';   // A575
 import type { CsvRow } from '../lib/csv';
 

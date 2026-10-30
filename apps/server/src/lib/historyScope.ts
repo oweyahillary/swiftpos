@@ -12,7 +12,7 @@
  *
  * One helper for routes/orders.ts (History) and routes/shifts.ts (cash movements) so the two cannot drift.
  */
-import { hasPermission } from './permissions';
+import { hasPermission } from '@zaptill/core/permissions';
 import { permissionsOpenBefore } from './permissionsState';
 import { callerMayConfirm } from './shiftConfirm';
 

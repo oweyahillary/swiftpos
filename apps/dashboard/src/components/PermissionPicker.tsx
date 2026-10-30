@@ -10,7 +10,7 @@
  * lib/permissions.ts, which is the fallback for a cloud that does not answer them yet.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PERMISSIONS, PERMISSION_GROUPS } from '../lib/permissions';
+import { PERMISSIONS, PERMISSION_GROUPS } from '@zaptill/core/permissions';
 import { permissionWords, permissionGroupWords } from '@zaptill/core/businessTerms';   // A573
 
 export interface CatalogueKey { key: string; label: string; description: string; group: string; surface: 'web' | 'till' | 'both' }

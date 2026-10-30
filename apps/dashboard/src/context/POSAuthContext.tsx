@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from 'react';
 import { API_URL } from '../lib/config';
-import { expandMap, hasPermission as holds } from '../lib/permissions';   // A490
+import { expandMap, hasPermission as holds } from '@zaptill/core/permissions';   // A490
 import { getCoveredTerminal } from '../lib/posTerminal';
 import { posError } from '../lib/posError';   // A506
 import { refreshSession, type RefreshAnswer } from '../lib/api';   // A506: one renewal

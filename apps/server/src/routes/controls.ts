@@ -26,7 +26,7 @@ import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { PAYMENT_METHODS_ENABLED_KEY, enabledFromSetting } from '@zaptill/core/paymentCatalogue';
-import { STOCK_ZERO_KEYS } from '../lib/posFeatures';   // A563
+import { STOCK_ZERO_KEYS } from '@zaptill/core/posFeatures';   // A563
 import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '@zaptill/core/stockGate';   // A563
 
 /** The POS options the owner sets (settings.pos). */

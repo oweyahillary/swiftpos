@@ -53,7 +53,7 @@ const put = async (table, row) => {
 };
 
 console.log('\nMigration 147 (Close the branch, its own right) — PGlite, every migration\n');
-const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const A = id(0xb);
 const R = { mgr: id(0xb1), sup: id(0xb2), old: id(0xb3), cash: id(0xb4), owner: id(0xb5) };

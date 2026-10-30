@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { posApi, type Confirmation } from '../lib/posApi';
-import { methodName, readAmounts, confirmationLabel, cashLines, type MethodOption, type CashBreakdown } from '../../shared/shiftConfirm';
+import { methodName, readAmounts, confirmationLabel, cashLines, type MethodOption, type CashBreakdown } from '@zaptill/core/shiftConfirm';
 import { reasonsNeeded, missingReasons, REASON_MAX } from '@zaptill/core/confirmReasons';
 import MethodDot from './MethodDot';
 

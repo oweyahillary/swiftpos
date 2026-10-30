@@ -17,14 +17,14 @@
 import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { v4 as uuid } from 'uuid';
-import { parsePosFeatures, type PosFeatures } from './posFeatures';
+import { parsePosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';
 import { rulesFromWire, type ReversalRules } from '@zaptill/core/reversalRules';
 import { cleanCutoff } from '@zaptill/core/businessDay';   // 0.6.34
 import { supportContact, supportWire, type SupportContact } from '@zaptill/core/support';   // 0.6.35 (A384)
 import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { parseStockCountFreeze, freezeExpired, NO_FREEZE, type StockCountFreeze } from '@zaptill/core/stockCountFreeze';   // A394, A521
 import { logLine } from './logFile';   // A521
-import { cleanScaleSettings, scaleSettingsOrDefault, type ScaleSettings } from './scaleBarcode';   // A577
+import { cleanScaleSettings, scaleSettingsOrDefault, type ScaleSettings } from '@zaptill/core/scaleBarcode';   // A577
 
 export type DeployMode = 'cloud' | 'local';
 

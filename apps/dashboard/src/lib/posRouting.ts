@@ -1,5 +1,5 @@
 // Central routing logic — one source of truth used everywhere (PIN sign-in, the manager portal's guard, the web POS).
-import { expandMap, isBackOffice, OPEN_BEFORE_A490 } from './permissions';   // A490
+import { expandMap, isBackOffice, OPEN_BEFORE_A490 } from '@zaptill/core/permissions';   // A490
 
 export type POSRoute = '/pos/cashier' | '/manager' | '/';
 

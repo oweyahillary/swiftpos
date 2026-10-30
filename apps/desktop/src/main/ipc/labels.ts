@@ -28,11 +28,11 @@ import { assertPayload } from '../ipcValidate';
 import { signedInCan } from '../tillAccess';
 import { sendToPrinter, parseTarget } from '@swiftpos/printing';
 import { printLabelsHtml } from '../printService';
-import { encodeBarcode, lacksBarcode, cleanBarcodeNumbering, type BarcodeNumbering } from '../barcode';
+import { encodeBarcode, lacksBarcode, cleanBarcodeNumbering, type BarcodeNumbering } from '@zaptill/core/barcode';
 import {
   cleanLabelSettings, layoutLabel, layoutLabels, labelsHtml, tsplLabel, zplLabel, escposLabel, textBytes, labelBarcodeProblem,
   type LabelSettings, type LabelRow,
-} from '../labels';
+} from '@zaptill/core/labels';
 import { type IpcShared } from './shared';
 
 export const LABEL_KEYS = ['menu.edit', 'inventory.view'];

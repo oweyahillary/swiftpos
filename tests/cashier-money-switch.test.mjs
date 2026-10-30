@@ -36,7 +36,7 @@ process.env.ADMIN_JWT_SECRET ??= randomBytes(24).toString('hex');
 process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
-const { mayRecordMoneyMovement, POS_FEATURE_KEYS, MONEY_MOVEMENT_MANAGER_ONLY } = require(path.join(DIST, 'lib/posFeatures.js'));
+const { mayRecordMoneyMovement, POS_FEATURE_KEYS, MONEY_MOVEMENT_MANAGER_ONLY } = require('@zaptill/core/posFeatures');
 const jwt = require('jsonwebtoken');
 
 const BZ = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222';

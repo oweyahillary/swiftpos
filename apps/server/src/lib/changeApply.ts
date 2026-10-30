@@ -17,7 +17,7 @@ import { supabase } from './supabase';
 import { ENTITY_SPECS, changeKeys, judgeCreate, judgeUpdate, describeChange, type TillChange } from '@zaptill/core/tillChanges';
 import { verifyPin } from '../routes/auth';
 import { canAssignRole } from './roleCeiling';
-import { hasPermission, keysBeyond } from './permissions';   // A490
+import { hasPermission, keysBeyond } from '@zaptill/core/permissions';   // A490
 import { effectiveKeysForRow } from './effectivePermissions';
 import { isOwnerRoleName } from './ownerRole';
 import { roleKeyMap, personKeys } from './roleKeys';

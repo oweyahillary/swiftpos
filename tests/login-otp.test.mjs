@@ -255,7 +255,7 @@ try {
     assert.match(a, /if \(needsOtp\(heldKeys, isOwner\)\r?\n\s+&& \(await businessPosFeatures\(\(user as any\)\.business_id\)\)\.login_codes\) \{/);
     assert.doesNotMatch(a, /effectiveSurface === 'web' && needsOtp\(/);
     assert.match(a, /const enabled = \(await businessPosFeatures\(req\.businessId\)\)\.login_codes;/);
-    const F = read('shared/posFeatures.ts');
+    const F = read('packages/core/src/posFeatures.ts');
     assert.match(F, /key: 'login_codes',\n\s+label: 'Sign-in codes \(OTP\)',/);
     // the admin portal's own sign-in is not behind the switch
     assert.doesNotMatch(read('apps/server/src/routes/admin.ts'), /login_codes|businessPosFeatures/);

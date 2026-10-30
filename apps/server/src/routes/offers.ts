@@ -19,7 +19,7 @@ import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, allBranchAccess, branchFilter } from '../middleware/rbac';   // A550: allBranchAccess
-import { cleanOffer, type Offer } from '../lib/offers';
+import { cleanOffer, type Offer } from '@zaptill/core/offers';
 
 const router = safeRouter();
 router.use(requireAuth);

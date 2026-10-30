@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { defaultKeysForRoleName, builtInRolesFor } from './permissions';
+import { defaultKeysForRoleName, builtInRolesFor } from '@zaptill/core/permissions';
 import { permissionIds } from './roleKeys';
 
 // Default permission grants for the roles seeded at business creation.

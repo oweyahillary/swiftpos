@@ -1,7 +1,7 @@
 // A518 — promotions charged at the sale, on the lines they are for. Before: nothing ever applied a promotion (not the
 // cloud, not the web POS, not the till), and "Specific products" had no picker, so it could name no products (A506).
 // Now a promotion saved from the page (applies_at_sale, migration 144) is sent to the tills and the web POS as an offer
-// with pos/init and rechecked by the cloud through the ONE offers engine (lib/offers.ts = shared/offers.ts).
+// with pos/init and rechecked by the cloud through the ONE offers engine (@zaptill/core/offers = packages/core/src/offers.ts).
 //
 //   cd apps/server && npm run build && cd ../.. && node --no-warnings tests/promotions-scope-a518.test.mjs
 //
@@ -31,7 +31,7 @@ const mem = installMemDb(supabase);
 const PO = require(path.join(DIST, 'lib/promotionOffers.js'));
 const { scopeProblem } = require(path.join(DIST, 'routes/promotions.js'));
 const { checkOfferClaim, offerClaimFrom } = require(path.join(DIST, 'routes/orders.js'));
-const ENGINE = await import(pathToFileURL(path.join(ROOT, 'shared/offers.ts')).href);
+const ENGINE = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/offers.ts')).href);
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };

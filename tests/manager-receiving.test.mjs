@@ -19,7 +19,7 @@ const tab = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/Ma
 const mgr = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), 'utf8');
 // A490: a new business's manager defaults are the shared catalogue's (`manager: true` per key; defaultKeysFor('manager')),
 // seeded by apps/server/src/lib/defaultRolePermissions.ts — MANAGER_DENY is gone.
-const catalogue = fs.readFileSync(path.join(root, 'shared/permissions.ts'), 'utf8');
+const catalogue = fs.readFileSync(path.join(root, 'packages/core/src/permissions.ts'), 'utf8');
 const seeder = fs.readFileSync(path.join(root, 'apps/server/src/lib/defaultRolePermissions.ts'), 'utf8');
 const managerGets = (key) => new RegExp(`key: '${key.replace('.', '\.')}',[^\n]*manager: true`).test(catalogue);
 

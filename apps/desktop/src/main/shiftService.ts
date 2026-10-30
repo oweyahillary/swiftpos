@@ -21,8 +21,8 @@ import { nonCashExpenses, expenseLabel, cleanExpenseMethod } from '@zaptill/core
 import { reasonsNeeded, cleanReasons, missingReasons } from '@zaptill/core/confirmReasons';
 import { kitchenVoidsForShift, type KitchenVoidLine } from './kitchenService';
 import { noteActivity } from './activityTracker';   // A508
-import type { KitchenVoidSummary } from './kitchenLines';
-import { riderSummary, type RiderLine } from './delivery';   // 0.6.33: the riders summary
+import type { KitchenVoidSummary } from '@zaptill/core/kitchenLines';
+import { riderSummary, type RiderLine } from '@zaptill/core/delivery';   // 0.6.33: the riders summary
 import { signedIn as sessionPerson, personCan, seesAllHistory } from './tillAccess';   // A490: the till's one rule
 
 /**

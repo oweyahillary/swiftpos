@@ -5,7 +5,7 @@
  *
  *   node tests/offers.test.mjs
  *
- * RUNS the real shared/offers.ts on real carts, money checked to the cent; then pins the chain (the cloud's table and
+ * RUNS the real packages/core/src/offers.ts on real carts, money checked to the cent; then pins the chain (the cloud's table and
  * check of a sale, the till's copy and cart, the web POS's cart, the receipt, both offer screens).
  *
  * MUTATIONS TO CONFIRM BITE: a unit taking two item offers (no `taken` check) → "one offer per item" fails; buy-get freeing
@@ -27,7 +27,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.OFFERS_TS) {
 }
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
-const O = await import(pathToFileURL(path.join(ROOT, 'shared/offers.ts')).href);
+const O = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/offers.ts')).href);
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); console.log(`  ok   ${name}`); pass++; } catch (e) { console.log(`  FAIL ${name}\n       ${e.message}`); fail++; } };

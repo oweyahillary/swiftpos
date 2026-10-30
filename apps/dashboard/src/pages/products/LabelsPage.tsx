@@ -29,11 +29,11 @@ import type { Product, Category } from '../../types';
 import {
   encodeBarcode, isGeneratedCode, lacksBarcode, cleanBarcodeNumbering, numberingPreview, DEFAULT_BARCODE_NUMBERING,
   CODE128N_MIN_LENGTH, CODE128N_MAX_LENGTH, type BarcodeNumbering, type NumberingFormat,
-} from '../../lib/barcode';
+} from '@zaptill/core/barcode';
 import {
   cleanLabelSettings, DEFAULT_LABEL_SETTINGS, LABEL_SIZE_PRESETS, SHEET_PRESETS, labelSvg, labelsHtml, layoutLabels,
   sheetGrid, MAX_LABELS_PER_RUN, type LabelSettings, type LabelRow, type SheetPresetId,
-} from '../../lib/labels';
+} from '@zaptill/core/labels';
 
 const FORMAT_LABEL: Record<NumberingFormat, string> = {
   EAN13: 'EAN-13 (13 digits, most scanners)', EAN8: 'EAN-8 (8 digits, small items)', UPCA: 'UPC-A (12 digits)', CODE128N: 'Code 128, digits only (choose the length)',

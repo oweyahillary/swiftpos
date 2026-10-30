@@ -41,14 +41,14 @@ const C = require(path.join(dist, 'deviceConfig.js'));
 const E = require(path.join(dist, 'syncEngine.js'));
 const S = require(path.join(dist, 'shiftService.js'));
 const K = require(path.join(dist, 'kitchenService.js'));
-const KL = require(path.join(dist, 'kitchenLines.js'));
+const KL = require('@zaptill/core/kitchenLines');
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 const threw = (f) => { try { f(); return null; } catch (e) { return e; } };
 
 console.log('0.6.28 — kitchen voids\n');
 
-// ── The rules (shared/kitchenLines.ts) ───────────────────────────────────────
+// ── The rules (packages/core/src/kitchenLines.ts) ───────────────────────────────────────
 ok('a line saved before 0.6.28 (kotSent, no sentQty) counts as all sent', KL.sentQtyOf({ quantity: 3, kotSent: true }) === 3);
 ok('a line of 2 that became 3 sends 1 — not 3 (the kitchen cooked 5)',
   KL.unsentQtyOf({ quantity: 3, sentQty: 2, kotSent: false }) === 1);

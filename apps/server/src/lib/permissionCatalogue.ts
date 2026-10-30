@@ -25,7 +25,7 @@
 
 import { supabase } from './supabase';
 
-import { PERMISSIONS, LEGACY } from './permissions';
+import { PERMISSIONS, LEGACY } from '@zaptill/core/permissions';
 
 export interface PermissionRow {
   key: string;

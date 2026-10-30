@@ -12,7 +12,7 @@ import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
-import { maySetMpesa } from '../lib/permissions';                 // A492
+import { maySetMpesa } from '@zaptill/core/permissions';                 // A492
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A492
 import { hiddenWhileCounting } from '../lib/stockTakeAccess';     // A494
 

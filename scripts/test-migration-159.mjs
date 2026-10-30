@@ -1,6 +1,6 @@
 /**
  * test-migration-159.mjs — A550: every business gets the built-in roles it does not have (General Manager, Operations
- * Manager, Finance Manager, Auditor, Kitchen Manager), with exactly the default keys of shared/permissions.ts
+ * Manager, Finance Manager, Auditor, Kitchen Manager), with exactly the default keys of packages/core/src/permissions.ts
  * BUILT_IN_ROLES, nobody assigned, and never a change to a role of that name the business already has — run for real
  * against the WHOLE schema (every migration replayed into PGlite).
  *
@@ -55,7 +55,7 @@ const put = async (table, row) => {
 };
 
 const { pathToFileURL } = await import('node:url');
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const NAMES = ['General Manager', 'Operations Manager', 'Finance Manager', 'Auditor', 'Kitchen Manager'];
 const ROLES = NAMES.map((n) => P.BUILT_IN_ROLES.find((r) => r.name === n));
 

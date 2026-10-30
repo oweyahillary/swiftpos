@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RELEASE, releaseLabel, releasesDiffer } from '../lib/release';
+import { RELEASE, releaseLabel, releasesDiffer } from '@zaptill/core/release';
 import { isProdDeployment } from '../lib/appFlavor';
 
 /**

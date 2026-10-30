@@ -5,7 +5,7 @@
  *
  * The decisions are in ownerAlertsDecision.ts and the HTML in ownerEmails.ts; this file only fetches and shapes.
  */
-import { hasPermission } from '../lib/permissions';   // A490
+import { hasPermission } from '@zaptill/core/permissions';   // A490
 import { isOwnerRoleName } from '../lib/ownerRole';
 import { keysForRow } from '../lib/effectiveKeys';
 import { supabase } from '../lib/supabase';

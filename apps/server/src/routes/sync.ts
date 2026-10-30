@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { partitionByValidId, isUuid } from '../lib/syncPush';
-import { cleanVoidReason, cleanVoidNote } from '../lib/kitchenLines';
+import { cleanVoidReason, cleanVoidNote } from '@zaptill/core/kitchenLines';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';

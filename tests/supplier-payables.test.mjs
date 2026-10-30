@@ -99,7 +99,7 @@ await ok("bills, payments and balances are the owner's by default; a manager who
   }
   assert.match(r, /router\.post\('\/returns', requireAnyPermission\('inventory\.receive', 'payables\.manage'\)/);
   // A490: the defaults are the shared catalogue's — payables.manage has no `manager: true` (the owner's by default).
-  assert.match(read('shared/permissions.ts'), /\{ key: 'payables\.manage',\s+group: 'stock', surface: 'web',\n/);
+  assert.match(read('packages/core/src/permissions.ts'), /\{ key: 'payables\.manage',\s+group: 'stock', surface: 'web',\n/);
   assert.match(read('apps/server/src/routes/index.ts'), /router\.use\('\/payables',\s+payablesRoutes\);/);
   assert.doesNotMatch(read('migrations/121_supplier_payables.sql'), /INSERT INTO public\.role_permissions/);
 });

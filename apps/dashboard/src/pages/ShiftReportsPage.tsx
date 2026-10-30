@@ -26,7 +26,7 @@ import { printDocument } from '../lib/printDocument';
 import { shiftDocSpec, shiftListDocSpec } from '../lib/documentSpecs';
 import {
   methodName, shiftReportStatus, shiftStatusLabel, shiftReportLines, shiftDifference, type ShiftReportStatus,
-} from '../lib/shiftConfirm';
+} from '@zaptill/core/shiftConfirm';
 import { money, num, dayTime, time } from '../lib/format';
 
 interface ShiftRow {

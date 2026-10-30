@@ -17,7 +17,7 @@ import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore'; 
 import { money, pct } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A472
 import { paginate, groupDigits } from '@zaptill/core/paginate';
-import { nextInStoreCodes } from '../../lib/barcode';   // A571
+import { nextInStoreCodes } from '@zaptill/core/barcode';   // A571
 import GenerateBarcodes from './GenerateBarcodes';      // A571
 import { useNavigate } from 'react-router-dom';
 

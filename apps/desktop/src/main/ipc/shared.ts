@@ -15,7 +15,7 @@ import { cacheStaffCredential, verifyPinOffline } from '../pinCache';
 import { assertPinAllowed, recordPinFailure } from '../pinAttempts';
 import path from 'path';   // A516
 import { configureStaffSession, syncAll, syncPush, refreshAccessToken, refreshStaffToken, pullWebSales } from '../syncEngine';
-import { receiptClassicFrom, kitchenFontBFrom } from '../posFeatures';
+import { receiptClassicFrom, kitchenFontBFrom } from '@zaptill/core/posFeatures';
 import { signedIn as sessionPerson, signedInCan, personCan, roleCeilingRefusal, mayActOn, type PersonLike } from '../tillAccess';
 import { getCloudUrl, getDeviceConfig, getPosFeatures } from '../deviceConfig';
 import { localShiftIds, type ForeignCash } from '../shiftService';

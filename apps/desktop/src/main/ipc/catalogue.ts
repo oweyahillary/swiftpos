@@ -2,7 +2,7 @@
 // Registered from ipcHandlers.ts (D10).
 import { getLocalDb, effectiveReceiptFooter } from '../localDb';
 import { getDeviceConfig, getPosFeatures, getStockCountFreeze, getScaleSettings } from '../deviceConfig';
-import { parseNotePicks } from '../orderNotes';
+import { parseNotePicks } from '@zaptill/core/orderNotes';
 import { cleanShowDays } from '@zaptill/core/productDays';
 import { tillStockView } from '../stockGateLocal';   // A563
 import { forecourtSales, forecourtTanks } from '../forecourt';   // A588

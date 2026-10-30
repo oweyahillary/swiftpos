@@ -9,7 +9,7 @@
  * Owner: a role named owner or admin is the business's owner (isOwnerRoleName) — everything, '*'.
  */
 import { supabase } from './supabase';
-import { permissionMapFor, PERMISSION_KEYS } from './permissions';
+import { permissionMapFor, PERMISSION_KEYS } from '@zaptill/core/permissions';
 import { keysFromGrants, keysForRow, type GrantRow, type OverrideRow } from './effectiveKeys';
 import { permissionsOpenBefore } from './permissionsState';
 

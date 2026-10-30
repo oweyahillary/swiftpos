@@ -268,7 +268,7 @@ console.log('\nThe cash totals — 3 shifts × 2,500 float\n');
 
 console.log('\nTwo rights: Close the day, Close the branch\n');
 {
-  const P = require(path.join(dist, 'permissions.js'));
+  const P = require('@zaptill/core/permissions');
   const k = (key) => P.PERMISSIONS.find((p) => p.key === key);
   ok('the catalogue: shifts.close_branch "Close the branch" (till, manager default); close_day "Close the day"',
     k('shifts.close_branch')?.label === 'Close the branch' && k('shifts.close_branch').surface === 'till' && k('shifts.close_branch').manager === true

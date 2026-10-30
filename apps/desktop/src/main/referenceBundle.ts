@@ -27,7 +27,7 @@
 // be mutation-tested off a plain row set without SQLite or Electron — the tri-
 // state products.is_kitchen and the users->roles reshape are exactly the kind of
 // mapping that breaks silently, so they get a test that fails when they regress.
-import { parsePosFeatures } from './posFeatures';
+import { parsePosFeatures } from '@zaptill/core/posFeatures';
 import { rulesFromWire, type ReversalRules } from '@zaptill/core/reversalRules';
 import { cleanShowDays } from '@zaptill/core/productDays';
 import { supportWire } from '@zaptill/core/support';   // 0.6.35 (A384)

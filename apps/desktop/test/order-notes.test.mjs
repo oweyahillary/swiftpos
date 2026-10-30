@@ -5,7 +5,7 @@
 // each line and one on the order; notes are free (anything priced stays a modifier).
 //
 // Drives the REAL compiled dist/main (localDb, syncEngine.createLocalOrder, deviceConfig, referenceBundle, webSales) on a
-// REAL SQLite file, electron shimmed; runs the shared rules (src/shared/orderNotes.ts, type-stripped); pins the screen.
+// REAL SQLite file, electron shimmed; runs the shared rules (packages/core/src/orderNotes.ts, type-stripped); pins the screen.
 //
 //   cd apps/desktop && npx tsc -b tsconfig.main.json && node test/order-notes.test.mjs
 //
@@ -53,7 +53,7 @@ const E = require(path.join(dist, 'syncEngine.js'));
 const C = require(path.join(dist, 'deviceConfig.js'));
 const R = require(path.join(dist, 'referenceBundle.js'));
 const W = require(path.join(dist, 'webSales.js'));
-const N = await import(pathToFileURL(path.join(desktop, 'src/shared/orderNotes.ts')).href);
+const N = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages/core/src/orderNotes.ts')).href);
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };

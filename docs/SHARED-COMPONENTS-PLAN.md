@@ -11,8 +11,9 @@ features on the branch. Printing (`shared/printing`), the desktop main process's
 stay where they are.
 
 Status: **step 1 done on the branch (package mechanism proven, pilot `confirmReasons.ts` moved); step 2 batches A and B
-done except `numberInputs`, `forecourt` (section 8); 63 of 174 copy paths left. Not committed, not merged. Merging
-needs the one Render change in section 4 first.**
+committed (37ffe35, section 8); batch C and `forecourt` (section 8b) and batch D (section 8c) done, not committed —
+40 modules in `packages/core`, 3 of 174 copy paths left (`numberInputs`, step 3). Step 2 is complete apart from
+`numberInputs`. Not merged. Merging needs the one Render change in section 4 first.**
 
 ---
 
@@ -346,8 +347,8 @@ Inside core the two pairs import each other relatively (`./businessTerms`, `./th
 | File | Why |
 |---|---|
 | `numberInputs.ts` (A) | Not pure: a DOM helper (`Document`, `Event`, `HTMLInputElement`). Core compiles without the DOM library on purpose (server and main process must not reach for `document`), so its own build fails (TS2304). It belongs with the screen pieces (`packages/ui`, step 3), or core gets a `dom` sub-entry later. |
-| `forecourt.ts` (B) | Name clash: the till has its **own, different** `apps/desktop/src/main/forecourt.ts` (A588 pump counters, reads SQLite). The core guard treats any same-named file in an app's `main/` folder as a re-grown copy and fails. Needs a decision: rename one of them, or give the guard an explicit "different module" exception. |
-| `release.ts` (D) | Changed on `dev` since 7f8684c (the version bumps) — moves after the `dev` merge, with batch D as planned. |
+| `forecourt.ts` (B) | Name clash: the till has its **own, different** `apps/desktop/src/main/forecourt.ts` (A588 pump counters, reads SQLite). The core guard treats any same-named file in an app's `main/` folder as a re-grown copy and fails. **Decided and done in batch C (section 8b):** a documented "different module" exception in the guard, no rename. |
+| `release.ts` (D) | Changed on `dev` since 7f8684c (the version bumps) — moves after the `dev` merge, with batch D as planned. **Moved in batch D before the merge, on the owner's instruction (section 8c, with the merge notes there).** |
 
 **Mechanism changes (small):**
 
@@ -378,25 +379,162 @@ assert "one file in `packages/core`, no copy left".
 | **Full CI step set** (`cisteps.py`, every `run:` step of `ci.yml`, after its own `npm ci` steps) | **237 steps run, 10 "failed" — all known Windows noise, none from this change**: schema audit (`python3` not on this PC); desktop `money-reports` (the local-hour case, TZ); and 8 steps that exit 127/1 with libuv's `Assertion failed … async.c` **after every case passed** (migrations: 89 files, the flagged one `test-migration-41-42` "all green"; offline suites: `cashier-money-switch` 10/0, `old-till-compat-a505` 10/0, `report-collected` 5/0, `staff-roster-cloud` 7/0, `void-owner-row` 5/0; `petrol-pos-web-a588` 17/0; desktop `server-join` 37/0, `server-setup-a503`, `a534-small-items` 30/0, `a554-log-fixes` 41/0, `monthly-pack-till` 19/0). Which suites hit the libuv crash varies run to run. |
 | **Installer** (`electron-builder --win nsis --x64 --ia32 … --config.directories.output=release-test --publish never`, no version bump) | pass — `ZapTill-1.0.20.exe` 212,809,053 bytes + blockmap + `latest.yml`; deleted afterwards |
 | `app.asar` (x64, extracted) | `node_modules/@zaptill/core/{package.json, dist/*.js}` — **all 27 modules**, no `.ts`, no `types/`; no moved file left in `dist/main`; require graph: 135 files, 763 requires, **every one resolves inside the app**, 30 edges into `@zaptill/core`, no `packages/` path anywhere |
-| Packaged exe (x64, node mode, from inside `app.asar`) | all 27 core modules load from `…
-esourcespp.asar
-ode_modules\@zaptill\core\dist`; `tenantHost.isTenantOrigin` answers as before (true / false for the look-alike); the WHOLE main-process start (A517 harness) ran, **250 IPC handlers**, `@zaptill/core` loaded at start. ia32 not checked — the branch predates the A590 32-bit driver fix (expected). |
+| Packaged exe (x64, node mode, from inside `app.asar`) | all 27 core modules load from `…\resources\app.asar\node_modules\@zaptill\core\dist`; `tenantHost.isTenantOrigin` answers as before (true / false for the look-alike); the WHOLE main-process start (A517 harness) ran, **250 IPC handlers**, `@zaptill/core` loaded at start. ia32 not checked — the branch predates the A590 32-bit driver fix (expected). |
 
 **Merge with `dev` (simulated read-only with `git merge-file`, base 7f8684c / branch / `origin/dev`):** 14 importers
 changed on both sides; 10 merge cleanly, **4 conflict in their import block only** (`apps/server/src/jobs/ownerAlerts.ts`,
 `jobs/watchdog.ts`, `lib/dayCutoff.ts` — `businessDay`; `routes/admin.ts` — `support`): take `dev`'s block and change
 the one specifier to `@zaptill/core/<name>`. `dev` adds no new importer of a moved file (same 162 importing files).
 
-**What remains:**
+**What remains** (updated after batch D, section 8c):
 
-1. Merge `dev` into the branch (the 4 import-block conflicts above), rerun everything.
-2. After the merge: `release.ts` (batch D), and decide `forecourt.ts` (rename or guard exception) and `numberInputs.ts`
-   (`packages/ui` or a DOM entry).
-3. Batch C (money and print, one commit each with the printing byte check): `orderNotes`, `kitchenLines`, `delivery`,
-   `scaleBarcode`, `barcode`, `labels`, `offers`, `parkingTariff`.
-4. Batch D: `posFeatures`, `release`, `permissions` + `shiftConfirm`.
-5. Refresh the "ONE file: shared/X.ts, copied to …" header comments inside the moved core files (after the merge).
-6. Render change (section 4) before any of this reaches `dev`.
+1. The owner commits batch C and batch D on the branch.
+2. Merge `dev` into the branch: the 4 import-block conflicts above, the batch C importers `dev` changed, and batch D's
+   merge notes (section 8c: 13 modify/delete conflicts on app copies `dev` edited, 2 new `dev` importers). Then rerun
+   everything.
+3. `numberInputs.ts` — step 3 (`packages/ui`, or a DOM entry in core); stays a copy until then.
+4. Refresh the "ONE file: shared/X.ts, copied to …" header comments inside the moved core files (after the merge), and
+   the few comments/strings that still name a `shared/` path (sections 8b, 8c).
+5. Render change (section 4) before any of this reaches `dev`.
+6. Step 3 — POS UI into `packages/ui`.
+
+## 8b. Step 2 batch C (2026-10-29, worktree `C:\swiftpos\pos-shared`, not committed)
+
+Batch C (money and print) and `forecourt` done: **9 files moved** into `packages/core/src` — `orderNotes` (5 paths),
+`kitchenLines` (5), `delivery` (5), `scaleBarcode` (5), `barcode` (5), `labels` (5), `offers` (5), `parkingTariff` (3,
+with its vectors `scripts/test-parking-tariff.mjs`), `forecourt` (3). 9 canonical files (`git mv`, **byte-identical**,
+header comments kept, `git diff --cached -M`: R100 each) and **32 app copies deleted**; `apps/server/src/shared/` is
+empty and gone. `packages/core` now holds **36 modules**; `check-shared-sync.mjs` guards **22 copy paths** (63 before,
+174 at the start): `numberInputs` (3, step 3) and batch D — `release` (4), `posFeatures` (6), `permissions` (6),
+`shiftConfirm` (3). Skipped: none (all nine are pure — no imports, no DOM, fs, SQLite or Electron).
+
+None of the nine, nor any of their copies, had changed on `dev` since 7f8684c (checked by the owner's session,
+including `dev`'s uncommitted work).
+
+**Importers:** 78 import lines in 47 app files now read `'@zaptill/core/<name>'`, one line per module, nothing else on
+the line changed (every added line in `apps/*/src` contains `@zaptill/core/`). The desktop main process's own
+`'../forecourt'` (`ipc/catalogue.ts` → `main/forecourt.ts`) and `'./ipc/labels'` (its IPC handler) are not copies and
+stay. **Tests and scripts repointed (17 files):** `tests/` `order-notes`, `kitchen-voids`, `free-delivery`,
+`prospect-features`, `scale-barcode-a577`, `barcode-labels-a571`, `offers`, `promotions-scope-a518`,
+`petrol-pos-web-a588`, `format`; `apps/desktop/test/` `order-notes`, `kitchen-voids`, `weighed-items-a577`,
+`petrol-pos-a588`; `scripts/test-parking-tariff.mjs`; `apps/website/scripts/render-labels.mjs` (reads core; the
+generated `labels.generated.json` and its `note` text unchanged, so the site's label test still matches); and
+`check-shared-sync.mjs`. Type-stripped imports read `packages/core/src/<name>.ts`; `require(dist/…/kitchenLines.js)` →
+`require('@zaptill/core/kitchenLines')`; the "server built?" probes that looked for `dist/lib/scaleBarcode.js` /
+`barcode.js` now look for `dist/routes/pos.js` / `products.js`; the petrol chunk check looks for
+`/packages/core/src/forecourt.ts` in the main chunk (still absent). Left as text for the header refresh: comments in
+`ci.yml`, `apps/website` (README, `LabelSamples.astro`, `parking.astro`), `shared/printing/README.md` and the `source`
+string in `scripts/push-domain-producers.json`.
+
+**`forecourt` — the "different module" exception (decided: an exception, not a rename).** `check-shared-sync.mjs` has a
+`DIFFERENT_MODULE` table with one entry, `apps/desktop/src/main/forecourt.ts` (the till's A588 pump counters, read from
+its SQLite). The core guard skips that path only while it is **not a copy**: it must not equal the core file (line
+endings normalised), must not define any name `packages/core/src/forecourt.ts` exports, and must still import
+`getLocalDb` from `'./localDb'` and call it. Mutations checked, each fails the guard: the core file pasted over it; the
+file plus an `export function gradeColour`; plus an `export const QUICK_AMOUNTS`; its `localDb` import changed; an
+empty `apps/desktop/src/shared/forecourt.ts`. The OK line names the exception. The dashboard's `lib/forecourt.ts` was a
+copy (identical) and is deleted; `tests/format.test.mjs`'s allow-list entry for `lib/forecourt.ts` `moneyText` is
+removed (the file is gone; core is outside that scan) with a comment, and its "allow-list still needed" case passes.
+
+**Verification** (after each of the 9 files: builds, byte checks, every `check-*`, printing, parking, 31 receipt /
+label / module suites; then all of it again at the end, then the CI set and the installer):
+
+| Check | Result |
+|---|---|
+| Server `tsc --noEmit` + `npm run build` (from a clean `dist`) | pass |
+| Dashboard `tsc --noEmit` + `vite build` | pass |
+| Admin `tsc --noEmit` + `vite build` | pass; **`dist` byte-identical to before** after every file |
+| Desktop `tsc -p tsconfig.json`, `tsc -b tsconfig.main.json --force`, `build:all` | pass; **`dist/renderer` byte-identical to before** after every file (and after the installer's own `build:all`); `dist/main`: the 8 moved modules' `.js`/`.d.ts` gone, 24 changed files whose every changed line is a `require` (or a `.d.ts` `import … from`) line |
+| Compiled moved modules (receipt bytes) | `packages/core/dist/<name>.js` **byte-identical** to the old `dist/main/<name>.js` for all 8 the till compiled (the receipt path: `escposBridge` uses `orderNotes`, `scaleBarcode`); the server's old `dist/lib` copies equal it except ES2022 → ES2020 syntax only (`100_000` → `100000` in `delivery`, `barcode`, `parkingTariff`; `??=` written out in `labels`) — the same values (core targets ES2020, as the till always did) |
+| `lazy-load-a517` main chunk | **445,575 bytes (434.5 kB), unchanged** — same file `index-QxmSppua.js` after every file; 44/0 |
+| Every `scripts/check-*.mjs` (31) | pass |
+| `shared/printing` `npm test` (byte check + sample check) | 13/0 after every file |
+| Parking tariff vectors (`npx tsx scripts/test-parking-tariff.mjs`, now on core) | 30/0 |
+| Receipt / print suites | `receipt-compact-a530` 7/0, `receipt-escpos-format`, `receipt-payment-block` 6/0, `receipt-permission` 22/0, `reprint-history`, `web-receipt-money` 6/0, `print-documents`, `tiny-bridge-printing`, `a534-update-state-receipt` 18/0; desktop `receipt-copies` 9/0, `test-print-business-name` 11/0, `zreport-print-live` 5/0 — pass |
+| Suites reading the moved files | `order-notes` 16/0 + desktop 34/0, `kitchen-voids` 16/0 + desktop 31/0, desktop `kitchen-extras-a559` 9/0, `free-delivery` 17/0 + desktop 13/0, `prospect-features` 19/0, `scale-barcode-a577` 26/0, desktop `weighed-items-a577` 36/0, `barcode-labels-a571` 46/0, desktop `labels-a571` 67/0, website `labels.test.mjs`, `offers` 26/0, `offers-cloud` 16/0, `promotions-scope-a518` 12/0, `format` 25/0, desktop `petrol-pos-a588` 49/0, `petrol-pos-web-a588` 17/0 (then the libuv exit 127) |
+| **Full CI step set** (`cisteps.py`) | **237 steps run, 9 "failed" — all known Windows noise, none from this change** (rerun alone to confirm): schema audit (`python3` not on this PC); desktop `money-reports` 17/1 (the local-hour case, TZ); 7 steps exiting with libuv's `Assertion failed … async.c` after every case passed — migrations (alone: 89 files, only `test-migrations-41-42` flagged, 29/0), offline suites (alone, 302 files: `cashier-money-switch` 10/0, `old-till-compat-a505` 10/0, `petrol-pos-web-a588` 17/0, `report-collected` 5/0, `scale-barcode-a577` 26/0, `staff-roster-cloud` 7/0, `void-owner-row` 5/0), `petrol-pos-web-a588`, desktop `server-join` 37/0, `server-setup-a503` 30/0, `a554-log-fixes` 41/0, `monthly-pack-till` 19/0. (An earlier full run the same night showed 10, with 54 migration files crashing under load; alone they pass.) |
+| **Installer** (`npm run build:all`, then `electron-builder --win nsis --x64 --ia32 --config electron-builder.config.js --config.directories.output=release-test --publish never`, no version bump) | pass — `ZapTill-1.0.20.exe` 212,816,189 bytes + blockmap + `latest.yml`; `release-test` deleted afterwards |
+| `app.asar` (x64 extracted; ia32 identical in `dist/` and `@zaptill`) | `node_modules/@zaptill/core/{package.json, dist/*.js}` — **all 36 modules** incl. the 9 new ones, no `.ts`; none of the moved files left in `dist/main` (its `forecourt.js` is the till's own module, byte-identical to before); require graph: 135 files, 763 requires, **every one resolves inside the app**, 48 edges into `@zaptill/core`, no `packages/` path |
+| Packaged exe (x64, node mode, from inside `app.asar`) | all 36 core modules load from `…\resources\app.asar\node_modules\@zaptill\core\dist`; parking 2 h at the mall tariff = 150, `barcode.nextInStoreCodes`, `orderNotes.noteLines` answer as in the source tree; the WHOLE main-process start (A517 harness) ran, **250 IPC handlers**, `@zaptill/core` loaded at start |
+
+Also fixed in passing: the section 8 table row for the packaged exe had a Windows path whose backslashes had turned
+into control characters (`\r`, `\a`, `\n`); restored.
+
+## 8c. Step 2 batch D (2026-10-30, worktree `C:\swiftpos\pos-shared`, on top of batch C, not committed)
+
+Batch D done on the owner's instruction, before the `dev` merge: **4 files moved** into `packages/core/src` —
+`posFeatures` (6 paths), `release` (4), `permissions` (6), `shiftConfirm` (3; it imports `./permissions`, so the two
+moved together). 4 canonical files (`git mv`, **byte-identical**, R100 each, header comments kept) and **15 app copies
+deleted**. `packages/core` now holds **40 modules**; `check-shared-sync.mjs` guards **3 copy paths** (`numberInputs`,
+step 3, untouched). Skipped: none. All four are pure (no DOM, fs, SQLite or Electron), and on the branch every copy was
+identical to its canonical file.
+
+(The move script also rewrote `shared/shiftConfirm.ts`'s own `./permissions` import while `permissions` was being moved
+first. That one line was put back from `HEAD` before verification, so the core file is byte-identical to the canonical.)
+
+**Importers:** 67 import lines in 59 app files now read `'@zaptill/core/<name>'`, one line per module, nothing else on
+the line changed. **Tests and scripts repointed (40 files):**
+- type-stripped imports and source pins now read `packages/core/src/<name>.ts` (24 files had `shared/permissions.ts`,
+  among them the migration tests 134, 142, 143, 147, 159 and 169, `test-permission-catalogue` and
+  `check-permission-catalogue`);
+- `require(dist/lib/{posFeatures,permissions,release}.js)` and `dist/main/permissions.js` became
+  `require('@zaptill/core/<name>')`;
+- `kitchen-font-a543` and `permissions-web-a490` now pin the import line `'@zaptill/core/…'`;
+- `partner-roles-a550`'s "the copies are identical" case now asserts "one catalogue in `packages/core`, no copy left";
+- the role-name allow-lists in `permissions-web-a490` and desktop `a490-permissions` dropped the deleted copies;
+- `check-permission-catalogue` now also scans `packages/core/src`. The rules that moved there were scanned as their app
+  copies before; it still passes with the same keys (727 files; the catalogue may still name broad keys).
+
+**`release`:** no script writes it (the version is bumped by hand with `apps/desktop/package.json`). Its readers:
+- the cloud's `/api/version` route, the dashboard's `ReleaseBadge` and the admin portal, all now importing
+  `@zaptill/core/release`;
+- `tests/release-version.test.mjs`, which asserts `RELEASE` = `apps/desktop/package.json`'s version (now
+  `require('@zaptill/core/release')`).
+
+`ci.yml`, `release.yml`, `scripts/*` and `electron-builder.config.js` do not read it. Its only `release` is the output
+folder name.
+
+**`shiftConfirm` — a second "different module" exception.** `apps/server/src/lib/shiftConfirm.ts` is the cloud's own
+rules (who may confirm, from `./approver` and `./effectiveKeys`; the confirm view's lines). It is not a copy (it was never
+in `SHARED`), but the core guard saw it as a regrown copy. `DIFFERENT_MODULE` is now a table of per-file rules:
+- **forecourt:** no name in common with core, and it must still be the SQLite reader;
+- **server `shiftConfirm`:** no core *value* in common (the two share one type name, `CashBreakdown`), and it must
+  still import `./approver` and `keysForRow` from `./effectiveKeys`.
+
+Each rule fails a real copy. Mutations checked: the core file pasted over it; an added
+`export function maySignedInConfirm`; its `./approver` import changed; forecourt's paste again; an empty
+`apps/dashboard/src/lib/permissions.ts`. The server's own importers of `./shiftConfirm` stay as they are; its
+`./permissions` import became `@zaptill/core/permissions`.
+
+**Merge notes for `dev`** (checked read-only against `dev` 4f7ba62):
+- `dev` changed all four modules since 7f8684c: `permissions` +225 lines, `posFeatures` +47, `release` the version, and
+  the server's own `shiftConfirm.ts`. `shared/X.ts` edits follow the 100 % rename into `packages/core/src/X.ts`.
+- **13 modify/delete conflicts** are expected on the app copies `dev` edited (5 `permissions`, 5 `posFeatures`,
+  3 `release`). On `dev` those copies were identical to their `shared/` file, so resolve each by deleting the copy.
+- `dev` adds **2 new importers** (`apps/desktop/src/main/ipc/dayClose.ts`, `apps/server/src/lib/webPosSignIn.ts`), each
+  to be switched to `@zaptill/core/<name>` at the merge.
+
+**Verification** (after each of 3 groups — `posFeatures`; `release`; `permissions` + `shiftConfirm` — then the CI set
+and the installer):
+
+| Check | Result |
+|---|---|
+| Server `tsc --noEmit` + `npm run build` (clean `dist`), dashboard `tsc` + `vite build`, admin `tsc` + build, desktop `tsc -p`, `tsc -b --force`, `build:all` | pass after every group |
+| Admin `dist` | **byte-identical** to before after every group |
+| Desktop `dist/renderer` | **byte-identical after `posFeatures` and `release`.** After `permissions` + `shiftConfirm`, **one dead CSS rule left the stylesheet**: `.lowercase{text-transform:lowercase}`. Tailwind had generated it from the word "lowercase" in a *comment* of the deleted `apps/desktop/src/shared/permissions.ts` (`content: ./src/**/*.{ts,tsx}`); no screen uses the class (no other file in `apps/desktop/src` names it). The CSS is 36 bytes shorter, so its hash changed, and with it every chunk's file name. Every JS chunk is otherwise byte-identical (compared with the hashes normalised). No behaviour change; recorded for the owner. |
+| `dist/main` and server `dist` | moved modules gone; every other changed line is a `require` line (or a `.d.ts` `import`); `packages/core/dist/permissions.js` and `posFeatures.js` are **byte-identical** to the old `dist/main` and server `dist/lib` copies (sourcemap line aside), and `release.js` to the server's; the server's own `lib/shiftConfirm.js` changed only in its `permissions` require |
+| `lazy-load-a517` main chunk | **445,575 bytes, unchanged** (44/0); renamed `index-BQSuSMoH.js` only because the CSS hash changed |
+| `petrol-pos-a588` (main chunk budget) | 49/0 |
+| `check-permission-parity` | pass, **same result** ("58 keys enforced, 76 registered, 47 named; unregistered 0, ungated 16, phantom 0 — all at baseline"); only the scanned-file counts fell by the deleted copies |
+| `check-permission-catalogue` | pass, same keys (68 fine keys) |
+| Every `scripts/check-*.mjs` (31) | pass |
+| `shared/printing` `npm test` | 13/0 |
+| Parking vectors | 30/0 |
+| Suites reading the moved files | all pass: e.g. `permissions-a490-routes` 130/0, `permissions-a490-api` 28/0, `permissions-web-a490` 19/0, desktop `a490-permissions` 93/0, `shift-confirm` 28/0 + desktop 50/0, `manager-cash-lines-a527` 15/0, desktop `close-branch-a520` 45/0, `partner-roles-a550` 12/0, `partner-login-a550` 33/0, `release-version` 8/0, `staff-a562` 24/0, `cashier-money-switch` 10/0, `kitchen-font-a543` 5/0, `receipt-compact-a530` 7/0, `login-otp` 24/0, migration tests 134/142/143/147/159/169, `test-permission-catalogue` 6/0 |
+| **Full CI step set** (`cisteps.py`) | **237 steps run, 9 "failed"; none come from this change** (each rerun alone): schema audit (`python3`); desktop `money-reports` 17/1 (TZ); libuv `async.c` after all passed (migrations: only `41-42` flagged, 29/0; offline suites: `petrol-pos-web-a588` 17/0, `report-collected` 5/0, `void-owner-row` 5/0; desktop `server-setup-a503` 30/0, `a554-log-fixes` 41/0, `monthly-pack-till` 19/0). **New:** `partner-my-branches-a582` 19/2 — its fixtures are dated 2026-10-20/22 and `/api/loss-alerts` shows "the last 7 days", so it started failing on 2026-10-30. With the clock set back to 2026-10-23 (a preload) it passes 21/0. It fails on the batch C tree as well (baseline). A test that ages out; for the owner, not this branch. |
+| **Installer** (`build:all`, then `electron-builder --win nsis --x64 --ia32 … --config.directories.output=release-test --publish never`, version 1.0.20, not bumped) | pass — `ZapTill-1.0.20.exe` 212,821,093 bytes; `release-test` and the extracted asars deleted afterwards |
+| `app.asar` (x64; ia32 identical in `dist/` and `@zaptill`) | **all 40 core modules** in `node_modules/@zaptill/core/dist`, no `.ts`; no moved file left in `dist/main`; require graph: 135 files, 763 requires, every one inside the app, 57 edges into `@zaptill/core` |
+| Packaged exe (x64, node mode) | all 40 core modules load from inside `app.asar`. `permissions` gives 68 catalogue keys, 11 cashier default keys, and `hasPermission` true; `posFeatures` 15 keys; `RELEASE` 1.0.20 (`v1.0.20 · abcdef1`); `shiftConfirm` loads. All the same as the source tree. The WHOLE main-process start (A517 harness) ran, 250 IPC handlers |
 
 ## 9. Rollback
 

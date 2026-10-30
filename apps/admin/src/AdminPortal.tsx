@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
-import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, STAFF_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538; A543; A562
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, STAFF_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "@zaptill/core/posFeatures";   // A538; A543; A562
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
-import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
+import { RELEASE, releaseLabel, releasesDiffer } from "@zaptill/core/release";
 import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "@zaptill/core/tenantHost";   // A378: a client's own sign-in address
 import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "@zaptill/core/support";   // 0.6.35 (A384): a shop's own tech
 import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and Account pages

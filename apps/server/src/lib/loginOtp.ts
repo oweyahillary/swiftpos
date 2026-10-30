@@ -16,7 +16,7 @@
  * LOGIN_OTP=off on the cloud turns every code off — for an emergency only (email down and an admin locked out).
  * Tills never come here: a till signs in by enrolment and PIN, offline too.
  */
-import { isBackOffice } from './permissions';   // A490
+import { isBackOffice } from '@zaptill/core/permissions';   // A490
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import qrcode from 'qrcode-generator';

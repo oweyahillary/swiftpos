@@ -5,7 +5,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { applyAppFlavor } from './lib/appFlavor';
 import './index.css';
 import { stopWheelOnNumberInputs } from './lib/numberInputs';
-import { RELEASE } from './lib/release';
+import { RELEASE } from '@zaptill/core/release';
 
 stopWheelOnNumberInputs(document);
 

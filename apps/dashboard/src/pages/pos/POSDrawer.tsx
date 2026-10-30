@@ -19,7 +19,7 @@ import POSReportsTab, { POS_REPORT_KEYS } from './POSReportsTab';
 import POSOrderHistoryTab  from './POSOrderHistoryTab';
 import POSInventoryTab     from './POSInventoryTab';
 import POSCustomersTab     from './POSCustomersTab';
-import { PERMISSIONS, PERMISSION_GROUPS, hasAnyPermission } from '../../lib/permissions';
+import { PERMISSIONS, PERMISSION_GROUPS, hasAnyPermission } from '@zaptill/core/permissions';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 

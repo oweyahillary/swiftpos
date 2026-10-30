@@ -1,7 +1,7 @@
 /**
  * partner-roles-a550.test.mjs — A550: the five built-in roles added with partner login (owner, 2026-10-21: "add general
  * manager, ops manager, accountant and any user you feel will be needed"): General Manager, Operations Manager, Finance
- * Manager, Auditor, Kitchen Manager (shared/permissions.ts BUILT_IN_ROLES; migration 159 gives them to every business,
+ * Manager, Auditor, Kitchen Manager (packages/core/src/permissions.ts BUILT_IN_ROLES; migration 159 gives them to every business,
  * scripts/test-migration-159.mjs).
  *
  *   node tests/partner-roles-a550.test.mjs          (build apps/server first — the ceiling and the seeding run from dist/)
@@ -32,7 +32,7 @@ process.env.SUPABASE_URL ??= 'http://127.0.0.1:9';
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-only';
 process.env.JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const ceiling = require(path.join(DIST, 'lib/roleCeiling.js'));
 const seed = require(path.join(DIST, 'lib/defaultRolePermissions.js'));
 const ownerRole = require(path.join(DIST, 'lib/ownerRole.js'));
@@ -130,11 +130,11 @@ await ok('a NEW business is seeded with all five, each with its keys (lib/defaul
   for (const n of NAMES) assert.deepEqual([...P.defaultKeysForRoleName(n)].sort(), [...keys(n)].sort(), n);
   assert.deepEqual([...P.defaultKeysForRoleName(' general_manager ')].sort(), [...keys('General Manager')].sort(), 'case and spaces aside');
 });
-await ok('the copies of the catalogue carry the same roles (the till\'s and the web\'s — check-shared-sync keeps them identical)', () => {
-  const canonical = fs.readFileSync(path.join(ROOT, 'shared/permissions.ts'), 'utf8');
-  for (const c of ['apps/server/src/lib/permissions.ts', 'apps/dashboard/src/lib/permissions.ts', 'apps/admin/src/lib/permissions.ts',
+await ok('ONE catalogue: packages/core/src/permissions.ts, no copy left (shared-components batch D — the till, the web, the admin portal and the cloud import @zaptill/core/permissions)', () => {
+  assert.ok(fs.existsSync(path.join(ROOT, 'packages/core/src/permissions.ts')));
+  for (const c of ['shared/permissions.ts', 'apps/server/src/lib/permissions.ts', 'apps/dashboard/src/lib/permissions.ts', 'apps/admin/src/lib/permissions.ts',
     'apps/desktop/src/shared/permissions.ts', 'apps/desktop/src/main/permissions.ts']) {
-    assert.equal(fs.readFileSync(path.join(ROOT, c), 'utf8'), canonical, c);
+    assert.ok(!fs.existsSync(path.join(ROOT, c)), c);
   }
 });
 

@@ -3,7 +3,7 @@ import { posApi, type Forecourt, type Pump } from '../lib/posApi';
 import {
   QUICK_AMOUNTS, LOW_PCT, gradeColour, keyIn, fuelSale, litresText, moneyText, gradeGauge, pumpGrades, pumpState,
   PUMP_STATE_LABEL, type FuelField, type Gauge, type PumpState,
-} from '../../shared/forecourt';
+} from '@zaptill/core/forecourt';
 
 // The petrol POS's forecourt (A588; owner, 2026-10-24: "FIX the petrol pos shop item, make it feel petrol-like, you can
 // add gauges"). Loaded only when a petrol station opens its pumps (POSPage lazy-loads it, A517's budget).

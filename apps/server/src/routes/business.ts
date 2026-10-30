@@ -24,7 +24,7 @@ import { LOSS_SETTINGS_KEY } from '../jobs/lossAlerts';               // A576
 import { CREDIT_APPROVERS_KEY } from '../lib/creditApprovers';         // A585
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
-import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
+import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
 
 const router = safeRouter();
 

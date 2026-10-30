@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import { recordWriteGuard } from '../lib/watchdogCounters';   // A383
 import { otpDisabled } from '../lib/loginOtp';   // A391
 import { isTillPayload, isOwnerEraTillPayload, tillBlockReason } from '../lib/deviceGrant';   // A415
-import { expandKeys } from '../lib/permissions';                 // A490
+import { expandKeys } from '@zaptill/core/permissions';                 // A490
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
 import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528

@@ -17,7 +17,7 @@ import { recorderId } from '../lib/expenseRecorder';
 import { cleanExpenseMethod, nonCashExpenses } from '@zaptill/core/expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from '@zaptill/core/confirmReasons';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
-import { MONEY_MOVEMENT_MANAGER_ONLY } from '../lib/posFeatures';   // A453
+import { MONEY_MOVEMENT_MANAGER_ONLY } from '@zaptill/core/posFeatures';   // A453
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, cashBreakdown, type MethodMap } from '../lib/shiftConfirm';
 import { confirmerRows, confirmerByPin, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from '../lib/confirmerLookup';

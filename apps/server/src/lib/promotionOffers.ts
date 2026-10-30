@@ -20,7 +20,7 @@
  * Pure apart from promotionOffersFor / promotionOffersByIds (one read each).
  */
 import { supabase } from './supabase';
-import { cleanOffer, type Offer } from './offers';
+import { cleanOffer, type Offer } from '@zaptill/core/offers';
 
 export interface PromotionRow {
   id: string; name: string; promo_type: string; status?: string | null; applies_at_sale?: boolean | null;

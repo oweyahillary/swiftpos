@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 const MGR = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');

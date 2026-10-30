@@ -8,7 +8,7 @@
  * Pure (no database): the route and the tests run these exact rules.
  */
 import { type ApproverRow } from './approver';
-import { hasPermission, expandKeys } from './permissions';   // A490
+import { hasPermission, expandKeys } from '@zaptill/core/permissions';   // A490
 import { isOwnerRoleName } from './ownerRole';
 import { keysForRow } from './effectiveKeys';
 

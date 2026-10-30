@@ -8,10 +8,10 @@
  * The hook returns stable references — only re-fetches when `session` changes.
  */
 
-import { cleanOffer, type Offer } from '../../../lib/offers';   // A445
-import { parseNotePicks } from '../../../lib/orderNotes';
-import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
-import { scaleSettingsOrDefault, type ScaleSettings } from '../../../lib/scaleBarcode';   // A577
+import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
+import { parseNotePicks } from '@zaptill/core/orderNotes';
+import { parsePosFeatures, noPosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';
+import { scaleSettingsOrDefault, type ScaleSettings } from '@zaptill/core/scaleBarcode';   // A577
 import { rulesFromWire } from '@zaptill/core/reversalRules';
 import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
