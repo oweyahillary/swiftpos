@@ -86,7 +86,7 @@ To try per-branch billing for real on dev, run migration 182 on the dev database
 ## 2. Shared components (C:\swiftpos\pos-shared): batch E
 
 No copies of shared files are left anywhere: the sync check says "45 modules live in packages/core and packages/ui with
-no copies". 63 paths changed. Details in `docs/SHARED-COMPONENTS-PLAN.md` section 8d.
+no copies". 63 paths changed. Details in section 8d of the shared-components plan (in the pos-shared folder).
 
 ### What moved
 - **Into `packages/core` (42 modules now):** `customerScreen` and `customerDetails`, both pure. Their 8 app copies are

@@ -76,7 +76,9 @@ await ok('172 runs (and again — idempotent), recorded once; invoices.kind matc
   assert.equal(Number((await one(`SELECT count(*) AS n FROM public.schema_migrations WHERE version = '172_cloud_billing'`)).n), 1);
   const idx = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts/schema-index.json'), 'utf8'));
   const cols = (await q(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'invoices'`)).map((r) => r.column_name).sort();
-  assert.deepEqual(Object.keys(idx.invoices).sort(), cols);
+  // the columns later migrations add are in the index too (182, A612: branch_ids, lines) — not yet at 172
+  const LATER = ['branch_ids', 'lines'];
+  assert.deepEqual(Object.keys(idx.invoices).filter((c) => !LATER.includes(c)).sort(), cols);
 });
 let n = 0;
 const inv = (o = {}) => put('invoices', { business_id: A, invoice_number: `INV-2026-${String(++n).padStart(4, '0')}`, amount: 3000, period_start: '2026-11-23T07:00:00Z', ...o });
