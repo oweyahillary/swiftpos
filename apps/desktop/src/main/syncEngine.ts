@@ -39,7 +39,7 @@ import { readPending as readPendingRouting, overlayPending as overlayPendingRout
 import { executeCloseDay } from './branchClose';
 import { unpackNodeBundle, numOrNull, type AcquiredReference, identityFromWire } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
-import { saleBuyerPin } from './customerDetails';   // A607
+import { saleBuyerPin } from '@zaptill/core/customerDetails';   // A607
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
 import { closesToAdopt, keepOwnExpected, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401, A521

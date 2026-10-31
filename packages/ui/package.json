@@ -1,0 +1,20 @@
+{
+  "name": "@zaptill/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZapTill screen pieces shared by the web POS and the desktop POS (React, consumed as source by Vite). Never imported by the cloud or the desktop's main process. React is the app's own (a peer, never a dependency). See docs/SHARED-COMPONENTS-PLAN.md step 3.",
+  "license": "UNLICENSED",
+  "sideEffects": false,
+  "exports": {
+    "./CustomerScreenView": "./src/CustomerScreenView.tsx",
+    "./CustomerAskForm": "./src/CustomerAskForm.tsx",
+    "./numberInputs": "./src/numberInputs.ts",
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "files": [
+    "src"
+  ]
+}

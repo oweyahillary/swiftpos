@@ -10,6 +10,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "@zaptill/core": "file:../../packages/core",
+    "@zaptill/ui": "file:../../packages/ui",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-is": "18.3.1",

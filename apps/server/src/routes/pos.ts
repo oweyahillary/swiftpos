@@ -41,7 +41,7 @@ import { assertBranchAccess, can } from '../middleware/rbac';                   
 import { maskPhone, seesCustomerContacts } from '../lib/personalData';           // A595
 import { branchCreditEnabled, branchLimitsAt, owedByCustomerAt } from '../lib/branchCredit';   // A595 D4
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
-import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '../lib/customerScreen';   // A606
+import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '@zaptill/core/customerScreen';   // A606
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
 import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601

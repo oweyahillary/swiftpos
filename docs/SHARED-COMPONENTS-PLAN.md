@@ -10,10 +10,10 @@ full CI step set after every step; before/after screenshots for every UI move; `
 features on the branch. Printing (`shared/printing`), the desktop main process's own code and the server's internals
 stay where they are.
 
-Status: **step 1 done on the branch (package mechanism proven, pilot `confirmReasons.ts` moved); step 2 batches A and B
-committed (37ffe35, section 8); batch C and `forecourt` (section 8b) and batch D (section 8c) done, not committed —
-40 modules in `packages/core`, 3 of 174 copy paths left (`numberInputs`, step 3). Step 2 is complete apart from
-`numberInputs`. Not merged. Merging needs the one Render change in section 4 first.**
+Status: **steps 1 and 2 done and committed on the branch (37ffe35, d639d40; `dev` merged in 859329a); batch E
+(section 8d) done, not committed — the last copies moved: 42 modules in `packages/core`, and step 3 started with
+`packages/ui` (3 pieces). No copy paths left (`SHARED` is empty). Not merged. Merging needs the one Render change in
+section 4 first.**
 
 ---
 
@@ -535,6 +535,75 @@ and the installer):
 | **Installer** (`build:all`, then `electron-builder --win nsis --x64 --ia32 … --config.directories.output=release-test --publish never`, version 1.0.20, not bumped) | pass — `ZapTill-1.0.20.exe` 212,821,093 bytes; `release-test` and the extracted asars deleted afterwards |
 | `app.asar` (x64; ia32 identical in `dist/` and `@zaptill`) | **all 40 core modules** in `node_modules/@zaptill/core/dist`, no `.ts`; no moved file left in `dist/main`; require graph: 135 files, 763 requires, every one inside the app, 57 edges into `@zaptill/core` |
 | Packaged exe (x64, node mode) | all 40 core modules load from inside `app.asar`. `permissions` gives 68 catalogue keys, 11 cashier default keys, and `hasPermission` true; `posFeatures` 15 keys; `RELEASE` 1.0.20 (`v1.0.20 · abcdef1`); `shiftConfirm` loads. All the same as the source tree. The WHOLE main-process start (A517 harness) ran, 250 IPC handlers |
+
+## 8d. Batch E — the last copies, and step 3 begins (2026-10-30, worktree `C:\swiftpos\pos-shared`, not committed)
+
+Done overnight on the owner's instruction, on top of the `dev` merge (859329a). `check-shared-sync.mjs` listed 17 copy
+paths in five groups after the merge. All five moved; **`SHARED` is now empty.**
+
+**Into `packages/core` (step 2's recipe):** `customerScreen` (A606) and `customerDetails` (A607), both pure (no imports
+at all). Two `git mv` (R100) and **8 app copies deleted**: server `lib/`, dashboard `lib/`, desktop `main/` and
+`shared/`. 25 app files had their import line switched to `'@zaptill/core/<name>'`. `packages/core` holds **42
+modules**.
+
+**Step 3 starts: `packages/ui` (`@zaptill/ui`).** The screen pieces the web POS and the desktop POS share:
+- `CustomerScreenView.tsx` and `CustomerAskForm.tsx` (the customer screen's view and form, A606 / A607, copied between
+  `apps/desktop/src/shared` and `apps/dashboard/src/lib`);
+- `numberInputs.ts` (the mouse-wheel guard, a DOM helper, so it never fitted core).
+
+Three `git mv` and **4 app copies deleted**. `apps/desktop/src/shared` is now empty and gone. 7 app files import
+`'@zaptill/ui/<name>'`.
+
+How the package is wired:
+- **Shape:** `package.json` with an `exports` entry per piece, pointing at the source (`./src/<name>.tsx`). Vite builds
+  it with the app, so there is no build step and no `dist`. React is a **peer** (the app's own React; never a copy in
+  the package).
+- **Links:** both apps have `"@zaptill/ui": "file:../../packages/ui"`. Each lockfile diff is the 13-line link entry only.
+- **Resolution:** the pieces import `react` and `@zaptill/core`, but `packages/ui` has no `node_modules`. So both apps
+  resolve through the link's own path: `preserveSymlinks` in the dashboard's and the desktop's `tsconfig.json` and Vite
+  config. React and core then come from the app's own `node_modules`, so there is one React.
+- **Dashboard chunking:** with `preserveSymlinks`, `@zaptill/*` modules sit under `node_modules`, and the dashboard's
+  `manualChunks` would have put them all in the eager `vendor` chunk. `@zaptill` is now excluded from that rule, so the
+  pieces chunk with the pages that use them, as before.
+- **Never server-side:** the cloud and the desktop main process (tsc, no React, no bundler) never import it. The sync
+  check now fails if they do.
+
+**`check-shared-sync.mjs`:**
+- `SHARED` is empty.
+- The "no copy grows back" guard covers `packages/ui` as well as `packages/core`.
+- A relative import of either package fails.
+- `@zaptill/ui` in `apps/server/src` or `apps/desktop/src/main` fails.
+- The "found nothing" safety check counts packaged modules (45), not copies.
+- Mutations checked: a view copied back into `apps/dashboard/src/lib` fails; a server file importing `@zaptill/ui`
+  fails.
+
+**Tests repointed:**
+- the cloud's `customer-details-a607` and `customer-screen-a606`: core by name, views bundled from `packages/ui/src`;
+- the desktop's `customer-details-a607`, `customer-display-a606` and `shift-confirm`: the same; the main-chunk checks
+  match the file name, wherever it lives;
+- `format` dropped its three `lib/` allow entries (the files are outside its scan now).
+
+**Verification:**
+
+| Check | Result |
+|---|---|
+| `tsc` — server, dashboard, admin, desktop `tsconfig.json` and `tsconfig.main.json` | pass |
+| Builds — server, desktop main and renderer, dashboard, admin | pass |
+| Desktop `dist/renderer` against a build of 859329a | **byte-identical** (21 files) |
+| Dashboard `dist` against a build of 859329a | **identical** apart from the build timestamp (`index`, `ReleaseBadge`); 106 JS files, same bytes. Before the `manualChunks` fix it was not: 90 files, the shared pieces folded into `vendor` |
+| Desktop POS main chunk (`lazy-load-a517`, `petrol-pos-a588`) | 446.4 kB, the same as 859329a (44/0, 49/0) |
+| Suites on the moved files | `customer-details-a607` 29/0, `customer-screen-a606` 17/0, `format` 25/0, `petrol-pos-web-a588` 17/0; desktop `customer-details-a607` 84/0, `customer-display-a606` 66/0, `shift-confirm` 50/0 |
+| `check-shared-sync` | pass: "45 modules live in packages/core and packages/ui with no copies" |
+| **Full CI step set** (`cisteps.py`) | 265 steps, 11 "failed". Nine are the known Windows noise: the schema audit (`python3`), the migrations install, libuv `async.c` exit 127 after every case passed (offline suites, desktop `server-join`, `server-setup-a503`, `a534-small-items`, `a554-log-fixes`, `monthly-pack-till`), desktop `money-reports` (TZ). Two were real, from the `dev` merge rather than batch E: see below |
+| Every test, migration script and desktop test run on its own | no real failure after the fixes below (only desktop `money-reports`, the TZ case) |
+
+**Found and fixed during the checks:**
+- **From the `dev` merge (859329a), missed then:** migration tests 175, 176 and 177 (A594 / A595) and `brand-polish-a609`
+  still read `shared/permissions.ts` and `shared/themes.ts`. They now read `packages/core/src`. These two CI steps
+  failed on the merge commit too.
+- **From this batch:** `till-scope-enforce-a545` scanned `apps/desktop/src/shared` for the POS's own writes, and the
+  folder is gone. It and `desktop-writes-allowed`, which skipped the missing folder silently, now scan
+  `packages/core/src` and `packages/ui/src` (`.ts` and `.tsx`).
 
 ## 9. Rollback
 

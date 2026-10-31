@@ -39,7 +39,7 @@ const coreRequire = createRequire(path.join(ROOT, 'apps/server/package.json')); 
 const DIST = path.join(ROOT, 'apps/server/dist');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
-if (!fs.existsSync(path.join(DIST, 'lib/customerScreen.js'))) { console.log('\nBuild the server first:\n  cd apps/server && npm run build\n'); process.exit(1); }
+if (!fs.existsSync(path.join(DIST, 'routes/pos.js'))) { console.log('\nBuild the server first:\n  cd apps/server && npm run build\n'); process.exit(1); }
 
 process.env.SUPABASE_URL ??= 'http://127.0.0.1:9';
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-only';
@@ -54,7 +54,7 @@ const SV = require(path.join(DIST, 'lib/syncVersions.js'));
 const AC = require(path.join(DIST, 'lib/authCache.js'));
 const PI = require(path.join(DIST, 'lib/posInit.js'));
 const SC = require(path.join(DIST, 'lib/syncChanges.js'));
-const CS = require(path.join(DIST, 'lib/customerScreen.js'));
+const CS = coreRequire('@zaptill/core/customerScreen');   // shared-components batch E: packages/core
 const TOPICS = coreRequire('@zaptill/core/syncTopics');
 const warn = console.warn; console.warn = () => {};
 const err = console.error; console.error = () => {};
@@ -209,8 +209,8 @@ try {
   const entry = path.join(tmp, 'entry.tsx');
   const dash = (p) => path.join(ROOT, 'apps/dashboard/src', p).replace(/\\/g, '/');
   fs.writeFileSync(entry, `export { createPublisher } from ${JSON.stringify(dash('lib/customerScreenChannel.ts'))};
-export { default as View } from ${JSON.stringify(dash('lib/CustomerScreenView.tsx'))};
-export * as CS from ${JSON.stringify(dash('lib/customerScreen.ts'))};
+export { default as View } from ${JSON.stringify(path.join(ROOT, 'packages/ui/src/CustomerScreenView.tsx').replace(/\\/g, '/'))};
+export * as CS from ${JSON.stringify(path.join(ROOT, 'packages/core/src/customerScreen.ts').replace(/\\/g, '/'))};
 export { createElement } from 'react';
 export { renderToStaticMarkup } from 'react-dom/server';`);
   const nodePaths = [path.join(ROOT, 'apps/dashboard/node_modules'), path.join(ROOT, 'node_modules')];

@@ -8,7 +8,7 @@
  * The hook returns stable references — only re-fetches when `session` changes.
  */
 
-import { gateDisplayContent, slidesFromWire, type DisplayContent } from '../../../lib/customerScreen';   // A606
+import { gateDisplayContent, slidesFromWire, type DisplayContent } from '@zaptill/core/customerScreen';   // A606
 import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
 import { parseNotePicks } from '@zaptill/core/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';

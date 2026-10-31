@@ -26,7 +26,7 @@ import { CREDIT_APPROVERS_KEY } from '../lib/creditApprovers';         // A585
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
 import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
-import { CUSTOMER_SCREEN_KEY, cleanCustomerScreen, slidesFromWire, customerScreenWriteError } from '../lib/customerScreen';   // A606
+import { CUSTOMER_SCREEN_KEY, cleanCustomerScreen, slidesFromWire, customerScreenWriteError } from '@zaptill/core/customerScreen';   // A606
 import { getWebAccess } from '../lib/webAccess';   // A606: the slideshow is part of the online licence
 
 const router = safeRouter();

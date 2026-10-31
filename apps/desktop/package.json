@@ -84,6 +84,7 @@
     "@swiftpos/printing": "file:../../shared/printing",
     "@types/node": "^20.19.43",
     "@zaptill/core": "file:../../packages/core",
+    "@zaptill/ui": "file:../../packages/ui",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.8.11",

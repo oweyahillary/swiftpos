@@ -4,7 +4,7 @@ import App from './App';
 import { ThemeProvider } from './context/ThemeContext';
 import { applyAppFlavor } from './lib/appFlavor';
 import './index.css';
-import { stopWheelOnNumberInputs } from './lib/numberInputs';
+import { stopWheelOnNumberInputs } from '@zaptill/ui/numberInputs';
 import { RELEASE } from '@zaptill/core/release';
 import { reloadForNewBuild } from './lib/staleBuild';
 import { bootBrandTheme } from './lib/themeBoot';

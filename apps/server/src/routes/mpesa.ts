@@ -50,7 +50,7 @@ import { requirePermission, oneBranchOnly } from '../middleware/rbac';
 import { decryptSecret } from '../lib/crypto';
 import { sendError }   from '../lib/sendError';
 import { maskCustomerContacts } from '../lib/personalData';   // A595
-import { normaliseKenyanPhone, stkAmount } from '../lib/customerDetails';   // A607
+import { normaliseKenyanPhone, stkAmount } from '@zaptill/core/customerDetails';   // A607
 
 const router = safeRouter();
 

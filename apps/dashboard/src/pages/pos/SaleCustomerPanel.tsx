@@ -15,11 +15,11 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import CustomerAskForm from '../../lib/CustomerAskForm';
+import CustomerAskForm from '@zaptill/ui/CustomerAskForm';
 import {
   CONSENT_LINE, SAVE_LABEL, consentPlan, kraPinError, phoneError, normaliseKenyanPhone, normaliseKraPin, maskTypedPhone,
   newAskId, cleanAnswer, secondScreenAsk, type CustomerAnswer, type SaleDetails,
-} from '../../lib/customerDetails';
+} from '@zaptill/core/customerDetails';
 import { customerScreenPublisher, customerScreenTouch, setCustomerScreenTouch } from '../../lib/customerScreenChannel';
 
 export interface WebSaleBuyer {

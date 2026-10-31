@@ -244,7 +244,7 @@ ok('the printed lines spell out the shortage and the cashier\'s different figure
 }
 
 // 0.6.23: the wheel blocker itself, on a stand-in document.
-const W = await import(pathToFileURL(path.join(here, '..', 'src/shared/numberInputs.ts')).href);
+const W = await import(pathToFileURL(path.join(here, '..', '..', '..', 'packages/ui/src/numberInputs.ts')).href);
 {
   let listener = null; const doc = { activeElement: null, addEventListener: (_t, fn) => { listener = fn; }, removeEventListener: () => { listener = null; } };
   let blurred = 0; const num = { tagName: 'INPUT', type: 'number', blur: () => { blurred++; } };

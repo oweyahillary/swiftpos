@@ -18,7 +18,7 @@
  * Pure apart from its deps (the cloud calls, the clock, the timers), so test/customer-details-a607.test.mjs runs it with
  * a fake cloud.
  */
-import { normaliseKenyanPhone, stkAmount, stkStageFromStatus, stkOffered, type StkStage } from './customerDetails';
+import { normaliseKenyanPhone, stkAmount, stkStageFromStatus, stkOffered, type StkStage } from '@zaptill/core/customerDetails';
 
 export interface CloudAnswer { status: number; json(): Promise<any> }
 export interface StkDeps {

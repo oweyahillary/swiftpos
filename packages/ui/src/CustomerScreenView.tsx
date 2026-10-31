@@ -12,7 +12,7 @@
  * (src/shared/) and the web dashboard (src/lib/), each beside its customerScreen.ts and themes.ts.
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { displayWords, lineQuantityText, shownStage, THANKS_MS, type DisplayState, type DisplayContent } from './customerScreen';
+import { displayWords, lineQuantityText, shownStage, THANKS_MS, type DisplayState, type DisplayContent } from '@zaptill/core/customerScreen';
 import { brandPalette, resolveTheme, labelOn } from '@zaptill/core/themes';
 
 export interface ScreenPalette { panel: string; onPanel: string; mark: string; markSoft: string }

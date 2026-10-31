@@ -2,7 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
-import { stopWheelOnNumberInputs } from '../shared/numberInputs';
+import { stopWheelOnNumberInputs } from '@zaptill/ui/numberInputs';
 import { startActivityPings } from './lib/activity';   // A508
 
 stopWheelOnNumberInputs(document);

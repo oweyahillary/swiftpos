@@ -8,6 +8,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173 },
+  // Shared components step 3: @zaptill/ui is linked (file:) and holds React views but no node_modules of its own — its
+  // imports (react, @zaptill/core) resolve from the link's path, i.e. this app's node_modules (one React, never two).
+  resolve: { preserveSymlinks: true },
   // A281: stamp the web build with its commit so "is the front-end current?" is a
   // glance, not an investigation (the till-picker "missing" because Vercel served a
   // main build cost hours). Vercel exposes these at build; falls back for local.
@@ -24,7 +27,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
+          // Shared components: @zaptill/core and @zaptill/ui are this repo's own code, reached through the app's
+          // node_modules link (preserveSymlinks) — they chunk with the pages that use them, never into 'vendor'.
+          if (id.includes('node_modules') && !/[\/]node_modules[\/]@zaptill[\/]/.test(id)) {
             if (id.includes('@supabase')) return 'supabase';
             // A469: the spreadsheet library (~400 KB) is its own chunk, fetched only by the menu import and a report's
             // Download Excel — in 'vendor' every page downloaded it.

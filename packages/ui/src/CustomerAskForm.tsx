@@ -13,7 +13,7 @@
  * (src/shared/) and the web dashboard (src/lib/), each beside its customerDetails.ts.
  */
 import { useState, type CSSProperties } from 'react';
-import { CONSENT_LINE, SAVE_LABEL, stkWords, type AskRequest, type StkView } from './customerDetails';
+import { CONSENT_LINE, SAVE_LABEL, stkWords, type AskRequest, type StkView } from '@zaptill/core/customerDetails';
 
 export interface AskValues { id: string; name: string; phone: string; kraPin: string; save: boolean }
 type Field = 'phone' | 'name' | 'kraPin';

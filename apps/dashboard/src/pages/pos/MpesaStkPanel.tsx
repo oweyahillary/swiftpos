@@ -24,8 +24,8 @@ import { useState, useEffect, useRef } from 'react';
 import { api } from '../../lib/api';
 // A607: the customer's number from this sale's details, typed by the customer (here or on the customer screen), and the
 // prompt's progress on the customer screen too ("Waiting for M-Pesa… (check your phone)" — never the phone number).
-import CustomerAskForm from '../../lib/CustomerAskForm';
-import { cleanAnswer, newAskId, maskTypedPhone, secondScreenAsk, type StkStage } from '../../lib/customerDetails';
+import CustomerAskForm from '@zaptill/ui/CustomerAskForm';
+import { cleanAnswer, newAskId, maskTypedPhone, secondScreenAsk, type StkStage } from '@zaptill/core/customerDetails';
 import { customerScreenPublisher, customerScreenTouch } from '../../lib/customerScreenChannel';
 import { usePOSAuth } from '../../context/POSAuthContext';
 

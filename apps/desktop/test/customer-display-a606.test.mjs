@@ -48,13 +48,13 @@ Module._resolveFilename = function (req, parent, ...rest) { return req === 'elec
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 
-const CS = require(path.join(dist, 'customerScreen.js'));
+const CS = require('@zaptill/core/customerScreen');   // shared-components batch E: packages/core
 const CD = require(path.join(dist, 'customerDisplay.js'));
 const SL = require(path.join(dist, 'customerSlides.js'));
 
 // The REAL view, bundled for Node and rendered to HTML (no browser).
 const entry = path.join(userData, 'entry.tsx');
-fs.writeFileSync(entry, `export { default as View } from ${JSON.stringify(path.join(desktop, 'src/shared/CustomerScreenView.tsx').replace(/\\/g, '/'))};
+fs.writeFileSync(entry, `export { default as View } from ${JSON.stringify(path.join(desktop, '../../packages/ui/src/CustomerScreenView.tsx').replace(/\\/g, '/'))};
 export * as FEED from ${JSON.stringify(path.join(desktop, 'src/renderer/lib/customerDisplayFeed.ts').replace(/\\/g, '/'))};
 export { createElement } from 'react';
 export { renderToStaticMarkup } from 'react-dom/server';`);
@@ -355,7 +355,7 @@ try {
       const kb = (main.code.length / 1024).toFixed(1);
       console.log(`  (built: main chunk ${kb} kB; the customer screen ${((chunks.find((c) => mods(c).some((m) => m.endsWith('/pages/CustomerDisplayPage.tsx')))?.code.length ?? 0) / 1024).toFixed(1)} kB)`);
       ok('the customer screen page, its view and its rules are their own chunk — not in the POS\'s', !inMain('renderer/pages/CustomerDisplayPage.tsx')
-        && !inMain('shared/CustomerScreenView.tsx') && !inMain('shared/customerScreen.ts') && !inMain('renderer/lib/customerDisplayFeed.ts')
+        && !inMain('CustomerScreenView.tsx') && !inMain('customerScreen.ts') && !inMain('renderer/lib/customerDisplayFeed.ts')
         && chunks.some((c) => c.isDynamicEntry && mods(c).some((m) => m.endsWith('/src/renderer/pages/CustomerDisplayPage.tsx'))));
       // Both budgets: petrol-pos-a588 (≤ 452 kB) and lazy-load-a517 (< 450 kB). 448.9 kB before A606.
       ok('the POS\'s main chunk < 450 kB still (lazy-load-a517) and ≤ 452 kB (petrol-pos-a588)', main.code.length < 450 * 1024, `${kb} kB`);

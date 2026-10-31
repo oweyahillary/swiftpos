@@ -18,7 +18,7 @@ import CustomerTypesIt from './CustomerTypesIt';
 import {
   CONSENT_LINE, SAVE_LABEL, consentPlan, kraPinError, phoneError, normaliseKenyanPhone, normaliseKraPin, maskTypedPhone,
   newAskId, cleanName, type CustomerAnswer, type SaleDetails,
-} from '../../shared/customerDetails';
+} from '@zaptill/core/customerDetails';
 
 export interface SaleBuyer {
   /** What the POS's button shows ("Mary", "PIN A123…", "Customer"). */

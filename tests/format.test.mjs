@@ -187,11 +187,8 @@ const EXCLUDED = [
 const ALLOW = {
   // (A588's forecourt moneyText, for the desktop pumps screen, now lives in packages/core/src/forecourt.ts, outside this
   // scan: shared-components batch C deleted the lib/forecourt.ts copy, so its entry left this list.)
-  // A606 / A607: copies of shared/customerScreen.ts and the shared customer-screen views (kept identical with the desktop's
-  // by check-shared-sync) — the desktop renderer has no lib/format, so the shared copies carry their own formatter.
-  'lib/customerScreen.ts': [['fmtN', 'the shared customer-screen copy, for the desktop customer screen too']],
-  'lib/CustomerScreenView.tsx': [['money', 'the shared customer-screen view, for the desktop customer screen too']],
-  'lib/CustomerAskForm.tsx': [['money', 'the shared customer details form, for the desktop customer screen too']],
+  // (A606 / A607's customer-screen rules and views — their own fmtN / money, for the desktop customer screen too — now
+  // live in packages/core and packages/ui, outside this scan: shared-components batch E deleted the lib/ copies.)
   'pages/ReportsPage.tsx': [['fmtShiftTime', 'a weekday + date + time label ("Tue 13 Oct, 14:05") for the shift list; lib/format has no weekday form']],
 };
 const files = [];

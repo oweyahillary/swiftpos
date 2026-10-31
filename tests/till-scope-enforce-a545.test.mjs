@@ -209,11 +209,12 @@ try {
     assert.deepEqual(missing, []);
   });
 
-  await ok('every write the till makes with its own sign-in (src/main, src/shared) falls in a pattern with a case', () => {
+  await ok('every write the till makes with its own sign-in (src/main, the shared packages) falls in a pattern with a case', () => {
     const concrete = (p) => p.replace(/\$\{(?:[^{}]|\{[^}]*\})*\}/g, 'x').split('?')[0];
     const out = [];
-    for (const d of ['apps/desktop/src/main', 'apps/desktop/src/main/ipc', 'apps/desktop/src/shared']) {   // D10: + src/main/ipc
-      for (const f of fs.readdirSync(path.join(ROOT, d)).filter((x) => x.endsWith('.ts'))) {
+    // D10: + src/main/ipc. Shared-components batch E: the desktop's src/shared moved into packages/core and packages/ui.
+    for (const d of ['apps/desktop/src/main', 'apps/desktop/src/main/ipc', 'packages/core/src', 'packages/ui/src']) {
+      for (const f of fs.readdirSync(path.join(ROOT, d)).filter((x) => /\.tsx?$/.test(x))) {
         const lines = fs.readFileSync(path.join(ROOT, d, f), 'utf8').split('\n');
         lines.forEach((ln, i) => {
           if (/^\s*(\/\/|\*)/.test(ln) || /manageFetch\(/.test(ln)) return;

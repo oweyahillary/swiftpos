@@ -19,7 +19,7 @@ import { getEtimsFlag } from '../deviceConfig';
 import { liveCloudGet, liveCloudPost } from '../syncEngine';
 import { logLine } from '../logFile';
 import { customerDisplay, customerScreenTouch, setCustomerScreenTouch, licensed } from '../customerDisplayWire';
-import { secondScreenAsk } from '../customerDetails';
+import { secondScreenAsk } from '@zaptill/core/customerDetails';
 import { createStkPrompt, type StkPrompt } from '../mpesaStk';
 import { DISPLAY_SETUP_REFUSED } from './customerDisplay';
 import { type IpcShared } from './shared';

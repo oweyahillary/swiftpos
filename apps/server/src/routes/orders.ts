@@ -53,7 +53,7 @@ import { loadCreditRule, onApproverList, type CreditApprovalRule } from '../lib/
 import { isMasked, seesCustomerContacts, maskPhone } from '../lib/personalData';   // A595
 import { branchCreditEnabled, branchLimitOf, owedAtBranch, creditAvailable, CREDIT_OFF_HERE } from '../lib/branchCredit';   // A595 D4
 import { backfillQuiet } from '../lib/backfill';   // A602
-import { saleBuyerPin } from '../lib/customerDetails';   // A607
+import { saleBuyerPin } from '@zaptill/core/customerDetails';   // A607
 
 const router = safeRouter();
 router.use(requireAuth);

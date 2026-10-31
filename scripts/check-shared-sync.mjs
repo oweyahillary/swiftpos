@@ -1,21 +1,17 @@
 #!/usr/bin/env node
 /**
- * check-shared-sync.mjs — fail CI when a shared file diverges between apps.
+ * check-shared-sync.mjs — fail CI when shared code is copied again, or diverges.
  *
- * There is no shared package in this monorepo and adding one means build
- * tooling across three apps with different bundlers. The pragmatic alternative
- * is a copied file plus a check that the copies are identical — which is the
- * same trick scripts/schema-parity.mjs already plays for Postgres and SQLite.
+ * It began as the guard over files copied between the apps and kept identical (audit H2: VAT was overstated on every
+ * discounted sale for months because /open and /pay each computed the same money their own way; the parking tariff is
+ * priced at the barrier and again on sync, and two answers would leave a drawer that does not balance). Two copies of
+ * one file was acceptable; two implementations is not.
  *
- * This exists because of audit H2. VAT was overstated on every discounted sale
- * for months because /open and /pay each computed the same money their own way.
- * Parking has the same shape with worse odds: the till prices a session offline
- * at the barrier, the server prices it again on sync, and if those two ever
- * disagree the drawer will not balance and nobody will know which figure was
- * right. Two copies of one file is acceptable. Two implementations is not.
- *
- * To change a shared file: edit one copy, copy it to the others verbatim, run
- * its test vectors, commit all copies together.
+ * Shared components (docs/SHARED-COMPONENTS-PLAN.md) replaced the copies with packages: the rules in packages/core
+ * (@zaptill/core, every app) and the POS screen pieces in packages/ui (@zaptill/ui, the web POS and the desktop
+ * renderer). Batch E (2026-10-30) moved the last copies, so SHARED is empty. What this checks now: no copy of a packaged
+ * module grows back in an app, a package is imported by its name (never a relative path), and @zaptill/ui never reaches
+ * the cloud or the desktop's main process.
  */
 
 import fs from 'node:fs';
@@ -25,62 +21,10 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Each entry: the canonical copy first, then every copy that must match it. */
-const SHARED = [
-  {
-    // A606: the customer screen — the slideshow rules, the cleaned state the customer sees, the premium gate, the screen.
-    name: 'customerScreen.ts',
-    copies: [
-      'shared/customerScreen.ts',
-      'apps/server/src/lib/customerScreen.ts',       // the owner's slideshow save, served with pos/init
-      'apps/desktop/src/main/customerScreen.ts',     // main cleans what the POS sends, gates the content, picks the screen
-      'apps/desktop/src/shared/customerScreen.ts',   // the customer screen page
-      'apps/dashboard/src/lib/customerScreen.ts',    // the Branding page's slideshow and the web customer screen
-    ],
-  },
-  {
-    // A607: the customer's details at the counter — phone / KRA PIN rules, the request to and the answer from a
-    // customer-facing form, the consent plan, the M-Pesa prompt as both screens show it, who gets what.
-    name: 'customerDetails.ts',
-    copies: [
-      'shared/customerDetails.ts',
-      'apps/server/src/lib/customerDetails.ts',       // the sale's buyer PIN (orders), the POS's M-Pesa prompt
-      'apps/desktop/src/main/customerDetails.ts',     // main checks what the customer screen sends back, the STK prompt
-      'apps/desktop/src/shared/customerDetails.ts',   // the POS's forms and the customer screen page
-      'apps/dashboard/src/lib/customerDetails.ts',    // the web POS's forms and its customer screen
-    ],
-  },
-  {
-    // A606: the customer screen's view — one drawing for the desktop's second window and the web POS's. Each copy sits
-    // beside a customerScreen.ts and a themes.ts copy (it imports ./customerScreen and ./themes).
-    name: 'CustomerScreenView.tsx',
-    copies: [
-      'apps/desktop/src/shared/CustomerScreenView.tsx',
-      'apps/dashboard/src/lib/CustomerScreenView.tsx',
-    ],
-  },
-  {
-    // A607: the form the customer fills in (the customer screen, and "Customer types it" on the cashier's screen) and the
-    // M-Pesa prompt's banner. Each copy sits beside a customerDetails.ts copy.
-    name: 'CustomerAskForm.tsx',
-    copies: [
-      'apps/desktop/src/shared/CustomerAskForm.tsx',
-      'apps/dashboard/src/lib/CustomerAskForm.tsx',
-    ],
-  },
-  {
-    // 0.6.23: the mouse wheel never changes a number field (the till and the web).
-    name: 'numberInputs.ts',
-    copies: [
-      'shared/numberInputs.ts',
-      'apps/desktop/src/shared/numberInputs.ts',
-      'apps/dashboard/src/lib/numberInputs.ts',
-    ],
-  },
-  // confirmReasons.ts (0.6.27) moved to packages/core in shared-components step 1 — imported as
-  // '@zaptill/core/confirmReasons', no copies (docs/SHARED-COMPONENTS-PLAN.md). The CORE check below keeps it that way.
-  // Step 2 (batches A and B) moved 26 more the same way — every file in packages/core/src (the plan's "Step 2 progress").
-];
+/** Each entry: the canonical copy first, then every copy that must match it. Shared-components batch E (2026-10-30)
+ *  moved the last five (customerScreen, customerDetails → packages/core; CustomerScreenView, CustomerAskForm,
+ *  numberInputs → packages/ui): no copies are left. A file shared again goes into a package, not here. */
+const SHARED = [];
 
 const sha = (p) =>
   crypto.createHash('sha256')
@@ -130,6 +74,9 @@ for (const { name, copies } of SHARED) {
 // a second implementation that nothing keeps in step — so a file of the same name in shared/ or an app's lib/, shared/
 // or main/ folder fails, and so does a module that is still listed above.
 const CORE_DIR = path.join(ROOT, 'packages', 'core', 'src');
+// Step 3 (batch E): the screen pieces in packages/ui (@zaptill/ui, React, the web POS's and the desktop POS's) — the same
+// rule: one file, imported by its package name, no copies.
+const UI_DIR = path.join(ROOT, 'packages', 'ui', 'src');
 const COPY_DIRS = [
   'shared',
   'apps/server/src/lib', 'apps/server/src/shared',
@@ -165,19 +112,24 @@ const isDifferentModule = (rel, src, core) => {
   return src !== core && exported.length > 0 && !exported.some(defines) && d.marks.every((re) => re.test(src));
 };
 const text = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
-const coreModules = fs.existsSync(CORE_DIR) ? fs.readdirSync(CORE_DIR).filter((f) => f.endsWith('.ts')) : [];
-for (const mod of coreModules) {
+const packaged = [
+  ...(fs.existsSync(CORE_DIR) ? fs.readdirSync(CORE_DIR).filter((f) => f.endsWith('.ts')).map((mod) => ({ mod, pkg: 'core' })) : []),
+  ...(fs.existsSync(UI_DIR) ? fs.readdirSync(UI_DIR).filter((f) => /\.tsx?$/.test(f)).map((mod) => ({ mod, pkg: 'ui' })) : []),
+];
+let guarded = 0;
+for (const { mod, pkg } of packaged) {
   const present = COPY_DIRS.map((d) => `${d}/${mod}`).filter((c) => fs.existsSync(path.join(ROOT, c)));
-  const different = present.filter((c) => isDifferentModule(c, text(c), text(`packages/core/src/${mod}`)));
+  const different = present.filter((c) => isDifferentModule(c, text(c), text(`packages/${pkg}/src/${mod}`)));
   const regrown = present.filter((c) => !different.includes(c));
   const listed = SHARED.some((e) => e.name === mod);
+  guarded++;
   if (regrown.length || listed) {
-    console.error(`\nFAIL ${mod} lives in packages/core/src — import it as '@zaptill/core/${mod.replace(/\.ts$/, '')}', do not copy it:`);
+    console.error(`\nFAIL ${mod} lives in packages/${pkg}/src — import it as '@zaptill/${pkg}/${mod.replace(/\.tsx?$/, '')}', do not copy it:`);
     for (const c of regrown) console.error(`  delete ${c}`);
     if (listed) console.error(`  remove its entry from SHARED in scripts/check-shared-sync.mjs`);
     problems++;
   } else {
-    console.log(`  ok   ${mod.padEnd(24)} packages/core only (no copies)${different.length ? ` — ${different.join(', ')} is a different module (DIFFERENT_MODULE)` : ''}`);
+    console.log(`  ok   ${mod.padEnd(24)} packages/${pkg} only (no copies)${different.length ? ` — ${different.join(', ')} is a different module (DIFFERENT_MODULE)` : ''}`);
   }
 }
 
@@ -185,7 +137,11 @@ for (const mod of coreModules) {
 // cloud's and the desktop main process's compiled code would then require a path outside the app: not shipped in the
 // installer's app.asar, not present on Render. The bundlers would inline it, so the rule is the same everywhere.
 const APP_SRC = ['apps/server/src', 'apps/dashboard/src', 'apps/admin/src', 'apps/desktop/src'];
-const RELATIVE_CORE = /(?:from\s+|import\(\s*|require\(\s*)['"](?:\.\.?\/)+(?:[^'"]*\/)?packages\/core\b/;
+const RELATIVE_CORE = /(?:from\s+|import\(\s*|require\(\s*)['"](?:\.\.?\/)+(?:[^'"]*\/)?packages\/(?:core|ui)\b/;
+// @zaptill/ui is React screens consumed as source by Vite: the cloud and the desktop's main process (compiled by tsc, no
+// React, no bundler) must never import it.
+const NO_UI = ['apps/server/src', 'apps/desktop/src/main'];
+const IMPORTS_UI = /(?:from\s+|import\(\s*|require\(\s*)['"]@zaptill\/ui\b/;
 const walkSrc = (d, out = []) => {
   if (!fs.existsSync(d)) return out;
   for (const e of fs.readdirSync(d, { withFileTypes: true })) {
@@ -198,15 +154,24 @@ const walkSrc = (d, out = []) => {
 for (const dir of APP_SRC) {
   for (const f of walkSrc(path.join(ROOT, dir))) {
     if (RELATIVE_CORE.test(fs.readFileSync(f, 'utf8'))) {
-      console.error(`\nFAIL ${path.relative(ROOT, f)} imports packages/core by a relative path — use '@zaptill/core/<name>'.`);
+      console.error(`\nFAIL ${path.relative(ROOT, f)} imports packages/core or packages/ui by a relative path — use '@zaptill/core/<name>' or '@zaptill/ui/<name>'.`);
+      problems++;
+    }
+  }
+}
+for (const dir of NO_UI) {
+  for (const f of walkSrc(path.join(ROOT, dir))) {
+    if (IMPORTS_UI.test(fs.readFileSync(f, 'utf8'))) {
+      console.error(`\nFAIL ${path.relative(ROOT, f)} imports @zaptill/ui — React screens are for the web POS and the desktop renderer only.`);
       problems++;
     }
   }
 }
 
-// The check's own failure mode is finding nothing and declaring success.
-if (checked === 0) {
-  console.error('\nrefusing to pass: no shared files were found at all. Check the paths in SHARED.');
+// The check's own failure mode is finding nothing and declaring success. With no copies left (batch E), what it checks is
+// the packages' modules: none found at all is a broken path, not a pass.
+if (checked === 0 && guarded === 0) {
+  console.error('\nrefusing to pass: no shared files and no packaged modules were found at all. Check the paths.');
   process.exit(2);
 }
 
@@ -215,4 +180,4 @@ if (problems) {
   process.exit(1);
 }
 
-console.log(`\nOK — ${checked} shared file copies all agree.`);
+console.log(`\nOK — ${guarded} modules live in packages/core and packages/ui with no copies${checked ? `; ${checked} shared file copies all agree` : ''}.`);
