@@ -73,8 +73,39 @@ The new project has a **new URL and new keys**, so every place below changes.
      "$PG/psql" "$NEW_DEV" -At -F' ' -f /c/swiftpos/pos/scripts/db-move/row-counts.sql > new.txt
      diff old.txt new.txt && echo "IDENTICAL"
      ```
-  5. When it says `IDENTICAL`, point dev at it (B3). Then delete the folder `~/zaptill-dev-move`, because the dumps hold
-     sign-in data.
+     Expected: the restore reports **one** ignored error, `schema "public" already exists` (the new project ships with an
+     empty `public`). A row-count difference only in `refresh_tokens` is fine: the old database stayed live and renewed a
+     sign-in after the dump.
+  5. **Check the structure, then the grants.** The new project's "Automatically expose new tables" gives `anon` and
+     `authenticated` access to every restored table, including the ones our migrations had revoked. Dev had 245 of them.
+     List them and revoke exactly those:
+     ```bash
+     Q="select 'tables', count(*) from pg_tables where schemaname='public' union all select 'functions', count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' union all select 'triggers', count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal union all select 'policies', count(*) from pg_policies where schemaname='public' union all select 'rls_tables', count(*) from pg_tables where schemaname='public' and rowsecurity union all select 'indexes', count(*) from pg_indexes where schemaname='public' union all select 'constraints', count(*) from information_schema.table_constraints where table_schema='public' union all select 'grants', count(*) from information_schema.role_table_grants where table_schema='public'"
+     G="select table_name||' '||grantee||' '||privilege_type from information_schema.role_table_grants where table_schema='public' order by 1"
+     "$PG/psql" "$OLD_DEV" -At -c "$G" > old-grants.txt
+     "$PG/psql" "$NEW_DEV" -At -c "$G" > new-grants.txt
+     comm -13 old-grants.txt new-grants.txt > extra-grants.txt      # expected: only anon / authenticated
+     comm -23 old-grants.txt new-grants.txt > missing-grants.txt    # expected: empty
+     awk '{printf "REVOKE %s ON TABLE public.\"%s\" FROM %s;\n", $3, $1, $2}' extra-grants.txt > revoke-extra.sql
+     "$PG/psql" "$NEW_DEV" -v ON_ERROR_STOP=1 --single-transaction -q -f revoke-extra.sql && echo REVOKED
+     "$PG/psql" "$NEW_DEV" -At -c "$G" > new-grants.txt && diff old-grants.txt new-grants.txt && echo "GRANTS IDENTICAL"
+     "$PG/psql" "$OLD_DEV" -At -F' ' -c "$Q" > old-struct.txt
+     "$PG/psql" "$NEW_DEV" -At -F' ' -c "$Q" > new-struct.txt
+     diff old-struct.txt new-struct.txt && echo "STRUCTURE IDENTICAL"
+     ```
+  6. When it says `IDENTICAL` throughout, point dev at it (B3). Before that, check the new project's **JWT Keys**: the
+     current key must be **Legacy HS256 (shared secret)**, because our server verifies owner sign-ins with it. Do not
+     rotate to the new signing keys. Then delete the folder `~/zaptill-dev-move`, because the dumps hold sign-in data.
+
+  **Dev result (2026-10-31): done.**
+  - 146 table counts identical (apart from one `refresh_tokens` row) and the structure identical.
+  - 245 extra `anon` / `authenticated` grants revoked.
+  - Render and Vercel pointed at the new project; `/health` showed `db up, schema ok`.
+  - The owner signed in on dev and the numbers were correct.
+  - **Lessons for prod:**
+    - copy the connection strings carefully (a pasted command lost its last letter);
+    - use PostgreSQL 18's tools;
+    - in Vercel, the `VITE_SUPABASE_*` values are **Config**, not Secret, and go only to that project's own environments.
 - **Dev, fresh instead (if the copy gives trouble):** the schema from our migrations, in order, with your migration
   runner pointed at the new database, then `scripts/dev-seed/attendance-demo.sql` and your usual test business.
 - **Prod:** a full copy is needed: the `public`, `auth` and `storage` schemas, so owners keep their passwords.
