@@ -37,7 +37,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { can, branchFilter, byBranch, assertBranchAccess, rowInBranches, type BranchFilter } from '../middleware/rbac';
+import { can, branchFilter, byBranch, assertBranchAccess, rowInBranches, NO_BRANCH, type BranchFilter } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { getDayCutoff } from '../lib/dayCutoff';
 import { businessRangeEAT, businessDateEAT } from '../lib/businessDay';
@@ -49,6 +49,8 @@ import {
   type Punch, type Correction, type DeviceUser, type IncomingPunch,
 } from '../lib/attendanceRules';
 import { attendanceEnabled, queuePersonOnDevices, takenNumbers, nextNumber, deviceClaims, type PersonRow } from '../lib/attendanceStore';
+import { cloudFactsFor } from '../lib/cloudPlan';                 // A612
+import { featureBranches } from '../lib/branchBilling';           // A612: premium per branch
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -59,6 +61,10 @@ const PERSON_COLS = 'id, business_id, branch_id, user_id, name, attendance_no, a
 const PUNCH_COLS = 'id, staff_id, person_id, branch_id, event_type, recorded_at, source, device_id, attendance_no, device_user_id, reason, created_by, corrects_id, voided_at, voided_by, void_reason, created_at';
 const ACTION_MAX_TRIES = 5;
 const off = (res: Response) => res.status(403).json({ error: ATTENDANCE_OFF_MESSAGE, code: 'ATTENDANCE_OFF' });
+/** A612 phase 4 (premium per branch): billed per branch, the branches that pay for Attendance (premium or the package);
+ *  null: billed as one — the business's flag alone, as before. */
+const attendanceBranches = async (businessId: string | null | undefined): Promise<string[] | null> =>
+  (businessId ? featureBranches(await cloudFactsFor(businessId).catch(() => null), 'attendance') : null);
 const nowIso = () => new Date().toISOString();
 
 // ── The branch server ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -67,6 +73,9 @@ async function nodeGate(req: NodeReq, res: Response, next: NextFunction): Promis
   const who = await serverBranch({ businessId: req.businessId, deviceId: req.deviceId ?? null, isTill: !!req.isTill, surface: req.surface ?? null });
   if ('status' in who) { res.status(who.status).json({ error: who.error, code: who.code }); return; }
   if (!(await attendanceEnabled(req.businessId))) { off(res); return; }
+  // A612: a branch that does not pay for Attendance — its branch server reads no device
+  const paying = await attendanceBranches(req.businessId);
+  if (paying && !paying.includes(who.branchId)) { off(res); return; }
   req.attBranch = who.branchId;
   next();
 }
@@ -261,6 +270,10 @@ router.use('/node', nodeRouter);
 router.use(requireWebSurface);
 router.use(async (req, res, next) => {
   if (!(await attendanceEnabled(req.businessId))) { off(res); return; }
+  // A612: billed per branch — only the branches that pay for Attendance (none: off)
+  const paying = await attendanceBranches(req.businessId);
+  if (paying && !paying.length) { off(res); return; }
+  (req as { attendanceBranches?: string[] | null }).attendanceBranches = paying;
   next();
 });
 
@@ -278,11 +291,22 @@ const need = (key: Right) => (req: Request, res: Response, next: NextFunction) =
 
 /** The branches a read covers: the owner names one (?branch_id first — the page's own picker — then X-Branch-Id) or all. */
 function readScope(req: Request): BranchFilter {
+  const f = readScopeBefore(req);
+  // A612: billed per branch — the branches that pay for Attendance only
+  const paying = (req as { attendanceBranches?: string[] | null }).attendanceBranches;
+  if (!paying) return f;
+  if (f.kind === 'one') return paying.includes(f.id) ? f : { kind: 'one', id: NO_BRANCH };
+  const ids = (f.kind === 'set' ? f.ids : paying).filter((b) => paying.includes(b) && !req.pausedBranches?.has(b));
+  return ids.length ? { kind: 'set', ids } : { kind: 'one', id: NO_BRANCH };
+}
+function readScopeBefore(req: Request): BranchFilter {
   if (req.isOwner) {
     const q = typeof req.query.branch_id === 'string' ? req.query.branch_id.trim() : '';
     const h = String(req.headers['x-branch-id'] ?? '').trim();
     const one = q && q !== 'all' ? q : !q && h && h !== 'all' && h !== 'mine' ? h : '';
-    return one ? { kind: 'one', id: one } : { kind: 'all' };
+    // A612: a paused branch named is nobody's (NO_BRANCH); none named while some are paused — the open ones (branchFilter).
+    if (one) return { kind: 'one', id: req.pausedBranches?.has(one) ? NO_BRANCH : one };
+    return req.pausedBranches?.size ? branchFilter(req) : { kind: 'all' };
   }
   return branchFilter(req);
 }
@@ -733,6 +757,12 @@ router.get('/devices', need('attendance.devices'), async (req, res) => {
   res.json({ devices: ((data ?? []) as any[]).map(({ comm_key, ...d }) => ({ ...d, comm_key_set: Number(comm_key) > 0, pending_actions: count(d.id, 'pending'), failed_actions: count(d.id, 'failed') })) });
 });
 
+/** A614: a branch has one attendance device — the words when a second is added. */
+export const oneDeviceRefusal = (existing: string | null) => ({
+  error: `This branch already has its attendance device${existing ? ` (${existing})` : ''}. A branch has one device — remove it first to put another in its place.`,
+  code: 'BRANCH_HAS_DEVICE',
+});
+
 router.post('/devices', need('attendance.devices'), async (req, res) => {
   const b = req.body ?? {};
   const name = cleanPersonName(b.name), ip = cleanIp(b.ip);
@@ -746,9 +776,20 @@ router.post('/devices', need('attendance.devices'), async (req, res) => {
   if (!branchId || !assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Choose one of your branches.', code: 'BRANCH_SCOPE' }); return; }
   const { data: br } = await supabase.from('branches').select('id').eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
   if (!br) { res.status(404).json({ error: 'Branch not found.', code: 'BRANCH_NOT_FOUND' }); return; }
+  // A612: a device goes only to a branch that pays for Attendance
+  const paying = (req as { attendanceBranches?: string[] | null }).attendanceBranches;
+  if (paying && !paying.includes(branchId)) { res.status(403).json({ error: 'This branch does not have Attendance. ZapTill turns it on per branch.', code: 'ATTENDANCE_OFF' }); return; }
+  // A614 (owner, 2026-10-30): "we bind an attendance device to a branch and a branch can never have two attendance device".
+  // The web is the one place a device is added (the desktop reads its branch's device from here); migration 183's unique
+  // index holds it in the database too (a second insert racing this check: 23505, answered the same).
+  const { data: has, error: hasErr } = await supabase.from('attendance_devices').select('id, name')
+    .eq('business_id', req.businessId).eq('branch_id', branchId).is('removed_at', null).limit(1);
+  if (hasErr) { res.status(503).json({ error: 'The device could not be saved right now.', code: 'ATTENDANCE_BUSY' }); return; }
+  if ((has ?? []).length) { res.status(409).json(oneDeviceRefusal((has as Array<{ name: string }>)[0].name)); return; }
   const { data, error } = await supabase.from('attendance_devices').insert({
     business_id: req.businessId, branch_id: branchId, name, ip, port, comm_key: key, created_by: req.userId ?? null,
   }).select(DEVICE_WEB_COLS).single();
+  if (error && (error as { code?: string }).code === '23505') { res.status(409).json(oneDeviceRefusal(null)); return; }
   if (error) { res.status(503).json({ error: 'The device could not be saved right now.', code: 'ATTENDANCE_BUSY' }); return; }
   // everyone already at the branch goes onto the new device
   const { data: ppl } = await supabase.from('attendance_people').select(PERSON_COLS).eq('business_id', req.businessId).eq('branch_id', branchId).eq('active', true);

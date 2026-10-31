@@ -3,7 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission, requirePermission, assertBranchAccess, can } from '../middleware/rbac';
+import { requireAnyPermission, requirePermission, assertBranchAccess, can, outsideReach } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 import { cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
@@ -29,7 +29,7 @@ export const BRANCH_PUBLIC_COLUMNS = 'id, business_id, name, address, phone, cit
 
 /** A582: a partner (lib/webPartners.ts) reads a branch named in the path only when it is theirs — another branch of the
  *  business is "not found" to them (its name, address, staff and settings). The owner and managers as before. */
-const partnerOutside = (req: any, branchId: string): boolean => req.webPartner === true && !assertBranchAccess(req, branchId);
+const partnerOutside = (req: any, branchId: string): boolean => outsideReach(req, branchId);   // A582; A612: a paused branch too
 
 // GET /api/branches — list all branches for this business
 router.get('/', requireAuth, async (req, res) => {
@@ -41,12 +41,14 @@ router.get('/', requireAuth, async (req, res) => {
     .order('created_at', { ascending: true });
 
   if (error) { sendError(res, error); return; }
+  // A612: a branch whose cloud is paused is listed, marked (Settings shows it paused; the picker leaves it out).
+  const rows = ((data ?? []) as unknown as Array<{ id: string }>).map((b) => (req.pausedBranches?.has(b.id) ? { ...b, cloud_paused: true } : b));
   // A550: a partner who works at some branches is offered those in the dashboard's picker (one of every branch: all).
   if (req.webPartner && !req.allBranches) {
-    res.json(((data ?? []) as unknown as Array<{ id: string }>).filter((b) => req.partnerBranches.includes(b.id)));
+    res.json(rows.filter((b) => req.partnerBranches.includes(b.id)));
     return;
   }
-  res.json(data);
+  res.json(rows);
 });
 
 // GET /api/branches/:id

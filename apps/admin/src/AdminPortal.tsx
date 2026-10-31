@@ -20,6 +20,8 @@ import TillsDaysCard from "./TillsDaysCard";   // A523
 import DownloadZapTill from "./DownloadZapTill";   // A570: the installer, through our own server
 import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone, expiryText, desktopOnlyText, cutoffLine, desktopUpdatesLine } from "./cloudPlan";   // A569; A581 expiryText; A601
 import CloudPlanCard from "./CloudPlanCard";   // A581: the cloud payment plan
+import BranchBillingCard from "./BranchBillingCard";   // A612: the cloud per branch
+import BillingDetailsCard from "./BillingDetailsCard";   // A612: ZapTill's billing details and prices
 import AdminPager, { usePageSize } from "./AdminPager";   // A475
 import { paginate } from "./lib/paginate";
 
@@ -1664,6 +1666,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
 
           {/* A581: the cloud payment plan — period, amount, Record payment, the payments and the reminders */}
           <CloudPlanCard clientId={client.id} clientName={d.name} req={req} isSuper={isSuper} onChanged={reloadDetail} />
+          <BranchBillingCard clientId={client.id} req={req} isSuper={isSuper} onChanged={reloadDetail} />
 
           <div className="sp-two-col" style={{ alignItems: "start" }}>
             <div style={S.card}>
@@ -2046,7 +2049,7 @@ function RenewForm({ plans, clientId, req, onRenewed }) {
 }
 
 // ─── BILLING PAGE (all clients) ───────────────────────────────────────────────
-function BillingPage({ req }) {
+function BillingPage({ req, isSuper = false }) {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading]   = useState(true);
 
@@ -2077,6 +2080,7 @@ function BillingPage({ req }) {
   return (
     <div style={S.content}>
       <h1 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 20px" }}>Billing</h1>
+      <div style={{ marginBottom: 20 }}><BillingDetailsCard req={req} isSuper={isSuper} /></div>
       <div className="sp-kpi-grid sp-kpi-3">
         {[["Total Invoiced", total, C.accent], ["Paid", paid, "#22c55e"], ["Outstanding", outstanding, "#f59e0b"]].map(([l, v, c]) => (
           <div key={l} style={S.kpiCard}>
@@ -2939,7 +2943,7 @@ export default function AdminPortal() {
       return <ClientDetailPage key={`${selectedClient.id}:${clientTab ?? ""}`} client={selectedClient} req={req} apiUrl={apiUrl} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} initialTab={clientTab ?? "overview"} />;
     if (page === "new_client") return <NewClientPage req={req} onCreated={(biz) => { setSelectedClient(biz); setPage("client_detail"); }} />;
     if (page === "clients")   return <ClientsPage req={req} onSelectClient={handleSelectClient} />;
-    if (page === "billing")   return <BillingPage req={req} />;
+    if (page === "billing")   return <BillingPage req={req} isSuper={admin?.role === "super_admin"} />;
     if (page === "audit")     return <AuditPage req={req} />;
     if (page === "team")      return <TeamPage req={req} admin={admin} />;
     if (page === "account")   return <AccountPage req={req} apiUrl={apiUrl} setApiUrl={setApiUrl} />;

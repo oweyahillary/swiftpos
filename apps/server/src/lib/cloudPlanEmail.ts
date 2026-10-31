@@ -86,6 +86,151 @@ export function invoiceEmailHtml(f: InvoiceFacts): { subject: string; html: stri
   return { subject: w.subject, html };
 }
 
+// ── A612 phase 3: the invoice per business, a line per branch (to the business's owner) ──────────────────────────────
+// Owner, 2026-10-30: "the owner should be the one who gets the invoice not individual branch" — ONE invoice per business,
+// a line per branch due that day (each branch still pays and locks on its own). A light, printable page (an accountant
+// prints or forwards it): ZapTill's details, "Billed to", the lines, the total, how to pay. The seller's and the payment
+// details are ZapTill's, set in the admin portal; until they are, SAMPLE_SELLER stands in (marked as a sample). Never a
+// word of a lock, a pause or a deadline (A584).
+
+export interface InvoiceSeller {
+  legalName: string;
+  address: string;
+  kraPin: string | null;
+  phone: string;
+  email: string | null;
+  /** M-Pesa Paybill (business number) — or a Till number (Buy Goods) when paybill is null. */
+  mpesaPaybill: string | null;
+  mpesaTill: string | null;
+  /** What the client types as the account number on a Paybill: the invoice number unless set. */
+  accountRef: 'invoice' | 'business';
+  /** Shown on the invoice while the details are placeholders. */
+  sample?: boolean;
+}
+
+/** Placeholders until ZapTill enters its own in the admin portal (A612 phase 3). */
+export const SAMPLE_SELLER: InvoiceSeller = {
+  legalName: 'ZapTill Limited', address: 'P.O. Box 00000-00100, Nairobi, Kenya', kraPin: 'P000000000X',
+  phone: ZAPTILL_PHONE, email: null, mpesaPaybill: '000000', mpesaTill: null, accountRef: 'invoice', sample: true,
+};
+
+/** Owner, 2026-10-30: the items — "Cloud - dashboard and, backup, remote till management", "Analytics", "Attendance",
+ *  "Themes" (A586: "POS", never "till", in what a client reads). Each listed in small type under its line. */
+export const CLOUD_INCLUDES = ['Web dashboard', 'Backup', 'Remote POS management'];
+export const PREMIUM_ITEMS: Record<string, string> = {
+  Analytics: 'Sales insights, best sellers, items bought together',
+  Attendance: 'Fingerprint device, worked-hours report',
+  Themes: 'Brand colours and logo on the dashboard and the POS',
+};
+
+/** The Premium package (owner, 2026-10-30): the Cloud and every premium item, one price a branch. */
+export const PACKAGE_ITEM = 'Premium package';
+export const PACKAGE_INCLUDES = ['Cloud', 'Analytics', 'Attendance', 'Themes'];
+
+/** One branch on the invoice: its cloud price for the period and its premium features (A612 phase 4), each priced — or the
+ *  Premium package (its price in place of the cloud and the items). `period` set: the branch's own plan length, when the
+ *  invoice's branches differ (its items then say so). */
+export interface BranchBill { branch: string; cloud: number; premium?: Array<{ name: string; price: number }>; package?: number | null; period?: PlanPeriod | null }
+export interface BranchInvoiceFacts {
+  invoiceNumber: string;
+  issuedAt: string;
+  currency: string;
+  business: { name: string; ownerName: string | null; phone: string | null; email: string | null; code?: string | null };
+  /** The period this invoice covers — once, in the header (the branches due together share it). */
+  periodStart: string;
+  periodEnd: string | null;
+  period: PlanPeriod;
+  branches: BranchBill[];
+  seller: InvoiceSeller;
+}
+/** A billed item: what, how many (branches), the unit price, the amount. */
+export interface InvoiceItem { description: string; detail: string | null; qty: number; unitPrice: number; amount: number }
+
+/**
+ * Owner, 2026-10-30: "do we really need a column for period … we itemize the items being billed, give unit price and under
+ * note we add list of branches". The items: the cloud (one per branch), then each premium feature (one per branch that has
+ * it) — the same item at another price is its own line. Pure.
+ */
+export function invoiceItems(branches: readonly BranchBill[]): InvoiceItem[] {
+  const out: InvoiceItem[] = [];
+  const add = (description: string, detail: string | null, unitPrice: number) => {
+    const hit = out.find((i) => i.description === description && i.unitPrice === unitPrice);
+    if (hit) { hit.qty++; hit.amount += unitPrice; return; }
+    out.push({ description, detail, qty: 1, unitPrice, amount: unitPrice });
+  };
+  const lengths = new Set(branches.map((b) => b.period ?? null));
+  const tag = (b: BranchBill, d: string) => (lengths.size > 1 && b.period ? `${d} (${b.period === 'custom' ? 'agreed period' : PERIOD_LABEL[b.period]})` : d);
+  for (const b of branches) if (b.package != null) add(tag(b, PACKAGE_ITEM), PACKAGE_INCLUDES.join(' · '), Number(b.package || 0));
+  for (const b of branches) if (b.package == null) add(tag(b, 'Cloud'), CLOUD_INCLUDES.join(' · '), Number(b.cloud || 0));
+  for (const b of branches) if (b.package == null) for (const p of b.premium ?? []) add(tag(b, p.name), PREMIUM_ITEMS[p.name] ?? null, Number(p.price || 0));
+  return out;
+}
+
+const kes = (currency: string, n: number) => `${esc(currency)} ${whole(n)}`;
+
+/** The client's invoice: one per business, to its owner — items, unit prices, and the branches in the note. */
+export function branchInvoiceEmailHtml(f: BranchInvoiceFacts): { subject: string; html: string; total: number; items: InvoiceItem[] } {
+  const items = invoiceItems(f.branches);
+  const total = items.reduce((t, i) => t + i.amount, 0);
+  const s = f.seller;
+  const account = s.accountRef === 'business' && f.business.code ? f.business.code : f.invoiceNumber;
+  const pay = s.mpesaPaybill
+    ? `<b>M-Pesa Paybill</b> ${esc(s.mpesaPaybill)} &nbsp;·&nbsp; <b>Account</b> ${esc(account)}`
+    : s.mpesaTill ? `<b>M-Pesa Buy Goods Till number</b> ${esc(s.mpesaTill)}` : `Call or WhatsApp ${esc(s.phone)}`;
+  const span = f.periodEnd ? `${planDate(f.periodStart)} – ${planDate(f.periodEnd)}` : `from ${planDate(f.periodStart)}`;
+  const planName = f.period === 'custom' ? 'Agreed period' : PERIOD_LABEL[f.period];
+  // Branches on different plan lengths: the period starts together, each item says its own length.
+  const mixed = new Set(f.branches.map((b) => b.period ?? f.period)).size > 1;
+  const periodLine = mixed ? `from <b style="color:#0f172a;">${esc(planDate(f.periodStart))}</b>` : `<b style="color:#0f172a;">${esc(span)}</b> (${esc(planName)})`;
+  const th = 'padding:10px 12px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;';
+  const td = 'padding:12px;font-size:13px;color:#0f172a;border-bottom:1px solid #f1f5f9;vertical-align:top;';
+  const num = 'text-align:right;white-space:nowrap;';
+  const rows = items.map((i) => `<tr>
+      <td style="${td}"><div style="font-weight:600;">${esc(i.description)}</div>${i.detail ? `<div style="font-size:11px;color:#64748b;margin-top:2px;">${esc(i.detail)}</div>` : ''}</td>
+      <td style="${td}text-align:center;">${i.qty}</td>
+      <td style="${td}${num}">${kes(f.currency, i.unitPrice)}</td>
+      <td style="${td}${num}font-weight:600;">${kes(f.currency, i.amount)}</td></tr>`).join('');
+  const branchNote = f.branches.map((b) => `<b>${esc(b.branch)}</b> — ${b.package != null ? PACKAGE_ITEM
+    : `Cloud${(b.premium ?? []).map((p) => `, ${esc(p.name)}`).join('')}`}`).join('<br>');
+  const who = [f.business.ownerName, f.business.phone, f.business.email].filter(Boolean).map((x) => esc(x)).join('<br>');
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Invoice ${esc(f.invoiceNumber)}</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px;"><tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+  ${s.sample ? `<tr><td style="background:#fef3c7;color:#92400e;font-size:12px;padding:8px 24px;">Sample details — ZapTill's company and payment details are set in the admin portal.</td></tr>` : ''}
+  <tr><td style="padding:28px 28px 8px;">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="vertical-align:top;"><div style="font-size:22px;font-weight:800;color:#16a34a;">ZapTill</div>
+        <div style="font-size:12px;color:#64748b;line-height:1.6;margin-top:4px;">${esc(s.legalName)}<br>${esc(s.address)}${s.kraPin ? `<br>KRA PIN ${esc(s.kraPin)}` : ''}<br>${esc(s.phone)}${s.email ? ` · ${esc(s.email)}` : ''}</div></td>
+      <td style="vertical-align:top;text-align:right;"><div style="font-size:24px;font-weight:800;letter-spacing:.04em;">INVOICE</div>
+        <div style="font-size:12px;color:#64748b;line-height:1.7;margin-top:4px;">No. <b style="color:#0f172a;">${esc(f.invoiceNumber)}</b><br>Issued ${esc(planDate(f.issuedAt))}<br>Period ${periodLine}<br>Due on receipt</div></td>
+    </tr></table></td></tr>
+  <tr><td style="padding:16px 28px 4px;">
+    <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;">Billed to</div>
+    <div style="font-size:15px;font-weight:700;margin-top:4px;">${esc(f.business.name)}</div>
+    ${who ? `<div style="font-size:13px;color:#334155;line-height:1.6;">${who}</div>` : ''}</td></tr>
+  <tr><td style="padding:20px 16px 0;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr><th style="${th}text-align:left;">Item</th><th style="${th}text-align:center;">Qty</th><th style="${th}text-align:right;">Unit price</th><th style="${th}text-align:right;">Amount</th></tr>
+      ${rows}
+      <tr><td colspan="3" style="padding:14px 12px;font-size:14px;font-weight:700;text-align:right;">Total</td>
+          <td style="padding:14px 12px;font-size:16px;font-weight:800;${num}">${kes(f.currency, total)}</td></tr>
+    </table></td></tr>
+  <tr><td style="padding:8px 28px 0;">
+    <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;">Note — branches billed (quantities are branches)</div>
+    <div style="font-size:12px;color:#475569;line-height:1.7;margin-top:4px;">${branchNote}</div></td></tr>
+  <tr><td style="padding:20px 28px;">
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 16px;">
+      <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#15803d;font-weight:700;">How to pay</div>
+      <div style="font-size:14px;margin-top:6px;">${pay}</div>
+      <div style="font-size:12px;color:#475569;margin-top:6px;">Then WhatsApp or call ${esc(s.phone)} — we confirm and send your receipt. You may also pay ahead for 3, 6 or 12 months.</div>
+    </div></td></tr>
+  <tr><td style="padding:0 28px 26px;font-size:12px;color:#94a3b8;">Thank you for using ZapTill.</td></tr>
+</table></td></tr></table></body></html>`;
+  return { subject: subjectSafe(`ZapTill invoice ${f.invoiceNumber} — ${f.business.name} — ${f.currency} ${whole(total)}`), html, total, items };
+}
+
 // ── The receipt (to the client, when a payment is recorded) ───────────────────────────────────────────────────────────
 
 export interface ReceiptFacts { businessName: string; amount: number; currency: string; method: string; reference: string | null; paidAt: string; paidUntil: string; invoiceNumber: string | null }

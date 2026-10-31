@@ -12,7 +12,8 @@ import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
 import { partnerRequestBranch, partnerBranchSet } from '../lib/webPartners';    // A550, A582
 import { NO_BRANCH, PICK_ONE_BRANCH_BODY } from './rbac';        // A582
-import { accessRefusal } from '../lib/cloudPlan';               // A581, A584
+import { accessRefusal, branchPauseFor } from '../lib/cloudPlan';   // A581, A584; A612
+import { scopeForPause, BRANCH_PAUSED_BODY, BRANCH_PICKED_PAUSED_BODY } from '../lib/branchPauseScope';   // A612
 
 /**
  * A582: in "All my branches" a write is refused before any route — a set of branches is never where a sale, a count, a
@@ -71,6 +72,12 @@ declare global {
        * nothing; a write is refused before any route — a set is never a write target). Read it through rbac.branchFilter.
        */
       branchSet?:         string[] | null;
+      /** A612: the business's branches whose cloud is paused — nobody reads or writes them (rbac.branchScope / assertBranchAccess). */
+      pausedBranches?:    ReadonlySet<string> | null;
+      /** A612: the one open branch the owner's (or an all-branch partner's) reads are pinned to while the rest are paused. */
+      pinnedBranch?:      string | null;
+      /** A612: the business's open branches, while some are paused (null otherwise). */
+      openBranches?:      string[] | null;
     }
   }
 }
@@ -429,14 +436,47 @@ export function requireWebSurface(req: Request, res: Response, next: NextFunctio
 // once); a failed read never refuses.
 async function cloudLapseBlocked(req: Request, res: Response): Promise<boolean> {
   let refusal = null;
-  try { refusal = await accessRefusal(req.businessId, req.surface, req.method, req.originalUrl || req.url || ''); }
+  // A612: a POS's own branch — billed per branch, a paused branch's POS is refused whatever it asks (lib/cloudPlan.ts).
+  const ownBranch = req.branchId && req.branchId !== NO_BRANCH ? req.branchId : null;
+  try { refusal = await accessRefusal(req.businessId, req.surface, req.method, req.originalUrl || req.url || '', ownBranch); }
   catch { return false; }
-  if (!refusal) return false;
+  if (!refusal) return branchPauseBlocked(req, res);
   res.locals.cloudLapsed = true;   // index.ts: not a server error, not a refused till for the watchdog
   // A601: a desktop-only POS's backup (CLOUD_BACKUP_OFF) is off until ZapTill says otherwise — an hour, not 15 minutes.
   if (refusal.status === 503) res.set('Retry-After', refusal.body.code === 'CLOUD_BACKUP_OFF' ? '3600' : '900');
   res.status(refusal.status).json(refusal.body);
   return true;
+}
+
+// ── A612: a paused branch is nobody's ─────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-30: "if a branch does not pay it should not view its data and the owner should not see it too, it cuts
+// across all users". A web request of a business with a paused branch is narrowed to the open branches (owner and partners
+// included) or, for a paused branch picked or worked at, refused 403 BRANCH_PAUSED — lib/branchPauseScope.ts. A POS is not
+// narrowed here: its branch paused, accessRefusal refused it whole. Sign-in and renewals stay open. A failed read never
+// refuses.
+async function branchPauseBlocked(req: Request, res: Response): Promise<boolean> {
+  if (!req.businessId || req.surface === 'desktop') return false;
+  if (/^\/api\/auth\//.test(String(req.originalUrl || req.url || ''))) return false;
+  let pause = null;
+  try { pause = await branchPauseFor(req.businessId); } catch { return false; }
+  if (!pause || !pause.paused.size) return false;
+  const picked = typeof req.headers['x-branch-id'] === 'string' ? req.headers['x-branch-id'] : null;
+  const out = scopeForPause({
+    isOwner: !!req.isOwner, isTill: !!req.isTill, webPartner: !!req.webPartner, allBranches: !!req.allBranches,
+    partnerBranches: req.partnerBranches ?? [], branchSet: req.branchSet ?? null, branchId: req.branchId ?? null, picked,
+    method: req.method,
+  }, pause);
+  // The branch list itself answers (marked): the dashboard learns which branches are paused and drops a remembered one.
+  const listing = req.method === 'GET' && /^\/api\/branches\/?(\?|$)/.test(String(req.originalUrl || req.url || ''));
+  if ((out === 'refuse' || out === 'picked') && !listing) {
+    res.locals.cloudLapsed = true;   // index.ts: a decision, not a server error
+    res.status(403).json(out === 'refuse' ? BRANCH_PAUSED_BODY : BRANCH_PICKED_PAUSED_BODY);
+    return true;
+  }
+  req.pausedBranches = pause.paused;
+  req.openBranches = [...pause.open];
+  if (typeof out === 'object') Object.assign(req, out);
+  return false;
 }
 
 // ── terminal write guard (A159) ───────────────────────────────────────────────

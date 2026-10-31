@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { branchScope, requirePermission, can, assertBranchAccess, branchFilter, byBranch, inBranchSet, oneBranchOnly, NO_BRANCH } from '../middleware/rbac';
+import { branchScope, requirePermission, can, assertBranchAccess, branchFilter, byBranch, inBranchSet, oneBranchOnly, NO_BRANCH, outsideReach } from '../middleware/rbac';
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { mayMoveMoney } from '../lib/historyScope';   // A490
 import { sendError } from '../lib/sendError';
@@ -66,9 +66,9 @@ const withoutFigures = (row: Record<string, any>): Record<string, any> => {
   return out;
 };
 /** A582: a partner (lib/webPartners.ts) reads a branch's tills and drawers only when it is theirs — a branch named in the
- *  query was taken as it came (a partner of X, Y and Z could name W). Everyone else exactly as before. */
-const partnerOutside = (req: Request, branchId: string | null | undefined): boolean =>
-  req.webPartner === true && !assertBranchAccess(req, branchId ?? null);
+ *  query was taken as it came (a partner of X, Y and Z could name W). A612: and nobody a paused branch's. Everyone else
+ *  exactly as before. */
+const partnerOutside = (req: Request, branchId: string | null | undefined): boolean => outsideReach(req, branchId);
 // A582: the tills and drawers of a branch named in the query (/terminals, /terminals/open, /web-till) — a partner's own
 // branches only; everyone else as before.
 router.use(['/terminals', '/web-till'], (req, res, next) => {
@@ -1683,6 +1683,7 @@ router.get('/:id', async (req, res) => {
   ]);
 
   if (sErr || !shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+  if (outsideReach(req, shift.branch_id)) { res.status(404).json({ error: 'Shift not found' }); return; }   // A612: a paused branch's
   // Audit 2026-10-14: a non-owner reads only shifts of the branch they are signed in at (the business was already checked
   // above). A person with no branch (works at every branch, A426) keeps the business-wide view GET /api/shifts gives them.
   // A550: a partner of every branch reads any of their branches' shifts (as the owner any).

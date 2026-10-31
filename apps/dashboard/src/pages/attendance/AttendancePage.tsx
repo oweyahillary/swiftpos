@@ -568,6 +568,10 @@ function DevicesPanel({ branchId, branches }: { branchId: string; branches: Arra
   const [err, setErr] = useState('');
   useEffect(() => { api.get<{ devices: DeviceRow[] }>(`/api/attendance/devices${branchId ? `?branch_id=${branchId}` : ''}`).then((r) => setRows(r.devices)).catch(() => setRows([])); }, [branchId, tick]);
   const act = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); setTick((t) => t + 1); } catch (e: any) { setErr(e?.message ?? 'Could not be saved.'); } };
+  // A614: one device per branch — a device is added only to a branch that has none (the cloud refuses a second).
+  const taken = new Set(rows.map((d) => d.branch_id));
+  const free = (branchId ? branches.filter((b) => b.id === branchId) : branches).filter((b) => !taken.has(b.id));
+  const addTo = free.some((b) => b.id === f.branch_id) ? f.branch_id : free[0]?.id ?? '';
   return (
     <section className={`${card} print:hidden`} data-testid="att-devices">
       <button className="flex w-full items-center justify-between" onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -592,15 +596,21 @@ function DevicesPanel({ branchId, branches }: { branchId: string; branches: Arra
               <button className={btn} onClick={() => act(() => api.delete(`/api/attendance/devices/${d.id}`))}>Remove</button>
             </div>
           ))}
+          {!free.length ? (
+            <p data-testid="att-one-device" className="text-xs text-gray-500 border-t border-gray-100 dark:border-gray-800 pt-2">
+              {branchId || branches.length === 1 ? 'This branch has its attendance device.' : 'Each branch has its attendance device.'} A branch has one device — remove it to put another in its place.
+            </p>
+          ) : (
           <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 dark:border-gray-800 pt-2">
             <input placeholder="Name (Front door)" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className={inputCls} />
             <input placeholder="Address (192.168.1.201)" value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} className={inputCls} />
             <input placeholder="Port" value={f.port} onChange={(e) => setF({ ...f, port: e.target.value })} className={`${inputCls} w-20`} />
             <input placeholder="Comm key (if set)" value={f.comm_key} onChange={(e) => setF({ ...f, comm_key: e.target.value })} className={`${inputCls} w-36`} />
-            {branches.length > 1 && <select value={f.branch_id} onChange={(e) => setF({ ...f, branch_id: e.target.value })} className={inputCls}>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>}
-            <button className={btnMain} disabled={!f.name.trim() || !f.ip.trim() || !f.branch_id}
-              onClick={() => act(async () => { await api.post('/api/attendance/devices', { ...f, port: Number(f.port) || 4370, comm_key: f.comm_key ? Number(f.comm_key) : 0 }); setF({ ...f, name: '', ip: '' }); })}>Add device</button>
+            {free.length > 1 && <select value={addTo} onChange={(e) => setF({ ...f, branch_id: e.target.value })} className={inputCls}>{free.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>}
+            <button className={btnMain} disabled={!f.name.trim() || !f.ip.trim() || !addTo}
+              onClick={() => act(async () => { await api.post('/api/attendance/devices', { ...f, branch_id: addTo, port: Number(f.port) || 4370, comm_key: f.comm_key ? Number(f.comm_key) : 0 }); setF({ ...f, name: '', ip: '' }); })}>Add device</button>
           </div>
+          )}
           <p className="text-[11px] text-gray-500">ZKTeco devices (K90 Pro). The branch server on the same network reads the punches and writes the people onto the device; fingerprints stay on the device.</p>
           {err && <p className="text-sm text-red-600">{err}</p>}
         </div>

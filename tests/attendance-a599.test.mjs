@@ -448,6 +448,35 @@ try {
     const devs = await call('GET', '/api/attendance/devices', T.owner);
     assert.ok(devs.body.devices.every((d) => !('comm_key' in d) && 'comm_key_set' in d), 'the comm key never reaches the web');
   });
+  await ok('A614: one device per branch — a second refused 409 BRANCH_HAS_DEVICE (naming the one there), nothing written', async () => {
+    const before = mem.db.attendance_devices.length;
+    const r = await call('POST', '/api/attendance/devices', T.owner, { name: 'Back door', ip: '192.168.1.202', branch_id: BR });
+    assert.equal(r.status, 409, JSON.stringify(r.body));
+    assert.equal(r.body.code, 'BRANCH_HAS_DEVICE');
+    assert.match(r.body.error, /already has its attendance device \(Front door\)/);
+    assert.equal(mem.db.attendance_devices.length, before);
+  });
+  await ok('A614: the device removed — a new one goes in its place; two adds racing: the database\'s unique index answers the same', async () => {
+    const front = mem.db.attendance_devices.find((d) => d.id === DEV);
+    const was = front.removed_at;
+    front.removed_at = ago(1);
+    const r = await call('POST', '/api/attendance/devices', T.owner, { name: 'New door', ip: '192.168.1.203', branch_id: BR });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    mem.db.attendance_devices = mem.db.attendance_devices.filter((d) => d.name !== 'New door');
+    mem.db.attendance_device_actions = (mem.db.attendance_device_actions ?? []).filter((a) => a.device_id !== r.body.id);
+    mem.fail = (table, op) => (table === 'attendance_devices' && op === 'insert' ? { code: '23505', message: 'duplicate key value violates unique constraint "attendance_devices_one_per_branch"' } : null);
+    const race = await call('POST', '/api/attendance/devices', T.owner, { name: 'Racer', ip: '192.168.1.204', branch_id: BR });
+    mem.fail = () => null;
+    front.removed_at = was;
+    assert.equal(race.status, 409, JSON.stringify(race.body));
+    assert.equal(race.body.code, 'BRANCH_HAS_DEVICE');
+  });
+  await ok('A614: the web offers "Add device" only for a branch with none; the POS says a branch has one device', () => {
+    const page = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/attendance/AttendancePage.tsx'), 'utf8');
+    assert.match(page, /const free = \(branchId \? branches\.filter\(\(b\) => b\.id === branchId\) : branches\)\.filter\(\(b\) => !taken\.has\(b\.id\)\);/);
+    assert.match(page, /data-testid="att-one-device"/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/components/AttendanceDevicesPanel.tsx'), 'utf8'), /A branch has one attendance device\./);
+  });
   await ok('a manager sees their own branch only (the CBD guard not in their report)', async () => {
     mem.db.clock_events.push({ id: 'cbd-1', business_id: B, branch_id: BR2, person_id: 'p-cbd', staff_id: null, source: 'device', event_type: 'punch', recorded_at: at('2026-10-22T06:00:00+03:00'), created_at: ago(1) },
       { id: 'cbd-2', business_id: B, branch_id: BR2, person_id: 'p-cbd', staff_id: null, source: 'device', event_type: 'punch', recorded_at: at('2026-10-22T18:00:00+03:00'), created_at: ago(1) });

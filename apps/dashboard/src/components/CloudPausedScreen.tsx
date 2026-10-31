@@ -16,7 +16,7 @@ export default function CloudPausedScreen() {
     const on = (e: Event) => {
       if (window.location.pathname.startsWith('/login')) return;   // the sign-in page shows its own card
       const c = (e as CustomEvent<{ code?: string }>).detail?.code;
-      setCode(c === 'CLOUD_TRIAL_ENDED' ? 'CLOUD_TRIAL_ENDED' : 'CLOUD_ACCESS_PAUSED');
+      setCode(c === 'CLOUD_TRIAL_ENDED' || c === 'BRANCH_PAUSED' ? c : 'CLOUD_ACCESS_PAUSED');   // A612: a branch's own
     };
     window.addEventListener('zaptill:cloud-paused', on);
     return () => window.removeEventListener('zaptill:cloud-paused', on);

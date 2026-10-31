@@ -268,7 +268,7 @@ try {
     assert.equal(TV.brandLookFor({ themes_enabled: true, logo_png: 'data:image/svg+xml;base64,AAAA' }), null, 'only the PNG / JPEG logo');
     const layout = read('apps/dashboard/src/components/DashboardLayout.tsx');
     assert.match(layout, /\{band && <div aria-hidden className="h-1 flex-shrink-0" style=\{\{ background: band \}\} data-testid="dashboard-brand-band" \/>\}/);
-    assert.match(layout, /\{look\?\.logo && \(\s*<img src=\{look\.logo\}/);
+    assert.match(layout, /\{look\?\.logo (?:&&|\?) \(\s*<img src=\{look\.logo\}/);   // A613: a logo, else the name's first letter
     assert.match(layout, /const logoChip = look\?\.logoChip === 'dark' \? 'logo-chip-dark' : 'logo-chip-light';/);
     assert.match(read('apps/dashboard/src/pages/analytics/AnalyticsPage.tsx'), /brandAccent \? \{ \.\.\.base, accent: brandAccent/);
   });

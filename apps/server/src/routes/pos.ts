@@ -45,6 +45,9 @@ import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '../lib/customerScreen';   /
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
 import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601
+import { BRANCH_PICKED_PAUSED_BODY } from '../lib/branchPauseScope';   // A612
+import { cloudFactsFor } from '../lib/cloudPlan';                     // A612
+import { featureBranches } from '../lib/branchBilling';               // A612: premium per branch
 /** A593: GET /test-data-clears per (business, the POS's last applied clear) — lib/quietMemo.ts. */
 const clearsMemo = quietMemo<unknown[]>('pos.test_clears');
 
@@ -330,6 +333,12 @@ router.get('/init', async (req, res) => {
   // is unchanged for anything not yet sending branch_id.
   const requestedBranchId =
     typeof req.query.branch_id === 'string' ? req.query.branch_id : null;
+  // A612: a paused branch's menu and prices are nobody's — its own POS was refused before (accessRefusal); a web POS or the
+  // dashboard naming it is too.
+  if (requestedBranchId && req.pausedBranches?.has(requestedBranchId)) {
+    res.status(403).json(BRANCH_PICKED_PAUSED_BODY);
+    return;
+  }
 
   // A531 (owner, 2026-10-19: "asking for the same 10 times an hour is not logical"): the answer is built once per
   // catalogue version (buildInit below, kept by lib/posInit.ts) — the next till of the business, and the next ask while
@@ -471,8 +480,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
   // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
   // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
-  const themesOn = await themesEnabled(req.businessId);
-  const themeId = effectiveThemeId(themesOn, branding?.theme_id);
+  const themesBusiness = await themesEnabled(req.businessId);
   // A346: does the business have the web POS? Same entitlement as web sign-in (lib/webAccess.ts) — fully usable = active
   // or in grace (owner, 2026-09-27: "stock should only appear if the web pos is enabled"; reports-only week → no).
   const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
@@ -484,6 +492,11 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // The branch the till OPERATES on (the licence gate, in the route, reads its desktop_licensed — D11): the bound branch it
   // sent, falling back to the main branch only for legacy callers with no binding.
   const opBranch = boundBranch ?? mainBranch;
+  // A612 phase 4 (premium per branch): billed per branch, Themes only on a branch that pays for it (premium or the package);
+  // another branch's POS keeps the standard look. Billed as one: the business's flag alone, as before.
+  const themesPaying = featureBranches(await cloudFactsFor(req.businessId).catch(() => null), 'themes');
+  const themesOn = themesBusiness && (!themesPaying || themesPaying.includes(String((opBranch as { id?: string } | null)?.id ?? '')));
+  const themeId = effectiveThemeId(themesOn, branding?.theme_id);
   // A544: this branch's override of the business branding (theme, brand colour, receipt footer) — only while the business
   // has themes (A325); null otherwise, so a till and the web POS apply none (stored, never applied). Only the till's own
   // branch's row: another branch's override never reaches it.

@@ -105,7 +105,7 @@ export default function AttendanceDevicesPanel() {
           </div>
         );
       })}
-      <p className="text-gray-500 mt-2">Devices are added and removed on the web portal, Attendance → Devices.</p>
+      <p className="text-gray-500 mt-2">A branch has one attendance device. It is added and removed on the web portal, Attendance → Devices.</p>
     </div>
   );
 }

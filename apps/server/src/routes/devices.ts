@@ -30,6 +30,7 @@ router.use(requireAuth);
  * the cashier asking their manager to approve their browser). Anything else is another branch's.
  */
 async function deviceInReach(req: any, device: { branch_id?: string | null; user_id?: string | null }): Promise<boolean> {
+  if (device.branch_id && req.pausedBranches?.has(device.branch_id)) return false;   // A612: a paused branch's POS — nobody's
   if (req.isOwner) return true;
   // A550: a partner of every branch reaches a till of any of their branches (assertBranchAccess), and a browser of anyone.
   if (req.allBranches) return device.branch_id ? assertBranchAccess(req, device.branch_id) : true;
@@ -134,7 +135,10 @@ router.get('/fleet', requirePermission('devices.view'), async (req, res) => {   
   if (error) { sendError(res, error); return; }
   // A582: a partner sees the tills of their branches only (every device of the business was listed to any key holder)
   const shown: any[] = [];
-  for (const d of (data ?? []) as any[]) if (!req.webPartner || await deviceInReach(req, d)) shown.push(d);
+  for (const d of (data ?? []) as any[]) {
+    if (d.branch_id && req.pausedBranches?.has(d.branch_id)) continue;   // A612: a paused branch's POS — nobody's
+    if (!req.webPartner || await deviceInReach(req, d)) shown.push(d);
+  }
 
   // A184 Tier 1 — resolve branch names. user_devices has two FKs to branches
   // (branch_id + previous_branch_id), so PostgREST can't embed one unambiguously;

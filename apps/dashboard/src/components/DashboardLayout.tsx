@@ -614,32 +614,39 @@ export default function DashboardLayout() {
           ${navOpen ? 'translate-x-0' : '-translate-x-full'} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col${look?.primary ? ' brand-sidebar' : ''}`}>
 
         {band && <div aria-hidden className="h-1 flex-shrink-0" style={{ background: band }} data-testid="dashboard-brand-band" />}
-        {/* Logo + bell */}
-        <div className="px-5 py-5 border-b border-gray-800 brand-divider flex items-center justify-between">
-          <div className="min-w-0">
-            {look?.logo && (
+        {/* Logo, name and bell on one row; the branch picker under them, full width */}
+        <div className="px-4 pt-5 pb-4 border-b border-gray-800 brand-divider space-y-3">
+          <div className="flex items-center gap-3">
+            {look?.logo ? (
               <img src={look.logo} alt="" data-testid="dashboard-brand-logo"
-                className={`mb-2 max-h-10 max-w-[140px] object-contain rounded-md p-1 ${logoChip}`} />
+                className={`h-11 w-11 flex-shrink-0 object-contain rounded-xl p-1 ${logoChip}`} />
+            ) : (
+              <span aria-hidden data-testid="dashboard-brand-initial"
+                className="h-11 w-11 flex-shrink-0 rounded-xl bg-action-500/15 text-action-400 font-bold text-lg flex items-center justify-center">
+                {(business?.name ?? '').trim().charAt(0).toUpperCase() || '·'}
+              </span>
             )}
-            <p className="text-white font-bold text-lg truncate">{business?.name ?? '…'}</p>
-            <BranchSelector />
+            <p className="flex-1 min-w-0 text-white font-bold text-base leading-tight line-clamp-2 break-words" title={business?.name ?? ''}>
+              {business?.name ?? '…'}
+            </p>
+            <div className="relative flex-shrink-0" ref={bellRef}>
+              <button onClick={() => setBellOpen(p => !p)} aria-label="Notifications"
+                className="relative h-9 w-9 flex items-center justify-center text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-bold min-w-[16px] h-4 rounded-full flex items-center justify-center px-0.5">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              {/* A609: on a phone the panel goes to the page itself (createPortal) — see bellPanelRef above. */}
+              {bellOpen && (isPhone ? createPortal(bellPanel, document.body) : bellPanel)}
+            </div>
           </div>
-          <div className="relative flex-shrink-0" ref={bellRef}>
-            <button onClick={() => setBellOpen(p => !p)}
-              className="relative p-1.5 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-gray-800">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-              </svg>
-              {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-bold min-w-[16px] h-4 rounded-full flex items-center justify-center px-0.5">
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </button>
-            {/* A609: on a phone the panel goes to the page itself (createPortal) — see bellPanelRef above. */}
-            {bellOpen && (isPhone ? createPortal(bellPanel, document.body) : bellPanel)}
-          </div>
+          <BranchSelector />
         </div>
 
         {/* Nav */}

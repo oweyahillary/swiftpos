@@ -166,6 +166,7 @@ router.get('/branch-config/:branchId', requireAuth, async (req: any, res) => {
 
   if (!branch)                              { res.status(404).json({ error: 'Branch not found' }); return; }
   if (branch.business_id !== req.businessId) { res.status(403).json({ error: 'Branch not in your business' }); return; }
+  if (req.pausedBranches?.has(branchId)) { res.status(404).json({ error: 'Branch not found' }); return; }   // A612: paused
   // A495: the reveal code opens the tech panel on this branch's tills — never for any signed-in cashier. Allowed: the
   // till's own session for ITS branch (techService.refreshTechConfig sends exactly that, at join and on every sync), the
   // owner, or a person who may approve devices (devices.approve) on a branch they work at.

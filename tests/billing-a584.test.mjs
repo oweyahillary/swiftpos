@@ -429,7 +429,8 @@ try {
     assert.match(PZ.pausedWords('CLOUD_TRIAL_ENDED').title, /trial has ended/);
     assert.equal(N.planNotice, undefined);
     const api = read('apps/dashboard/src/lib/api.ts');
-    assert.match(api, /res\.status === 403 && \(json\?\.code === 'CLOUD_ACCESS_PAUSED' \|\| json\?\.code === 'CLOUD_TRIAL_ENDED'\)/);
+    // A612: a paused branch (BRANCH_PAUSED) is the same screen, in a branch's words
+    assert.match(api, /res\.status === 403 && \(json\?\.code === 'CLOUD_ACCESS_PAUSED' \|\| json\?\.code === 'CLOUD_TRIAL_ENDED'( \|\| json\?\.code === 'BRANCH_PAUSED')?\)/);
     assert.match(read('apps/dashboard/src/App.tsx'), /<CloudPausedScreen \/>/);
     const login = read('apps/dashboard/src/pages/LoginPage.tsx');
     assert.match(login, /CLOUD_ACCESS_PAUSED: \{[\s\S]*?PAUSED_BODY/);

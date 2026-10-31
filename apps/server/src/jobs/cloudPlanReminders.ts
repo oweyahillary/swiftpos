@@ -27,6 +27,14 @@
  * Once each: the (business, due date, milestone) row is claimed in cloud_plan_reminders (unique) before anything is
  * sent; an invoice that could not be written gives the claim back for the next hour. No email provider (SendGrid is the
  * owner's pending action): logged and recorded, never a crash. A suspended business is skipped.
+ *
+ * A612 phase 3 (owner, 2026-10-30: the cloud billed per branch; "the owner should be the one who gets the invoice not
+ * individual branch"): a business whose branches have their own plans (branch_cloud_plans, migration 182) is billed per
+ * branch — each branch's ladder is its own (lib/cloudPlan.ts branchPause), and the branches with the same milestone on the
+ * same day go together: ONE invoice to the owner for the branches due that day (items, unit prices, the branches in a note —
+ * lib/cloudPlanEmail.ts branchInvoiceEmailHtml, ZapTill's details and prices from the admin portal, lib/branchBilling.ts),
+ * one notice to ZapTill for the branches on their 5th unpaid day, locked, or not interested (only their invoices written
+ * off). The claim is the same (business, date, milestone).
  */
 import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
 import cron from 'node-cron';
@@ -36,10 +44,11 @@ import { addAdminNotifications } from '../lib/adminAlerts';           // A589: t
 import { billingStatus } from '../lib/adminAlertPolicy';
 import {
   cloudBusinessIds, readCloudFacts, cloudStanding, adminMilestones, reminderHour, invoicePeriod, inferBridgePeriod, defaultAmount,
-  nextInvoiceNumber, insertCloudInvoice, forgetStanding, invoiceStarts, lockedUnderOldLadder, writeOffCloudInvoices,
-  type CloudFactsRow, type AdminMilestone, type CloudStanding,
+  nextInvoiceNumber, insertCloudInvoice, forgetStanding, invoiceStarts, lockedUnderOldLadder, writeOffCloudInvoices, branchPause,
+  WRITTEN_OFF, type CloudFactsRow, type AdminMilestone, type CloudStanding, type BranchPause, type BranchPlanRow,
 } from '../lib/cloudPlan';
-import { invoiceEmailHtml, adminNoticeText } from '../lib/cloudPlanEmail';
+import { invoiceEmailHtml, adminNoticeText, branchInvoiceEmailHtml, invoiceItems, type BranchBill } from '../lib/cloudPlanEmail';
+import { readBillingDetails, branchBill, periodMonths } from '../lib/branchBilling';   // A612
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -65,7 +74,7 @@ export async function ownerEmailOf(ownerId: string | null | undefined, fallback:
 
 export interface BillingRun {
   bridged: string[];
-  sent: Array<{ business_id: string; milestone: AdminMilestone; owner: boolean; admin: boolean; invoice?: string | null; period_start?: string }>;
+  sent: Array<{ business_id: string; milestone: AdminMilestone; owner: boolean; admin: boolean; invoice?: string | null; period_start?: string; branches?: string[] }>;
   skipped: number;
 }
 
@@ -116,6 +125,9 @@ export async function runCloudBilling(now: Date = new Date(), opts: { force?: bo
   for (const [businessId, f] of facts) {
     try {
       if (f.suspended) { out.skipped++; continue; }
+      // A612: billed per branch — each branch's own ladder, the branches due together on one invoice.
+      const pause = branchPause(f, t);
+      if (pause) { await branchBilling(businessId, f, pause, now, out); continue; }
       let s = cloudStanding(f, t);
       if (s.bridgePending) {
         const plan = await bridge(businessId, f, now);
@@ -237,6 +249,153 @@ async function sendOne(businessId: string, f: CloudFactsRow, s: CloudStanding, m
     error: errors.length ? errors.join('; ').slice(0, 500) : null,
   }).eq('id', claimId);
   out.sent.push({ business_id: businessId, milestone, owner: ownerSent, admin: adminSent, ...(milestone === 'invoice' ? { invoice: invoiceNumber, period_start: key } : {}) });
+}
+
+// ── A612 phase 3: billed per branch ─────────────────────────────────────────────────────────────────────────────────
+interface BranchGroup { milestone: AdminMilestone; key: string; branches: string[] }
+
+/** The branches' milestones today, grouped by (milestone, date) — one claim, one invoice or notice each. Pure. */
+export function branchGroups(f: Pick<CloudFactsRow, 'branchPlans'>, pause: BranchPause, t: number): BranchGroup[] {
+  const groups = new Map<string, BranchGroup>();
+  for (const row of f.branchPlans ?? []) {
+    const id = String(row.branch_id);
+    const s = pause.standings.get(id);
+    if (!s) continue;   // a branch no longer the business's
+    for (const milestone of adminMilestones(s, t)) {
+      const keys = milestone === 'invoice' ? invoiceStarts(s, row, t) : s.dueAt ? [s.dueAt] : [];
+      for (const key of keys) {
+        const k = `${milestone}|${key}`;
+        const g = groups.get(k) ?? { milestone, key, branches: [] };
+        g.branches.push(id);
+        groups.set(k, g);
+      }
+    }
+  }
+  return [...groups.values()];
+}
+
+async function branchBilling(businessId: string, f: CloudFactsRow, pause: BranchPause, now: Date, out: BillingRun): Promise<void> {
+  const groups = branchGroups(f, pause, now.getTime());
+  if (!groups.length) { out.skipped++; return; }
+  const { data: brs } = await supabase.from('branches').select('id, name').eq('business_id', businessId);
+  const names = new Map(((brs ?? []) as Array<{ id: string; name: string | null }>).map((b) => [String(b.id), b.name ?? 'Branch']));
+  for (const g of groups) await sendBranchGroup(businessId, f, pause, names, g, now, out);
+}
+
+/** One group's invoice or notice, once per (business, date, milestone) — the claim first, as sendOne. */
+async function sendBranchGroup(businessId: string, f: CloudFactsRow, pause: BranchPause, names: Map<string, string>, g: BranchGroup,
+  now: Date, out: BillingRun): Promise<void> {
+  const { milestone, key } = g;
+  const seen = await supabase.from('cloud_plan_reminders').select('id')
+    .eq('business_id', businessId).eq('paid_until', key).eq('milestone', milestone).maybeSingle();
+  if (seen.error || seen.data) return;
+  const claim = await supabase.from('cloud_plan_reminders')
+    .insert({ business_id: businessId, paid_until: key, milestone, sent_at: now.toISOString() }).select('id').single();
+  if (claim.error) {
+    if ((claim.error as { code?: string }).code !== '23505') console.warn(`[cloudPlan] ${milestone} not claimed for ${businessId}:`, claim.error.message);
+    return;
+  }
+  const claimId = (claim.data as { id: string }).id;
+  const rowBy = new Map((f.branchPlans ?? []).map((r) => [String(r.branch_id), r]));
+  const rows = g.branches.map((id) => rowBy.get(id)).filter((r): r is BranchPlanRow => !!r);
+  const branchNames = g.branches.map((id) => names.get(id) ?? 'Branch');
+  const first = pause.standings.get(g.branches[0])!;
+  const currency = rows[0]?.currency ?? 'KES';
+  const ownerEmail = await ownerEmailOf(f.ownerId, f.email);
+  const errors: string[] = [];
+  let invoiceNumber: string | null = null;
+  let ownerSent = false;
+  let writtenOff: string[] = [];
+  let amount = rows.reduce((t, r) => t + Number(r.amount ?? 0), 0);
+  const giveBack = async () => { await supabase.from('cloud_plan_reminders').delete().eq('id', claimId); };
+
+  if (milestone === 'invoice') {
+    const details = await readBillingDetails(now.getTime());
+    const periods = rows.map((r) => invoicePeriod(r, key));
+    const bills: BranchBill[] = rows.map((r, i) => branchBill(r, branchNames[i], details.prices, periodMonths(r.period, key, periods[i].end)));
+    const items = invoiceItems(bills);
+    amount = items.reduce((t, i) => t + i.amount, 0);
+    const ends = periods.map((p) => p.end).filter((e): e is string => !!e).sort();
+    const periodEnd = ends.length ? ends[ends.length - 1] : null;
+    const have = await supabase.from('invoices').select('id, invoice_number, status')
+      .eq('business_id', businessId).eq('period_start', key).limit(1).maybeSingle();
+    if (have.error) { await giveBack(); return; }
+    if (have.data) invoiceNumber = (have.data as { invoice_number: string }).invoice_number;
+    else {
+      const number = await nextInvoiceNumber();
+      const inv = await insertCloudInvoice({
+        business_id: businessId, invoice_number: number, amount, currency, status: 'pending', period_start: key, period_end: periodEnd,
+        branch_ids: g.branches,
+        lines: { items, branches: g.branches.map((id, i) => ({ branch_id: id, name: branchNames[i], bill: bills[i] })) },
+      });
+      if (inv.error || !inv.data) {
+        console.warn(`[cloudPlan] branch invoice not raised for ${businessId} — tried again next hour:`, inv.error?.message);
+        await giveBack(); return;
+      }
+      invoiceNumber = inv.data.invoice_number ?? number;
+    }
+    if ((have.data as { status?: string } | null)?.status !== 'paid') {
+      if (ownerEmail) {
+        const mail = branchInvoiceEmailHtml({
+          invoiceNumber: invoiceNumber ?? '', issuedAt: now.toISOString(), currency,
+          business: { name: f.name ?? 'your business', ownerName: null, phone: null, email: ownerEmail },
+          periodStart: key, periodEnd, period: rows[0]?.period ?? 'monthly', branches: bills, seller: details.seller,
+        });
+        try {
+          const r = await sendEmailChecked({ to: ownerEmail, subject: mail.subject, html: mail.html });
+          ownerSent = r.ok;
+          if (!r.ok) errors.push(`owner: ${r.error ?? `not sent (${r.provider})`}`);
+        } catch (e: any) { errors.push(`owner: ${e?.message ?? e}`); }
+      } else errors.push('owner: no email on file');
+    }
+  }
+
+  if (milestone === 'not_interested') {
+    // A587, per branch: only the open invoices of these branches alone are closed (another branch's stay owed).
+    const { data: open, error: oErr } = await supabase.from('invoices').select('id, branch_ids')
+      .eq('business_id', businessId).eq('kind', 'cloud').eq('status', 'pending');
+    if (oErr) { await giveBack(); return; }
+    const mine = ((open ?? []) as Array<{ id: string; branch_ids: string[] | null }>)
+      .filter((i) => (i.branch_ids ?? []).length && (i.branch_ids ?? []).every((b) => g.branches.includes(b))).map((i) => i.id);
+    const w = mine.length ? await writeOffCloudInvoices(businessId, mine) : { numbers: [], status: WRITTEN_OFF, error: null };
+    if (w.error) { await giveBack(); return; }
+    writtenOff = w.numbers;
+    const { error: aErr } = await supabase.from('admin_audit_log').insert({
+      admin_id: null, admin_email: 'system (A612 billing)', action: 'cloud_plan.not_interested', resource: 'cloud_plan',
+      business_id: businessId, business_name: f.name ?? null,
+      before_data: { state: 'locked', due_at: key, branches: branchNames, open_invoices: w.numbers },
+      after_data: { state: 'not_interested', branches: branchNames, written_off: w.numbers, invoice_status: w.status },
+      reason: 'Branch unpaid 3 months after its first unpaid due date — taken as not interested (A587, per branch A612)',
+    });
+    if (aErr) console.error('[cloudPlan] not-interested audit not written:', aErr.message);
+    forgetStanding(businessId);
+  }
+
+  let adminSent = false;
+  try {
+    const client = `${f.name ?? 'a client'} — ${branchNames.join(', ')}`;
+    const a = adminNoticeText({
+      businessName: client, milestone, dueAt: milestone === 'invoice' ? key : first.dueAt, lockAt: first.lockAt, unpaidDays: first.unpaidDays,
+      lockInDays: first.lockInDays, amount, currency, period: rows[0]?.period ?? 'monthly', invoiceNumber, ownerEmail, ownerSent,
+      trial: first.trial, notInterestedAt: first.notInterestedAt, writtenOff,
+    });
+    adminSent = await addAdminNotifications([{
+      category: 'billing', business_id: businessId, alert_key: `billing:${milestone}:${businessId}:${key}`, title: a.subject, detail: a.text,
+      data: {
+        milestone, client, branches: branchNames, invoice: invoiceNumber, amount, currency, due: key,
+        status: billingStatus(milestone, { unpaidDays: first.unpaidDays, lockInDays: first.lockInDays, ownerSent: milestone === 'invoice' ? ownerSent : null, trial: first.trial }),
+        owner_email: ownerEmail, owner_sent: milestone === 'invoice' ? ownerSent : null, written_off: writtenOff,
+      },
+    }], now);
+    if (!adminSent) errors.push('ZapTill: the admin portal notification was not stored (migration 174?)');
+  } catch (e: any) { errors.push(`ZapTill: ${e?.message ?? e}`); }
+  if (errors.length) console.warn(`[cloudPlan] ${f.name} ${milestone} (${branchNames.join(', ')}): ${errors.join('; ')}`);
+  await supabase.from('cloud_plan_reminders').update({
+    owner_email: milestone === 'invoice' ? ownerEmail : null, owner_sent: ownerSent, admin_sent: adminSent,
+    error: errors.length ? errors.join('; ').slice(0, 500) : null,
+  }).eq('id', claimId);
+  out.sent.push({ business_id: businessId, milestone, owner: ownerSent, admin: adminSent, branches: g.branches,
+    ...(milestone === 'invoice' ? { invoice: invoiceNumber, period_start: key } : {}) });
 }
 
 /** A581's name, kept for its callers and tests. */

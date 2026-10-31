@@ -1097,7 +1097,8 @@ router.get('/other-branches', requirePermission('inventory.view'), async (req, r
   if (bErr) { sendError(res, bErr); return; }
   // A582: a partner of some branches checks THEIR other branches only — a branch not theirs is someone else's shop (its
   // name and its stock never reach them). Managers and staff keep A564's every other branch; the owner as before.
-  const reach = (b: { id: string }) => !(req.webPartner && !req.allBranches) || (req.partnerBranches ?? []).includes(b.id);
+  const reach = (b: { id: string }) => (!(req.webPartner && !req.allBranches) || (req.partnerBranches ?? []).includes(b.id))
+    && !req.pausedBranches?.has(b.id);   // A612: a paused branch's stock is nobody's to see
   const others = ((allBranches ?? []) as Array<{ id: string; name: string; status: string | null }>)
     .filter((b) => b.id !== own && b.status !== 'inactive' && reach(b));
 

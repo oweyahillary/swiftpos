@@ -71,6 +71,7 @@ import opsRoutes           from './ops';            // A525: the GitHub workflow
 import opsAdminRoutes      from './opsAdmin';       // A525: the admin portal's System page reads them
 import adminInstallerRoutes from './adminInstaller';   // A570: Download ZapTill, through the cloud
 import cloudPlanAdminRoutes from './cloudPlanAdmin';   // A581: the cloud payment plan
+import billingDetailsAdminRoutes from './billingDetailsAdmin';   // A612: ZapTill's billing details and prices
 import { forgetOnWrite }   from '../lib/forgetOnWrite';   // A528
 import { ringDrawersOnWrite } from '../lib/drawerBell';   // A535
 import branchDrawersRoutes from './branchDrawers';       // A535: a branch server asks about every drawer of its branch at once
@@ -161,6 +162,7 @@ router.use('/admin/version',  adminVersionRouter);   // before /admin, which tak
 router.use('/admin/support-logs', supportAdminRoutes);   // A519: before /admin, which takes the rest of /admin/*
 router.use('/admin/clients', logRequestsAdminRoutes);   // A533: …/:id/log-requests only; the rest falls through to /admin
 router.use('/admin/clients', cloudPlanAdminRoutes);   // A581: …/:id/cloud-plan only; the rest falls through to /admin
+router.use('/admin/billing-details', billingDetailsAdminRoutes);   // A612
 router.use('/admin/tills-days', tillsDaysAdminRoutes);   // A523: before /admin, which takes the rest of /admin/*
 router.use('/admin/ops',      opsAdminRoutes);   // A525: before /admin, which takes the rest of /admin/*
 router.use('/admin/desktop',  adminInstallerRoutes);   // A570: before /admin, which takes the rest of /admin/*

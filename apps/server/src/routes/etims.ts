@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, branchScope, oneBranchOnly, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission, branchScope, oneBranchOnly, assertBranchAccess, outsideReach } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { registerBranch } from '../lib/etims';
 import { processPending } from '../lib/etims/queue';
@@ -92,7 +92,8 @@ router.get('/order/:orderId', async (req, res) => {
     .from('orders').select('business_id, branch_id').eq('id', req.params.orderId).single();
   if (!order || order.business_id !== req.businessId) { res.status(404).json({ error: 'Not found' }); return; }
   // A582: a partner reads only their branches' sales (an order id of another branch: not found)
-  if (req.webPartner && !assertBranchAccess(req, (order as { branch_id?: string | null }).branch_id ?? null)) { res.status(404).json({ error: 'Not found' }); return; }
+  // A612: and nobody a paused branch's
+  if (outsideReach(req, (order as { branch_id?: string | null }).branch_id ?? null)) { res.status(404).json({ error: 'Not found' }); return; }
 
   const { data } = await supabase
     .from('etims_invoices')

@@ -167,6 +167,23 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "branch_cloud_plans": {
+    "branch_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "period": "\"text\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "currency": "\"text\" NOT NULL",
+    "custom_until": "\"timestamp with time zone\"",
+    "paid_until": "\"timestamp with time zone\"",
+    "billing_from": "\"timestamp with time zone\"",
+    "web_off": "\"boolean\" NOT NULL",
+    "notes": "\"text\"",
+    "updated_by": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "premium": "\"ARRAY\" NOT NULL",
+    "package": "\"boolean\" NOT NULL"
+  },
   "branch_prices": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -232,7 +249,9 @@
     "receipt_logo_enabled": "\"boolean\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "theme_id": "\"text\""
+    "theme_id": "\"text\"",
+    "primary_hex": "\"text\"",
+    "secondary_hex": "\"text\""
   },
   "business_days": {
     "id": "\"uuid\" NOT NULL",
@@ -366,7 +385,8 @@
     "recorded_by": "\"uuid\"",
     "recorded_by_email": "\"text\" NOT NULL",
     "recorded_at": "\"timestamp with time zone\" NOT NULL",
-    "note": "\"text\""
+    "note": "\"text\"",
+    "branch_ids": "\"ARRAY\""
   },
   "cloud_plan_reminders": {
     "id": "\"uuid\" NOT NULL",
@@ -691,7 +711,9 @@
     "period_end": "\"timestamp with time zone\"",
     "paid_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "kind": "\"text\""
+    "kind": "\"text\"",
+    "branch_ids": "\"ARRAY\"",
+    "lines": "\"jsonb\""
   },
   "kitchen_tickets": {
     "id": "\"uuid\" NOT NULL",

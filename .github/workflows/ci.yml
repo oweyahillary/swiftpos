@@ -683,6 +683,24 @@ jobs:
       - name: Refusals keep the memory (A611)
         run: TZ=UTC node --no-warnings tests/quiet-refusals-a611.test.mjs
 
+      # A612 phase 1 — the cloud billed per branch (migration 182 branch_cloud_plans, each branch inheriting its business's
+      # plan): a branch past its 7 unpaid days (or Disabled) is paused — its POS refused everything but sign-in, the
+      # technician, support logs and the update state (nothing up, nothing down: no price reaches it); nobody sees it on the
+      # web (the owner and partners narrowed to the open branches, a paused branch picked → BRANCH_PICKED_PAUSED, a manager
+      # of one → BRANCH_PAUSED); every branch paused → the web paused. Needs the server build.
+      - name: Cloud per branch (A612) and migration 182
+        run: |
+          TZ=UTC node --no-warnings tests/branch-cloud-a612.test.mjs
+          node --no-warnings scripts/test-migration-182.mjs
+
+      # A612 phases 3-4 — billed per branch: ONE invoice to the owner for the branches due that day (itemised: Cloud,
+      # Analytics, Attendance, Themes, the Premium package; the branches in a note), ZapTill's notices per branch, payments
+      # for the branches ticked (each its own period; a locked one afresh, its locked time not charged), a branch's plan,
+      # "Bill per branch", a new branch billed from the day it is made, ZapTill's billing details; premium per branch
+      # (analytics, attendance, the POS's themes). Needs the server build.
+      - name: Billing per branch and premium per branch (A612)
+        run: TZ=UTC node --no-warnings tests/branch-billing-a612.test.mjs
+
       # A592 — "How can we make these messages look better": every admin Telegram message and email laid out the same —
       # Telegram HTML (a client "A&B <Shop>" escaped, valid), URL buttons ("Close it remotely", "Open run", "Guide"), a 400
       # "can't parse entities" sent again as plain text; "8 days 22 h" not "214 h", "Mon 26 Oct 13:07 EAT"; client problems
@@ -764,10 +782,12 @@ jobs:
       # attendance-only person never a users row; the branch server's ingest idempotent, its own branch only; "Not
       # matched" → link assigns retroactively; corrections keep the original; the rights' defaults; pay only with
       # staff.pay. Migration 180 replayed into PGlite. Needs the server build. In the loop too.
-      - name: Attendance (A599) and migration 180
+      # A614: one attendance device per branch — a second refused 409 BRANCH_HAS_DEVICE, migration 183's unique index.
+      - name: Attendance (A599, A614) and migrations 180, 183
         run: |
           TZ=UTC node --no-warnings tests/attendance-a599.test.mjs
           node --no-warnings scripts/test-migration-180.mjs
+          node --no-warnings scripts/test-migration-183.mjs
 
       # A601 — the desktop-only cut-off (DESKTOP_ONLY_CUTOFF_AT): unset or before the date nothing is refused; from it a
       # desktop-only POS's backup writes 503 CLOUD_BACKUP_OFF while sign-in, joining a POS, the catalogue / staff changes,

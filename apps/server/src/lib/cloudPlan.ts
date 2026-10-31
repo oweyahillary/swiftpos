@@ -343,6 +343,53 @@ export function cloudStanding(f: CloudFacts, now: number = Date.now(), cutoffAt:
   };
 }
 
+// ── A612: the cloud billed per branch ─────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-30 (docs/A612-per-branch-cloud.md): "monthly subscription should be per branch … if a branch does not pay
+// it should not view its data and the owner should not see it too, it cuts across all users" · "if a branch has not paid
+// it's cut off completely, nothing syncs" · "even price change online should not sync".
+// A branch with its own plan row (branch_cloud_plans, migration 182) stands on its own paid-until — the SAME rules as a
+// business (cloudStanding: due day, 7 unpaid days, locked; web_off is its "Disable"); a branch with no row follows its
+// business. A locked branch is PAUSED: its POS refused everything but sign-in, the technician, support logs and the update
+// state (accessRefusal — reads too: no price or menu reaches it), and nobody sees its data (middleware/auth.ts narrows every
+// user to the open branches). Every branch paused: the whole web dashboard paused, as a locked business is.
+export interface BranchPause {
+  /** Each branch's standing — its own row's, else its business's. */
+  standings: Map<string, CloudStanding>;
+  /** The paused branches. */
+  paused: Set<string>;
+  /** The branches still open, in the business's order. */
+  open: string[];
+  /** Every branch paused: the web dashboard paused too. */
+  allPaused: boolean;
+}
+
+/** A branch's facts: its business's (trial, web access, the flags) with the branch's own plan and paid-until. Pure. */
+export function branchFactsFor(f: CloudFacts, row: Pick<BranchPlanRow, 'paid_until' | 'billing_from' | 'created_at' | 'web_off'>): CloudFacts {
+  return {
+    ...f, onPlan: true, planCreatedAt: row.created_at ?? null, billingFrom: row.billing_from ?? null, expiresAt: row.paid_until ?? null,
+    webHosting: row.web_off ? false : f.webHosting,
+  };
+}
+
+/** Where each branch stands at `now`; null when no branch has its own plan (the business is billed as one). Pure. */
+export function branchPause(f: CloudFacts & { branchIds?: string[]; branchPlans?: BranchPlanRow[] }, now: number = Date.now(),
+  cutoffAt: string | null = desktopOnlyCutoffAt()): BranchPause | null {
+  const ids = f.branchIds ?? [], rows = f.branchPlans ?? [];
+  if (!ids.length || !rows.length) return null;
+  const rowBy = new Map(rows.map((r) => [String(r.branch_id), r]));
+  const business = cloudStanding(f, now, cutoffAt);
+  const standings = new Map<string, CloudStanding>();
+  const paused = new Set<string>();
+  for (const id of ids) {
+    const row = rowBy.get(id);
+    const st = row ? cloudStanding(branchFactsFor(f, row), now, cutoffAt) : business;
+    standings.set(id, st);
+    if (st.webLocked || st.syncRefused) paused.add(id);
+  }
+  const open = ids.filter((id) => !paused.has(id));
+  return { standings, paused, open, allPaused: open.length === 0 };
+}
+
 /** The standing as the portal reads it (snake_case). */
 export function standingView(s: CloudStanding) {
   return {
@@ -559,22 +606,60 @@ export interface CloudPlanRow {
   billing_from?: string | null;
 }
 
-export type CloudFactsRow = CloudFacts & { plan: CloudPlanRow | null; name?: string; ownerId?: string | null; email?: string | null };
+/** A612 (migration 182): a branch's own plan — the cloud billed per branch. */
+export interface BranchPlanRow {
+  branch_id: string;
+  business_id: string;
+  period: PlanPeriod;
+  amount: number | string;
+  currency: string;
+  custom_until: string | null;
+  paid_until: string | null;
+  billing_from: string | null;
+  web_off: boolean;
+  /** A612 phase 4: the branch's premium features, and the Premium package (every one). */
+  premium?: string[] | null;
+  package?: boolean | null;
+  notes?: string | null;
+  updated_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type CloudFactsRow = CloudFacts & {
+  plan: CloudPlanRow | null; name?: string; ownerId?: string | null; email?: string | null;
+  /** A612: the business's branches (ids) and the branches' own plans (empty: the business is billed as one, as before). */
+  branchIds?: string[]; branchPlans?: BranchPlanRow[];
+};
 
 /** The facts for several businesses (the admin list, the billing job, the gate). A failed read leaves them unknown — never locked. */
 export async function readCloudFacts(businessIds: string[]): Promise<Map<string, CloudFactsRow>> {
   const out = new Map<string, CloudFactsRow>();
   if (!businessIds.length) return out;
-  const [plans, trials, bizs, flags] = await Promise.all([
+  const [plans, trials, bizs, flags, branchRows, branchPlanRows] = await Promise.all([
     supabase.from('cloud_plans').select('*').in('business_id', businessIds),
     supabase.from('business_settings').select('business_id, value').eq('key', CLOUD_TRIAL_KEY).in('business_id', businessIds),
     supabase.from('businesses').select('id, name, owner_id, email, status, web_access_expires_at').in('id', businessIds),
     // A601: the cut-off's two flags ride the same read (no extra query).
     supabase.from('feature_flags').select('business_id, key, enabled').in('key', ['web_hosting', CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG]).in('business_id', businessIds),
+    // A612: the branches and their own plans ride the same read set (two queries for every business asked, not two each).
+    supabase.from('branches').select('id, business_id').in('business_id', businessIds),
+    supabase.from('branch_cloud_plans').select('*').in('business_id', businessIds),
   ]);
   // Plans unreadable (migration 170 not applied, a timeout): every dated business reads as not yet bridged — never locked.
   if (plans.error) warnOnce('cloud_plans', plans.error.message);
+  // A612: branch plans unreadable (migration 182 not applied, a timeout) — every branch follows its business, as before.
+  if (branchPlanRows.error) warnOnce('branch_cloud_plans', branchPlanRows.error.message);
   if (bizs.error) return out;
+  const branchesBy = new Map<string, string[]>();
+  // Branches unreadable: none known — the branch rules then never apply (a business-wide answer, as before).
+  for (const r of (branchRows.error ? [] : branchRows.data ?? []) as Array<{ id: string; business_id: string }>) {
+    branchesBy.set(r.business_id, [...(branchesBy.get(r.business_id) ?? []), String(r.id)]);
+  }
+  const branchPlansBy = new Map<string, BranchPlanRow[]>();
+  for (const r of (branchPlanRows.error || branchRows.error ? [] : branchPlanRows.data ?? []) as BranchPlanRow[]) {
+    branchPlansBy.set(r.business_id, [...(branchPlansBy.get(r.business_id) ?? []), r]);
+  }
   const planBy = new Map(((plans.data ?? []) as CloudPlanRow[]).map((p) => [p.business_id, p]));
   const trialBy = new Map<string, CloudTrial>();
   for (const r of (trials.data ?? []) as Array<{ business_id: string; value: unknown }>) { const t = cleanTrial(r.value); if (t) trialBy.set(r.business_id, t); }
@@ -589,6 +674,7 @@ export async function readCloudFacts(businessIds: string[]): Promise<Map<string,
       expiresAt: b.web_access_expires_at ?? null, webHosting: flagBy.has(b.id) ? flagBy.get(b.id)! : null,
       suspended: b.status === 'suspended', name: b.name, ownerId: b.owner_id, email: b.email,
       cloudBackup: backupBy.has(b.id) ? backupBy.get(b.id)! : null, desktopUpdates: updatesBy.has(b.id) ? updatesBy.get(b.id)! : null,
+      branchIds: branchesBy.get(b.id) ?? [], branchPlans: branchPlansBy.get(b.id) ?? [],
     });
   }
   return out;
@@ -785,7 +871,7 @@ function warnOnce(what: string, msg: string): void {
 // ── The gate's memory (one read set per business per minute — a till writes every few seconds) ──────────────────────
 
 export const STANDING_TTL_MS = 60_000;
-const memo = new Map<string, { at: number; standing: CloudStanding | null }>();
+const memo = new Map<string, { at: number; facts: CloudFactsRow | null }>();
 
 /**
  * A593 (owner, 2026-10-26: "logs are full already" — ~82,000 Supabase calls a day): every POS write (its sale, a drawer's
@@ -835,8 +921,8 @@ export async function primeStandings(businessIds: string[], now: number = standi
   await refreshFacts(stale[0], now);
 }
 
-/** The standing for the gates, remembered a minute. A failed read answers null (never refuse on a failed read). */
-export async function standingFor(businessId: string, now: number = standingClock()): Promise<CloudStanding | null> {
+/** The business's facts as the gates read them (kept as below). A failed read answers null (never refuse on a failed read). */
+async function factsFor(businessId: string, now: number): Promise<CloudFactsRow | null> {
   if (memoEnabled()) {   // A593
     const fresh = (e: { at: number; gen: string } | undefined) => !!e && (now - e.at < STANDING_TTL_MS
       || (e.gen !== '' && e.gen === writeGen(businessId) && now - e.at < STANDING_QUIET_MS));
@@ -847,21 +933,36 @@ export async function standingFor(businessId: string, now: number = standingCloc
       e = factsKept.get(businessId);
       if (!fresh(e)) { await refreshFacts(businessId, now); e = factsKept.get(businessId); }   // read for others meanwhile
     }
-    return standingOf(e?.facts ?? null, now);
+    return e?.facts ?? null;
   }
   const hit = memo.get(businessId);
-  if (hit && now - hit.at < STANDING_TTL_MS) return hit.standing;
-  let standing: CloudStanding | null = null;
+  if (hit && now - hit.at < STANDING_TTL_MS) return hit.facts;
+  let facts: CloudFactsRow | null = null;
   try {
-    const facts = (await readCloudFacts([businessId])).get(businessId);
-    standing = facts && !facts.suspended ? cloudStanding(facts, now) : null;
+    facts = (await readCloudFacts([businessId])).get(businessId) ?? null;
   } catch (e) {
     console.warn('[cloud-plan] standing read failed — not gated this time:', (e as Error)?.message ?? e);
-    standing = null;
+    facts = null;
   }
-  memo.set(businessId, { at: now, standing });
+  memo.set(businessId, { at: now, facts });
   if (memo.size > 5000) memo.clear();
-  return standing;
+  return facts;
+}
+
+/** The standing for the gates, remembered a minute. A failed read answers null (never refuse on a failed read). */
+export async function standingFor(businessId: string, now: number = standingClock()): Promise<CloudStanding | null> {
+  return standingOf(await factsFor(businessId, now), now);
+}
+
+/** A612: the business's facts as the gates keep them (premium per branch reads its branches' rows from here). */
+export async function cloudFactsFor(businessId: string, now: number = standingClock()): Promise<CloudFactsRow | null> {
+  return factsFor(businessId, now);
+}
+
+/** A612: the business's paused branches, from the same kept facts; null when it is billed as one (or unreadable / suspended). */
+export async function branchPauseFor(businessId: string, now: number = standingClock()): Promise<BranchPause | null> {
+  const f = await factsFor(businessId, now);
+  return f && !f.suspended ? branchPause(f, now) : null;
 }
 
 /** A payment, a plan or web access changed — the next request reads afresh (this server; another one within a minute). */
@@ -881,18 +982,34 @@ export async function lapseRefusal(businessId: string | null | undefined, surfac
  * A584: every gate in one — a till's write while locked → 503 CLOUD_SUBSCRIPTION_ENDED (A581); a web request while paused
  * → 403 CLOUD_ACCESS_PAUSED (a trial: CLOUD_TRIAL_ENDED). null when it may go.
  */
-export async function accessRefusal(businessId: string | null | undefined, surface: string | null | undefined, method: string, path: string):
+export async function accessRefusal(businessId: string | null | undefined, surface: string | null | undefined, method: string, path: string,
+  branchId: string | null = null):
   Promise<{ status: 503; body: ReturnType<typeof syncRefusalBody> } | { status: 503; body: ReturnType<typeof backupRefusalBody> }
     | { status: 403; body: ReturnType<typeof webRefusalBody> } | null> {
   if (!businessId) return null;
+  // A612: a POS (or a person on it) of a PAUSED branch — every request but the open ones, reads included: nothing goes up,
+  // nothing comes down (not even a price changed on the web). 503 as a lapsed business's, so every POS version keeps it queued.
+  if (surface === 'desktop' && branchId && !OPEN_WHILE_LAPSED.some((re) => re.test(cleanPath(path)))) {
+    const p = await branchPauseFor(businessId);
+    const st = p?.paused.has(branchId) ? p.standings.get(branchId) : undefined;
+    if (st) return { status: 503, body: syncRefusalBody(st) };
+  }
   if (lapseGateApplies(surface, method, path)) {
     const s = await standingFor(businessId);
-    if (s && s.syncRefused) return { status: 503, body: syncRefusalBody(s) };
+    // A612: billed per branch — the business's own date no longer stops a branch (its branch's standing did, above).
+    const perBranch = !!(await branchPauseFor(businessId));
+    if (s && s.syncRefused && !perBranch) return { status: 503, body: syncRefusalBody(s) };
     // A601: a desktop-only business from the cut-off — its POS's backup writes only (setup, changes, logs stay open).
     if (s && s.desktopOnly.backupOff && backupGateApplies(surface, method, path)) return { status: 503, body: backupRefusalBody(s) };
     return null;
   }
   if (webGateApplies(surface, path)) {
+    // A612: billed per branch — the web is paused only when every branch is (one paused branch is hidden: middleware/auth.ts).
+    const p = await branchPauseFor(businessId);
+    if (p) {
+      const first = p.allPaused ? p.standings.values().next().value : undefined;
+      return first ? { status: 403, body: webRefusalBody(first) } : null;
+    }
     const s = await standingFor(businessId);
     return s && s.webLocked ? { status: 403, body: webRefusalBody(s) } : null;
   }
@@ -900,7 +1017,10 @@ export async function accessRefusal(businessId: string | null | undefined, surfa
 }
 
 /** May a till join this business now? (enrolment code redeem, the admin's code, a branch server's join code) */
-export async function enrolRefusal(businessId: string): Promise<ReturnType<typeof enrolRefusalBody> | null> {
+export async function enrolRefusal(businessId: string, branchId: string | null = null): Promise<ReturnType<typeof enrolRefusalBody> | null> {
+  // A612: billed per branch — a POS joins only an open branch (a paused one, or none named while every branch is paused: no).
+  const p = await branchPauseFor(businessId);
+  if (p) return (branchId ? p.paused.has(branchId) : p.allPaused) ? enrolRefusalBody() : null;
   const s = await standingFor(businessId);
   return s && s.syncRefused ? enrolRefusalBody() : null;
 }

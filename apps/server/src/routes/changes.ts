@@ -25,6 +25,8 @@ function partnerChangeScope(req: any): BranchFilter {
   const f = branchFilter(req);
   if (f.kind === 'set') return f;
   if (req.webPartner === true && !req.allBranches) return { kind: 'set', ids: [...(req.partnerBranches ?? [])] };
+  // A612: some branches paused — the open ones only (a paused branch's changes are nobody's to see).
+  if (req.pausedBranches?.size) return { kind: 'set', ids: [...(req.openBranches ?? [])] };
   return { kind: 'all' };
 }
 

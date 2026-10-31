@@ -47,7 +47,9 @@ const src = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const pos = src('apps/server/src/routes/pos.ts');
 ok('/pos/init computes themeId with effectiveThemeId + the flag',
   // A544: the flag is read once into themesOn — the branch override (branchBranding) is served by the same answer.
-  /const themesOn = await themesEnabled\(req\.businessId\);\s*const themeId = effectiveThemeId\(themesOn, branding\?\.theme_id\);/.test(pos));
+  // A612 phase 4: the flag AND (billed per branch) the branch paying for Themes, then the same effectiveThemeId.
+  /const themesBusiness = await themesEnabled\(req\.businessId\);/.test(pos)
+  && /const themesOn = themesBusiness && \(!themesPaying \|\| [^;]+;\s*const themeId = effectiveThemeId\(themesOn, branding\?\.theme_id\);/.test(pos));
 ok('…served top-level, NOT inside `branding` (a business may have themes without a branding row)',
   /\n    themeId,\n(?:\s*\/\/[^\n]*\n)*\s*branchBranding,\n    receiptHeader:/.test(pos) && !/branding: branding \? \{[^}]*themeId/.test(pos));
 // A597: + primary_hex, secondary_hex (migration 179), read through selectBusinessBranding.
