@@ -788,6 +788,7 @@ jobs:
           TZ=UTC node --no-warnings tests/attendance-a599.test.mjs
           node --no-warnings scripts/test-migration-180.mjs
           node --no-warnings scripts/test-migration-183.mjs
+          node --no-warnings scripts/test-attendance-demo-seed.mjs   # the dev demo data still fits the schema
 
       # A601 — the desktop-only cut-off (DESKTOP_ONLY_CUTOFF_AT): unset or before the date nothing is refused; from it a
       # desktop-only POS's backup writes 503 CLOUD_BACKUP_OFF while sign-in, joining a POS, the catalogue / staff changes,
