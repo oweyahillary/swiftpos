@@ -1,8 +1,9 @@
 import { useBusiness } from '../../context/BusinessContext';
 import { usePermissions } from '../../context/PermissionsContext';   // A550
-import SettingsSection from './SettingsSection';
-import ReportSchedulerTab from './ReportSchedulerTab';
+import { Navigate } from 'react-router-dom';
+import SettingsSection, { type SettingsGroup } from './SettingsSection';
 import WebhooksTab from './WebhooksTab';
+import MpesaStkSettings from './MpesaStkSettings';   // A618, moved to Integrations (A620)
 import RestaurantSettingsPage from './RestaurantSettingsPage';
 import MinimartSettingsPage from './MinimartSettingsPage';
 import ParkingSettingsPage from './ParkingSettingsPage';
@@ -22,28 +23,46 @@ import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
 // pure regroupings of existing pages and ship now.
 
 export function useBusinessTabs() {
+  return useBusinessGroups().flatMap((g) => g.tabs);
+}
+
+/**
+ * A620 (owner, 2026-11-01: "under business … the top nav is cluttered"; "under integration we can add a menu left side
+ * like the normal navigation where there is a section for webhooks, mpesa, kra"): the Business section's pages in four
+ * groups, shown as a left menu. Integrations holds M-Pesa (STK push), KRA eTIMS (was "Tax & compliance") and Webhooks;
+ * the report e-mails moved to the Reports page.
+ */
+export function useBusinessGroups(): SettingsGroup[] {
   const { business } = useBusiness();
   const { can, isOwner } = usePermissions();   // A550: a partner sees the POS options only with settings.pos (the owner holds '*')
   const setupLabel = businessTerms(business?.type).setupLabel;   // A573: Restaurant setup / Retail setup / … (lib/businessTerms.ts)
+  const webhooks = isOwner || can('settings.webhooks');   // A595 D3
   return [
-    { to: 'profile',      label: 'Profile' },
-    { to: 'branding',     label: 'Branding' },
-    { to: 'branches',     label: 'Branches' },
-    { to: 'tax',          label: 'Tax & compliance' },
-    { to: 'payments',     label: 'Payments' },
-    { to: 'voids-refunds', label: 'Voids, refunds & delivery' },   // 0.6.30 (A336 stage 3): the owner's rules; 0.6.33 + free delivery
-    ...(can('settings.pos') ? [{ to: 'pos-options',  label: 'POS options' }] : []),    // A491: the owner's now (was the admin portal's)
-    ...(isOwner ? [{ to: 'loss-alerts',  label: 'Loss prevention' }] : []),   // A576: the watch list's switches — the owner's
-    ...(isOwner ? [{ to: 'credit-approvals', label: 'Credit approvals' }] : []),   // A585: who approves sales on account — the owner's
-    ...(can('settings.business') ? [{ to: 'scale-labels', label: 'Scale labels' }] : []),   // A577: weighing-scale barcodes
-    { to: 'setup',        label: setupLabel },
-    { to: 'integrations', label: 'Integrations' },
-  ];
+    { title: 'Your business', tabs: [
+      { to: 'profile',      label: 'Profile' },
+      { to: 'branding',     label: 'Branding' },
+      { to: 'branches',     label: 'Branches' },
+    ] },
+    { title: 'Selling', tabs: [
+      { to: 'payments',     label: 'Payments' },
+      ...(can('settings.pos') ? [{ to: 'pos-options',  label: 'POS options' }] : []),    // A491: the owner's now (was the admin portal's)
+      { to: 'voids-refunds', label: 'Voids, refunds & delivery' },   // 0.6.30 (A336 stage 3): the owner's rules; 0.6.33 + free delivery
+      ...(isOwner ? [{ to: 'credit-approvals', label: 'Credit approvals' }] : []),   // A585: who approves sales on account — the owner's
+      ...(isOwner ? [{ to: 'loss-alerts',  label: 'Loss prevention' }] : []),   // A576: the watch list's switches — the owner's
+      ...(can('settings.business') ? [{ to: 'scale-labels', label: 'Scale labels' }] : []),   // A577: weighing-scale barcodes
+    ] },
+    { title: 'Setup', tabs: [{ to: 'setup', label: setupLabel }] },
+    { title: 'Integrations', tabs: [
+      ...(isOwner ? [{ to: 'integrations/mpesa', label: 'M-Pesa (STK push)' }] : []),   // A618: the Daraja details are the owner's
+      { to: 'integrations/kra', label: 'KRA eTIMS' },
+      ...(webhooks ? [{ to: 'integrations/webhooks', label: 'Webhooks' }] : []),
+    ] },
+  ].filter((g) => g.tabs.length > 0);
 }
 
 export default function BusinessPage() {
-  const tabs = useBusinessTabs();
-  return <SettingsSection title="Business" tabs={tabs} />;
+  const groups = useBusinessGroups();
+  return <SettingsSection title="Business" tabs={groups.flatMap((g) => g.tabs)} groups={groups} />;
 }
 
 // Vertical setup tab — renders the right settings page for the business type.
@@ -64,18 +83,22 @@ export function VerticalSetupRoute() {
   }
 }
 
-// Integrations tab — outbound webhooks + scheduled report email, both moved out
-// of the old Staff Management page.
-// A595 (owner decision D3, 2026-10-27): webhooks are the owner's (or someone the owner gave settings.webhooks); who receives
-// the report e-mails is the owner's and the partners' (the cloud's mayReportEmails).
-export function IntegrationsRoute() {
+// A620: Integrations › … — the first page the section opens on: M-Pesa for the owner, else KRA eTIMS.
+export function IntegrationsIndexRoute() {
+  const { isOwner } = usePermissions();
+  return <Navigate to={isOwner ? 'mpesa' : 'kra'} replace />;
+}
+
+// A620: Integrations › Webhooks — outbound webhooks (A595 D3: the owner's, or someone given settings.webhooks).
+export function WebhooksRoute() {
   const { can, isOwner } = usePermissions();
-  const webhooks = isOwner || can('settings.webhooks');
-  return (
-    <div className="p-4 sm:p-6 space-y-10">
-      {webhooks && <WebhooksTab />}
-      {webhooks && <div className="border-t border-gray-800" />}
-      <ReportSchedulerTab />
-    </div>
-  );
+  if (!(isOwner || can('settings.webhooks'))) return <p className="p-6 text-sm text-gray-500">Only the owner manages webhooks.</p>;
+  return <div className="p-4 sm:p-6"><WebhooksTab /></div>;
+}
+
+// A620: Integrations › M-Pesa (STK push) — the Daraja details (A618), the owner's alone.
+export function MpesaRoute() {
+  const { isOwner } = usePermissions();
+  if (!isOwner) return <p className="p-6 text-sm text-gray-500">Only the owner manages the M-Pesa details.</p>;
+  return <div className="max-w-3xl p-4 sm:p-6"><MpesaStkSettings /></div>;
 }

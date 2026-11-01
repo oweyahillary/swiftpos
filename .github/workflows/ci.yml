@@ -812,6 +812,12 @@ jobs:
           TZ=UTC node --no-warnings tests/platform-prices-cloud-a619.test.mjs
           node --no-warnings scripts/test-migration-187.mjs
 
+      # A620 — Settings › Business: a grouped left menu (Your business, Selling, Setup, Integrations; a dropdown on a phone),
+      # Integrations' pages (M-Pesa the owner's, KRA eTIMS, Webhooks) with the old links redirected, the Payments page in
+      # three sections without the M-Pesa details, the report e-mails on Reports, the kitchen ticket on Printers.
+      - name: Business settings menu (A620)
+        run: node --no-warnings tests/business-settings-menu-a620.test.mjs
+
       # A599 — Attendance (premium, the 'attendance' flag set in the admin portal): punches only from a ZKTeco device
       # through the branch server, for everyone. The pairing (in / out alternately in time order, a night shift on the day
       # it started, an odd last punch a missing punch-out not counted, a 16 h gap never paired); flag off → every route

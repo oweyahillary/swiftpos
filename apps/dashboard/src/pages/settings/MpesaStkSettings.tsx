@@ -1,5 +1,5 @@
 /**
- * MpesaStkSettings — A618: Settings › Payments › M-Pesa (STK push). The owner's only.
+ * MpesaStkSettings — A618: Settings › Business › Integrations › M-Pesa (STK push). The owner's only.
  *
  * Owner, 2026-11-01: "it should be per branch since different branches might have different payment method some paybill
  * some buy goods". The Daraja details (Lipa Na M-Pesa Online) that send the payment prompt to a customer's phone: the

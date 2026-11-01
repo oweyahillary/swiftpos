@@ -175,8 +175,8 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
           then enter the M-Pesa confirmation code below.
         </p>
         {!mpesaConfigured && (
-          // A618: say where the prompt is set up (the owner's Settings › Payments › M-Pesa — per branch)
-          <p style={s.hint}>M-Pesa prompts are not set up for this branch. The owner adds them in Settings › Payments › M-Pesa.</p>
+          // A618: say where the prompt is set up (the owner's Settings › Business › Integrations › M-Pesa — per branch)
+          <p style={s.hint}>M-Pesa prompts are not set up for this branch. The owner adds them in Settings › Business › Integrations › M-Pesa.</p>
         )}
         <div style={s.field}>
           <label style={s.fieldLabel}>M-Pesa code</label>

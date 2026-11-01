@@ -309,14 +309,14 @@ try {
     assert.equal(r.status, 200, r.text);
     assert.deepEqual([daraja.pushes[0].BusinessShortCode, daraja.pushes[0].PartyB, daraja.pushes[0].Amount], ['600100', '163726', 250]);
   });
-  await ok('/config answers for the session\'s branch; not set up anywhere → 422 pointing at Settings › Payments › M-Pesa', async () => {
+  await ok('/config answers for the session\'s branch; not set up anywhere → 422 pointing at Settings › Business › Integrations › M-Pesa', async () => {
     reset({ mpesa: false });
     let r = await call('GET', '/api/mpesa/config', TILL_KIL, undefined, 'dev-T2');
     assert.equal(r.body.configured, true); assert.equal(r.body.source, 'branch'); assert.equal(r.body.shortcode, '600100');
     r = await call('GET', '/api/mpesa/config', TILL_WEST);
     assert.equal(r.body.configured, false);
     r = await call('POST', '/api/mpesa/stk-push-pos', TILL_WEST, { phone: '0712345678', amount: 10, client_ref: 'R' });
-    assert.equal(r.status, 422); assert.equal(r.body.code, 'NOT_CONFIGURED'); assert.match(r.body.error, /Settings › Payments › M-Pesa/);
+    assert.equal(r.status, 422); assert.equal(r.body.code, 'NOT_CONFIGURED'); assert.match(r.body.error, /Settings › Business › Integrations › M-Pesa/);
     assert.equal(daraja.pushes.length, 0);
   });
   await ok('migration 186 not run: payments use the business\'s, the screen says so, a branch save is 503 MIGRATION_186', async () => {

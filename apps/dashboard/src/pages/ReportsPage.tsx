@@ -20,6 +20,8 @@ import { reportPresets, activePreset } from '../lib/reportPeriods';   // A467; a
 import * as fmt from '../lib/format';   // A471: one money/number/date format ('money' here is the Excel column shorthand)
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '../lib/paginate';
+import { usePermissions } from '../context/PermissionsContext';   // A620: who may set the report e-mails
+import ReportSchedulerTab from './settings/ReportSchedulerTab';   // A620: moved here from Settings › Integrations
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -2554,13 +2556,31 @@ export default function ReportsPage() {
     branchName: branchId ? ((branches ?? []).find(b => b.id === branchId)?.name ?? '') : (allMine ? allLabel : ''),   // A582
   };
   const tabProps: TabProps = { range, branchId, currency, meta, staffId };
+  // A620 (owner, 2026-11-01: "emails we can add it in reports"): who receives the scheduled report e-mails — the owner's
+  // and the partners' (the cloud's mayReportEmails), opened from here instead of Settings › Integrations.
+  const { isOwner, isPartner, can } = usePermissions();
+  const mayEmails = isOwner || isPartner || can('settings.report_emails');
+  const [emailsOpen, setEmailsOpen] = useState(false);
 
   return (
     <div className="p-4 sm:p-6 w-full">
-      <div className="mb-5">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Reports</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sales analysis · Tax · Staff performance · Voids</p>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Reports</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sales analysis · Tax · Staff performance · Voids</p>
+        </div>
+        {mayEmails && (
+          <button type="button" data-testid="report-emails-toggle" onClick={() => setEmailsOpen((o) => !o)} aria-expanded={emailsOpen}
+            className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">
+            {emailsOpen ? 'Close email schedule' : 'Email schedule'}
+          </button>
+        )}
       </div>
+      {mayEmails && emailsOpen && (
+        <div data-testid="report-emails" className="mb-6 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+          <ReportSchedulerTab />
+        </div>
+      )}
 
       <DateRangeBar range={range} onChange={setRange} branches={branches ?? []} branchId={branchId} onBranchChange={setBranchId}
         allLabel={allLabel} showAll={allowAll || allMine} />

@@ -49,7 +49,9 @@ const BusinessProfileTab  = lazy(() => import('./pages/settings/BusinessProfileT
 const BrandingTab         = lazy(() => import('./pages/settings/BrandingTab'));
 const VoidRefundRulesTab  = lazy(() => import('./pages/settings/VoidRefundRulesTab'));
 const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
-const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
+const IntegrationsIndexRoute = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsIndexRoute })));   // A620
+const MpesaRoute          = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.MpesaRoute })));
+const WebhooksRoute       = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.WebhooksRoute })));
 const PosOptionsTab       = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.PosOptionsTab })));     // A491
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
 const AnalyticsPage           = lazy(() => import('./pages/analytics/AnalyticsPage'));   // A549
@@ -197,7 +199,7 @@ export default function App() {
                         <Route path="profile"      element={<BusinessProfileTab />} />
                         <Route path="branding"     element={<BrandingTab />} />
                         <Route path="branches"     element={<BranchesPage />} />
-                        <Route path="tax"          element={<EtimsSettingsPage />} />
+                        <Route path="tax"          element={<Navigate to="/dashboard/settings/business/integrations/kra" replace />} />   {/* A620: moved */}
                         <Route path="payments"     element={<PaymentMethodsPage />} />
                         <Route path="voids-refunds" element={<VoidRefundRulesTab />} />
                         <Route path="pos-options"  element={<PosOptionsTab />} />
@@ -205,7 +207,11 @@ export default function App() {
                         <Route path="credit-approvals" element={<CreditApproversTab />} />
                         <Route path="scale-labels" element={<ScaleLabelsTab />} />
                         <Route path="setup"        element={<VerticalSetupRoute />} />
-                        <Route path="integrations" element={<IntegrationsRoute />} />
+                        {/* A620: Integrations — M-Pesa, KRA eTIMS, Webhooks (each its own page in the left menu) */}
+                        <Route path="integrations"          element={<IntegrationsIndexRoute />} />
+                        <Route path="integrations/mpesa"    element={<MpesaRoute />} />
+                        <Route path="integrations/kra"      element={<EtimsSettingsPage />} />
+                        <Route path="integrations/webhooks" element={<WebhooksRoute />} />
                       </Route>
 
                       {/* back-compat: old deep links redirect into the new sections */}
@@ -213,7 +219,7 @@ export default function App() {
                       <Route path="settings/minimart"   element={<Navigate to="/dashboard/settings/business/setup" replace />} />
                       <Route path="settings/parking"    element={<Navigate to="/dashboard/settings/business/setup" replace />} />
                       <Route path="settings/petrol"     element={<Navigate to="/dashboard/settings/business/setup" replace />} />
-                      <Route path="settings/etims"      element={<Navigate to="/dashboard/settings/business/tax" replace />} />
+                      <Route path="settings/etims"      element={<Navigate to="/dashboard/settings/business/integrations/kra" replace />} />
                       <Route path="printers"            element={<Navigate to="/dashboard/settings/devices/printers" replace />} />
                       <Route path="stations"            element={<Navigate to="/dashboard/settings/devices/stations" replace />} />
                       <Route path="stock/ingredients"         element={<IngredientsPage />} />

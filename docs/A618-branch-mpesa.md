@@ -20,7 +20,7 @@ branches might have different payment method some paybill some buy goods"*.
 
 ## 2. Where on screen
 
-**Settings › Business › Payments › M-Pesa (STK push)**. Only the owner sees it. Managers, partners and POS sessions are
+**Settings › Business › Integrations › M-Pesa (STK push)**. Only the owner sees it. Managers, partners and POS sessions are
 refused, the same as the business's other M-Pesa settings.
 
 - **Business default** card: what it is (for example "Paybill 174379"), Sandbox or Live, the key's last 4, and who saved

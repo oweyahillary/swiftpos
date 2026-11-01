@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
 import { BusinessPaymentMethods } from './settings/OwnerControls';   // A490: the business-wide list
-import MpesaStkSettings from './settings/MpesaStkSettings';   // A618: the STK push details, per branch
-import { usePermissions } from '../context/PermissionsContext';
 import { BusinessPlatformPrices } from './settings/PlatformPrices';   // A619
 
 // Custom payment methods, per business (register A95 / #4). The built-in tenders
@@ -20,7 +18,6 @@ interface PaymentMethod {
 
 export default function PaymentMethodsPage() {
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
-  const { isOwner } = usePermissions();   // A618: the M-Pesa details are the owner's alone
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -85,22 +82,21 @@ export default function PaymentMethodsPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-4 sm:p-6">
-      {/* A490: which of Kenya's ways to pay the business takes by default (a branch can choose its own). */}
-      <div className="mb-8"><BusinessPaymentMethods /></div>
-      {/* A618 (owner, 2026-11-01): the Daraja details that send the M-Pesa prompt — the default and per branch. */}
-      {isOwner && <div className="mb-8"><MpesaStkSettings /></div>}
-      {/* A619: what Glovo, Uber Eats, Bolt Food … charge — a percentage or an amount per item, and the rounding. */}
-      <div className="mb-8"><BusinessPlatformPrices /></div>
-      <h1 className="text-xl font-semibold text-white">Payment methods</h1>
-      <p className="text-sm text-gray-400 mt-1">
-        Cash, M-Pesa and Card are always available. Add any other methods you accept —
-        they appear at the POS and in your payment reports. All count as non-cash.
-      </p>
+    <div className="max-w-3xl p-4 sm:p-6 space-y-8">
+      {/* A620 (owner, 2026-11-01: "under payment method this is confusing, arrangement is also off"): three sections in
+          the order a business sets them — the ways it takes money, its own extra methods, then the delivery platforms'
+          prices. The M-Pesa prompt's details moved to Integrations › M-Pesa. */}
+      <section>
+        <SectionTitle n={1} title="Ways to pay" sub="Which ways of paying the POS offers. A branch can choose its own in Branches." />
+        <BusinessPaymentMethods />
+      </section>
 
+      <section>
+        <SectionTitle n={2} title="Your own payment methods"
+          sub="Cash, M-Pesa and Card are always there. Add any other way you accept (Coop Card, Airtel Money, a house account). They appear at the POS and in your payment reports, and count as non-cash." />
       {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
 
-      <div className="mt-6 flex gap-2">
+      <div className="flex gap-2">
         <input
           value={name}
           onChange={e => setName(e.target.value)}
@@ -165,7 +161,24 @@ export default function PaymentMethodsPage() {
         ))}
       </div>
 
+      </section>
+
+      <section>
+        <SectionTitle n={3} title="Delivery platforms" sub="What Glovo, Uber Eats and Bolt Food orders cost: a percentage or an amount per item, and how prices are rounded." />
+        <BusinessPlatformPrices />
+      </section>
+
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </div>
+  );
+}
+
+/** A620: a numbered section heading on the Payments page. */
+function SectionTitle({ n, title, sub }: { n: number; title: string; sub: string }) {
+  return (
+    <div className="mb-3">
+      <h2 className="text-lg font-semibold text-white"><span className="text-gray-500 mr-2">{n}.</span>{title}</h2>
+      <p className="text-sm text-gray-400 mt-1">{sub}</p>
     </div>
   );
 }

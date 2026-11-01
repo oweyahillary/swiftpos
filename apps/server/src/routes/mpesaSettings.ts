@@ -1,6 +1,6 @@
 /**
  * mpesaSettings.ts — A618: the M-Pesa STK push (Daraja) details, per branch with the business's as default,
- * /api/mpesa/settings/*. Settings › Payments › M-Pesa (STK push) on the dashboard.
+ * /api/mpesa/settings/*. Settings › Business › Integrations › M-Pesa (STK push) on the dashboard.
  *
  * Owner, 2026-11-01: "it should be per branch since different branches might have different payment method some paybill
  * some buy goods". Until now the details could be put in only by SQL; STK push itself was tested on dev the same day.

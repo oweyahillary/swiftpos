@@ -29,7 +29,7 @@
  *   mpesa_type             — 'CustomerBuyGoodsOnline' | 'CustomerPayBillOnline'
  *
  *   A618 (2026-11-01): these are the business's DEFAULT; a branch may have its own (branch_mpesa_settings, migration 186).
- *   Both are put in on Settings › Payments › M-Pesa (STK push) — routes/mpesaSettings.ts; lib/branchMpesa.ts reads them.
+ *   Both are put in on Settings › Business › Integrations › M-Pesa (STK push) — routes/mpesaSettings.ts; lib/branchMpesa.ts reads them.
  *
  * ENVIRONMENT VARIABLES
  * ─────────────────────
@@ -122,7 +122,7 @@ const STK_TIMEOUT_MS = 70_000;
 // paybill some buy goods"): the details come from lib/branchMpesa.ts — the branch's own (migration 186) when complete,
 // else the business's (business_settings, H9-encrypted secret and passkey, legacy plain text still read), else null.
 // The STK request's parties from stkParties: Buy Goods signs with the store number and pays the Till number.
-const NOT_CONFIGURED_MESSAGE = 'M-Pesa is not set up for this branch. The owner adds it in Settings › Payments › M-Pesa (STK push).';
+const NOT_CONFIGURED_MESSAGE = 'M-Pesa is not set up for this branch. The owner adds it in Settings › Business › Integrations › M-Pesa (STK push).';
 
 /** A618: the branch a web POS order was made at — the prompt uses that branch's details (the session's when unknown). */
 async function orderBranch(businessId: string, orderId: string, fallback: string | null): Promise<string | null> {
