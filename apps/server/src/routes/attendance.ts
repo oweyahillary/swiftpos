@@ -46,7 +46,7 @@ import { traffic } from '../lib/trafficStats';
 import {
   ATTENDANCE_OFF_MESSAGE, MAX_SHIFT_HOURS, INGEST_MAX, rangeError, personPeriod, estimatePay, nextFreeNumber,
   cleanAttendanceNo, cleanPersonName, cleanIncomingPunch, newOnDevice, deviceDiff, datesBetween, deviceName,
-  type Punch, type Correction, type DeviceUser, type IncomingPunch,
+  cleanShift, type Punch, type Correction, type DeviceUser, type IncomingPunch, type WorkShift,
 } from '../lib/attendanceRules';
 import { attendanceEnabled, queuePersonOnDevices, takenNumbers, nextNumber, deviceClaims, type PersonRow } from '../lib/attendanceStore';
 import { cloudFactsFor } from '../lib/cloudPlan';                 // A612
@@ -66,6 +66,26 @@ const off = (res: Response) => res.status(403).json({ error: ATTENDANCE_OFF_MESS
 const attendanceBranches = async (businessId: string | null | undefined): Promise<string[] | null> =>
   (businessId ? featureBranches(await cloudFactsFor(businessId).catch(() => null), 'attendance') : null);
 const nowIso = () => new Date().toISOString();
+
+// ── Shifts (A616, migration 184) ───────────────────────────────────────────────────────────────────────────────────
+interface ShiftRow extends WorkShift { business_id: string; branch_id: string; active: boolean }
+const SHIFT_COLS = 'id, business_id, branch_id, name, start_min, end_min, grace_min, active';
+/** The business's shifts (ended ones too, for their names). Unreadable (migration 184 not run yet): none — the report
+ *  pairs as with no shifts, never fails. */
+async function readShifts(businessId: string | null | undefined): Promise<ShiftRow[]> {
+  if (!businessId) return [];
+  const { data, error } = await supabase.from('attendance_shifts').select(SHIFT_COLS).eq('business_id', businessId).order('start_min', { ascending: true });
+  if (error) { console.warn(`[attendance] shifts: ${error.message}`); return []; }
+  return (data ?? []) as ShiftRow[];
+}
+/** person id → their pinned shift id. Unreadable: none pinned. */
+async function readPins(businessId: string | null | undefined): Promise<Map<string, string>> {
+  if (!businessId) return new Map();
+  const { data, error } = await supabase.from('attendance_people').select('id, shift_id').eq('business_id', businessId).not('shift_id', 'is', null);
+  if (error) { console.warn(`[attendance] pinned shifts: ${error.message}`); return new Map(); }
+  return new Map(((data ?? []) as Array<{ id: string; shift_id: string }>).map((r) => [r.id, r.shift_id]));
+}
+const shiftOut = (s: ShiftRow) => ({ id: s.id, branch_id: s.branch_id, name: s.name, start_min: s.start_min, end_min: s.end_min, grace_min: s.grace_min });
 
 // ── The branch server ──────────────────────────────────────────────────────────────────────────────────────────────
 type NodeReq = Request & { attBranch?: string };
@@ -342,18 +362,20 @@ router.get('/report', need('attendance.view'), async (req, res) => {
   const oneBranch = scope.kind === 'one' ? scope.id : null;
   const cutoff = await getDayCutoff(req.businessId, oneBranch);
   const { start, end } = businessRangeEAT(from as string, to as string, cutoff);
-  const readFrom = new Date(Date.parse(start) - MAX_SHIFT_HOURS * 3_600_000).toISOString();
-  const readTo = new Date(Date.parse(end) + MAX_SHIFT_HOURS * 3_600_000).toISOString();
+  // a day either side: a work day may start up to 18 h after midnight (6 h before a shift), or before it (A616)
+  const readFrom = new Date(Date.parse(start) - 24 * 3_600_000).toISOString();
+  const readTo = new Date(Date.parse(end) + 24 * 3_600_000).toISOString();
   const wantPerson = typeof req.query.person === 'string' ? req.query.person : null;
 
-  let people: PersonRow[], users: any[], events: any[], branches: any[];
+  let people: PersonRow[], users: any[], events: any[], branches: any[], shifts: ShiftRow[], pins: Map<string, string>;
   try {
-    [people, users, events, branches] = await Promise.all([
+    [people, users, events, branches, shifts, pins] = await Promise.all([
       readPages<PersonRow>((a, b) => supabase.from('attendance_people').select(PERSON_COLS).eq('business_id', req.businessId).range(a, b)),
       readPages<any>((a, b) => supabase.from('users').select('id, name, status, hourly_rate, user_branches ( branch_id )').eq('business_id', req.businessId).range(a, b)),
       readPages<any>((a, b) => supabase.from('clock_events').select(PUNCH_COLS).eq('business_id', req.businessId)
         .gte('recorded_at', readFrom).lte('recorded_at', readTo).order('recorded_at', { ascending: true }).range(a, b), 50_000),
       readPages<any>((a, b) => supabase.from('branches').select('id, name').eq('business_id', req.businessId).range(a, b)),
+      readShifts(req.businessId), readPins(req.businessId),
     ]);
   } catch (e) {
     console.warn(`[attendance] report: ${(e as Error).message}`);
@@ -404,10 +426,17 @@ router.get('/report', need('attendance.view'), async (req, res) => {
   }
   const pay = maySeePay(req);
   const dates = datesBetween(from as string, to as string);
+  const live = shifts.filter((s) => s.active);
+  const shiftById = new Map(live.map((s) => [s.id, s]));
+  const optsOf = (w: Who) => {
+    const pin = w.personId ? shiftById.get(pins.get(w.personId) ?? '') : undefined;
+    return { shifts: live.filter((s) => s.branch_id === w.branchId), pinned: pin && pin.branch_id === w.branchId ? pin : null };
+  };
   const out: any[] = [];
   for (const w of whoOf.values()) {
     if (!rowInBranches(scope, w.branchId)) continue;
-    const period = personPeriod(punchesOf.get(w.key) ?? [], from as string, to as string, cutoff, correctionsOf.get(w.key) ?? []);
+    const opts = optsOf(w);
+    const period = personPeriod(punchesOf.get(w.key) ?? [], from as string, to as string, opts, correctionsOf.get(w.key) ?? []);
     if (!period.days.length && !w.active) continue;   // someone gone, with nothing in the period
     if (!w.personId && !period.days.length) continue; // staff with no number and nothing recorded: listed under People
     const daily: Record<string, number> = {};
@@ -416,6 +445,7 @@ router.get('/report', need('attendance.view'), async (req, res) => {
       key: w.key, person_id: w.personId, user_id: w.userId, name: w.name, attendance_no: w.attendanceNo, attendance_only: w.attendanceOnly,
       active: w.active, branch_id: w.branchId, branch_name: w.branchId ? branchName.get(w.branchId) ?? null : null,
       totals: period.totals, daily, missing: period.days.filter((d) => d.missingOut).map((d) => d.date),
+      late: period.days.filter((d) => (d.lateMin ?? 0) > 0).map((d) => d.date), shift_id: opts.pinned?.id ?? null,
     };
     if (pay) { row.hourly_rate = w.rate ?? null; row.pay = estimatePay(period.totals.hours, w.rate); }
     if (wantPerson && (wantPerson === w.key || wantPerson === w.personId || wantPerson === w.userId)) row.days = period.days;
@@ -423,18 +453,21 @@ router.get('/report', need('attendance.view'), async (req, res) => {
   }
   out.sort((a, b) => b.totals.hours - a.totals.hours || a.name.localeCompare(b.name));
   const team: any = { hours: Math.round(out.reduce((s, r) => s + r.totals.hours, 0) * 100) / 100, people: out.filter((r) => r.totals.daysWorked > 0).length,
-    missedOuts: out.reduce((s, r) => s + r.totals.missedOuts, 0), corrections: out.reduce((s, r) => s + r.totals.corrections, 0) };
+    missedOuts: out.reduce((s, r) => s + r.totals.missedOuts, 0), corrections: out.reduce((s, r) => s + r.totals.corrections, 0),
+    lateDays: out.reduce((s, r) => s + r.totals.lateDays, 0), lateMinutes: out.reduce((s, r) => s + r.totals.lateMinutes, 0) };
   if (pay) team.pay = Math.round(out.reduce((s, r) => s + (r.pay ?? 0), 0) * 100) / 100;
   res.set('Cache-Control', 'no-store');
-  res.json({ from, to, cutoff, dates, today: businessDateEAT(new Date(), cutoff), branch_id: oneBranch, payVisible: pay, people: out, team });
+  res.json({ from, to, cutoff, dates, today: businessDateEAT(new Date(), cutoff), branch_id: oneBranch, payVisible: pay, people: out, team,
+    shifts: live.filter((s) => rowInBranches(scope, s.branch_id)).map(shiftOut) });
 });
 
 // ── People and numbers ─────────────────────────────────────────────────────────────────────────────────────────────
 router.get('/people', need('attendance.view'), async (req, res) => {
   const scope = readScope(req);
-  const [ppl, usr] = await Promise.all([
+  const [ppl, usr, pins] = await Promise.all([
     supabase.from('attendance_people').select(PERSON_COLS).eq('business_id', req.businessId).order('attendance_no', { ascending: true }),
     supabase.from('users').select('id, name, status, user_branches ( branch_id )').eq('business_id', req.businessId).eq('status', 'active'),
+    readPins(req.businessId),
   ]);
   if (ppl.error || usr.error) { res.status(503).json({ error: 'People could not be read right now.', code: 'ATTENDANCE_BUSY' }); return; }
   const people = (ppl.data ?? []) as PersonRow[];
@@ -443,7 +476,7 @@ router.get('/people', need('attendance.view'), async (req, res) => {
     .map((u) => ({ user_id: u.id, name: u.name, branch_id: u.user_branches?.[0]?.branch_id ?? null }))
     .filter((u) => rowInBranches(scope, u.branch_id, true));
   res.json({
-    people: people.filter((p) => rowInBranches(scope, p.branch_id, true)).map((p) => ({ ...p, attendance_only: !p.user_id })),
+    people: people.filter((p) => rowInBranches(scope, p.branch_id, true)).map((p) => ({ ...p, attendance_only: !p.user_id, shift_id: pins.get(p.id) ?? null })),
     staff_without_number: without,
     next_number: await nextNumber(req.businessId),
   });
@@ -531,6 +564,97 @@ router.patch('/people/:id', need('attendance.devices'), async (req, res) => {
   if (after.attendance_no !== before.attendance_no) await assignUnmatched(req.businessId, after);
   await queuePersonOnDevices(req.businessId, after, before, req.userId ?? null, after.attendance_no !== before.attendance_no);
   res.json({ ...after, attendance_only: !after.user_id });
+});
+
+// ── Shifts (A616) ──────────────────────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-31: shifts per branch (copyable from another); each day the shift nearest a person's first punch, or the
+// one pinned to them; the report shows late arrivals. Set up by whoever corrects attendance (attendance.edit).
+const SHIFTS_BUSY = { error: 'Shifts could not be saved right now - try again.', code: 'ATTENDANCE_BUSY' };
+async function ownBranch(req: Request, branchId: unknown): Promise<string | null> {
+  if (typeof branchId !== 'string' || !UUID.test(branchId) || !assertBranchAccess(req, branchId)) return null;
+  const { data } = await supabase.from('branches').select('id').eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
+  return data ? branchId : null;
+}
+async function ownShift(req: Request, id: string): Promise<ShiftRow | null> {
+  if (!UUID.test(id)) return null;
+  const { data } = await supabase.from('attendance_shifts').select(SHIFT_COLS).eq('id', id).eq('business_id', req.businessId).eq('active', true).maybeSingle();
+  const s = (data ?? null) as ShiftRow | null;
+  return s && assertBranchAccess(req, s.branch_id) ? s : null;
+}
+const nameTaken = (e: unknown) => (e as { code?: string } | null)?.code === '23505';
+
+router.get('/shifts', need('attendance.view'), async (req, res) => {
+  const scope = readScope(req);
+  const { data, error } = await supabase.from('attendance_shifts').select(SHIFT_COLS).eq('business_id', req.businessId).eq('active', true).order('start_min', { ascending: true });
+  if (error) { res.status(503).json({ error: 'Shifts could not be read right now.', code: 'ATTENDANCE_BUSY' }); return; }
+  res.json({ shifts: ((data ?? []) as ShiftRow[]).filter((s) => rowInBranches(scope, s.branch_id)).map(shiftOut) });
+});
+
+/** POST /shifts — { branch_id, name, start: "09:00", end: "17:00", grace?: 10 }. */
+router.post('/shifts', need('attendance.edit'), async (req, res) => {
+  const b = req.body ?? {};
+  const branchId = await ownBranch(req, b.branch_id);
+  if (!branchId) { res.status(403).json({ error: 'Choose one of your branches.', code: 'BRANCH_SCOPE' }); return; }
+  const s = cleanShift(b);
+  if ('error' in s) { res.status(400).json({ error: s.error, code: 'BAD_SHIFT' }); return; }
+  const { data, error } = await supabase.from('attendance_shifts').insert({ business_id: req.businessId, branch_id: branchId, ...s, active: true, created_by: req.userId ?? null })
+    .select(SHIFT_COLS).single();
+  if (error) { res.status(nameTaken(error) ? 409 : 503).json(nameTaken(error) ? { error: `This branch already has a shift called ${s.name}.`, code: 'SHIFT_NAME_TAKEN' } : SHIFTS_BUSY); return; }
+  res.status(201).json(shiftOut(data as ShiftRow));
+});
+
+/** PATCH /shifts/:id — { name?, start?, end?, grace? }. */
+router.patch('/shifts/:id', need('attendance.edit'), async (req, res) => {
+  const had = await ownShift(req, req.params.id);
+  if (!had) { res.status(404).json({ error: 'Shift not found.', code: 'SHIFT_NOT_FOUND' }); return; }
+  const b = req.body ?? {};
+  const s = cleanShift({ name: b.name ?? had.name, start: b.start ?? had.start_min, end: b.end ?? had.end_min, grace: b.grace ?? had.grace_min });
+  if ('error' in s) { res.status(400).json({ error: s.error, code: 'BAD_SHIFT' }); return; }
+  const { data, error } = await supabase.from('attendance_shifts').update({ ...s, updated_at: nowIso() }).eq('id', had.id).eq('business_id', req.businessId)
+    .select(SHIFT_COLS).single();
+  if (error) { res.status(nameTaken(error) ? 409 : 503).json(nameTaken(error) ? { error: `This branch already has a shift called ${s.name}.`, code: 'SHIFT_NAME_TAKEN' } : SHIFTS_BUSY); return; }
+  res.json(shiftOut(data as ShiftRow));
+});
+
+/** DELETE /shifts/:id — the shift ends (kept for old reports' names); the people pinned to it go back to the nearest shift. */
+router.delete('/shifts/:id', need('attendance.edit'), async (req, res) => {
+  const had = await ownShift(req, req.params.id);
+  if (!had) { res.status(404).json({ error: 'Shift not found.', code: 'SHIFT_NOT_FOUND' }); return; }
+  const { error } = await supabase.from('attendance_shifts').update({ active: false, updated_at: nowIso() }).eq('id', had.id).eq('business_id', req.businessId);
+  if (error) { res.status(503).json(SHIFTS_BUSY); return; }
+  await supabase.from('attendance_people').update({ shift_id: null, updated_at: nowIso() }).eq('business_id', req.businessId).eq('shift_id', had.id);
+  res.json({ ended: had.id });
+});
+
+/** POST /shifts/copy — { from_branch_id, to_branch_id }: the other branch's shifts the branch has no shift of that name for. */
+router.post('/shifts/copy', need('attendance.edit'), async (req, res) => {
+  const b = req.body ?? {};
+  const [fromId, toId] = await Promise.all([ownBranch(req, b.from_branch_id), ownBranch(req, b.to_branch_id)]);
+  if (!fromId || !toId || fromId === toId) { res.status(403).json({ error: 'Choose two of your branches.', code: 'BRANCH_SCOPE' }); return; }
+  const all = (await readShifts(req.businessId)).filter((s) => s.active);
+  const have = new Set(all.filter((s) => s.branch_id === toId).map((s) => s.name.toLowerCase()));
+  const rows = all.filter((s) => s.branch_id === fromId && !have.has(s.name.toLowerCase()))
+    .map((s) => ({ business_id: req.businessId, branch_id: toId, name: s.name, start_min: s.start_min, end_min: s.end_min, grace_min: s.grace_min, active: true, created_by: req.userId ?? null }));
+  if (!rows.length) { res.json({ copied: 0 }); return; }
+  const { error } = await supabase.from('attendance_shifts').insert(rows);
+  if (error) { res.status(503).json(SHIFTS_BUSY); return; }
+  res.json({ copied: rows.length });
+});
+
+/** PUT /people/:id/shift — { shift_id }: pin a shift of the person's branch to them; null: the nearest shift each day. */
+router.put('/people/:id/shift', need('attendance.edit'), async (req, res) => {
+  if (!UUID.test(req.params.id)) { res.status(404).json({ error: 'Person not found.', code: 'PERSON_NOT_FOUND' }); return; }
+  const { data: had } = await supabase.from('attendance_people').select(PERSON_COLS).eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  const person = had as PersonRow | null;
+  if (!person || !assertBranchAccess(req, person.branch_id)) { res.status(404).json({ error: 'Person not found.', code: 'PERSON_NOT_FOUND' }); return; }
+  const want = req.body?.shift_id ?? null;
+  if (want !== null) {
+    const s = typeof want === 'string' ? await ownShift(req, want) : null;
+    if (!s || s.branch_id !== person.branch_id) { res.status(400).json({ error: 'Choose a shift of their branch.', code: 'BAD_SHIFT' }); return; }
+  }
+  const { error } = await supabase.from('attendance_people').update({ shift_id: want, updated_at: nowIso() }).eq('id', person.id).eq('business_id', req.businessId);
+  if (error) { res.status(503).json(SHIFTS_BUSY); return; }
+  res.json({ person_id: person.id, shift_id: want });
 });
 
 /** The punches of a number nobody had → this person (retroactively, every date). */
@@ -734,7 +858,7 @@ router.get('/punches', need('attendance.view'), async (req, res) => {
   const cutoff = await getDayCutoff(req.businessId, who.branchId);
   const { start, end } = businessRangeEAT(date, date, cutoff);
   let q = supabase.from('clock_events').select(PUNCH_COLS).eq('business_id', req.businessId)
-    .gte('recorded_at', new Date(Date.parse(start) - 2 * 3_600_000).toISOString()).lte('recorded_at', new Date(Date.parse(end) + MAX_SHIFT_HOURS * 3_600_000).toISOString())
+    .gte('recorded_at', new Date(Date.parse(start) - 6 * 3_600_000).toISOString()).lte('recorded_at', new Date(Date.parse(end) + MAX_SHIFT_HOURS * 3_600_000).toISOString())
     .order('recorded_at', { ascending: true });
   q = who.personId ? q.eq('person_id', who.personId) : q.eq('staff_id', who.staffId as string);
   const { data, error } = await q;

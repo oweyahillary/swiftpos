@@ -11,7 +11,12 @@
  * month · Custom — one preset lit, lib/reportPeriods.ts activePreset). Export to Excel (lib/reportDownload.ts) and Print.
  * Below the report, for the people who hold the rights: "Not matched" punches (attendance.edit), "New on the device",
  * People and device numbers, and the devices (attendance.devices). The pairing rule is the cloud's (lib/attendanceRules.ts):
- * punches in time order, in / out alternately; an odd last punch is a missing punch-out, flagged and not counted.
+ * punches grouped into work days (a punch before 06:00 is the night before's, A616), then in / out alternately within the
+ * day; an odd last punch is a missing punch-out, flagged and not counted.
+ *
+ * A616 (owner, 2026-10-31): Shifts per branch (attendance.edit; copy from another branch), a shift pinned to a person in
+ * People (else the shift nearest their first punch each day), and late arrivals: a card, a bar under a late day in the
+ * grid, the shift and minutes late on a person's days, Late columns in the Excel — all only once the branch has shifts.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, LabelList } from 'recharts';
@@ -25,7 +30,8 @@ import { downloadReport } from '../../lib/reportDownload';
 import * as fmt from '../../lib/format';
 import {
   attendancePresets, activePreset, attendancePalette, heatColour, heatInk, hoursWords, clockEAT, dayLabel, monthGrid,
-  preferredView, attendanceSheets, type AttReport, type AttPerson, type AttDay, type AttendancePalette,
+  preferredView, attendanceSheets, lateWords, shiftTimes, clockOf, hasShifts,
+  type AttReport, type AttPerson, type AttDay, type AttendancePalette, type AttWorkShift,
 } from '../../lib/attendanceView';
 
 interface Access { enabled: boolean; view: boolean; edit: boolean; devices: boolean; pay: boolean }
@@ -60,7 +66,8 @@ export default function AttendancePage() {
     setLoading(true); setError('');
     try {
       const p = new URLSearchParams({ from: range.from, to: range.to });
-      if (branchId) p.set('branch_id', branchId);
+      // "All branches" is said out loud: with no branch_id the server would read the sidebar's branch (X-Branch-Id) alone
+      p.set('branch_id', branchId || 'all');
       if (who !== 'all') p.set('person', who);
       setReport(await api.get<AttReport>(`/api/attendance/report?${p}`));
     } catch (e: any) { setError(e?.message ?? 'The attendance report could not be loaded.'); }
@@ -77,7 +84,7 @@ export default function AttendancePage() {
   const refresh = () => setTick((t) => t + 1);
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-4" data-testid="attendance-page">
+    <div className="p-4 sm:p-6 w-full min-w-0 max-w-7xl mx-auto space-y-4" data-testid="attendance-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Attendance</h1>
@@ -128,7 +135,8 @@ export default function AttendancePage() {
 
       {access?.edit && <NotMatchedPanel branchId={branchId} onChanged={refresh} />}
       {access?.devices && <NewOnDevicePanel branchId={branchId} onChanged={refresh} />}
-      {access?.devices && <PeoplePanel branchId={branchId} branches={branches} onChanged={refresh} />}
+      {access?.edit && <ShiftsPanel branchId={branchId} branches={branches} onChanged={refresh} />}
+      {access?.devices && <PeoplePanel branchId={branchId} branches={branches} onChanged={refresh} canPin={!!access?.edit} reloadKey={tick} />}
       {access?.devices && <DevicesPanel branchId={branchId} branches={branches} />}
       {fixing && <FixDayDialog person={fixing.person} date={fixing.date} onClose={() => setFixing(null)} onChanged={refresh} />}
     </div>
@@ -150,12 +158,15 @@ function SummaryCard({ label, value, sub, colour, testId }: { label: string; val
 function TeamView({ report, pal, mode, currency, onPick }: { report: AttReport; pal: AttendancePalette; mode: 'light' | 'dark'; currency: string; onPick: (k: string) => void }) {
   const ranked = report.people.filter((p) => p.totals.hours > 0);
   const height = Math.max(160, ranked.length * 30 + 40);
+  const late = hasShifts(report);
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${late ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
         <SummaryCard label="Team hours" value={hoursWords(report.team.hours)} colour={pal.cards.hours} testId="att-team-hours" />
         <SummaryCard label="People who worked" value={String(report.team.people)} colour={pal.cards.days} />
         <SummaryCard label="Missed punch-outs" value={String(report.team.missedOuts)} sub="Not counted until fixed" colour={pal.cards.missed} />
+        {late && <SummaryCard label="Late arrivals" value={String(report.team.lateDays ?? 0)} colour={pal.late} testId="att-team-late"
+          sub={report.team.lateMinutes ? `${hoursWords(report.team.lateMinutes / 60)} in all` : 'Everyone on time'} />}
         {report.payVisible && report.team.pay !== undefined
           ? <SummaryCard label="Estimated pay" value={fmt.money(report.team.pay, currency)} sub="Hours × each person's hourly rate" colour={pal.cards.avg} testId="att-team-pay" />
           : <SummaryCard label="Corrections" value={String(report.team.corrections)} colour={pal.cards.corrections} />}
@@ -182,7 +193,7 @@ function TeamView({ report, pal, mode, currency, onPick }: { report: AttReport; 
       </section>
       <section className={card}>
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Week grid</h3>
-        <p className="text-xs text-gray-500 mb-2">Each cell is a day's hours — grey is a day off, a red outline a missing punch-out.</p>
+        <p className="text-xs text-gray-500 mb-2">Each cell is a day's hours — grey is a day off, a red outline a missing punch-out{late ? ', a bar underneath a late arrival' : ''}.</p>
         <div className="overflow-x-auto">
           <table className="text-xs border-separate" style={{ borderSpacing: 3 }} data-testid="att-week-grid">
             <thead><tr>
@@ -196,10 +207,12 @@ function TeamView({ report, pal, mode, currency, onPick }: { report: AttReport; 
                   <td className="pr-2 whitespace-nowrap"><button className="text-left text-gray-800 dark:text-gray-100 hover:underline" onClick={() => onPick(p.key)}>{p.name}</button>
                     {p.attendance_only && <span className="ml-1 text-[10px] text-gray-500">(attendance only)</span>}</td>
                   {report.dates.map((d) => {
-                    const h = p.daily[d] ?? 0; const miss = p.missing.includes(d);
-                    return <td key={d} title={`${p.name} · ${d}: ${hoursWords(h)}${miss ? ' · missing punch-out' : ''}`}
+                    const h = p.daily[d] ?? 0; const miss = p.missing.includes(d); const wasLate = !!p.late?.includes(d);
+                    return <td key={d} title={`${p.name} · ${d}: ${hoursWords(h)}${miss ? ' · missing punch-out' : ''}${wasLate ? ' · late' : ''}`}
+                      data-late={wasLate || undefined}
                       className="text-center rounded tabular-nums" style={{ minWidth: 34, height: 26, background: heatColour(h, pal), color: heatInk(h, mode),
-                        outline: miss ? `2px solid ${pal.missing}` : undefined, outlineOffset: -2 }}>{h ? h.toFixed(1) : ''}</td>;
+                        outline: miss ? `2px solid ${pal.missing}` : undefined, outlineOffset: -2,
+                        boxShadow: wasLate ? `inset 0 -4px 0 ${pal.late}` : undefined }}>{h ? h.toFixed(1) : ''}</td>;
                   })}
                   <td className="pl-2 text-right font-semibold tabular-nums text-gray-800 dark:text-gray-100">{p.totals.hours.toFixed(1)}</td>
                 </tr>
@@ -207,19 +220,20 @@ function TeamView({ report, pal, mode, currency, onPick }: { report: AttReport; 
             </tbody>
           </table>
         </div>
-        <HeatLegend pal={pal} />
+        <HeatLegend pal={pal} late={late} />
       </section>
     </div>
   );
 }
 
-function HeatLegend({ pal }: { pal: AttendancePalette }) {
+function HeatLegend({ pal, late = false }: { pal: AttendancePalette; late?: boolean }) {
   const steps = ['Day off', 'Under 4 h', '4–6 h', '6–8 h', '8–10 h', '10 h +'];
   const colours = [pal.off, ...pal.ramp];
   return (
     <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 mt-2">
       {steps.map((s, i) => <li key={s} className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: colours[i] }} />{s}</li>)}
       <li className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ outline: `2px solid ${pal.missing}`, outlineOffset: -2 }} />Missing punch-out</li>
+      {late && <li className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: pal.off, boxShadow: `inset 0 -4px 0 ${pal.late}` }} />Late</li>}
     </ul>
   );
 }
@@ -233,6 +247,8 @@ function PersonView({ report, person, pal, mode, currency, canEdit, onBack, onFi
   const days = person.days ?? [];
   const byDate = new Map(days.map((d) => [d.date, d]));
   const t = person.totals;
+  const late = hasShifts(report);
+  const pinned = person.shift_id ? report.shifts?.find((s) => s.id === person.shift_id) ?? null : null;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -240,13 +256,16 @@ function PersonView({ report, person, pal, mode, currency, canEdit, onBack, onFi
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{person.name}</h2>
         {person.attendance_no !== null && <span className="text-xs text-gray-500">Device number {person.attendance_no}</span>}
         {person.attendance_only && <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">Attendance only</span>}
+        {pinned && <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">Shift: {pinned.name} {shiftTimes(pinned)}</span>}
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${late ? 'md:grid-cols-6' : 'md:grid-cols-5'}`}>
         <SummaryCard label="Total hours" value={hoursWords(t.hours)} colour={pal.cards.hours} testId="att-hours"
           sub={report.payVisible && person.pay != null ? `Estimated pay ${fmt.money(person.pay, currency)}` : undefined} />
         <SummaryCard label="Days worked" value={String(t.daysWorked)} colour={pal.cards.days} />
         <SummaryCard label="Average a day" value={hoursWords(t.avgHours)} colour={pal.cards.avg} />
         <SummaryCard label="Missed punch-outs" value={String(t.missedOuts)} sub="Not counted until fixed" colour={pal.cards.missed} />
+        {late && <SummaryCard label="Days late" value={String(t.lateDays ?? 0)} colour={pal.late} testId="att-late"
+          sub={t.lateMinutes ? `${hoursWords(t.lateMinutes / 60)} in all` : 'Always on time'} />}
         <SummaryCard label="Corrections" value={String(t.corrections)} colour={pal.cards.corrections} />
       </div>
       <section className={card}>
@@ -264,19 +283,21 @@ function PersonView({ report, person, pal, mode, currency, canEdit, onBack, onFi
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="att-day-list">
             <thead><tr className="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-800">
-              <th className="py-1.5 pr-3">Day</th><th className="pr-3">First in</th><th className="pr-3">Last out</th><th className="pr-3 text-right">Hours</th><th className="pr-3">Check</th><th className="pr-3">Corrections</th>{canEdit && <th className="print:hidden" />}
+              <th className="py-1.5 pr-3">Day</th>{late && <th className="pr-3">Shift</th>}<th className="pr-3">First in</th><th className="pr-3">Last out</th><th className="pr-3 text-right">Hours</th><th className="pr-3">Check</th><th className="pr-3">Corrections</th>{canEdit && <th className="print:hidden" />}
             </tr></thead>
             <tbody>
-              {days.length === 0 && <tr><td colSpan={7} className="py-3 text-gray-500">No punches in this period.</td></tr>}
+              {days.length === 0 && <tr><td colSpan={8} className="py-3 text-gray-500">No punches in this period.</td></tr>}
               {days.map((d) => (
                 <tr key={d.date} className="border-b border-gray-100 dark:border-gray-800 align-top">
                   <td className="py-1.5 pr-3 whitespace-nowrap text-gray-800 dark:text-gray-100">{dayLabel(d.date)} <span className="text-gray-400 text-xs">{d.date}</span></td>
+                  {late && <td className="pr-3 text-xs whitespace-nowrap text-gray-600 dark:text-gray-300">{d.shift ? <>{d.shift.name} <span className="text-gray-400">{clockOf(d.shift.start_min)}</span></> : '—'}</td>}
                   <td className="pr-3 tabular-nums">{clockEAT(d.firstIn)}</td>
                   <td className="pr-3 tabular-nums">{clockEAT(d.lastOut)}</td>
                   <td className="pr-3 text-right tabular-nums font-medium">{hoursWords(d.hours)}</td>
                   <td className="pr-3 text-xs">
                     {d.missingOut && <span className="inline-block px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 mr-1">Missing punch-out</span>}
-                    {d.long && <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300">Over 12 h</span>}
+                    {(d.lateMin ?? 0) > 0 && <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 mr-1" data-testid="att-late-badge">{lateWords(d.lateMin)}</span>}
+                    {d.long && <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300">Long shift</span>}
                   </td>
                   <td className="pr-3 text-xs text-gray-600 dark:text-gray-300">
                     {d.corrections.map((c) => (
@@ -392,10 +413,10 @@ function FixDayDialog({ person, date, onClose, onChanged }: { person: AttPerson;
 
 // ── Not matched (attendance.edit) ──────────────────────────────────────────────────────────────────────────────────
 interface Unmatched { device_user_id: string; attendance_no: number | null; punches: number; first: string; last: string; devices: string[]; name_on_device: string | null }
-interface PeopleAnswer { people: Array<{ id: string; name: string; attendance_no: number; branch_id: string | null; user_id: string | null; active: boolean; attendance_only: boolean }>; staff_without_number: Array<{ user_id: string; name: string; branch_id: string | null }>; next_number: number }
+interface PeopleAnswer { people: Array<{ id: string; name: string; attendance_no: number; branch_id: string | null; user_id: string | null; active: boolean; attendance_only: boolean; shift_id?: string | null }>; staff_without_number: Array<{ user_id: string; name: string; branch_id: string | null }>; next_number: number }
 function usePeople(branchId: string, tick: number) {
   const [p, setP] = useState<PeopleAnswer | null>(null);
-  useEffect(() => { api.get<PeopleAnswer>(`/api/attendance/people${branchId ? `?branch_id=${branchId}` : ''}`).then(setP).catch(() => setP(null)); }, [branchId, tick]);
+  useEffect(() => { api.get<PeopleAnswer>(`/api/attendance/people?branch_id=${branchId || 'all'}`).then(setP).catch(() => setP(null)); }, [branchId, tick]);
   return p;
 }
 function LinkPicker({ people, onLink }: { people: PeopleAnswer | null; onLink: (body: Record<string, unknown>) => void }) {
@@ -421,7 +442,7 @@ function NotMatchedPanel({ branchId, onChanged }: { branchId: string; onChanged:
   const [err, setErr] = useState('');
   const people = usePeople(branchId, tick);
   const { branches } = useBranch();
-  useEffect(() => { api.get<{ unmatched: Unmatched[] }>(`/api/attendance/unmatched${branchId ? `?branch_id=${branchId}` : ''}`).then((r) => setRows(r.unmatched)).catch(() => setRows([])); }, [branchId, tick]);
+  useEffect(() => { api.get<{ unmatched: Unmatched[] }>(`/api/attendance/unmatched?branch_id=${branchId || 'all'}`).then((r) => setRows(r.unmatched)).catch(() => setRows([])); }, [branchId, tick]);
   if (!rows.length) return null;
   return (
     <section className={`${card} print:hidden`} data-testid="att-not-matched">
@@ -457,7 +478,7 @@ function NewOnDevicePanel({ branchId, onChanged }: { branchId: string; onChanged
   const people = usePeople(branchId, tick);
   const { branches } = useBranch();
   useEffect(() => {
-    api.get<{ new_on_device: DeviceUserRow[]; clashes?: ClashRow[] }>(`/api/attendance/device-users${branchId ? `?branch_id=${branchId}` : ''}`)
+    api.get<{ new_on_device: DeviceUserRow[]; clashes?: ClashRow[] }>(`/api/attendance/device-users?branch_id=${branchId || 'all'}`)
       .then((r) => { setRows(r.new_on_device); setClashes(r.clashes ?? []); }).catch(() => { setRows([]); setClashes([]); });
   }, [branchId, tick]);
   if (!rows.length && !clashes.length) return null;
@@ -510,9 +531,106 @@ function NewOnDevicePanel({ branchId, onChanged }: { branchId: string; onChanged
 }
 
 // ── People and device numbers (attendance.devices) ─────────────────────────────────────────────────────────────────
-function PeoplePanel({ branchId, branches, onChanged }: { branchId: string; branches: Array<{ id: string; name: string }>; onChanged: () => void }) {
+// ── Shifts (A616, attendance.edit) ─────────────────────────────────────────────────────────────────────────────────
+function useShifts(branchId: string, tick: number): AttWorkShift[] | null {
+  const [s, setS] = useState<AttWorkShift[] | null>(null);
+  useEffect(() => { api.get<{ shifts: AttWorkShift[] }>(`/api/attendance/shifts?branch_id=${branchId || 'all'}`).then((r) => setS(r.shifts)).catch(() => setS([])); }, [branchId, tick]);
+  return s;
+}
+const NEW_SHIFT = { name: '', start: '09:00', end: '17:00', grace: '10' };
+
+function ShiftsPanel({ branchId, branches, onChanged }: { branchId: string; branches: Array<{ id: string; name: string }>; onChanged: () => void }) {
   const [tick, setTick] = useState(0);
-  const people = usePeople(branchId, tick);
+  const shifts = useShifts(branchId, tick);
+  const [open, setOpen] = useState(false);
+  const [br, setBr] = useState(branchId || branches[0]?.id || '');
+  useEffect(() => { if (branchId) setBr(branchId); }, [branchId]);
+  const [f, setF] = useState(NEW_SHIFT);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [ending, setEnding] = useState<string | null>(null);
+  const [from, setFrom] = useState('');
+  const [err, setErr] = useState('');
+  const act = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); setTick((t) => t + 1); onChanged(); } catch (e: any) { setErr(e?.message ?? 'Could not be saved.'); } };
+  const mine = (shifts ?? []).filter((s) => s.branch_id === br);
+  const others = branches.filter((b) => b.id !== br && (shifts ?? []).some((s) => s.branch_id === b.id));
+  const bn = branches.find((b) => b.id === br)?.name ?? '';
+  const save = () => act(async () => {
+    const body = { name: f.name, start: f.start, end: f.end, grace: Number(f.grace) };
+    if (editing) await api.patch(`/api/attendance/shifts/${editing}`, body); else await api.post('/api/attendance/shifts', { ...body, branch_id: br });
+    setF(NEW_SHIFT); setEditing(null);
+  });
+  return (
+    <section className={`${card} print:hidden`} data-testid="att-shifts">
+      <button className="flex w-full items-center justify-between" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Shifts</h3>
+        <span className="text-xs text-gray-500">{shifts ? `${mine.length} at ${bn || 'this branch'}` : ''} {open ? '▲' : '▼'}</span>
+      </button>
+      {open && shifts && (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-gray-500">
+            Each day, a person's shift is the one that starts nearest their first punch, unless one is pinned to them under People.
+            They are late when that first punch comes more than the grace after the start. A shift that ends earlier than it starts
+            runs past midnight (18:00 – 06:00). Night staff need a night shift, so their nights pair up correctly.
+          </p>
+          {!branchId && branches.length > 1 && (
+            <select value={br} onChange={(e) => { setBr(e.target.value); setEditing(null); setF(NEW_SHIFT); }} className={inputCls} aria-label="Branch">
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          )}
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-xs text-gray-500"><th className="py-1">Shift</th><th>Times</th><th>Grace</th><th /></tr></thead>
+            <tbody>
+              {mine.length === 0 && <tr><td colSpan={4} className="py-2 text-gray-500">No shifts at {bn || 'this branch'} yet: hours are counted, lateness is not.</td></tr>}
+              {mine.map((s) => (
+                <tr key={s.id} className="border-t border-gray-100 dark:border-gray-800">
+                  <td className="py-1 text-gray-800 dark:text-gray-100">{s.name}</td>
+                  <td className="tabular-nums">{shiftTimes(s)}</td>
+                  <td className="tabular-nums">{s.grace_min} min</td>
+                  <td className="text-right whitespace-nowrap">
+                    <button className={btn} onClick={() => { setEditing(s.id); setF({ name: s.name, start: clockOf(s.start_min), end: clockOf(s.end_min), grace: String(s.grace_min) }); }}>Change</button>{' '}
+                    {ending === s.id
+                      ? <button className={btn} onClick={() => act(async () => { await api.delete(`/api/attendance/shifts/${s.id}`); setEnding(null); })}>Yes, end it</button>
+                      : <button className={btn} onClick={() => setEnding(s.id)}>End</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-gray-500 flex flex-col gap-1">Name
+              <input placeholder="Morning, Evening, Night…" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className={`${inputCls} w-44`} /></label>
+            <label className="text-xs text-gray-500 flex flex-col gap-1">Starts
+              <input type="time" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} className={inputCls} /></label>
+            <label className="text-xs text-gray-500 flex flex-col gap-1">Ends
+              <input type="time" value={f.end} onChange={(e) => setF({ ...f, end: e.target.value })} className={inputCls} /></label>
+            <label className="text-xs text-gray-500 flex flex-col gap-1">Grace (min)
+              <input type="number" min={0} max={120} value={f.grace} onChange={(e) => setF({ ...f, grace: e.target.value })} className={`${inputCls} w-20`} /></label>
+            <button className={btnMain} disabled={!f.name.trim() || !f.start || !f.end || !br} onClick={save}>{editing ? 'Save changes' : `Add shift${bn ? ` at ${bn}` : ''}`}</button>
+            {editing && <button className={btn} onClick={() => { setEditing(null); setF(NEW_SHIFT); }}>Cancel</button>}
+          </div>
+          {others.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-xs text-gray-500">Copy the shifts of</span>
+              <select value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} aria-label="Copy from">
+                <option value="">another branch…</option>
+                {others.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <button className={btn} disabled={!from} onClick={() => act(async () => { await api.post('/api/attendance/shifts/copy', { from_branch_id: from, to_branch_id: br }); setFrom(''); })}>Copy to {bn}</button>
+            </div>
+          )}
+          {err && <p className="text-sm text-red-600">{err}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PeoplePanel({ branchId, branches, onChanged, canPin = false, reloadKey = 0 }: {
+  branchId: string; branches: Array<{ id: string; name: string }>; onChanged: () => void; canPin?: boolean; reloadKey?: number;
+}) {
+  const [tick, setTick] = useState(0);
+  const people = usePeople(branchId, tick + reloadKey * 1000);
+  const shifts = useShifts(branchId, reloadKey);
   const [name, setName] = useState('');
   const [br, setBr] = useState(branchId || branches[0]?.id || '');
   const [err, setErr] = useState('');
@@ -536,11 +654,18 @@ function PeoplePanel({ branchId, branches, onChanged }: { branchId: string; bran
             </div>
           )}
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs text-gray-500"><th className="py-1">No.</th><th>Name</th><th>Branch</th><th>Kind</th><th /></tr></thead>
+            <thead><tr className="text-left text-xs text-gray-500"><th className="py-1">No.</th><th>Name</th><th>Branch</th><th>Kind</th>{canPin && <th>Shift</th>}<th /></tr></thead>
             <tbody>{people.people.map((p) => (
               <tr key={p.id} className={`border-t border-gray-100 dark:border-gray-800 ${p.active ? '' : 'text-gray-400'}`}>
                 <td className="py-1 tabular-nums">{p.attendance_no}</td><td>{p.name}</td><td>{bn(p.branch_id)}</td>
                 <td className="text-xs">{p.attendance_only ? 'Attendance only (no sign-in)' : 'Staff'}</td>
+                {canPin && <td>
+                  <select value={p.shift_id ?? ''} aria-label={`${p.name}'s shift`} className={`${inputCls} py-1 text-xs`}
+                    onChange={(e) => act(() => api.put(`/api/attendance/people/${p.id}/shift`, { shift_id: e.target.value || null }))}>
+                    <option value="">Nearest each day</option>
+                    {(shifts ?? []).filter((s) => s.branch_id === p.branch_id).map((s) => <option key={s.id} value={s.id}>{s.name} {shiftTimes(s)}</option>)}
+                  </select>
+                </td>}
                 <td className="text-right">{p.attendance_only && <button className={btn} onClick={() => act(() => api.patch(`/api/attendance/people/${p.id}`, { active: !p.active }))}>{p.active ? 'Deactivate' : 'Bring back'}</button>}</td>
               </tr>
             ))}</tbody>
@@ -566,7 +691,7 @@ function DevicesPanel({ branchId, branches }: { branchId: string; branches: Arra
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ name: '', ip: '', port: '4370', comm_key: '', branch_id: branchId || branches[0]?.id || '' });
   const [err, setErr] = useState('');
-  useEffect(() => { api.get<{ devices: DeviceRow[] }>(`/api/attendance/devices${branchId ? `?branch_id=${branchId}` : ''}`).then((r) => setRows(r.devices)).catch(() => setRows([])); }, [branchId, tick]);
+  useEffect(() => { api.get<{ devices: DeviceRow[] }>(`/api/attendance/devices?branch_id=${branchId || 'all'}`).then((r) => setRows(r.devices)).catch(() => setRows([])); }, [branchId, tick]);
   const act = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); setTick((t) => t + 1); } catch (e: any) { setErr(e?.message ?? 'Could not be saved.'); } };
   // A614: one device per branch — a device is added only to a branch that has none (the cloud refuses a second).
   const taken = new Set(rows.map((d) => d.branch_id));

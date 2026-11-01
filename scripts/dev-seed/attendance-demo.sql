@@ -7,6 +7,8 @@
 -- What it adds to that business:
 --   * the 'attendance' feature flag on (the report is premium), and a demo device on its main branch (serial
 --     'DEMO-SEED-K40') — if the branch already has a device, that one is used (a branch has one device, A614);
+--   * A616: three shifts on that branch, Day (demo) 07:30-16:30, Delivery (demo) 10:00-19:00, Night (demo) 18:00-06:00,
+--     with the delivery person pinned to theirs (only once migration 184 has run);
 --   * 8 attendance-only people (no sign-in: cooks, cleaners, guards), numbers 9001-9008, and up to 3 of the business's
 --     existing active staff linked as numbers 9101-9103;
 --   * 5 weeks of device punches (today included), Nairobi time, with what real shops show: day and night shifts, late
@@ -64,6 +66,16 @@ BEGIN
     VALUES (b, br, u.id, COALESCE(u.name, 'Staff'), 9100 + n_staff, true)
     ON CONFLICT DO NOTHING;
   END LOOP;
+
+  -- A616 shifts (migration 184; skipped where it has not run): the demo's own pattern, "(demo)" in the name for the
+  -- cleanup. Delivery pinned to its shift; the night guard NOT pinned — the report finds his nights by itself.
+  IF to_regclass('public.attendance_shifts') IS NOT NULL THEN
+    INSERT INTO public.attendance_shifts (business_id, branch_id, name, start_min, end_min, grace_min, active)
+    SELECT b, br, n, s, e, 10, true FROM (VALUES ('Day (demo)', 450, 990), ('Delivery (demo)', 600, 1140), ('Night (demo)', 1080, 360)) AS t(n, s, e)
+    ON CONFLICT (branch_id, lower(btrim(name))) WHERE active DO NOTHING;
+    UPDATE public.attendance_people SET shift_id = (SELECT id FROM public.attendance_shifts WHERE branch_id = br AND name = 'Delivery (demo)' AND active)
+    WHERE business_id = b AND attendance_no = 9007;
+  END IF;
 
   -- the punches: 35 days back to today, per person, Nairobi times (UTC = EAT - 3 h)
   FOR p IN SELECT id, attendance_no FROM public.attendance_people

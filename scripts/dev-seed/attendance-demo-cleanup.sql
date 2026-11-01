@@ -1,6 +1,7 @@
 -- attendance-demo-cleanup.sql — removes EXACTLY what attendance-demo.sql added (DEV ONLY). Edit the same ONE line.
 --   * the punches of numbers 9001-9199 and 9999 from the demo device, or with the demo serial;
 --   * the people numbered 9001-9199;
+--   * the shifts named "… (demo)" (A616);
 --   * the demo device (serial 'DEMO-SEED-K40') — a device that was already there is kept;
 --   * the 'attendance' flag only if the seed set it (its note says DEMO-SEED).
 
@@ -16,6 +17,9 @@ BEGIN
   DELETE FROM public.attendance_device_actions WHERE business_id = b
     AND person_id IN (SELECT id FROM public.attendance_people WHERE business_id = b AND attendance_no BETWEEN 9001 AND 9199);
   DELETE FROM public.attendance_people WHERE business_id = b AND attendance_no BETWEEN 9001 AND 9199;
+  IF to_regclass('public.attendance_shifts') IS NOT NULL THEN   -- A616: the demo's shifts (anyone pinned to one goes back to the nearest)
+    DELETE FROM public.attendance_shifts WHERE business_id = b AND name LIKE '% (demo)';
+  END IF;
   DELETE FROM public.attendance_devices WHERE business_id = b AND serial = 'DEMO-SEED-K40';
   DELETE FROM public.feature_flags WHERE business_id = b AND key = 'attendance' AND notes = 'DEMO-SEED attendance-demo.sql';
   RAISE NOTICE 'Attendance demo removed from %.', biz_name;

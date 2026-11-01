@@ -58,9 +58,11 @@ const clean = sanitize(fs.readFileSync(path.join(ROOT, 'scripts/dev-seed/attenda
 await ok('seed runs', async () => { await db.exec(seed); });
 const c = async () => ({ people: (await one(`SELECT count(*)::int n FROM attendance_people`)).n, punches: (await one(`SELECT count(*)::int n FROM clock_events`)).n,
   unmatched: (await one(`SELECT count(*)::int n FROM clock_events WHERE person_id IS NULL`)).n, devs: (await one(`SELECT count(*)::int n FROM attendance_devices`)).n,
-  flag: (await one(`SELECT count(*)::int n FROM feature_flags WHERE key='attendance' AND enabled`)).n });
+  flag: (await one(`SELECT count(*)::int n FROM feature_flags WHERE key='attendance' AND enabled`)).n,
+  shifts: (await one(`SELECT count(*)::int n FROM attendance_shifts`)).n, pinned: (await one(`SELECT count(*)::int n FROM attendance_people WHERE shift_id IS NOT NULL`)).n });
 const first = await c(); console.log(JSON.stringify(first));
+await ok('A616: three demo shifts, the delivery person pinned', async () => { assert.equal(first.shifts, 3); assert.equal(first.pinned, 1); });
 await ok('seed again adds nothing', async () => { await db.exec(seed); assert.deepEqual(await c(), first); });
-await ok('cleanup removes it all', async () => { await db.exec(clean); assert.deepEqual(await c(), { people: 0, punches: 0, unmatched: 0, devs: 0, flag: 0 }); });
+await ok('cleanup removes it all', async () => { await db.exec(clean); assert.deepEqual(await c(), { people: 0, punches: 0, unmatched: 0, devs: 0, flag: 0, shifts: 0, pinned: 0 }); });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

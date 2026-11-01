@@ -129,6 +129,20 @@
     "deactivated_at": "\"timestamp with time zone\"",
     "created_by": "\"uuid\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "shift_id": "\"uuid\""
+  },
+  "attendance_shifts": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "start_min": "\"integer\" NOT NULL",
+    "end_min": "\"integer\" NOT NULL",
+    "grace_min": "\"integer\" NOT NULL",
+    "active": "\"boolean\" NOT NULL",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
   "attribute_groups": {
