@@ -168,12 +168,14 @@ const inPart = (p: MealPart, u: Unit) =>
 /**
  * The offers on a cart. `offers` are the till's (or the cloud's) copy; those not running at `at` for `branchId` are
  * skipped — unless `ignoreTiming` (the cloud re-checking a sale the till already priced: the timing was the till's call,
- * and an offline sale reaches the cloud later).
+ * and an offline sale reaches the cloud later). The branch is checked either way: an offer for some branches needs the
+ * sale's branch to be one of them, so a sale arriving without its branch gets none of them (owner, 2026-11-01; the cart
+ * already refused them with no branch, so no sale priced at a POS loses anything).
  */
 export function applyOffers(lines: OfferLine[], offers: Offer[],
   opts: { at?: Date; branchId?: string | null; ignoreTiming?: boolean } = {}): OfferResult {
   const at = opts.at ?? new Date();
-  const live = (offers ?? []).filter((o) => o && (opts.ignoreTiming ? o.active && (!o.branch_ids || !opts.branchId || o.branch_ids.includes(opts.branchId)) : offerRunsAt(o, at, opts.branchId ?? null)));
+  const live = (offers ?? []).filter((o) => o && (opts.ignoreTiming ? o.active && (!o.branch_ids || (!!opts.branchId && o.branch_ids.includes(opts.branchId))) : offerRunsAt(o, at, opts.branchId ?? null)));
   const units: Unit[] = [];
   for (const l of lines ?? []) {
     const q = num(l.quantity), p = Math.max(0, num(l.unit_price));
@@ -278,15 +280,22 @@ export function applyOffers(lines: OfferLine[], offers: Offer[],
 // ── Words for the screens ────────────────────────────────────────────────────
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEK_MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
+
+/** The days in words, Monday first, as menu hours word them: "Mon–Fri", "Sat, Sun", "Fri–Sun", "Mon–Wed, Fri". */
+function offerDaysLabel(days: readonly number[]): string {
+  const idx = WEEK_MON_FIRST.map((d, i) => (days.includes(d) ? i : -1)).filter((i) => i >= 0);
+  const runs: number[][] = [];
+  for (const i of idx) { const r = runs[runs.length - 1]; if (r && r[r.length - 1] === i - 1) r.push(i); else runs.push([i]); }
+  return runs.map((r) => r.length >= 3
+    ? `${DAY_NAMES[WEEK_MON_FIRST[r[0]]]}–${DAY_NAMES[WEEK_MON_FIRST[r[r.length - 1]]]}`
+    : r.map((i) => DAY_NAMES[WEEK_MON_FIRST[i]]).join(', ')).join(', ');
+}
 
 /** "Mon–Fri · 16:00–19:00 · 1 Oct – 31 Oct" — or "Every day". */
 export function offerWhenLabel(o: Pick<Offer, 'days' | 'start_time' | 'end_time' | 'start_date' | 'end_date'>): string {
   const parts: string[] = [];
-  if (o.days && o.days.length && o.days.length < 7) {
-    const d = [...o.days].sort();
-    const run = d.every((x, i) => i === 0 || x === d[i - 1] + 1);
-    parts.push(run && d.length > 2 ? `${DAY_NAMES[d[0]]}–${DAY_NAMES[d[d.length - 1]]}` : d.map((x) => DAY_NAMES[x]).join(', '));
-  } else parts.push('Every day');
+  parts.push(o.days && o.days.length && o.days.length < 7 ? offerDaysLabel(o.days) : 'Every day');
   if (o.start_time && o.end_time) parts.push(`${o.start_time}–${o.end_time}`);
   if (o.start_date || o.end_date) parts.push(`${o.start_date ?? '…'} to ${o.end_date ?? '…'}`);
   return parts.join(' · ');

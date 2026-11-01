@@ -51,13 +51,20 @@ BEGIN
     RETURNING attendance_devices.id, attendance_devices.serial INTO dev, dev_serial;
   END IF;
 
-  -- the people: 8 attendance-only (no sign-in), then up to 3 existing staff
+  -- the people: 8 attendance-only (no sign-in), then up to 3 existing staff. Plain names, as a device holds them (owner,
+  -- 2026-11-01: no role in brackets); a re-run renames the demo people an older seed added with a role.
   INSERT INTO public.attendance_people (business_id, branch_id, name, attendance_no, active)
   SELECT b, br, n, no, true FROM (VALUES
-    ('Wanjiku Kamau (cook)', 9001), ('Otieno Ouma (cook)', 9002), ('Achieng Atieno (cleaner)', 9003),
-    ('Mwangi Njoroge (guard, nights)', 9004), ('Kiprono Cheruiyot (guard, days)', 9005), ('Fatuma Hassan (dishwasher)', 9006),
-    ('Mutua Musyoka (delivery)', 9007), ('Nyambura Wairimu (kitchen helper)', 9008)) AS t(n, no)
-  ON CONFLICT (business_id, attendance_no) DO NOTHING;
+    ('Wanjiku Kamau', 9001),      -- cook
+    ('Otieno Ouma', 9002),        -- cook, late most often
+    ('Achieng Atieno', 9003),     -- cleaner
+    ('Mwangi Njoroge', 9004),     -- guard, nights
+    ('Kiprono Cheruiyot', 9005),  -- guard, days
+    ('Fatuma Hassan', 9006),      -- dishwasher
+    ('Mutua Musyoka', 9007),      -- delivery
+    ('Nyambura Wairimu', 9008)    -- kitchen helper
+  ) AS t(n, no)
+  ON CONFLICT (business_id, attendance_no) DO UPDATE SET name = EXCLUDED.name;
   FOR u IN SELECT id, name FROM public.users WHERE business_id = b AND status = 'active'
              AND id NOT IN (SELECT user_id FROM public.attendance_people WHERE business_id = b AND user_id IS NOT NULL)
              ORDER BY created_at LIMIT 3 LOOP

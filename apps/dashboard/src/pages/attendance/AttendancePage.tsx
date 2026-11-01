@@ -181,7 +181,12 @@ function TeamView({ report, pal, mode, currency, onPick }: { report: AttReport; 
                 <CartesianGrid horizontal={false} stroke={pal.grid} />
                 <XAxis type="number" tick={{ fontSize: 11, fill: mode === 'dark' ? '#9ca3af' : '#64748b' }} />
                 <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 12, fill: mode === 'dark' ? '#d1d5db' : '#334155' }} />
-                <Tooltip formatter={(v: any) => hoursWords(Number(v))} cursor={{ fill: mode === 'dark' ? '#1f2937' : '#f1f5f9' }} />
+                <Tooltip cursor={{ fill: mode === 'dark' ? '#1f2937' : '#f1f5f9' }} content={({ active, payload }: any) => {
+                  // the card's own colours (owner, 2026-11-01: recharts' default is a white box on the dark page)
+                  const p = active && payload?.[0]?.payload; if (!p) return null;
+                  return <div data-testid="att-person-tip" className="text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-2 py-1 shadow">
+                    <div className="font-semibold">{p.name}</div><div>{hoursWords(p.hours)}</div></div>;
+                }} />
                 <Bar dataKey="hours" radius={[0, 4, 4, 0]} maxBarSize={22} onClick={(d: any) => onPick(d?.key ?? d?.payload?.key)} style={{ cursor: 'pointer' }} {...noAnim}>
                   {ranked.map((p, i) => <Cell key={p.key} fill={i === 0 ? pal.accent : pal.ramp[Math.max(1, 4 - Math.min(3, Math.floor(i / 3)))]} />)}
                   <LabelList dataKey="hours" position="right" formatter={(v: any) => `${Number(v).toFixed(1)} h`} style={{ fontSize: 11, fill: mode === 'dark' ? '#d1d5db' : '#334155' }} />
@@ -328,7 +333,7 @@ function WeekBars({ dates, byDate, pal, mode }: { dates: string[]; byDate: Map<s
           <YAxis tick={{ fontSize: 11, fill: mode === 'dark' ? '#9ca3af' : '#64748b' }} />
           <Tooltip content={({ active, payload }: any) => {
             const p = active && payload?.[0]?.payload; if (!p) return null;
-            return <div className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-2 py-1 shadow">
+            return <div className="text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-2 py-1 shadow">
               <div className="font-semibold">{p.label}</div><div>{hoursWords(p.hours)}</div><div>In {p.inT} · Out {p.outT}</div>
               {p.missing && <div style={{ color: pal.missing }}>Missing punch-out</div>}</div>;
           }} />
