@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveBranding, pickButtonText } from '../../lib/contrast';
-import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, brandPalette, brandNotes, STATUS_SHADES, type Theme } from '../../lib/themes';
+import { THEMES, isFreeThemeId, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, brandPalette, brandNotes, STATUS_SHADES, type Theme } from '../../lib/themes';
 import { logoColoursFromDataUri, type LogoColours } from '../../lib/logoColours';   // A605
 import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
 import { accentWriteError, footerWriteError, normaliseHex, resolveBranchBranding, FOOTER_LINE_MAX, FOOTER_LINE_NARROW } from '../../lib/branchBranding';   // A544
@@ -174,7 +174,9 @@ export default function BrandingTab() {
   const shownAccent = brand.accent;
   // A327: what the till's lock screen will actually wear — the brand colour; with themes ON and no brand colour, the
   // chosen theme (the till's PinPage rule, A326). With themes OFF: exactly the Phase 1 preview (shownAccent).
-  const theme: Theme | null = themesEnabled ? resolveTheme(themeId) : null;
+  // A617 (owner, 2026-11-01: "basic themes for everyone, the rest premium"): without Themes, a free theme (Ocean, Teal,
+  // Sky — themes.ts FREE_THEME_IDS) or ZapTill's default look (null), exactly what the cloud serves the POS.
+  const theme: Theme | null = themesEnabled || isFreeThemeId(themeId) ? resolveTheme(themeId) : null;
   const lockAccent = theme && accentHex.trim() === '' ? theme.shades[500] : shownAccent;
   const suggested = themesEnabled ? suggestThemeFor(accentHex.trim() || null) : null;
   // A597: what is saved — #rgb is widened to #rrggbb; '' clears; anything else stops the save and says why.
@@ -182,8 +184,13 @@ export default function BrandingTab() {
   const secondaryHex = secondary.trim() ? normaliseHex(secondary) : null;
   const colourErr = (primary.trim() && !primaryHex) || (secondary.trim() && !secondaryHex) ? 'A colour is written #RRGGBB, for example #E11D48.' : '';
   const sendColours = themesEnabled && coloursEditable;
+  // A617: the theme is saved with Themes (as before), or without it when the owner picked a free one or the default.
+  const sendTheme = themesEnabled || themeId !== saved?.themeId;
+  const primaryWorn = themesEnabled ? primaryHex : null;   // the brand colours are worn only with Themes
   // The lock screen: the accent above when set; otherwise, with brand colours, the primary at its shade seen there.
-  const lockShown = theme && accentHex.trim() === '' && brandPalette(primaryHex) ? brandPalette(primaryHex)!.layer : lockAccent;
+  const lockShown = theme && accentHex.trim() === '' && brandPalette(primaryWorn) ? brandPalette(primaryWorn)!.layer : lockAccent;
+  // A617: the free themes by name, from the one list (themes.ts FREE_THEME_IDS).
+  const freeThemeNames = THEMES.filter((t) => isFreeThemeId(t.id)).map((t) => t.name).join(', ');
 
   const draft: BrandingDraft = { accentHex, logoPng, logoReceipt, receiptLogoEnabled, themeId, primary, secondary };
   const dirty = !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
@@ -210,8 +217,9 @@ export default function BrandingTab() {
         logo_png: logoPng,
         logo_receipt: logoPng ? logoReceipt : null,           // A313: no logo → no raster
         receipt_logo_enabled: !!logoPng && receiptLogoEnabled,
-        // A327: only when the business has themes — the cloud refuses a theme without the flag (A325).
-        ...(themesEnabled ? { theme_id: theme?.id ?? null } : {}),
+        // A327: only when the business has themes — the cloud refuses a theme without the flag (A325); A617: a free one
+        // (or the default) without it.
+        ...(sendTheme ? { theme_id: theme?.id ?? null } : {}),
         // A597: the brand colours — the owner's alone, and only with themes (the cloud refuses anyone else: 403).
         ...(sendColours ? { primary_hex: primaryHex, secondary_hex: secondaryHex } : {}),
       });
@@ -232,7 +240,7 @@ export default function BrandingTab() {
       && !window.confirm('Reset all branding to the ZapTill default? Your logo, colours and theme are removed.')) return;
     setBusy(true); say('');
     try {
-      await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, ...(themesEnabled ? { theme_id: null } : {}),
+      await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, theme_id: null,   // A617: null is always allowed
         ...(sendColours ? { primary_hex: null, secondary_hex: null } : {}) });
       setAccentHex(''); setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn(''); setThemeId(null);
       if (sendColours) { setPrimary(''); setSecondary(''); }
@@ -318,42 +326,56 @@ export default function BrandingTab() {
           </div>
         </Section>
 
-        {/* ── App theme (A327) — the colours of buttons when no primary colour is chosen ── */}
-        {themesEnabled && (
-          <Section title="App theme" hint={primaryHex
-            ? 'Your primary colour is used for buttons and selections, so the theme below only applies if you clear it.'
-            : 'The colour of buttons and selections on your points of sale. Paid, warnings, voids and prices keep their own colours.'}>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className={primaryHex ? 'opacity-60' : ''}>
-                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="App theme">
-                  {THEMES.map((t) => {
-                    const on = theme?.id === t.id;
-                    return (
-                      // Selected = the theme's OWN colour as border + ring, and a tick — readable in dark AND light mode.
-                      // (The dashboard is dark-first: gray-900/200 invert between modes, which made the selected tile the
-                      // faintest one in dark mode — owner's screenshots, 2026-09-24.)
-                      <button key={t.id} type="button" role="radio" aria-checked={on} onClick={() => setThemeId(t.id)}
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${on ? '' : 'border-gray-700 hover:border-gray-500'}`}
-                        style={on ? { borderColor: t.shades[500], boxShadow: `0 0 0 2px ${t.shades[500]}` } : undefined}>
-                        <span className="h-5 w-5 rounded" style={{ background: t.shades[500] }} aria-hidden />
-                        <span className="font-medium text-gray-300">{t.name}</span>
-                        {suggested === t.id && <span className="text-[10px] font-semibold text-gray-400">Suggested</span>}
-                        {on && <span className="ml-auto text-sm font-bold" style={{ color: t.shades[500] }} aria-hidden>✓</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-                {suggested && theme?.id !== suggested && (
-                  <p className="text-xs text-gray-400 mt-2">Suggested beside your lock-screen colour: <b>{resolveTheme(suggested).name}</b>. <button type="button" className="underline" onClick={() => setThemeId(suggested)}>Use it</button></p>
+        {/* ── App theme (A327) — the colours of buttons when no primary colour is chosen. A617: shown to every business —
+             ZapTill's default look and the free themes for all; the others locked without Themes. ── */}
+        <Section title="App theme" hint={primaryWorn
+          ? 'Your primary colour is used for buttons and selections, so the theme below only applies if you clear it.'
+          : 'The colour of buttons and selections on your points of sale. Paid, warnings, voids and prices keep their own colours.'}>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className={primaryWorn ? 'opacity-60' : ''}>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="App theme">
+                {!themesEnabled && (
+                  // A617: without Themes, null is ZapTill's default look (with Themes, null serves Ocean — no tile).
+                  <button type="button" role="radio" aria-checked={theme === null} onClick={() => setThemeId(null)} data-testid="theme-default"
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${theme === null ? 'border-gray-300 ring-2 ring-gray-300' : 'border-gray-700 hover:border-gray-500'}`}>
+                    <span className="h-5 w-5 rounded bg-swift" aria-hidden />
+                    <span className="font-medium text-gray-300">ZapTill default</span>
+                    {theme === null && <span className="ml-auto text-sm font-bold text-gray-300" aria-hidden>✓</span>}
+                  </button>
                 )}
+                {THEMES.map((t) => {
+                  const on = theme?.id === t.id;
+                  const locked = !themesEnabled && !isFreeThemeId(t.id);   // A617: premium without Themes
+                  return (
+                    // Selected = the theme's OWN colour as border + ring, and a tick — readable in dark AND light mode.
+                    // (The dashboard is dark-first: gray-900/200 invert between modes, which made the selected tile the
+                    // faintest one in dark mode — owner's screenshots, 2026-09-24.)
+                    <button key={t.id} type="button" role="radio" aria-checked={on} disabled={locked} onClick={() => setThemeId(t.id)}
+                      data-testid={`theme-${t.id}`} title={locked ? 'Part of Themes — ask ZapTill' : undefined}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${on ? '' : 'border-gray-700 hover:border-gray-500'} ${locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      style={on ? { borderColor: t.shades[500], boxShadow: `0 0 0 2px ${t.shades[500]}` } : undefined}>
+                      <span className="h-5 w-5 rounded" style={{ background: t.shades[500] }} aria-hidden />
+                      <span className="font-medium text-gray-300">{t.name}</span>
+                      {suggested === t.id && <span className="text-[10px] font-semibold text-gray-400">Suggested</span>}
+                      {locked && <span className="ml-auto text-[10px] font-semibold text-gray-400">Premium</span>}
+                      {on && <span className="ml-auto text-sm font-bold" style={{ color: t.shades[500] }} aria-hidden>✓</span>}
+                    </button>
+                  );
+                })}
               </div>
-              {theme && !primaryHex && (<div>
-                <TillPreview theme={theme} brandHex={accentHex.trim() || null} primaryHex={primaryHex} secondaryHex={secondaryHex} />
-                <p className="text-xs text-gray-500 mt-2">Buttons and selections take the theme; your lock-screen colour marks the top strip and the sidebar. Paid and prices stay green.</p>
-              </div>)}
+              {!themesEnabled && (
+                <p className="text-xs text-gray-500 mt-2" data-testid="themes-premium-note">ZapTill default and {freeThemeNames} are free. The other themes, your own brand colours, your logo and colours on the customer screen and a branch’s own look are part of Themes — ask ZapTill.</p>
+              )}
+              {suggested && theme?.id !== suggested && (
+                <p className="text-xs text-gray-400 mt-2">Suggested beside your lock-screen colour: <b>{resolveTheme(suggested).name}</b>. <button type="button" className="underline" onClick={() => setThemeId(suggested)}>Use it</button></p>
+              )}
             </div>
-          </Section>
-        )}
+            {theme && !primaryWorn && (<div>
+              <TillPreview theme={theme} brandHex={accentHex.trim() || null} primaryHex={primaryWorn} secondaryHex={themesEnabled ? secondaryHex : null} />
+              <p className="text-xs text-gray-500 mt-2">Buttons and selections take the theme; your lock-screen colour marks the top strip and the sidebar. Paid and prices stay green.</p>
+            </div>)}
+          </div>
+        </Section>
 
         {/* ── Receipt (A313) ── */}
         <Section title="Receipt preview" hint="The exact black-and-white image a receipt printer prints.">

@@ -178,6 +178,7 @@ export function usePOSData(): POSData {
       setReceiptPay(init.receiptPayNumber ? { label: init.receiptPayLabel ?? '', number: init.receiptPayNumber } : null);   // A450
       // A606: the customer screen's look and premium parts — the same gate as the desktop's (lib/customerScreen.ts).
       setCustomerContent(gateDisplayContent({ businessName: (init as any).businessName ?? null, themeId: look.themeId ?? null,
+        themesPremium: init.themesPremium,   // A617: a free theme is served without Themes — the logo and colours need it
         logo: init.branding?.logoPng ?? null, primaryHex: colours.primaryHex, secondaryHex: colours.secondaryHex, accentHex: look.accentHex ?? null,
         licensed: (init as any).webPosEnabled === true, slides: slidesFromWire((init as any).customerScreen ?? null), mpesa: (init as any).mpesa ?? null }));
       setCurrency(init.currency ?? 'KES');

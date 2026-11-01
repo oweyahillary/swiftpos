@@ -701,6 +701,17 @@ jobs:
       - name: Billing per branch and premium per branch (A612)
         run: TZ=UTC node --no-warnings tests/branch-billing-a612.test.mjs
 
+      # A617 — current clients keep Themes, free (migration 185: every branch row of a business with the themes flag gets
+      # Themes at its own price 0, once; an own price already set never overwritten); a branch's own price for an add-on or
+      # the package (the bill and the invoice line at the price that applied; the admin save merged and checked — unknown
+      # key, negative, a word → 400; a database before 185 saves the rest and says so); ZapTill's default look, Ocean, Teal
+      # and Sky free to every business, the rest premium (the cloud's pull and write, the customer screen's logo and colours
+      # on themesPremium, the Branding page). Migration 185 replayed into PGlite. Needs the server build.
+      - name: Basic themes for everyone and own prices per branch (A617) and migration 185
+        run: |
+          TZ=UTC node --no-warnings tests/a617-themes-basic-and-own-prices.test.mjs
+          node --no-warnings scripts/test-migration-185.mjs
+
       # A592 — "How can we make these messages look better": every admin Telegram message and email laid out the same —
       # Telegram HTML (a client "A&B <Shop>" escaped, valid), URL buttons ("Close it remotely", "Open run", "Guide"), a 400
       # "can't parse entities" sent again as plain text; "8 days 22 h" not "214 h", "Mon 26 Oct 13:07 EAT"; client problems

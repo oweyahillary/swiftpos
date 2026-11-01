@@ -383,6 +383,25 @@ export function getEtimsFlag(): boolean {
   } catch { return false; }
 }
 
+/**
+ * A617 (owner, 2026-11-01: "basic themes for everyone, the rest premium"): does this POS have Themes (pos/init
+ * themesPremium)? A free theme id (Ocean, Teal, Sky) is served without it, so the theme id alone no longer says so; the
+ * customer screen's logo and colours follow this. Kept in maintenance_state like the eTIMS flag. undefined = not said
+ * (an older cloud or branch server) → keep. null from the getter = never told: the theme id decides, as before.
+ */
+export const THEMES_PREMIUM_KEY = 'themes_premium';
+export function setThemesPremium(on: boolean | undefined): void {
+  if (typeof on !== 'boolean') return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(THEMES_PREMIUM_KEY, on ? '1' : '0', new Date().toISOString());
+}
+export function getThemesPremium(): boolean | null {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(THEMES_PREMIUM_KEY) as { value?: string } | undefined;
+    return row?.value === '1' ? true : row?.value === '0' ? false : null;
+  } catch { return null; }
+}
+
 /** 0.6.27: the switches as the till last heard them (all off until told). */
 export function getPosFeatures(): PosFeatures {
   return parsePosFeatures(getDeviceConfig()?.pos_features ?? null);

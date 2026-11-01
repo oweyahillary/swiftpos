@@ -395,7 +395,8 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     row.receipt_logo_enabled = req.body.receipt_logo_enabled;
   }
   if (has('theme_id')) {
-    // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag.
+    // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag — A617: except a
+    // free theme (FREE_THEME_IDS: Ocean, Teal, Sky), which every business may choose.
     const err = themeWriteError(req.body.theme_id, await themesEnabled(req.businessId));
     if (err) { res.status(400).json({ error: err }); return; }
     row.theme_id = req.body.theme_id;

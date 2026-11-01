@@ -58,6 +58,12 @@ export const THEMES: readonly Theme[] = [
 /** A business that turns themes on without choosing one gets Ocean. (With themes OFF, nothing changes — slice 3.) */
 export const DEFAULT_THEME_ID: ThemeId = 'ocean';
 
+/** A617 (owner, 2026-11-01: "basic themes for everyone, the rest premium"): ZapTill's default look and these ready themes
+ *  are free to every business; every other theme (and the brand colours, the customer screen's logo and colours, a
+ *  branch's own look) needs Themes. The ONE list — the cloud's write and pull, the Branding page and the tests use it. */
+export const FREE_THEME_IDS: readonly ThemeId[] = ['ocean', 'teal', 'sky'];
+export function isFreeThemeId(id: unknown): id is ThemeId { return typeof id === 'string' && (FREE_THEME_IDS as readonly string[]).includes(id); }
+
 // ── The real surfaces and status colours (Tailwind grays used by the till; the lock card; the light dashboard) ──
 export const SURFACES = {
   darkPanels: ['#030712', '#111827', '#0d1424'] as Hex[],   // gray-950, gray-900, lock card — what a fill SITS ON

@@ -9,6 +9,9 @@
  * Billed per branch: each branch's plan, premium, package, "Disable", paid-until and where it stands; Record payment for the
  * branches ticked (each moves on one of its own periods — the cloud says what it covers and the amount expected first).
  * Cloud: routes/cloudPlanAdmin.ts (…/cloud-plan/branches/*, …/branch-payments).
+ *
+ * A617 (owner, 2026-11-01: per-client prices; current clients keep Themes, free): a branch's own monthly price for each
+ * add-on and the package (blank = ZapTill's price, shown as the placeholder); the table marks a branch on an own price.
  */
 import { useCallback, useEffect, useState } from "react";
 import { C, S } from "./theme";
@@ -16,7 +19,10 @@ import { standingLine, trialDate, type CloudStandingView } from "./cloudPlan";
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 interface BranchPlan { period: string; amount: number; custom_until: string | null; paid_until: string | null; web_off: boolean; premium: string[]; package: boolean }
-interface BranchRow { branch_id: string; name: string | null; is_main: boolean; plan: BranchPlan | null; premium: string[]; package: boolean; standing: CloudStandingView | null; period_total: number | null }
+interface BranchRow { branch_id: string; name: string | null; is_main: boolean; plan: BranchPlan | null; premium: string[]; package: boolean; own_prices?: OwnPrices; standing: CloudStandingView | null; period_total: number | null }
+/** A617: a branch's own monthly prices (a key missing = ZapTill's price). */
+type OwnKey = "analytics" | "attendance" | "themes" | "package";
+type OwnPrices = Partial<Record<OwnKey, number>>;
 interface Prices { cloud: number; analytics: number; attendance: number; themes: number; package: number }
 interface View { per_branch: boolean; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
 interface Preview { expected: number; branches: Array<{ branch_id: string; name: string; from: string; until: string; fresh: boolean }> }
@@ -24,6 +30,17 @@ interface Preview { expected: number; branches: Array<{ branch_id: string; name:
 const TONE: Record<string, string> = { ok: "#34e5a0", warn: "#f59e0b", bad: C.danger, muted: C.muted };
 const kes = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `KES ${Number(n).toLocaleString("en-KE")}`);
 const PREMIUM: Array<[string, string]> = [["analytics", "Analytics"], ["attendance", "Attendance"], ["themes", "Themes"]];
+const OWN_PRICES: Array<[OwnKey, string]> = [["analytics", "Analytics"], ["attendance", "Attendance"], ["themes", "Themes"], ["package", "Premium package"]];
+/** A617: the own prices as the form holds them ('' = ZapTill's price). */
+const ownDraft = (o: OwnPrices | undefined): Record<OwnKey, string> =>
+  Object.fromEntries(OWN_PRICES.map(([k]) => [k, o?.[k] === undefined ? "" : String(o[k])])) as Record<OwnKey, string>;
+/** A617: what the save sends — every key as typed (blank → null: ZapTill's price; the cloud checks the rest), or nothing
+ *  when the form left them as they were. */
+const ownToSend = (draft: Record<OwnKey, string>, before: OwnPrices | undefined): Record<OwnKey, string | null> | undefined => {
+  const out = Object.fromEntries(OWN_PRICES.map(([k]) => [k, draft[k].trim() || null])) as Record<OwnKey, string | null>;
+  const same = (k: OwnKey) => (out[k] === null ? before?.[k] === undefined : Number(out[k]!.replace(/[, ]/g, "")) === before?.[k]);
+  return OWN_PRICES.every(([k]) => same(k)) ? undefined : out;
+};
 const METHOD: Record<string, string> = { mpesa: "M-Pesa", bank: "Bank", cash: "Cash", other: "Other" };
 const today = () => new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
 
@@ -32,7 +49,7 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [edit, setEdit] = useState<{ branch_id: string; period: string; amount: string; premium: string[]; package: boolean; web_off: boolean } | null>(null);
+  const [edit, setEdit] = useState<{ branch_id: string; period: string; amount: string; premium: string[]; package: boolean; web_off: boolean; own: Record<OwnKey, string> } | null>(null);
   const [ticked, setTicked] = useState<string[]>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [payAmount, setPayAmount] = useState("");
@@ -92,7 +109,9 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
 
   const saveBranch = () => edit && run(() => req("PUT", `/clients/${clientId}/cloud-plan/branches/${edit.branch_id}`, {
     period: edit.period, amount: Number(edit.amount), premium: edit.premium, package: edit.package, web_off: edit.web_off,
-  }), () => { setEdit(null); return "Branch plan saved."; });
+    own_prices: ownToSend(edit.own, view.branches.find((b) => b.branch_id === edit.branch_id)?.own_prices),   // A617
+  }), (v) => { setEdit(null); return v?.notice ?? "Branch plan saved."; });
+  const onOwnPrice = (b: BranchRow) => Object.keys(b.own_prices ?? {}).length > 0;   // A617
 
   return (
     <div style={S.card} data-testid="branch-billing">
@@ -113,14 +132,16 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
             <tr key={b.branch_id}>
               <td style={{ ...S.td, fontWeight: 600 }}>{b.name}{b.is_main ? " ★" : ""}</td>
               <td style={{ ...S.td, fontSize: 12 }}>{b.plan ? `${label(b.plan.period)} · ${kes(b.plan.amount)}` : <span style={{ color: C.muted }}>Follows the business</span>}</td>
-              <td style={{ ...S.td, fontSize: 12 }}>{b.package ? "Premium package" : b.premium.length ? b.premium.map((k) => PREMIUM.find((p) => p[0] === k)?.[1] ?? k).join(", ") : "—"}</td>
+              <td style={{ ...S.td, fontSize: 12 }}>{b.package ? "Premium package" : b.premium.length ? b.premium.map((k) => PREMIUM.find((p) => p[0] === k)?.[1] ?? k).join(", ") : "—"}
+                {onOwnPrice(b) && <span data-testid={`branch-own-price-${b.branch_id}`} title={OWN_PRICES.filter(([k]) => b.own_prices?.[k] !== undefined).map(([k, n]) => `${n} ${kes(b.own_prices?.[k])}`).join(" · ")}
+                  style={{ marginLeft: 6, fontSize: 10, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 6, padding: "0 4px" }}>own price</span>}</td>
               <td style={{ ...S.td, fontSize: 12 }}>{b.plan ? trialDate(b.plan.paid_until) : "—"}</td>
               <td style={{ ...S.td, fontSize: 12, color: TONE[line.tone] }}>{b.plan?.web_off ? "Disabled" : line.title}</td>
               <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{kes(b.period_total)}</td>
               <td style={S.td}>{isSuper && (
                 <button data-testid={`branch-edit-${b.branch_id}`} style={{ ...S.btn, ...S.btnGhost, fontSize: 11 }}
                   onClick={() => setEdit({ branch_id: b.branch_id, period: b.plan?.period ?? view.plan?.period ?? "monthly", amount: String(b.plan?.amount ?? view.prices.cloud),
-                    premium: b.plan?.premium ?? [], package: !!b.plan?.package, web_off: !!b.plan?.web_off })}>Edit</button>
+                    premium: b.plan?.premium ?? [], package: !!b.plan?.package, web_off: !!b.plan?.web_off, own: ownDraft(b.own_prices) })}>Edit</button>
               )}</td>
             </tr>
           );
@@ -146,6 +167,13 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
             ))}
             <label style={{ color: C.danger }}><input type="checkbox" checked={edit.web_off} onChange={(e) => setEdit({ ...edit, web_off: e.target.checked })} /> Disable this branch now</label>
           </div>
+          {/* A617: this branch's own monthly price for an add-on or the package; blank = ZapTill's price (the placeholder). */}
+          <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 6px" }}>Own prices, a month (optional)</div>
+          <div data-testid="branch-own-prices" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            {OWN_PRICES.map(([k, n]) => <span key={k} style={{ display: "contents" }}>{field(`${n} (KES)`, <input data-testid={`branch-own-${k}`} style={S.input} inputMode="numeric"
+              placeholder={String(view.prices[k])} value={edit.own[k]} onChange={(e) => setEdit({ ...edit, own: { ...edit.own, [k]: e.target.value } })} />)}</span>)}
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Leave a price blank for ZapTill's price; 0 gives it free. The invoice shows the price that applies.</div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Premium needs the business's own switch on too (Features). Disable cuts the branch off at once: its POS stop syncing and nobody sees its data.</div>
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <button data-testid="branch-save" disabled={busy || !edit.amount} onClick={saveBranch} style={{ ...S.btn, ...S.btnPrimary, opacity: busy ? 0.5 : 1 }}>Save</button>

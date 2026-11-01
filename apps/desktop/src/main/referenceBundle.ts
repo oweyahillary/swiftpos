@@ -116,6 +116,8 @@ export interface ReferenceBundle {
      *  theme, brand colour and receipt footer (null = none). Absent = an older server (the peer keeps its own). */
     themeId?: string | null;
     branchBranding?: unknown;
+    /** A617: the node's copy of "this POS has Themes" (a free theme id is served without it); null = not known. */
+    themesPremium?: boolean | null;
   };
   // The pieces pullCatalogue fetches separately (per-product loops + branch GETs).
   // Served flat here so a peer makes ONE node call instead of the cloud's 7 + N.
@@ -170,6 +172,7 @@ export interface ReferenceRows {
     cloudBackup?: { on: boolean; phase: string; cutoffAt: string | null } | null;   // A601
     customerScreen?: unknown;   // A606
     etimsEnabled?: boolean | null;   // A607
+    themesPremium?: boolean | null;  // A617
     noteQuickPicks?: string[] | null; // A367
     scaleBarcodes?: unknown;          // A577
     posFeatures?: Record<string, boolean> | null; // 0.6.27
@@ -303,6 +306,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       cloudBackup: rows.config.cloudBackup ?? null,
       customerScreen: rows.config.customerScreen ?? null,   // A606: relayed so a peer shows the same slideshow
       etimsEnabled: rows.config.etimsEnabled ?? null,   // A607: relayed so a peer asks for the buyer's KRA PIN too
+      themesPremium: rows.config.themesPremium ?? null,   // A617: relayed so a peer's customer screen wears the logo only with Themes
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       scaleBarcodes: rows.config.scaleBarcodes ?? null,   // A577: relayed so a peer reads the same scale labels
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
@@ -449,6 +453,13 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
           return raw === '1' ? true : raw === '0' ? false : null;
         } catch { return null; }
       })(),
+      // A617: null until the node itself has heard from the cloud (a peer then keeps its own value).
+      themesPremium: (() => {
+        try {
+          const raw = all(`SELECT value FROM maintenance_state WHERE key = 'themes_premium'`)[0]?.value;
+          return raw === '1' ? true : raw === '0' ? false : null;
+        } catch { return null; }
+      })(),
       cloudBackup: (() => {
         try {
           const raw = all(`SELECT value FROM maintenance_state WHERE key = 'cloud_backup'`)[0]?.value;
@@ -556,6 +567,9 @@ export interface AcquiredReference {
     customerScreen?: unknown;
     /** A607: KRA eTIMS is on (pos/init etimsEnabled). undefined = not said (older cloud / older node) → keep. */
     etimsEnabled?: boolean;
+    /** A617: this POS has Themes (pos/init themesPremium) — a free theme id is served without it. undefined = not said
+     *  (older cloud / older node) → keep. */
+    themesPremium?: boolean;
     /** A599: the business's 'attendance' flag (pos/init attendanceDevice). undefined = not said → keep. Never relayed to a
      *  till behind a server — only the server pulls the devices. */
     attendanceDevice?: boolean;
@@ -615,6 +629,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       cloudBackup: cleanCloudBackup(pi.cloudBackup),   // A601: a node that has not heard (null) or an older node says nothing
       customerScreen: pi && typeof pi === 'object' && 'customerScreen' in pi ? (pi.customerScreen ?? null) : undefined,   // A606
       etimsEnabled: typeof pi.etimsEnabled === 'boolean' ? pi.etimsEnabled : undefined,   // A607: a node that has not heard says nothing
+      themesPremium: typeof pi.themesPremium === 'boolean' ? pi.themesPremium : undefined,   // A617: a node that has not heard says nothing
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
       scaleBarcodes: pi.scaleBarcodes && typeof pi.scaleBarcodes === 'object' ? pi.scaleBarcodes : undefined,   // A577
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27

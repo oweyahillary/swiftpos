@@ -196,7 +196,8 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "premium": "\"ARRAY\" NOT NULL",
-    "package": "\"boolean\" NOT NULL"
+    "package": "\"boolean\" NOT NULL",
+    "own_prices": "\"jsonb\""
   },
   "branch_prices": {
     "id": "\"uuid\" NOT NULL",

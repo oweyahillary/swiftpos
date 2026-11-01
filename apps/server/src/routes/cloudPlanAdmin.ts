@@ -30,8 +30,11 @@
  *
  * A612 phase 3 — the cloud billed per branch (docs/A612-per-branch-cloud.md). A client whose branches have their own plans
  * (branch_cloud_plans) is billed per branch; GET adds the branches (each its plan, premium, package and where it stands):
- *   PUT  …/cloud-plan/branches/:branchId     — { period, amount, custom_until?, web_off?, premium?, package?, notes? }: a
- *        branch's plan; web_off is "Disable" for that branch alone. Super admin, audited ('cloud_plan.branch').
+ *   PUT  …/cloud-plan/branches/:branchId     — { period, amount, custom_until?, web_off?, premium?, package?, own_prices?,
+ *        notes? }: a branch's plan; web_off is "Disable" for that branch alone. Super admin, audited ('cloud_plan.branch').
+ *        A617 (owner, 2026-11-01: per-client prices): own_prices — { analytics?, attendance?, themes?, package? }, the
+ *        branch's own monthly price for each (KES, 0 or more); null or blank clears one (the global price), null for the
+ *        whole clears them all; an unknown key or a bad price → 400 BAD_OWN_PRICE (lib/branchBilling.ts mergeOwnPrices).
  *   POST …/cloud-plan/branches/start         — every branch without a plan gets the business's (its period, amount and
  *        paid-until): the client billed per branch from now. Super admin, audited ('cloud_plan.branches_start').
  *   POST …/cloud-plan/branch-payments/preview — { branch_ids }: what a payment would cover per branch (no write). Any admin.
@@ -58,7 +61,7 @@ import {
   type CloudStanding, type BranchPlanRow,
 } from '../lib/cloudPlan';
 import { receiptEmailHtml, invoiceItems, type BranchBill } from '../lib/cloudPlanEmail';
-import { readBillingDetails, branchBill, periodMonths, premiumOf, isPremiumKey, PREMIUM_KEYS } from '../lib/branchBilling';   // A612
+import { readBillingDetails, branchBill, periodMonths, premiumOf, isPremiumKey, PREMIUM_KEYS, ownPricesOf, mergeOwnPrices } from '../lib/branchBilling';   // A612, A617
 import { ownerEmailOf } from '../jobs/cloudPlanReminders';
 
 const router = safeRouter();
@@ -114,6 +117,7 @@ async function planView(businessId: string) {
     const months = row ? periodMonths(row.period, now ? new Date(now).toISOString() : null, row.custom_until) : 1;
     const bill = row ? branchBill(row, b.name ?? 'Branch', details.prices, months) : null;
     return { branch_id: b.id, name: b.name, is_main: !!b.is_main, plan: row, premium: row ? [...premiumOf(row)] : [], package: !!row?.package,
+      own_prices: ownPricesOf(row),   // A617: {} = the global prices
       standing: bs ? standingView(bs) : null, period_total: bill ? invoiceItems([bill]).reduce((t, i) => t + i.amount, 0) : null };
   });
   return {
@@ -366,6 +370,21 @@ const branchRowsOf = async (businessId: string) => {
   return { facts, rowBy: new Map((facts?.branchPlans ?? []).map((r) => [String(r.branch_id), r])) };
 };
 
+/** A617: migration 185's column. A save that names it on a database not yet migrated is retried without it (the rest of
+ *  the plan saved; the caller is told), so a branch's plan can be edited whatever order the deploy and the migration land in. */
+export function isMissingOwnPricesColumn(error: { message?: string; code?: string } | null | undefined): boolean {
+  const m = String(error?.message ?? '');
+  return !!error && /own_prices/.test(m) && (error.code === '42703' || error.code === 'PGRST204' || /does not exist|column/i.test(m));
+}
+async function saveBranchPlan(row: Record<string, unknown>): Promise<{ error: { message?: string; code?: string } | null; ownPricesDropped: boolean }> {
+  // business_id: in the row the PUT builds (client.id)
+  const upsert = (r: Record<string, unknown>) => supabase.from('branch_cloud_plans').upsert(r, { onConflict: 'branch_id' });
+  const { error } = await upsert(row);
+  if (!('own_prices' in row) || !isMissingOwnPricesColumn(error)) return { error, ownPricesDropped: false };
+  const { own_prices: _dropped, ...rest } = row;
+  return { error: (await upsert(rest)).error, ownPricesDropped: true };
+}
+
 router.put('/:businessId/cloud-plan/branches/:branchId', requireAdmin, requireSuperAdmin, async (req, res) => {
   const client = await clientOf(req, res); if (!client) return;
   const branchId = String(req.params.branchId ?? '');
@@ -383,23 +402,30 @@ router.put('/:businessId/cloud-plan/branches/:branchId', requireAdmin, requireSu
   if (b.premium !== undefined && (!Array.isArray(b.premium) || !b.premium.every(isPremiumKey))) {
     res.status(400).json({ error: `premium is a list of: ${PREMIUM_KEYS.join(', ')}`, code: 'BAD_PREMIUM' }); return;
   }
+  // A617: the branch's own prices — merged onto what it has (keys not sent are kept).
+  const own = b.own_prices === undefined ? null : mergeOwnPrices(b.own_prices, ownPricesOf(before));
+  if (own && 'error' in own) { res.status(400).json({ error: own.error, code: 'BAD_OWN_PRICE' }); return; }
   const row = {
     branch_id: branchId, business_id: client.id, period, amount, currency: 'KES',
     custom_until: period === 'custom' ? customUntil ?? before?.custom_until ?? null : null,
     web_off: b.web_off === undefined ? !!before?.web_off : b.web_off === true,
     premium: b.premium === undefined ? before?.premium ?? [] : [...new Set(b.premium as string[])],
     package: b.package === undefined ? !!before?.package : b.package === true,
+    // A617: only when sent — a save without own_prices never names the column (a database before migration 185)
+    ...(own?.ok ? { own_prices: own.value } : {}),
     notes: b.notes === undefined ? before?.notes ?? null : text(b.notes, 500),
     updated_by: req.adminEmail ?? null, updated_at: new Date().toISOString(),
     // a new row: paid until the business's date (it inherits, as migration 182 did), billing from today
     ...(before ? {} : { paid_until: facts?.expiresAt ?? null, created_at: new Date().toISOString() }),
   };
-  const { error } = await supabase.from('branch_cloud_plans').upsert(row, { onConflict: 'branch_id' });
+  const { error, ownPricesDropped } = await saveBranchPlan(row);
   if (error) { sendError(res, error); return; }
   forgetStanding(client.id);
   await audit(req, client, 'cloud_plan.branch', before as object | null,
-    { branch: (br as { name: string | null }).name, period, amount, web_off: row.web_off, premium: row.premium, package: row.package });
-  res.json(await planView(client.id));
+    { branch: (br as { name: string | null }).name, period, amount, web_off: row.web_off, premium: row.premium, package: row.package,
+      ...(own?.ok && !ownPricesDropped ? { own_prices: own.value } : {}) });
+  res.json({ ...(await planView(client.id)),
+    ...(ownPricesDropped ? { notice: 'Saved without the own prices: the database needs migration 185 first.' } : {}) });
 });
 
 router.post('/:businessId/cloud-plan/branches/start', requireAdmin, requireSuperAdmin, async (req, res) => {

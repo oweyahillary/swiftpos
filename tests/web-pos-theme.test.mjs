@@ -57,8 +57,12 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   ok(`links in light mode ≥ 4.5 on white (worst ${worst.linkLight.toFixed(2)})`, worst.linkLight >= 4.5);
 
   // ── Only with themes on ──
-  ok('themes OFF sets no variables (the index.css defaults — SwiftPOS teal since A329 — apply)', /if \(!b \|\| b\.themes_enabled !== true\) return null;/.test(vars));
-  ok('an unknown or unchosen theme resolves to the default', /themeTokens\(resolveTheme\(b\.theme_id \?\? null\)\)/.test(vars));
+  // A617 (owner, 2026-11-01): themes OFF sets nothing — unless the owner chose a free theme (Ocean, Teal, Sky), never the
+  // brand colours.
+  ok('themes OFF sets no variables (the index.css defaults — SwiftPOS teal since A329 — apply), or A617 a free theme\'s',
+    /if \(b\.themes_enabled !== true\) return isFreeThemeId\(b\.theme_id\) \? themeVars\(b\.theme_id\) : null;/.test(vars));
+  ok('an unknown or unchosen theme resolves to the default', /return themeVars\(b\.theme_id \?\? null\);/.test(vars)
+    && /const k = themeTokens\(resolveTheme\(themeId\)\);/.test(vars));
 
   // ── The stylesheet: defaults = Tailwind green, links switch shade with the mode ──
   const css = D('src/index.css');

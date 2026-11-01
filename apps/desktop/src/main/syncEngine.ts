@@ -20,7 +20,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setThemesPremium, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
 import { notePushOk } from './distributionLag';   // A534 (A23): the branch server's distribution lag
@@ -2090,6 +2090,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (c.branding && !brandingPushPending()) applyPulledBranding(c.branding);
   // A325: the effective action theme — its own field (see applyPulledTheme); undefined = older cloud → keep.
   if (c.themeId !== undefined) applyPulledTheme(c.themeId);
+  // A617: does this POS have Themes (a free theme is served without it)? undefined = not said (older cloud / node) → keep.
+  setThemesPremium(c.themesPremium);
   // A544: this branch's override of the theme, brand colour and receipt footer. undefined = not said (older cloud) → keep.
   applyPulledBranchBranding(c.branchBranding);
   // A346: the web POS switch (decides the manager screen's Stock). undefined = not said → keep.
@@ -2156,6 +2158,7 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
       : null,
     // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
     themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
+    themesPremium: typeof _j.themesPremium === 'boolean' ? _j.themesPremium : undefined,   // A617: absent → keep
     // A544: the branch's override; absent on a cloud before A544 (and on a money / look / setup change) → undefined (keep).
     branchBranding: 'branchBranding' in _j ? (_j.branchBranding ?? null) : undefined,
     // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).

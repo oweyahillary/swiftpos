@@ -496,6 +496,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // another branch's POS keeps the standard look. Billed as one: the business's flag alone, as before.
   const themesPaying = featureBranches(await cloudFactsFor(req.businessId).catch(() => null), 'themes');
   const themesOn = themesBusiness && (!themesPaying || themesPaying.includes(String((opBranch as { id?: string } | null)?.id ?? '')));
+  // A617: without Themes here, a free theme (Ocean, Teal, Sky) the owner chose, else ZapTill's default look (null).
   const themeId = effectiveThemeId(themesOn, branding?.theme_id);
   // A544: this branch's override of the business branding (theme, brand colour, receipt footer) — only while the business
   // has themes (A325); null otherwise, so a till and the web POS apply none (stored, never applied). Only the till's own
@@ -630,6 +631,10 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       ...effectiveBrandColours(themesOn, branding),
     } : null,
     themeId,
+    // A617: does this POS have Themes (the flag and, billed per branch, its branch pays)? themeId alone no longer says so —
+    // a free theme (Ocean, Teal, Sky) is served without it. The customer screen's logo and colours follow this (an older
+    // POS ignores it and reads themeId as before).
+    themesPremium: themesOn,
     // A544: the branch's own override ({ branchId, themeId, accentHex, receiptFooter }), or null. The till and the web POS
     // resolve per field: branch → business → ZapTill default (lib/branchBranding.ts). Older tills ignore it.
     branchBranding,

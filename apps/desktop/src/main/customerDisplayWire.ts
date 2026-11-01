@@ -6,7 +6,7 @@
 import { app, BrowserWindow, screen } from 'electron';
 import path from 'path';
 import { getLocalDb, getBranding } from './localDb';
-import { getDeviceConfig } from './deviceConfig';
+import { getDeviceConfig, getThemesPremium } from './deviceConfig';   // A617: getThemesPremium
 import { getReceiptPay } from './receiptPay';
 import { logLine } from './logFile';
 import { createCustomerDisplay, CHOICE_KEY, type CustomerDisplay, type DisplayWindow } from './customerDisplay';
@@ -190,6 +190,7 @@ export function customerDisplayContent(): DisplayContent & { slideKeys: string[]
   const c = gateDisplayContent({
     businessName: name,
     themeId: b?.effective?.themeId ?? b?.themeId ?? null,
+    themesPremium: getThemesPremium(),   // A617: a free theme is served without Themes; null = never told (older cloud)
     logo: b?.logoPng ?? null,
     primaryHex: b?.effective?.primaryHex ?? null, secondaryHex: b?.effective?.secondaryHex ?? null,
     accentHex: b?.effective ? b.effective.accentHex : (b?.accentHex ?? null),

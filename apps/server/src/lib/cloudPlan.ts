@@ -620,6 +620,8 @@ export interface BranchPlanRow {
   /** A612 phase 4: the branch's premium features, and the Premium package (every one). */
   premium?: string[] | null;
   package?: boolean | null;
+  /** A617 (migration 185): the branch's own monthly prices for the add-ons and the package (absent: the global ones). */
+  own_prices?: Record<string, unknown> | null;
   notes?: string | null;
   updated_by?: string | null;
   created_at?: string;
