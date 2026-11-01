@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useCustomerScreenPublisher, openCustomerScreenWindow } from '../../lib/customerScreenChannel';   // A606
 import { applyOffers, type AppliedOffer } from '../../lib/offers';   // A445
+import { platformQuote, platformRecord } from '../../lib/platformPrices';   // A619
 import { POSLoadingSkeleton } from './cashier/POSSkeletons';
 import { usePOSData }         from './cashier/usePOSData';
 import { useCart }            from './cashier/useCart';
@@ -13,7 +14,7 @@ import { api } from '../../lib/api';
 import { cartSubtotal, extractTaxes, generateOrderNumber } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
 import type { Product, Category, VariantGroup, VariantOption, SelectedVariant, OrderType } from '../../types';
-import PaymentModal from './PaymentModal';
+import PaymentModal, { type PlatformCart } from './PaymentModal';
 // A607: the customer's details for this sale — typed by the cashier, by the customer here or on the customer screen.
 const SaleCustomerPanel = lazy(() => import('./SaleCustomerPanel'));
 import DiscountPanel from './DiscountPanel';
@@ -222,6 +223,7 @@ export default function CashierScreen() {
     paymentMethods,
     paymentMethodsEnabled,   // A429
     offers: branchOffers,    // A445
+    platformPricing,         // A619
     scaleSettings,           // A577
     loading,
     error:         posDataError,
@@ -1180,13 +1182,21 @@ export default function CashierScreen() {
     : cartSubtotal(cart);
   const loyaltyDiscount = loyaltyState?.discountAmount ?? 0;
   // A445: what the branch's offers take off this cart (never on a parking bill — that is time, not items).
-  const offerResult = useMemo(() => isParking ? { total: 0, applied: [] as AppliedOffer[], byLine: {} } : applyOffers(cart.map((i, n) => ({
+  const offersOn = useCallback((lines: CartItem[]) => applyOffers(lines.map((i, n) => ({
     key: String(n),
     product_id: i.product?.id ?? null,
     category_id: (i.product as any)?.category_id ?? (i.product as any)?.categories?.id ?? null,
     unit_price: i.quantity > 0 ? i.lineTotal / i.quantity : 0,
     quantity: i.quantity,
-  })), branchOffers, { at: offerClock, branchId: session?.branchId ?? null }), [cart, branchOffers, offerClock, isParking, session?.branchId]);
+  })), branchOffers, { at: offerClock, branchId: session?.branchId ?? null }), [branchOffers, offerClock, session?.branchId]);
+  const offerResult = useMemo(() => isParking ? { total: 0, applied: [] as AppliedOffer[], byLine: {} } : offersOn(cart), [cart, offersOn, isParking]);
+  // A619: the cart at a delivery platform's prices for the payment screen — its offers recomputed on them (never a
+  // parking bill: that is time, not items).
+  const platformCart = useCallback((platform: string): PlatformCart | null => {
+    if (isParking) return null;
+    const q = platformQuote(cart, platform, platformPricing);
+    return q ? { ...q, offers: offersOn(q.lines).applied, record: platformRecord(platform, platformPricing, q.uplift) } : null;
+  }, [cart, isParking, platformPricing, offersOn]);
   const autoPromoDiscount = offerResult.total;
   const promoDiscount = (discountState?.discount_amount ?? 0) + autoPromoDiscount;
   const totalDiscount = loyaltyDiscount + promoDiscount;
@@ -2619,6 +2629,7 @@ export default function CashierScreen() {
           offers={offerResult.applied}   // A445
           customMethods={paymentMethods}
           enabledMethods={paymentMethodsEnabled}
+          platformCart={platformCart}   // A619: a delivery platform's prices when it is the method
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}

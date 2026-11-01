@@ -14,7 +14,8 @@
 --   own every current client would lose Themes on deploy. Every branch row whose business has the 'themes' flag on gets
 --   'themes' in premium (never twice) and own_prices.themes = 0 (only when the row has no own Themes price yet) — current
 --   clients keep Themes, free. It runs once (its schema_migrations row guards it), so a later run never puts back a Themes
---   a super admin took off; each row's own guards make it safe even without that.
+--   a super admin took off; each row's own guards make it safe even without that. The same once: every business with
+--   'themes' on gets ZapTill's 'themes_free' flag — its branches billed later start with Themes at 0 too (lib/branchBilling.ts).
 --
 -- Safe before or after the server deploy: the server reads branch_cloud_plans with '*' (no column named) and a save that
 -- names own_prices on a database without it is retried without it (routes/cloudPlanAdmin.ts). Run after 182.
@@ -49,6 +50,14 @@ IF NOT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = '185_branc
    WHERE EXISTS (SELECT 1 FROM public.feature_flags f
                   WHERE f.business_id = p.business_id AND f.key = 'themes' AND f.enabled = true)
      AND (NOT ('themes' = ANY (p.premium)) OR NOT (COALESCE(p.own_prices, '{}'::jsonb) ? 'themes'));
+  -- The deal itself, on the business (owner, 2026-11-01: a current client's NEW branches "do not pay for now"): ZapTill's
+  -- own 'themes_free' flag (feature_flags — a client's writes are limited to its POS options, so only ZapTill sets it).
+  -- A branch row the server makes later (a new branch, "Bill per branch") starts with Themes at 0 while it is on.
+  INSERT INTO public.feature_flags (business_id, key, enabled, notes, set_by, updated_at)
+  SELECT f.business_id, 'themes_free', true, 'A617: a client before per-branch billing - Themes free on every branch', 'migration 185', now()
+    FROM public.feature_flags f
+   WHERE f.key = 'themes' AND f.enabled = true
+  ON CONFLICT (business_id, key) DO NOTHING;
 END IF;
 END $a617b$;
 

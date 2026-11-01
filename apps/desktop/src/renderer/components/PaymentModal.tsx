@@ -1,11 +1,13 @@
 import MethodDot from './MethodDot';
 import { methodColour, methodSolid, methodTint } from '../../shared/paymentColours';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';
+import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT, platformOfLegs, legsAfterPick } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
 import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
-import { enabledFromSetting, paymentButtons } from '../../shared/paymentCatalogue';   // A429
+import { enabledFromSetting, paymentButtons, catalogueMethod } from '../../shared/paymentCatalogue';   // A429
 import type { AppliedOffer } from '../../shared/offers';   // A445
+import type { PlatformQuote, PlatformRecord } from '../../shared/platformPrices';   // A619 (types only: the file loads on demand)
+import type { CartItem } from '../lib/cart';
 import { posApi, type CreditCustomerView } from '../lib/posApi';   // A552
 const MpesaStk = lazy(() => import('./MpesaStkPanel'));   // A607: the M-Pesa prompt, loaded when an M-Pesa leg shows
 
@@ -45,7 +47,16 @@ export interface PaymentResult {
   legs: PaymentLeg[];
   /** A552: a sale (partly) on account — the customer, and the approver's PIN when the seller does not hold customers.credit. */
   credit?: { customerId: string; pin?: string };
+  /** A619: the sale at a delivery platform's prices (its lines, subtotal and offers) — absent: the rung prices. */
+  platform?: PlatformCart;
 }
+
+/** A619: a cart re-priced for a delivery platform (shared/platformPrices.ts platformQuote), its offers, its record and what
+ *  changed in words ("1,000 → 1,150"). */
+export type PlatformCart = PlatformQuote<CartItem> & { offers: AppliedOffer[]; record: PlatformRecord; label: string };
+
+/** A619: a delivery platform — the payment catalogue's kind 'delivery' (shared/platformPrices.ts PLATFORM_METHODS). */
+const isPlatform = (code: string) => catalogueMethod(code)?.kind === 'delivery';
 
 interface Props {
   subtotal: number;       // VAT-inclusive cart subtotal
@@ -82,6 +93,8 @@ interface Props {
   /** A607: the number the customer gave for the M-Pesa prompt (masked: shown masked to this person). */
   stkPhone?: string | null;
   stkMasked?: boolean;
+  /** A619: the cart at a delivery platform's prices (null: they do not apply). Absent: every method at the rung prices. */
+  platformCart?: (platform: string) => PlatformCart | null;
 }
 
 // A429: the buttons are the branch's switched-on methods from shared/paymentCatalogue.ts (Cash, M-Pesa, Card, Glovo
@@ -89,12 +102,35 @@ interface Props {
 // business's own methods (A96). Delivery apps (Glovo …) collect from the customer and settle later, so nothing enters
 // the drawer: cash reconciliation filters on method = 'cash' specifically, so no other method can inflate expected cash.
 
-export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers = [], onAccount = null, onConfirm, onClose, onDisplay, stkPhone, stkMasked }: Props) {
+export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers: rungOffers = [], onAccount = null, onConfirm, onClose, onDisplay, stkPhone, stkMasked, platformCart }: Props) {
   const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);
   // A552: On account only where this till offers it (a credit customer held; main/creditSale.ts decides again at the sale).
   const methods = useMemo(() => buttons.filter((b) => b.code !== 'credit' || onAccount?.offered), [buttons, onAccount?.offered]);
   // The first leg starts on cash when the branch takes cash, else on its first method.
   const firstMethod = methods.some((b) => b.code === 'cash') ? 'cash' : (methods.find((b) => b.code !== 'credit')?.code ?? methods[0]?.code ?? 'cash');
+
+  // ── Payment legs ────────────────────────────────────────
+  // Single leg by default; "Split payment" adds more. A blank amount means
+  // "the remaining balance", so the common flow needs zero typing.
+  const [legs, setLegs] = useState<DraftLeg[]>([
+    { method: firstMethod, amount: '', tendered: '', reference: '' },
+  ]);
+
+  // ── A619: delivery platform prices ──────────────────────
+  // Owner, 2026-11-01: "the moment a cashier picks glovo or uber eats as the payment method the price changes". With a
+  // platform as the ONE payment, every line is at its price (shared/platformPrices.ts) and its offers recomputed on them;
+  // any other method: the rung prices again. A platform pays the whole bill (picking it leaves one leg; no split), and
+  // Charge asks first — only for a platform.
+  const platform = platformOfLegs(legs, isPlatform);
+  const platformName = platform ? (buttons.find((b) => b.code === platform)?.name ?? platform) : '';
+  const quote = useMemo(() => (platform && platformCart ? platformCart(platform) : null), [platform, platformCart]);
+  const subtotal = quote?.platformSubtotal ?? rungSubtotal;
+  const offers = quote ? quote.offers : rungOffers;
+  const [confirmingPlatform, setConfirmingPlatform] = useState(false);
+  useEffect(() => { setConfirmingPlatform(false); }, [platform]);
+  // The platform's prices load with the payment screen (POSPage): until they are here a platform is not charged.
+  const platformWaiting = !!platform && !quote;
+
   // ── Adjustments ─────────────────────────────────────────
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
@@ -111,13 +147,6 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
   // 0.6.27: the delivery fee rides on top like the tip — in the legs, not in the bill (total) or its taxes.
   const deliveryFee = cleanDeliveryFee(feeIn);
   const amountDue = amountDueWithFee(billAndTip, 0, deliveryFee);
-
-  // ── Payment legs ────────────────────────────────────────
-  // Single leg by default; "Split payment" adds more. A blank amount means
-  // "the remaining balance", so the common flow needs zero typing.
-  const [legs, setLegs] = useState<DraftLeg[]>([
-    { method: firstMethod, amount: '', tendered: '', reference: '' },
-  ]);
 
   const { view: legView, remaining, cashShort, balanced, allPositive } = useMemo(
     () => buildLegView(legs, amountDue),
@@ -153,7 +182,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
     : '';
   const creditOk = !creditProblem;
 
-  const canConfirm = balanced && allPositive && !cashShort && creditOk && !placing;
+  const canConfirm = balanced && allPositive && !cashShort && creditOk && !placing && !platformWaiting;   // A619
   // A606: the customer screen follows the payment (main cleans it; only these figures cross).
   useEffect(() => { onDisplay?.({ discount: discountAmount, amountDue, legs, view: legView }); }, [discountAmount, amountDue, legView, legs]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -201,6 +230,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
       })),
       // A552: the customer, and the approver's PIN when the seller does not approve it themselves (checked in main).
       ...(creditIdx >= 0 && customer ? { credit: { customerId: customer.id, ...(needsPin ? { pin: creditPin.trim() } : {}) } } : {}),
+      ...(quote ? { platform: quote } : {}),   // A619: the lines at the platform's prices
     });
   };
 
@@ -219,6 +249,10 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
           <div className="flex justify-between text-gray-400">
             <span>Subtotal</span><span>{fmt(subtotal)}</span>
           </div>
+          {/* A619: the platform's prices, said plainly — never a "+15%" line */}
+          {quote && (
+            <div className="text-sky-300 text-xs" data-testid="platform-prices">{platformName} prices: {quote.label}</div>
+          )}
           {/* A445: each offer by name, then the cashier's own discount. */}
           {offerDiscount > 0 && offers.map((o) => (
             <div key={o.offer_id} data-testid="payment-offer" className="flex justify-between text-amber-300">
@@ -315,7 +349,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                       key={m.code}
                       // A552: one leg on account per sale (one customer)
                       disabled={m.code === 'credit' && creditIdx >= 0 && creditIdx !== i}
-                      onClick={() => setLeg(i, { method: m.code })}
+                      onClick={() => setLegs(prev => legsAfterPick(prev, i, m.code, isPlatform))}   // A619: a platform pays the whole bill
                       aria-pressed={leg.method === m.code}
                       className={`py-2 rounded-lg text-xs border transition-colors ${leg.method === m.code ? 'font-bold' : 'font-medium bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'}`}
                       // A344: each method in its own colour. A430: the SELECTED one solid in it, white text, a halo and a ✓.
@@ -433,9 +467,12 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
           ))}
 
           <div className="flex items-center justify-between">
+            {/* A619: no split while a delivery platform is chosen — it pays the whole bill */}
+            {platform ? <span className="text-xs text-gray-400">{platformName} pays the whole bill</span> : (
             <button onClick={addLeg} className="text-xs text-action-400 hover:text-action-300 transition-colors font-medium">
               + Split payment
             </button>
+            )}
             {Math.abs(remaining) > EPSILON && (
               <span className={`text-xs font-medium ${remaining > 0 ? 'text-amber-400' : 'text-red-400'}`}>
                 {remaining > 0 ? `${fmt(remaining)} remaining` : `${fmt(Math.abs(remaining))} over`}
@@ -446,13 +483,39 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
 
         {(error || localError) && <p className="text-red-400 text-sm">{error || localError}</p>}
 
+        {confirmingPlatform && platform ? (
+          // A619: "a confirmation of payment method when a cashier clicks charge glovo, uber but cash there is no need"
+          <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-3 space-y-3" data-testid="platform-confirm">
+            <div>
+              <p className="text-white font-semibold">Charge to {platformName}?</p>
+              <p className="text-sky-300 text-sm mt-0.5">
+                {platformName} prices: {quote?.label} · {fmt(amountDue)}
+              </p>
+            </div>
+            <input
+              type="text" value={legs[0]?.reference ?? ''} autoFocus
+              onChange={e => setLeg(0, { reference: e.target.value })}
+              placeholder={buttons.find(b => b.code === platform)?.reference ?? 'Order #'}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500"
+            />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setConfirmingPlatform(false)} disabled={placing}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-3 text-sm font-medium">Back</button>
+              <button type="button" onClick={handleConfirm} disabled={!canConfirm}
+                className="flex-[2] bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors">
+                {placing && <span className="btn-spinner" aria-hidden="true" />}{placing ? 'Processing…' : `Charge to ${platformName}`}
+              </button>
+            </div>
+          </div>
+        ) : (
         <button
-          onClick={handleConfirm}
+          onClick={platform ? () => setConfirmingPlatform(true) : handleConfirm}   // A619: a platform asks first
           disabled={!canConfirm}
           className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
         >
           {placing && <span className="btn-spinner" aria-hidden="true" />}{placing ? 'Processing…' : `Charge ${fmt(amountDue)}`}
         </button>
+        )}
       </div>
     </div>
   );

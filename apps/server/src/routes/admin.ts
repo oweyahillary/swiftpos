@@ -76,6 +76,7 @@ import { checkApprovableVersion } from '../lib/desktopVersionApproval';   // A49
 import { startTrialIfEligible, readTrial, trialPhase, planLabel, planLabelsFor } from '../lib/cloudTrial';   // A569
 import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds, standingView, type CloudStanding,
   CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG, desktopOnlyView, desktopOnlyCutoffAt, cutoffPhase } from '../lib/cloudPlan';   // A581, A584, A601
+import { newBranchPremium, themesFreeFor, THEMES_FREE_FLAG } from '../lib/branchBilling';   // A617: a new branch on the free-Themes deal
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
@@ -1209,7 +1210,7 @@ router.get('/clients/:id/features', requireAdmin, async (req, res) => {
 });
 
 // A495. A601: the desktop-only cut-off's exemption (cloud_backup) and update release (desktop_updates) are paid too.
-const PAID_FEATURES = new Set(['web_hosting', CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG]);
+const PAID_FEATURES = new Set(['web_hosting', CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG, THEMES_FREE_FLAG]);   // A617: the free-Themes deal
 
 router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   const { id, key } = req.params;
@@ -1224,7 +1225,7 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled must be true or false' }); return; }
   // A495: web access is paid (A584: the cloud plan) — switching it is a super admin's call.
   if (PAID_FEATURES.has(key) && req.adminRole !== 'super_admin') {
-    const what = key === CLOUD_BACKUP_FLAG ? 'the cloud backup' : key === DESKTOP_UPDATES_FLAG ? 'desktop updates' : 'web access (a paid licence)';
+    const what = key === CLOUD_BACKUP_FLAG ? 'the cloud backup' : key === DESKTOP_UPDATES_FLAG ? 'desktop updates' : key === THEMES_FREE_FLAG ? 'the free-Themes deal' : 'web access (a paid licence)';
     res.status(403).json({ error: `Only a super admin can switch ${what}.`, code: 'SUPER_ADMIN_REQUIRED' });
     return;
   }
@@ -1762,10 +1763,12 @@ router.post('/clients/:id/branches', requireAdmin, async (req: any, res) => {
     const { data: plan } = await supabase.from('cloud_plans').select('period, amount, currency, custom_until').eq('business_id', businessId).maybeSingle();
     if (plan) {
       billedFrom = new Date().toISOString();
+      const start = newBranchPremium(await themesFreeFor(businessId));   // A617: the free-Themes deal, when the client is on it
       const bp = await supabase.from('branch_cloud_plans').insert({
         branch_id: (branch as { id: string }).id, business_id: businessId, period: (plan as any).period, amount: (plan as any).amount,
         currency: (plan as any).currency ?? 'KES', custom_until: (plan as any).custom_until ?? null, paid_until: billedFrom,
         created_at: billedFrom, updated_by: req.adminEmail ?? null, notes: 'A612: a new branch — billed from the day it was made',
+        premium: start.premium, ...(start.own_prices ? { own_prices: start.own_prices } : {}),
       });
       if (bp.error) { console.error('[admin] new branch plan not written:', bp.error.message); billedFrom = null; }
       else forgetStanding(businessId);

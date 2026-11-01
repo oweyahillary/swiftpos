@@ -199,6 +199,19 @@
     "package": "\"boolean\" NOT NULL",
     "own_prices": "\"jsonb\""
   },
+  "branch_mpesa_settings": {
+    "branch_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "type": "\"text\" NOT NULL",
+    "shortcode": "\"text\" NOT NULL",
+    "till_number": "\"text\"",
+    "consumer_key": "\"text\" NOT NULL",
+    "consumer_secret": "\"text\" NOT NULL",
+    "passkey": "\"text\" NOT NULL",
+    "environment": "\"text\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_by": "\"uuid\""
+  },
   "branch_prices": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -1069,7 +1082,10 @@
     "delivery_free": "\"boolean\" NOT NULL",
     "offer_discount": "\"numeric\" NOT NULL",
     "offers": "\"jsonb\"",
-    "buyer_kra_pin": "\"text\""
+    "buyer_kra_pin": "\"text\"",
+    "price_list": "\"text\"",
+    "platform_rule": "\"jsonb\"",
+    "platform_uplift": "\"numeric\""
   },
   "parking_sessions": {
     "id": "\"uuid\" NOT NULL",
@@ -1259,7 +1275,8 @@
     "is_kitchen": "\"boolean\"",
     "menu_visible": "\"boolean\" NOT NULL",
     "portions": "\"integer\" NOT NULL",
-    "show_days": "\"ARRAY\""
+    "show_days": "\"ARRAY\"",
+    "platform_prices": "\"jsonb\""
   },
   "promotions": {
     "id": "\"uuid\" NOT NULL",

@@ -29,6 +29,7 @@ import { supabase }  from '../lib/supabase';
 import { buildProductPatch, rowMatchKeys, importKey } from '../lib/productImport';
 import { applyPriceOp, parsePriceOp } from '../lib/priceOps';
 import { cleanShowDays } from '../lib/productDays';
+import { ownPricesValue, cleanOwnPrices } from '../lib/platformPrices';   // A619
 import { cleanMenuName, isDuplicateName, menusMissing } from '../lib/menus';   // A542: the import's `menu` column
 
 const router = safeRouter();
@@ -456,6 +457,26 @@ router.patch('/:id', PRODUCT_WRITE, validateLoose(UpdateProductSchema), async (r
   if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Product not found' }); return; }
   res.json(data);
+});
+
+// ── PUT /api/products/:id/platform-prices — A619: an item's own delivery platform prices ─────────────────────────────
+// Owner, 2026-11-01: an item may have its own Glovo / Uber Eats / Bolt Food price that wins over the platform's uplift
+// (drinks unchanged, a hand-priced combo). Body: { prices: { glovo: 1200, uber_eats: null } } — blank = the uplift. A price
+// is menu.prices (as the item's own price). Its own route, so a product form never fails over it before migration 187.
+router.put('/:id/platform-prices', requireAnyPermission('menu.prices', 'menu.edit'), async (req, res) => {
+  const prices = ownPricesValue(req.body?.prices);
+  if (prices === null) { res.status(400).json({ error: 'A platform price is an amount (blank = the platform\'s uplift).', code: 'INVALID_VALUE' }); return; }
+  const { data, error } = await supabase.from('products')
+    .update({ platform_prices: Object.keys(prices).length ? prices : null })
+    .eq('id', req.params.id).eq('business_id', req.businessId)
+    .select('id, platform_prices').maybeSingle();
+  if (error && /platform_prices/.test(error.message ?? '')) {
+    res.status(409).json({ error: 'Own platform prices need the latest database update (migration 187).', code: 'MIGRATION_187' });
+    return;
+  }
+  if (error) { sendError(res, error); return; }
+  if (!data) { res.status(404).json({ error: 'Product not found' }); return; }
+  res.json({ id: data.id, prices: cleanOwnPrices((data as { platform_prices?: unknown }).platform_prices) });
 });
 
 // ── DELETE /api/products/:id ──────────────────────────────────────────────────

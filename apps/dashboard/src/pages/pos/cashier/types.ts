@@ -111,6 +111,8 @@ export interface POSInitResponse {
   paymentMethodsEnabled?: string[];
   /** A445: the offers this branch runs (shared/offers.ts applies them to the cart). Absent from an older cloud = none. */
   offers?: unknown[];
+  /** A619: the delivery platforms' prices ({ rounding, rules }). Absent from an older cloud = normal prices. */
+  platformPrices?: unknown;
 }
 
 export type { CartItem, Product, Category, VariantGroup, VariantOption };

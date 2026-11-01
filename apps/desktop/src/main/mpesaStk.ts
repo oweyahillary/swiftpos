@@ -109,7 +109,8 @@ export function createStkPrompt(deps: StkDeps) {
       if (mine !== run) return { ...state };
       const j = await r.json().catch(() => ({}));
       if (r.status !== 200 || typeof j?.checkoutRequestId !== 'string' || !j.checkoutRequestId) {
-        const why = r.status === 422 ? 'M-Pesa is not set up for this business.'
+        // A618: where the owner sets it up (Settings › Payments › M-Pesa on the web dashboard) — per branch now
+        const why = r.status === 422 ? 'M-Pesa prompts are not set up for this branch. The owner adds them in Settings › Payments › M-Pesa.'
           : typeof j?.details === 'string' ? j.details.slice(0, 120) : typeof j?.error === 'string' ? j.error.slice(0, 120) : 'The prompt could not be sent.';
         deps.log(`stk: refused (${r.status})`);
         set({ stage: 'failed', reason: why });

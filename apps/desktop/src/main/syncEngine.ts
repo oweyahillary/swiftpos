@@ -20,7 +20,8 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setThemesPremium, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setThemesPremium, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled, setPlatformPricing } from './deviceConfig';
+import { cleanOwnPrices } from './platformPrices';   // A619
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
 import { notePushOk } from './distributionLag';   // A534 (A23): the branch server's distribution lag
@@ -2100,6 +2101,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setOrderNotePicks(c.noteQuickPicks);
   // A577: the scale label layout. undefined = not said → keep.
   setScaleBarcodes(c.scaleBarcodes);
+  // A619: the delivery platforms' prices (the payment screen re-prices with them, offline too). undefined = not said → keep.
+  setPlatformPricing(c.platformPrices);
   // 0.6.27: the per-client POS switches. undefined = not said → keep.
   setPosFeatures(c.posFeatures);
   // A599: the 'attendance' flag (premium) — the branch server pulls the attendance devices only while it is on.
@@ -2165,6 +2168,7 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
     webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
     noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
     scaleBarcodes: _j.scaleBarcodes && typeof _j.scaleBarcodes === 'object' ? _j.scaleBarcodes : undefined,   // A577
+    platformPrices: _j.platformPrices && typeof _j.platformPrices === 'object' ? _j.platformPrices : undefined,   // A619
     posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
     attendanceDevice: typeof _j.attendanceDevice === 'boolean' ? _j.attendanceDevice : undefined,   // A599: absent → keep
     etimsEnabled: typeof _j.etimsEnabled === 'boolean' ? _j.etimsEnabled : undefined,   // A607: absent → keep
@@ -2585,8 +2589,8 @@ function writeComboItems(db: LocalDbT, comboItems: Record<string, any[]> | undef
 }
 function writeProducts(db: LocalDbT, products: any[], now: string): void {
   const upsertProd = db.prepare(`
-    INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, sold_by, unit_label, synced_at)
-    VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @sold_by, @unit_label, @synced_at)
+    INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, sold_by, unit_label, platform_prices, synced_at)
+    VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @sold_by, @unit_label, @platform_prices, @synced_at)
     ON CONFLICT(id) DO UPDATE SET
       category_id=excluded.category_id, name=excluded.name, description=excluded.description,
       base_price=excluded.base_price, branch_price=excluded.branch_price, image_url=excluded.image_url,
@@ -2594,7 +2598,7 @@ function writeProducts(db: LocalDbT, products: any[], now: string): void {
       track_stock=excluded.track_stock, status=excluded.status,
       barcode=excluded.barcode, plu=excluded.plu, is_fuel=excluded.is_fuel,
       is_kitchen=excluded.is_kitchen, show_days=excluded.show_days,
-      sold_by=excluded.sold_by, unit_label=excluded.unit_label,
+      sold_by=excluded.sold_by, unit_label=excluded.unit_label, platform_prices=excluded.platform_prices,
       synced_at=excluded.synced_at
   `);
   for (const p of products) {
@@ -2610,6 +2614,8 @@ function writeProducts(db: LocalDbT, products: any[], now: string): void {
       plu:           (p as any).plu ?? (p as any).plu_code ?? null,
       sold_by:       typeof (p as any).sold_by === 'string' ? (p as any).sold_by : null,         // A577
       unit_label:    typeof (p as any).unit_label === 'string' ? (p as any).unit_label : null,   // A577
+      // A619: the item's own platform prices, cleaned (the cloud's jsonb, or a branch server's relayed text); none → NULL.
+      platform_prices: (() => { const o = cleanOwnPrices((p as any).platform_prices); return Object.keys(o).length ? JSON.stringify(o) : null; })(),
       branch_price:  (p as any).branch_price ?? null,
       // Preserve the tri-state: null must stay null, not become 0.
       is_kitchen:    typeof (p as any).is_kitchen === 'boolean' ? ((p as any).is_kitchen ? 1 : 0) : null,

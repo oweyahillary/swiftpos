@@ -4,6 +4,7 @@ import { effectiveKeysForRow, clientPermissionMap } from '../lib/effectivePermis
 import { offersForBranch } from './offers';   // A445
 import { promotionOffersFor } from '../lib/promotionOffers';   // A518
 import { enabledFromSetting } from '../lib/paymentCatalogue';   // A429
+import { loadPlatformPricing } from '../lib/platformPricing';   // A619
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
 import { parseReversalRules, REVERSAL_SETTING_KEYS } from '../lib/reversalRules';
@@ -653,6 +654,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     cashierHistoryTotals: historyTotalsOn(receiptText.cashier_sees_shift_sales, receiptText.cashier_history_totals),
     // A429: the payment methods this branch takes (catalogue codes); the branch's own value wins; absent = the defaults.
     paymentMethodsEnabled: enabledFromSetting(receiptText.payment_methods_enabled),
+    // A619: the delivery platforms' prices — the business's rounding and this branch's rule per platform (its own, else
+    // the business's); { rounding: 'exact', rules: {} } = normal prices. Always sent; older POSs ignore it.
+    platformPrices: await loadPlatformPricing(req.businessId, (opBranch as { id?: string } | null)?.id ?? null),
     // 0.6.35 (A384): the tech allocated to this client (admin portal) — their name and number on the till's Help.
     // Always sent: null = no tech → the Help shows SwiftPOS support's numbers (shared/support.ts). Older tills ignore it.
     support: await getSupportContact(req.businessId),

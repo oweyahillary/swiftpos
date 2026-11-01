@@ -61,7 +61,7 @@ import {
   type CloudStanding, type BranchPlanRow,
 } from '../lib/cloudPlan';
 import { receiptEmailHtml, invoiceItems, type BranchBill } from '../lib/cloudPlanEmail';
-import { readBillingDetails, branchBill, periodMonths, premiumOf, isPremiumKey, PREMIUM_KEYS, ownPricesOf, mergeOwnPrices } from '../lib/branchBilling';   // A612, A617
+import { readBillingDetails, branchBill, periodMonths, premiumOf, isPremiumKey, PREMIUM_KEYS, ownPricesOf, mergeOwnPrices, newBranchPremium, themesFreeFor } from '../lib/branchBilling';   // A612, A617
 import { ownerEmailOf } from '../jobs/cloudPlanReminders';
 
 const router = safeRouter();
@@ -110,7 +110,7 @@ async function planView(businessId: string) {
   const rows = facts?.branchPlans ?? [];
   const rowBy = new Map(rows.map((r) => [String(r.branch_id), r]));
   const { data: brs } = await supabase.from('branches').select('id, name, is_main').eq('business_id', businessId).order('created_at', { ascending: true });
-  const details = await readBillingDetails(now);
+  const [details, themesFree] = await Promise.all([readBillingDetails(now), themesFreeFor(businessId)]);
   const branches = ((brs ?? []) as Array<{ id: string; name: string | null; is_main?: boolean }>).map((b) => {
     const row = rowBy.get(String(b.id)) ?? null;
     const bs = row && facts ? cloudStanding(branchFactsFor(facts, row), now) : null;
@@ -124,6 +124,7 @@ async function planView(businessId: string) {
     plan: facts?.plan ?? null,
     standing: s ? standingView(s) : null,
     per_branch: rows.length > 0,   // A612
+    themes_free: themesFree,   // A617: on the free-Themes deal — its new branches start with Themes at 0
     branches,
     prices: details.prices,
     open_invoices: open,   // A587: what a payment offsets, oldest first
@@ -402,17 +403,19 @@ router.put('/:businessId/cloud-plan/branches/:branchId', requireAdmin, requireSu
   if (b.premium !== undefined && (!Array.isArray(b.premium) || !b.premium.every(isPremiumKey))) {
     res.status(400).json({ error: `premium is a list of: ${PREMIUM_KEYS.join(', ')}`, code: 'BAD_PREMIUM' }); return;
   }
+  // A617: a branch without a row yet starts from the free-Themes deal when its business is on it.
+  const start = before ? null : newBranchPremium(await themesFreeFor(client.id));
   // A617: the branch's own prices — merged onto what it has (keys not sent are kept).
-  const own = b.own_prices === undefined ? null : mergeOwnPrices(b.own_prices, ownPricesOf(before));
+  const own = b.own_prices === undefined ? null : mergeOwnPrices(b.own_prices, before ? ownPricesOf(before) : start?.own_prices ?? {});
   if (own && 'error' in own) { res.status(400).json({ error: own.error, code: 'BAD_OWN_PRICE' }); return; }
   const row = {
     branch_id: branchId, business_id: client.id, period, amount, currency: 'KES',
     custom_until: period === 'custom' ? customUntil ?? before?.custom_until ?? null : null,
     web_off: b.web_off === undefined ? !!before?.web_off : b.web_off === true,
-    premium: b.premium === undefined ? before?.premium ?? [] : [...new Set(b.premium as string[])],
+    premium: b.premium === undefined ? before?.premium ?? start?.premium ?? [] : [...new Set(b.premium as string[])],
     package: b.package === undefined ? !!before?.package : b.package === true,
-    // A617: only when sent — a save without own_prices never names the column (a database before migration 185)
-    ...(own?.ok ? { own_prices: own.value } : {}),
+    // A617: only when sent (or the deal's start) — otherwise the save never names the column (a database before 185)
+    ...(own?.ok ? { own_prices: own.value } : start?.own_prices ? { own_prices: start.own_prices } : {}),
     notes: b.notes === undefined ? before?.notes ?? null : text(b.notes, 500),
     updated_by: req.adminEmail ?? null, updated_at: new Date().toISOString(),
     // a new row: paid until the business's date (it inherits, as migration 182 did), billing from today
@@ -437,10 +440,12 @@ router.post('/:businessId/cloud-plan/branches/start', requireAdmin, requireSuper
   const fresh = ((brs ?? []) as Array<{ id: string; name: string | null }>).filter((b) => !rowBy.has(String(b.id)));
   if (fresh.length) {
     const now = new Date().toISOString();
+    const start = newBranchPremium(await themesFreeFor(client.id));   // A617: the free-Themes deal, when the client is on it
     const { error } = await supabase.from('branch_cloud_plans').insert(fresh.map((b) => ({
       branch_id: b.id, business_id: client.id, period: facts.plan!.period, amount: facts.plan!.amount, currency: facts.plan!.currency ?? 'KES',
       custom_until: facts.plan!.custom_until ?? null, paid_until: facts.expiresAt ?? null, billing_from: facts.plan!.billing_from ?? null,
       created_at: facts.plan!.created_at ?? now, updated_by: req.adminEmail ?? null,
+      premium: start.premium, ...(start.own_prices ? { own_prices: start.own_prices } : {}),
     })));
     if (error) { sendError(res, error); return; }
   }

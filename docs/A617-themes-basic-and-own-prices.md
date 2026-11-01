@@ -53,9 +53,19 @@ Once (guarded by its own `schema_migrations` row), every branch row of a busines
 `themes` in its premium (never twice) and an own Themes price of 0 (only when it has no own Themes price yet). Nothing
 else changes; businesses without the switch are untouched.
 
-**Not covered by the migration:** a branch billed per branch **after** it runs (a new branch of a client billed per
-branch, or "Bill per branch" later) starts with no premium, as A612 does. Tick Themes and set its own price to 0 by hand
-if that client should keep it free there too.
+**New branches of current clients get it too** (owner, 2026-11-01: "they do not pay for now"). The same once, migration
+185 sets ZapTill's own flag `themes_free` on every business that had Themes. While it is on, every branch row the server
+makes starts with Themes at an own price of 0:
+- a branch ZapTill adds to a client billed per branch;
+- the first save of a branch that had no row;
+- **Bill per branch** switched on later.
+
+An admin's own choices on that first save win, and existing rows are never changed by the deal. Brand-new clients have no
+flag, so they pay the global Themes price.
+
+**Ending the deal:** the client's **Branch billing** card says "Free Themes …" with **End the deal** (super admin only;
+the flag is a paid switch like web access). New branches then start without Themes; branches already on it keep Themes
+at 0 until you edit them.
 
 ## 4. Run order
 

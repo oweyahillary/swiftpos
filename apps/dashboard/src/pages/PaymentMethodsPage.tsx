@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
 import { BusinessPaymentMethods } from './settings/OwnerControls';   // A490: the business-wide list
+import MpesaStkSettings from './settings/MpesaStkSettings';   // A618: the STK push details, per branch
+import { usePermissions } from '../context/PermissionsContext';
+import { BusinessPlatformPrices } from './settings/PlatformPrices';   // A619
 
 // Custom payment methods, per business (register A95 / #4). The built-in tenders
 // (Cash, M-Pesa, Card) are always available at the POS and are not listed here —
@@ -17,6 +20,7 @@ interface PaymentMethod {
 
 export default function PaymentMethodsPage() {
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
+  const { isOwner } = usePermissions();   // A618: the M-Pesa details are the owner's alone
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -84,6 +88,10 @@ export default function PaymentMethodsPage() {
     <div className="max-w-2xl mx-auto p-4 sm:p-6">
       {/* A490: which of Kenya's ways to pay the business takes by default (a branch can choose its own). */}
       <div className="mb-8"><BusinessPaymentMethods /></div>
+      {/* A618 (owner, 2026-11-01): the Daraja details that send the M-Pesa prompt — the default and per branch. */}
+      {isOwner && <div className="mb-8"><MpesaStkSettings /></div>}
+      {/* A619: what Glovo, Uber Eats, Bolt Food … charge — a percentage or an amount per item, and the rounding. */}
+      <div className="mb-8"><BusinessPlatformPrices /></div>
       <h1 className="text-xl font-semibold text-white">Payment methods</h1>
       <p className="text-sm text-gray-400 mt-1">
         Cash, M-Pesa and Card are always available. Add any other methods you accept —

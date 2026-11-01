@@ -96,7 +96,8 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      setStockCountFreeze: () => {}, setCashierSeesShiftSales: () => {}, setCashierHistoryTotals: () => {},   // A394
                      setPaymentMethodsEnabled: () => {},   // A429
                      setScaleBarcodes: () => {},   // A577
-                     setThemesPremium: () => {} };   // A617`);
+                     setThemesPremium: () => {},   // A617
+                     setPlatformPricing: () => {} };   // A619`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

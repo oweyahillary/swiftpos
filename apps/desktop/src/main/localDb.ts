@@ -1214,6 +1214,9 @@ function initSchema(db: Database.Database) {
     // A577 (77): how the business's weighing scales print their labels — JSON (shared/scaleBarcode.ts). Pulled
     // (scaleBarcodes), never pushed. NULL = not told yet = the default layout (21–29, item 5, price 5).
     ['scale_barcodes', 'TEXT'],
+    // A619 (79): the delivery platforms' prices — JSON { rounding, rules } (shared/platformPrices.ts). Pulled (platformPrices),
+    // never pushed. NULL = not told yet = normal prices.
+    ['platform_prices', 'TEXT'],
   ]);
 
   // A445 (70): offers — the branch's offers, pulled with the menu (pos/init `offers`) and applied to the cart by the till's
@@ -1290,6 +1293,9 @@ function initSchema(db: Database.Database) {
     // unit ('kg', or 'g' for an item shown in grams). Pulled, never pushed. NULL = sold each (every till before 77).
     ['sold_by', 'TEXT'],
     ['unit_label', 'TEXT'],
+    // A619 (79): the item's own price per delivery platform, JSON ({"glovo": 1200}; migration 187). Pulled, never pushed.
+    // NULL = the platform's uplift.
+    ['platform_prices', 'TEXT'],
   ]);
   // A607 (78): the buyer's KRA PIN on this sale (customer details at the counter) — in the order payload (POST /api/orders
   // buyer_kra_pin → the receipt and KRA eTIMS); migration 181. NULL = none.
@@ -1372,7 +1378,9 @@ function initSchema(db: Database.Database) {
 // 77 adds A577: products.sold_by + products.unit_label (pulled — items sold by weight) and device_config.scale_barcodes
 // (pulled — the scale label layout). REQUIRED moves.
 // 78 adds A607: orders.buyer_kra_pin (the order payload — the buyer's KRA PIN for this sale; migration 181). REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 78;
+// 79 adds A619: device_config.platform_prices and products.platform_prices (both pulled — the delivery platforms' prices;
+// migration 187). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 79;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

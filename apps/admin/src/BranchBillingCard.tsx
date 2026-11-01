@@ -24,7 +24,7 @@ interface BranchRow { branch_id: string; name: string | null; is_main: boolean; 
 type OwnKey = "analytics" | "attendance" | "themes" | "package";
 type OwnPrices = Partial<Record<OwnKey, number>>;
 interface Prices { cloud: number; analytics: number; attendance: number; themes: number; package: number }
-interface View { per_branch: boolean; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
+interface View { per_branch: boolean; themes_free?: boolean; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
 interface Preview { expected: number; branches: Array<{ branch_id: string; name: string; from: string; until: string; fresh: boolean }> }
 
 const TONE: Record<string, string> = { ok: "#34e5a0", warn: "#f59e0b", bad: C.danger, muted: C.muted };
@@ -87,6 +87,22 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
   const field = (title: string, el: React.ReactNode) => (
     <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: C.muted, minWidth: 120, flex: 1 }}>{title}{el}</label>
   );
+  // A617 (owner, 2026-11-01: a current client's new branches "do not pay for now"): the free-Themes deal, and its end.
+  const endThemesDeal = async () => {
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      await req("PATCH", `/clients/${clientId}/features/themes_free`, { enabled: false, notes: "A617: the free-Themes deal ended" });
+      setNotice("Deal ended: new branches start without Themes. Branches already on it keep Themes at 0 until you edit them.");
+      load(); onChanged?.();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+  const themesDeal = view.themes_free ? (
+    <div data-testid="themes-free-deal" style={{ fontSize: 12, color: C.muted, margin: "8px 0", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <span>Free Themes (a client from before per-branch billing): its new branches start with Themes at KES 0.</span>
+      {isSuper && <button data-testid="themes-free-end" disabled={busy} onClick={endThemesDeal}
+        style={{ ...S.btn, ...S.btnGhost, fontSize: 11, opacity: busy ? 0.5 : 1 }}>End the deal</button>}
+    </div>
+  ) : null;
 
   if (!view.per_branch) {
     return (
@@ -96,6 +112,7 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
           This client is billed as one business. Billed per branch, each branch has its own plan, premium and paid-until; a branch that
           does not pay is cut off on its own (its POS stop syncing, nobody sees its data) and the owner gets one invoice for the branches due.
         </div>
+        {themesDeal}
         {isSuper && (
           <button data-testid="branches-start" disabled={busy || !view.plan} title={view.plan ? undefined : "Set the plan first"}
             onClick={() => run(() => req("POST", `/clients/${clientId}/cloud-plan/branches/start`), () => "Billed per branch from now: every branch has the business's plan and paid-until.")}
@@ -121,6 +138,7 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
           A month: Cloud {kes(view.prices.cloud)} · Analytics {kes(view.prices.analytics)} · Attendance {kes(view.prices.attendance)} · Themes {kes(view.prices.themes)} · Premium package {kes(view.prices.package)}
         </div>
       </div>
+      {themesDeal}
       {notice && <div style={{ fontSize: 12, color: "#34e5a0", margin: "8px 0" }}>{notice}</div>}
       {error && <div style={{ fontSize: 12, color: C.danger, margin: "8px 0" }}>{error}</div>}
 

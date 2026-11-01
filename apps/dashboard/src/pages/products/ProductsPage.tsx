@@ -19,6 +19,7 @@ import Pager, { usePageSize } from '../../components/Pager';   // A472
 import { paginate, groupDigits } from '../../lib/paginate';
 import { nextInStoreCodes } from '../../lib/barcode';   // A571
 import GenerateBarcodes from './GenerateBarcodes';      // A571
+import PlatformPriceFields, { platformDraftOf, savePlatformPrices, usePlatformsTaken, type PlatformPriceDraft } from './PlatformPriceFields';   // A619
 import { useNavigate } from 'react-router-dom';
 
 const EMPTY_FORM = {
@@ -51,6 +52,10 @@ export default function ProductsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  // A619: the item's own delivery platform prices (blank = the platform's uplift), and as they were when opened.
+  const [platformDraft, setPlatformDraft] = useState<PlatformPriceDraft>({});
+  const [platformBefore, setPlatformBefore] = useState<PlatformPriceDraft>({});
+  const platformsTaken = usePlatformsTaken();
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -167,6 +172,7 @@ export default function ProductsPage() {
   const openNew = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setPlatformDraft({}); setPlatformBefore({});   // A619
     setImageFile(null);
     setImagePreview(null);
     setError('');
@@ -193,6 +199,7 @@ export default function ProductsPage() {
       plu_code: (p as any).plu_code ?? '',                              // A577
       unit_label: (p as any).unit_label === 'g' ? 'g' : 'kg',          // A577
     });
+    setPlatformDraft(platformDraftOf((p as any).platform_prices)); setPlatformBefore(platformDraftOf((p as any).platform_prices));   // A619
     setImageFile(null);
     setImagePreview(p.image_url);
     setError('');
@@ -268,13 +275,17 @@ export default function ProductsPage() {
     };
 
     try {
+      let savedId = editing?.id ?? '';
       if (editing) {
         await api.patch(`/api/products/${editing.id}`, payload);
       } else {
-        await api.post('/api/products', payload);
+        savedId = (await api.post<{ id?: string }>('/api/products', payload))?.id ?? '';
       }
+      // A619: the item's own platform prices, through their own route (the item is saved whatever happens to them).
+      const platformError = savedId ? await savePlatformPrices(savedId, platformDraft, platformBefore) : '';
       await fetchAll();
       setSaving(false);
+      if (platformError) { setError(platformError); return; }
       setShowModal(false);
     } catch (err: any) {
       setError(err.message);
@@ -764,6 +775,9 @@ export default function ProductsPage() {
               </button>
               <label className="text-sm text-gray-400">Track stock for this product</label>
             </div>
+
+            {/* A619: the item's own Glovo / Uber Eats / Bolt Food price — only when the business takes a platform. */}
+            {!form.is_fuel && <PlatformPriceFields platforms={platformsTaken} value={platformDraft} onChange={setPlatformDraft} currency={currency} />}
 
             {/* 0.6.31: show on the POS grid / QR menu only on chosen days. Still sold any day — a search finds it. */}
             <div data-testid="show-days">

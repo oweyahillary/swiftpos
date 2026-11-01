@@ -99,6 +99,8 @@ export interface ReferenceBundle {
     noteQuickPicks?: string[] | null;
     /** A577: the scale label layout (shared/scaleBarcode.ts); null = the node has not been told. */
     scaleBarcodes?: unknown;
+    /** A619: the delivery platforms' prices ({ rounding, rules }); null = the node has not been told. */
+    platformPrices?: unknown;
     /** 0.6.27: the per-client POS switches; null = the node has not been told. */
     posFeatures?: Record<string, boolean> | null;
     /** 0.6.30: the owner's void window and offline void/refund rules; null = the node has not been told. */
@@ -175,6 +177,7 @@ export interface ReferenceRows {
     themesPremium?: boolean | null;  // A617
     noteQuickPicks?: string[] | null; // A367
     scaleBarcodes?: unknown;          // A577
+    platformPrices?: unknown;         // A619
     posFeatures?: Record<string, boolean> | null; // 0.6.27
     reversalRules?: ReversalRules | null;         // 0.6.30
     businessName?: string | null;                 // A450
@@ -246,6 +249,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
     plu: p.plu ?? null,
     sold_by: p.sold_by ?? null,         // A577: relayed so a peer sells weighed items by weight
     unit_label: p.unit_label ?? null,   // A577
+    platform_prices: p.platform_prices ?? null,   // A619: relayed so a peer charges the item's own platform prices
     is_fuel: asBool(p.is_fuel),
     is_kitchen: asTriBool(p.is_kitchen),   // tri-state — see asTriBool
     show_days: cleanShowDays(p.show_days) ?? null,   // 0.6.31: relayed so a peer shows the same products each day
@@ -309,6 +313,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       themesPremium: rows.config.themesPremium ?? null,   // A617: relayed so a peer's customer screen wears the logo only with Themes
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       scaleBarcodes: rows.config.scaleBarcodes ?? null,   // A577: relayed so a peer reads the same scale labels
+      platformPrices: rows.config.platformPrices ?? null,   // A619: relayed so a peer charges the same platform prices offline
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
       reversalRules: rows.config.reversalRules ?? null,   // 0.6.30: relayed so a peer applies the owner's rules offline
       // A450: the business's name and currency, and the receipt's Buy Goods / Paybill line — relayed so a peer prints them.
@@ -387,7 +392,7 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
   const rows: ReferenceRows = {
     products: all(`SELECT id, category_id, name, description, base_price, branch_price, image_url,
                           has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days,
-                          sold_by, unit_label
+                          sold_by, unit_label, platform_prices
                    FROM products`),
     categories: all(`SELECT id, name, color, icon, sort_order, status, is_kitchen, menu_id FROM categories`),
     menus: all(`SELECT id, name, sort_order, active, color, icon, availability FROM menus WHERE active = 1 ORDER BY sort_order, name`),   // A537; A578 hours
@@ -478,6 +483,13 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
           return typeof raw === 'string' && raw ? JSON.parse(raw) : null;
         } catch { return null; }   // a database before local schema 77
       })(),
+      // A619: null until the node itself has heard from the cloud (a peer then keeps its own value).
+      platformPrices: (() => {
+        try {
+          const raw = all(`SELECT platform_prices FROM device_config WHERE id = 1`)[0]?.platform_prices;
+          return typeof raw === 'string' && raw ? JSON.parse(raw) : null;
+        } catch { return null; }   // a database before local schema 79
+      })(),
       // 0.6.27: null until the node itself has heard from the cloud (a peer then keeps its own value).
       posFeatures: typeof cfg?.pos_features === 'string' ? parsePosFeatures(cfg.pos_features) : null,
       // 0.6.30: likewise null until the node has heard the owner's rules from the cloud.
@@ -559,6 +571,8 @@ export interface AcquiredReference {
     noteQuickPicks?: string[];
     /** A577: the scale label layout. undefined = not said (older cloud / older node) → keep. */
     scaleBarcodes?: unknown;
+    /** A619: the delivery platforms' prices. undefined = not said (older cloud / older node) → keep. */
+    platformPrices?: unknown;
     /** 0.6.27: the per-client POS switches. undefined = not said (older cloud / older node) → keep. */
     posFeatures?: Record<string, boolean>;
     /** A601: the desktop-only cut-off (cloudBackup.ts). undefined = not said (older cloud / older node) → keep. */
@@ -632,6 +646,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       themesPremium: typeof pi.themesPremium === 'boolean' ? pi.themesPremium : undefined,   // A617: a node that has not heard says nothing
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
       scaleBarcodes: pi.scaleBarcodes && typeof pi.scaleBarcodes === 'object' ? pi.scaleBarcodes : undefined,   // A577
+      platformPrices: pi.platformPrices && typeof pi.platformPrices === 'object' ? pi.platformPrices : undefined,   // A619
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27
       reversalRules: pi.reversalRules && typeof pi.reversalRules === 'object' ? rulesFromWire(pi.reversalRules) : undefined,   // 0.6.30
       ...identityFromWire(pi),   // A450 + A381

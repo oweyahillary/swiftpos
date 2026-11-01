@@ -643,7 +643,8 @@ declare global {
         forecourt: () => Promise<Forecourt>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
         /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
-        paymentMethodsEnabled: () => Promise<{ enabled: string[] | null }>;
+        /** A429; A619: + the delivery platforms' prices ({ rounding, rules }; absent from an older main = normal prices). */
+        paymentMethodsEnabled: () => Promise<{ enabled: string[] | null; platformPrices?: unknown }>;
         /** A445: the branch's offers as the till holds them, and its branch (an offer may be for chosen branches). */
         offers: () => Promise<{ offers: import('../../shared/offers').Offer[]; branchId: string | null }>;
         onCatalogueChanged: (cb: () => void) => () => void;   // A278

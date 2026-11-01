@@ -25,6 +25,7 @@ import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
 import { parseStockCountFreeze, freezeExpired, NO_FREEZE, type StockCountFreeze } from './stockCountFreeze';   // A394, A521
 import { logLine } from './logFile';   // A521
 import { cleanScaleSettings, scaleSettingsOrDefault, type ScaleSettings } from './scaleBarcode';   // A577
+import { cleanPricing, type PlatformPricing } from './platformPrices';   // A619
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -537,6 +538,26 @@ export function getScaleSettings(): ScaleSettings {
     return scaleSettingsOrDefault(r?.scale_barcodes ?? null);
   } catch {
     return scaleSettingsOrDefault(null);
+  }
+}
+
+/**
+ * A619: cache the delivery platforms' prices (the cloud's `platformPrices`: { rounding, rules }, shared/platformPrices.ts).
+ * undefined / null = not said (an older cloud or branch server) → keep what this POS holds. Stored cleaned. The ONLY writer.
+ */
+export function setPlatformPricing(raw: unknown): void {
+  if (raw === undefined || raw === null || typeof raw !== 'object') return;
+  try { getLocalDb().prepare(`UPDATE device_config SET platform_prices = ? WHERE id = 1`).run(JSON.stringify(cleanPricing(raw))); }
+  catch { /* a database before local schema 79 */ }
+}
+
+/** A619: the delivery platforms' prices this POS charges (normal prices until told — offline too). */
+export function getPlatformPricing(): PlatformPricing {
+  try {
+    const r = getLocalDb().prepare(`SELECT platform_prices FROM device_config WHERE id = 1`).get() as { platform_prices?: string | null } | undefined;
+    return cleanPricing(r?.platform_prices ?? null);
+  } catch {
+    return cleanPricing(null);
   }
 }
 

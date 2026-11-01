@@ -47,6 +47,7 @@ import expensesRoutes      from './expenses';
 import recipesRoutes       from './recipes';
 import printersRoutes      from './printers';
 import mpesaRoutes         from './mpesa';
+import mpesaSettingsRoutes from './mpesaSettings';   // A618
 import webhooksRoutes      from './webhooks';
 import { fuelTanksRouter, pumpsRouter } from './fueltanks';
 import combosRoutes        from './combos';
@@ -142,6 +143,7 @@ router.use('/loyalty',        loyaltyRoutes);
 router.use('/credit',         creditRoutes);
 router.use('/notifications',  notificationsRoutes);
 router.use('/webhooks',       webhooksRoutes);
+router.use('/mpesa/settings', mpesaSettingsRoutes);   // A618: the STK push details per branch — before /mpesa
 router.use('/mpesa',          mpesaRoutes);
 router.use('/fuel-tanks',     fuelTanksRouter);
 router.use('/pumps',          pumpsRouter);

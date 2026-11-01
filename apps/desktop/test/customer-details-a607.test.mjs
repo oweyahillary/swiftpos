@@ -347,7 +347,8 @@ try {
     const RB = require(path.join(dist, 'referenceBundle.js'));
     const required = Number((fs.readFileSync(path.join(desktop, '..', 'server', 'src', 'lib', 'desktopSchema.ts'), 'utf8').match(/REQUIRED_DESKTOP_SCHEMA = (\d+)/) || [])[1]);
     const cols = db.prepare(`PRAGMA table_info(orders)`).all().map((c) => c.name);
-    ok('local schema 78: orders.buyer_kra_pin; REQUIRED moves with it', L.LOCAL_SCHEMA_VERSION === 78 && required === 78 && cols.includes('buyer_kra_pin'),
+    // A619 moved the local schema to 79 (the delivery platforms' prices); A607 made it 78.
+    ok('local schema 78: orders.buyer_kra_pin; REQUIRED moves with it', L.LOCAL_SCHEMA_VERSION >= 78 && required === L.LOCAL_SCHEMA_VERSION && cols.includes('buyer_kra_pin'),
       JSON.stringify({ v: L.LOCAL_SCHEMA_VERSION, required }));
     ok('DC getEtimsFlag: off until told', DC.getEtimsFlag() === false);
     await E.pullCatalogueNow();

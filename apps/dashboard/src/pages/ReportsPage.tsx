@@ -40,7 +40,8 @@ interface MasterReport {
     totalDeliveryFees?: number; totalTips?: number; totalCollected?: number;
   };
   channels: { channel: string; amount: number; pct: number }[];
-  payments: { method: string; amount: number }[];
+  /** A619: `uplift` — of a delivery platform's sales, what its prices added (platform − normal prices). */
+  payments: { method: string; amount: number; uplift?: number }[];
   categoryBreakdown: { category: string; superCategory: string; qty: number; netSales: number }[];
   expenses: { total: number; breakdown: { category: string; amount: number }[] };
 }
@@ -294,9 +295,9 @@ function MasterTab({ range, branchId, currency, meta, staffId }: TabProps) {
     { name: 'Order Channels', columns: [col('channel', 'Channel'), money('amount', 'Amount'), num('pct', 'Share %', 1)],
       rows: channels.filter(c => c.amount > 0).sort((a, b) => b.amount - a.amount)
         .map(c => ({ channel: CHANNEL_LABELS[c.channel] ?? c.channel, amount: c.amount, pct: c.pct })) },
-    { name: 'Payment Methods', columns: [col('method', 'Method'), money('amount', 'Amount'), num('pct', 'Share %', 1)],
+    { name: 'Payment Methods', columns: [col('method', 'Method'), money('amount', 'Amount'), num('pct', 'Share %', 1), money('uplift', 'Of which uplift')],
       rows: [...[...payments].sort((a, b) => b.amount - a.amount)
-        .map(p => ({ method: p.method.replace(/_/g, ' '), amount: p.amount, pct: share(p.amount, paidTotal) })),
+        .map(p => ({ method: p.method.replace(/_/g, ' '), amount: p.amount, pct: share(p.amount, paidTotal), uplift: p.uplift ?? null })),   // A619
         ...(payments.length > 0 ? [{ method: 'Total paid', amount: paidTotal, pct: null }] : [])] },
     { name: 'Category Breakdown',
       columns: [col('category', 'Category'), col('superCategory', 'Super Category'), num('qty', 'Qty', 3), money('netSales', 'Net Sales'), num('pct', 'Share %', 1)],
@@ -382,7 +383,10 @@ function MasterTab({ range, branchId, currency, meta, staffId }: TabProps) {
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {payments.sort((a, b) => b.amount - a.amount).map(p => (
                 <tr key={p.method}>
-                  <td className="py-2 text-gray-700 dark:text-gray-300 capitalize">{p.method.replace(/_/g, ' ')}</td>
+                  <td className="py-2 text-gray-700 dark:text-gray-300 capitalize">{p.method.replace(/_/g, ' ')}
+                    {/* A619: a delivery platform's sales at its own prices — what those prices added */}
+                    {p.uplift ? <span className="block text-xs normal-case text-gray-400" data-testid="platform-uplift">of which uplift {fmt.money(p.uplift, currency)}</span> : null}
+                  </td>
                   <td className="py-2 text-right font-medium tabular-nums text-gray-900 dark:text-white">{fmt.money(p.amount, currency, { blank: '—' })}</td>
                   {/* A451: a share of what was PAID (it includes delivery fees and tips) — the shares add up to 100%. */}
                   <td className="py-2 text-right text-gray-400 w-14">{fmt.pct(paidTotal > 0 ? (p.amount / paidTotal) * 100 : 0)}</td>

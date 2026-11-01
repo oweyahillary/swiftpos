@@ -188,6 +188,55 @@ try {
     assert.equal(plan(B2).web_off, true); assert.deepEqual(plan(B2).own_prices, { package: 12000 }, 'unchanged');
     assert.match(r.body.notice, /migration 185/);
   });
+
+  // The free-Themes deal for a current client's NEW branches (owner, 2026-11-01: they "do not pay for now").
+  const B3 = u(13);
+  const addBranch = () => mem.db.branches.push({ id: B3, business_id: M, name: 'Kilimani', is_main: false, status: 'active', created_at: '2026-11-01' });
+  const dealOn = () => mem.db.feature_flags.push({ business_id: M, key: 'themes_free', enabled: true });
+  await ok('the deal (pure): Themes at an own price of 0 when on; nothing when off', () => {
+    assert.deepEqual(BB.newBranchPremium(true), { premium: ['themes'], own_prices: { themes: 0 } });
+    assert.deepEqual(BB.newBranchPremium(false), { premium: [], own_prices: null });
+  });
+  await ok('a new branch of a client on the deal starts with Themes at 0; the view says the client is on it', async () => {
+    reset(); addBranch(); dealOn();
+    const r = await put(B3, { period: 'monthly', amount: 3000 });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual([plan(B3).premium, plan(B3).own_prices], [['themes'], { themes: 0 }]);
+    assert.equal(r.body.themes_free, true);
+  });
+  await ok('…a client not on it: no Themes, and the save never names own_prices', async () => {
+    reset(); addBranch(); mem.calls = [];
+    assert.equal((await put(B3, { period: 'monthly', amount: 3000 })).status, 200);
+    assert.deepEqual(plan(B3).premium, []);
+    assert.ok(!('own_prices' in plan(B3)) || plan(B3).own_prices == null);
+    const r = await call('GET', `/api/admin/clients/${M}/cloud-plan`, ADMIN);
+    assert.equal(r.body.themes_free, false);
+  });
+  await ok('…the admin\'s first save wins over the deal (premium and own prices sent)', async () => {
+    reset(); addBranch(); dealOn();
+    assert.equal((await put(B3, { period: 'monthly', amount: 3000, premium: ['analytics'], own_prices: { analytics: 5000 } })).status, 200);
+    assert.deepEqual([plan(B3).premium, plan(B3).own_prices], [['analytics'], { themes: 0, analytics: 5000 }]);
+  });
+  await ok('…an existing branch is never changed by the deal (only rows the server makes)', async () => {
+    reset(); dealOn();
+    mem.db.branch_cloud_plans[0].premium = ['analytics']; mem.db.branch_cloud_plans[0].own_prices = null;
+    assert.equal((await put(B1, { web_off: false })).status, 200);
+    assert.deepEqual([plan(B1).premium, plan(B1).own_prices], [['analytics'], null]);
+  });
+  await ok('"Bill per branch" later: every branch of a client on the deal starts with Themes at 0', async () => {
+    reset(); dealOn(); mem.db.branch_cloud_plans = [];
+    const r = await call('POST', `/api/admin/clients/${M}/cloud-plan/branches/start`, ADMIN);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    for (const b of [B1, B2]) assert.deepEqual([plan(b).premium, plan(b).own_prices], [['themes'], { themes: 0 }], b);
+  });
+  await ok('a branch added by ZapTill (admin) to a client billed per branch takes the deal too; ending it is a super admin\'s', () => {
+    const admin = read('apps/server/src/routes/admin.ts');
+    assert.match(admin, /const start = newBranchPremium\(await themesFreeFor\(businessId\)\);[^\n]*\n\s*const bp = await supabase\.from\('branch_cloud_plans'\)\.insert\(\{[\s\S]{0,500}premium: start\.premium, \.\.\.\(start\.own_prices \? \{ own_prices: start\.own_prices \} : \{\}\),/);
+    assert.match(admin, /const PAID_FEATURES = new Set\(\['web_hosting', CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG, THEMES_FREE_FLAG\]\);/);
+    const card = read('apps/admin/src/BranchBillingCard.tsx');
+    assert.match(card, /req\("PATCH", `\/clients\/\$\{clientId\}\/features\/themes_free`, \{ enabled: false/);
+    assert.match(card, /\{isSuper && <button data-testid="themes-free-end"/);
+  });
 } finally { server.close(); }
 
 console.log('\nC. basic themes for everyone, the rest premium\n');

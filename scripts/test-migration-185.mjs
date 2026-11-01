@@ -95,6 +95,10 @@ await ok('only businesses with the themes flag on: flag off or no flag row — n
     assert.deepEqual([r.premium, r.own_prices], [[], null], b);
   }
 });
+await ok('the deal on the business: ZapTill\'s themes_free flag on every business with Themes on, none for the others', async () => {
+  const flags = await q(`SELECT business_id, enabled, set_by FROM public.feature_flags WHERE key = 'themes_free' ORDER BY business_id`);
+  assert.deepEqual(flags.map((f) => [f.business_id, f.enabled, f.set_by]), [[T, true, 'migration 185']]);
+});
 await ok('own_prices checked: an object of analytics, attendance, themes, package — each a non-negative number', async () => {
   await db.query(`UPDATE public.branch_cloud_plans SET own_prices = '{"analytics": 7500, "package": 12000.5}' WHERE branch_id = $1`, [O1]);
   await db.query(`UPDATE public.branch_cloud_plans SET own_prices = NULL WHERE branch_id = $1`, [O1]);

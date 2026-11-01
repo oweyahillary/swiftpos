@@ -9,6 +9,7 @@ import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 import { cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
 import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/paymentCatalogue';   // A429
+import { PLATFORM_PRICES_KEY, rulesSettingValue } from '../lib/platformPrices';   // A619
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '../lib/mpesaReceive';   // A492
@@ -274,11 +275,12 @@ const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operat
   'cashier_sees_shift_sales',   // A416: a cashier closing a shift sees their sales
   'cashier_history_totals',    // A418: a cashier's History shows the total of what is filtered
   'payment_methods_enabled',   // A429: the payment methods this branch takes
+  PLATFORM_PRICES_KEY,         // A619: this branch's delivery platform prices (the rounding stays the business's)
   'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'];   // A450 / A492: each branch its own M-Pesa number
 
 /** A490: the keys that may set one branch override (any one of them). */
 export function branchSettingKeys(key: string): string[] {
-  if (key === 'payment_methods_enabled') return ['settings.payments'];
+  if (key === 'payment_methods_enabled' || key === PLATFORM_PRICES_KEY) return ['settings.payments'];   // A429, A619
   if (['receipt_header', 'receipt_footer'].includes(key)) return ['settings.branches', 'receipt.manage'];
   return ['settings.branches'];
 }
@@ -360,6 +362,12 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branche
   if (key === PAYMENT_METHODS_ENABLED_KEY) {
     const clean = enabledSettingValue(value);
     if (clean === null) { res.status(400).json({ error: 'Choose payment methods from the list.' }); return; }
+    stored = clean;
+  }
+  // A619: this branch's delivery platform prices — a percentage or an amount per item, by platform.
+  if (key === PLATFORM_PRICES_KEY) {
+    const clean = rulesSettingValue(value);
+    if (clean === null) { res.status(400).json({ error: 'Each platform takes a percentage (up to 500%) or an amount per item.' }); return; }
     stored = clean;
   }
   // 0.6.37 (A387): a branch's own History methods — a list of method codes ([] = every method).

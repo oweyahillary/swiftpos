@@ -146,3 +146,21 @@ export function buildLegView(legs: DraftLeg[], total: number) {
   const allPositive = view.every(l => l.resolvedAmount > 0);
   return { view, remaining, cashShort, balanced, allPositive };
 }
+
+// ── A619: a delivery platform on the payment screen ─────────────────────────────
+// Owner, 2026-11-01: "the moment a cashier picks glovo or uber eats as the payment method the price changes" and "a
+// confirmation of payment method when a cashier clicks charge glovo, uber but cash there is no need". `isPlatform` says
+// whether a method is a delivery platform (the payment catalogue's kind 'delivery'); the pricing itself is
+// shared/platformPrices.ts, loaded when the payment screen opens.
+
+/** The platform the screen prices for: only while its ONE payment is a platform (a split never is). */
+export function platformOfLegs(legs: Array<{ method: string }>, isPlatform: (code: string) => boolean): string | null {
+  return legs.length === 1 && isPlatform(legs[0].method) ? legs[0].method : null;
+}
+
+/** Picking a method on a leg: a platform pays the whole bill — the other legs go and its amount is the balance. */
+export function legsAfterPick<L extends { method: string; amount: string }>(legs: L[], index: number, method: string,
+  isPlatform: (code: string) => boolean): L[] {
+  if (isPlatform(method)) return [{ ...legs[index], method, amount: '' }];
+  return legs.map((l, i) => (i === index ? { ...l, method } : l));
+}

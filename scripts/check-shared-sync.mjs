@@ -228,6 +228,18 @@ const SHARED = [
     ],
   },
   {
+    // A619: delivery platform prices — a platform's uplift (% or an amount per item), the business's rounding, an item's
+    // own platform price; the price both payment screens charge and the cloud and the till's main process check.
+    name: 'platformPrices.ts',
+    copies: [
+      'shared/platformPrices.ts',
+      'apps/server/src/lib/platformPrices.ts',        // the cloud re-derives a platform sale's prices; the settings
+      'apps/desktop/src/shared/platformPrices.ts',    // the till's payment screen
+      'apps/desktop/src/main/platformPrices.ts',      // the till's sale (main) checks the screen's platform prices
+      'apps/dashboard/src/lib/platformPrices.ts',     // the web POS, the branch settings and the product form
+    ],
+  },
+  {
     // 0.6.23: the mouse wheel never changes a number field (the till and the web).
     name: 'numberInputs.ts',
     copies: [

@@ -54,6 +54,8 @@ import { isMasked, seesCustomerContacts, maskPhone } from '../lib/personalData';
 import { branchCreditEnabled, branchLimitOf, owedAtBranch, creditAvailable, CREDIT_OFF_HERE } from '../lib/branchCredit';   // A595 D4
 import { backfillQuiet } from '../lib/backfill';   // A602
 import { saleBuyerPin } from '../lib/customerDetails';   // A607
+import { platformUnitPrice, platformModifierPrice, platformRecord, salePlatform, cleanRule, cleanRounding, type PlatformPricing, type PlatformRecord } from '../lib/platformPrices';   // A619
+import { loadPlatformPricing, ownPlatformPrices } from '../lib/platformPricing';   // A619
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -345,7 +347,9 @@ type RecomputeOk   = { ok: true; lines: { unitPrice: number; lineTotal: number }
   /** A445: the part of `discount` that offers took off, and which offers. */
   offerDiscount: number; offers: AppliedOffer[];
   /** P0-2 (a till's sale only): lines the catalogue could not price — valued at the till's price, and why. */
-  fallbacks: TillLineFallback[] };
+  fallbacks: TillLineFallback[];
+  /** A619: a delivery platform's sale — the lines are at its prices; what they come to at normal prices, and the rule. */
+  platform: { code: string; pricing: PlatformPricing; normalSubtotal: number } | null };
 export interface TillLineFallback { index: number; reason: string; unknownProduct: boolean }
 type RecomputeFail = { ok: false; status: number; error: string };
 type RecomputeResult = RecomputeOk | RecomputeFail;
@@ -426,7 +430,7 @@ async function recomputeOrderTotals(
   claim: OfferClaim = { amount: 0, ids: [] },
   /** P0-2: a till's sale (made, printed and paid already) — a line the catalogue cannot price is valued at the till's
    *  price and reported in `fallbacks`, never refused. A web / live sale is refused as before (anti-tampering). */
-  opts: { tillSale?: boolean } = {},
+  opts: { tillSale?: boolean; platform?: string | null } = {},
 ): Promise<RecomputeResult> {
   const fallbacks: TillLineFallback[] = [];
   const vKey = (pid: string, g: string, o: string) => `${pid}::${g}::${o}`;
@@ -440,6 +444,11 @@ async function recomputeOrderTotals(
   const modifierPriceMap = new Map<string, number>();
   const categoryMap = new Map<string, string | null>();   // A445
   const weighedIds = new Set<string>();   // A577: products sold by weight (their quantity is kg)
+  // A619: a delivery platform's sale is priced HERE with its rule (shared/platformPrices.ts) — never at the POS's word.
+  const platform = opts.platform ?? null;
+  let platformPricing: PlatformPricing | null = null;
+  let ownPrices = new Map<string, number>();
+  let normalSubtotal = 0;
 
   if (lineProductIds.length) {
     const { data: bizProducts } = await supabase
@@ -480,6 +489,10 @@ async function recomputeOrderTotals(
       (g.modifier_options ?? []).forEach(o =>
         modifierPriceMap.set(vKey(g.product_id, g.name, o.name), Number(o.price))));
   }
+  if (platform) {
+    platformPricing = await loadPlatformPricing(businessId, branchId || null);
+    ownPrices = await ownPlatformPrices(businessId, lineProductIds, platform);
+  }
 
   const lines: { unitPrice: number; lineTotal: number }[] = [];
   for (const [index, item] of items.entries()) {
@@ -490,6 +503,7 @@ async function recomputeOrderTotals(
     const atTillPrice = (reason: string, unknownProduct: boolean) => {
       fallbacks.push({ index, reason, unknownProduct });
       lines.push({ unitPrice: round2(Math.max(0, Number(item.unitPrice) || 0)), lineTotal: tillLineTotal(item) });
+      normalSubtotal += tillLineTotal(item);
     };
 
     if (pid) {
@@ -527,6 +541,13 @@ async function recomputeOrderTotals(
       if (unknown) { atTillPrice(unknown, false); continue; }
       // Every option is known: the catalogue's values replace the client's (the display rows stay truthful).
       (item.selectedVariants ?? []).forEach((v, i) => { v.priceAdjustment = adjs[i]; unit += adjs[i]; });
+      if (platformPricing && platform) {
+        const p = platformLine(unit, adjs, mprices, ownPrices.get(pid) ?? null, platform, platformPricing);
+        (item.selectedModifiers ?? []).forEach((m, i) => { m.price = p.modifiers[i]; });   // the display rows: the platform's
+        normalSubtotal += round2((unit + mprices.reduce((s, x) => s + x, 0)) * qty);
+        lines.push({ unitPrice: p.unitPrice, lineTotal: round2((p.unitPrice + p.modifiers.reduce((s, x) => s + x, 0)) * qty) });
+        continue;
+      }
       let modifierTotal = 0;
       (item.selectedModifiers ?? []).forEach((m, i) => { m.price = mprices[i]; modifierTotal += mprices[i]; });
       // A577: a weighed line keeps the amount the till charged when it is what the weight gives to within half a gram
@@ -537,12 +558,14 @@ async function recomputeOrderTotals(
       const keep = weighedIds.has(pid) && modifierTotal === 0 && item.lineTotal !== undefined && item.lineTotal !== null
         && item.lineTotal !== '' && weighedAmountAccepted(unit, qty, asked);
       lines.push({ unitPrice: round2(unit), lineTotal: keep ? round2(asked) : priced });
+      normalSubtotal += keep ? round2(asked) : priced;
     } else {
       // Non-catalogue charge (parking/fuel/quick-add) — trust client price, clamped >= 0.
       const unit = Math.max(0, Number(item.unitPrice) || 0);
       const modifierTotal = (item.selectedModifiers ?? [])
         .reduce((s: number, m: { price?: number | string }) => s + Math.max(0, Number(m.price) || 0), 0);
       lines.push({ unitPrice: round2(unit), lineTotal: round2((unit + modifierTotal) * qty) });
+      normalSubtotal += round2((unit + modifierTotal) * qty);
     }
   }
 
@@ -561,7 +584,39 @@ async function recomputeOrderTotals(
 
   const { vat, ctl } = await taxSplit(businessId, total);
 
-  return { ok: true, lines, subtotal, discount, total, vat, ctl, offerDiscount, offers, fallbacks };
+  return { ok: true, lines, subtotal, discount, total, vat, ctl, offerDiscount, offers, fallbacks,
+    platform: platform && platformPricing ? { code: platform, pricing: platformPricing, normalSubtotal: round2(normalSubtotal) } : null };
+}
+
+/**
+ * A619: one catalogue line at a delivery platform's prices — its unit price (its own platform price, else the rule on the
+ * catalogue's price and options) and each add-on's.
+ */
+function platformLine(unit: number, variantAdjs: number[], modifierPrices: number[], own: number | null, platform: string,
+  pricing: PlatformPricing): { unitPrice: number; modifiers: number[] } {
+  const rule = pricing.rules[platform] ?? null;
+  return {
+    unitPrice: platformUnitPrice({ unit, variants: variantAdjs.reduce((s, a) => s + a, 0), own }, rule, pricing.rounding),
+    modifiers: modifierPrices.map((m) => platformModifierPrice(m, rule, pricing.rounding)),
+  };
+}
+
+/**
+ * A619: what an order records of the platform pricing that applied (orders.price_list / platform_rule / platform_uplift),
+ * so a later change of the rate never rewrites it. A till's sale stored at its own prices keeps the rule it applied when
+ * it says one (an offline sale made before a rate change), else the cloud's.
+ */
+export function platformOrderRecord(recomputed: { platform: { code: string; pricing: PlatformPricing; normalSubtotal: number } | null },
+  storedSubtotal: number, tillClaim?: unknown): PlatformRecord | null {
+  const p = recomputed.platform;
+  if (!p) return null;
+  const rec = platformRecord(p.code, p.pricing, round2(storedSubtotal - p.normalSubtotal));
+  const claim = tillClaim && typeof tillClaim === 'object' ? tillClaim as { kind?: unknown; value?: unknown; rounding?: unknown } : null;
+  if (claim) {
+    const rule = cleanRule(claim);
+    rec.platform_rule = { kind: rule?.kind ?? null, value: rule?.value ?? 0, rounding: cleanRounding(claim.rounding) };
+  }
+  return rec;
 }
 
 // ── P0-2: an offline till sale priced differently from the cloud's catalogue ──
@@ -589,7 +644,9 @@ export function tillPricing(items: OrderItemInput[], cat: RecomputeOk, body: { t
     : Math.max(0, subtotal - (Number(body?.discount_amount) || 0)));
   const difference = round2(cat.total - total);
   if (Math.abs(difference) < 0.01 && !cat.fallbacks.length) return null;
-  const reasons = [...(Math.abs(difference) >= 0.01 && cat.fallbacks.length < items.length ? ['price changed before sync'] : []),
+  // A619: a platform's sale priced differently — its rule or an item's own platform price changed before it synced.
+  const changed = cat.platform ? `${cat.platform.code} price changed before sync` : 'price changed before sync';
+  const reasons = [...(Math.abs(difference) >= 0.01 && cat.fallbacks.length < items.length ? [changed] : []),
     ...cat.fallbacks.map((f) => f.reason)];
   return {
     lines, subtotal, discount: round2(Math.max(0, subtotal - total)), total,
@@ -873,7 +930,9 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
       await mapCanonicalProducts(req.businessId, items);   // P1-8a: a product the till created offline, known here by another id
       saleItems = JSON.parse(JSON.stringify(items));
     }
-    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, saleItems, discount_amount, offerClaimFrom(req.body), { tillSale });   // A445
+    // A619: a sale paid by a delivery platform alone, claiming its prices (price_list), is priced at them — re-derived here.
+    const platform = salePlatform(req.body?.price_list, paymentLegs.map((l) => l.method));
+    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, saleItems, discount_amount, offerClaimFrom(req.body), { tillSale, platform });   // A445
     if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     // A490: a manual discount on a LIVE web sale is sales.discount (offers are not a manual discount). A till's sale was
     // made already — never refused for it (the till checks its own person).
@@ -1255,6 +1314,14 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
       const { error: pinErr } = await supabase.from('orders').update({ buyer_kra_pin: buyerPin })
         .eq('id', createdRow.order_id).eq('business_id', req.businessId);
       if (pinErr) console.error('[order-create] the buyer KRA PIN was not saved (is migration 181 applied?):', pinErr.message);
+    }
+    // A619: which platform's prices applied, its rule and what they added (create_order_atomic does not carry them — written
+    // right after, like the note). A failure is logged, never the sale's.
+    const platformRec = platformOrderRecord(recomputed, authSubtotal, variance ? req.body?.platform_rule : undefined);
+    if (platformRec) {
+      const { error: plErr } = await supabase.from('orders').update(platformRec)
+        .eq('id', createdRow.order_id).eq('business_id', req.businessId);
+      if (plErr) console.error('[order-create] the platform pricing was not recorded (is migration 187 applied?):', plErr.message);
     }
     const order = {
       id: createdRow.order_id,

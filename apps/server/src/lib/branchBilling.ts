@@ -129,6 +129,17 @@ export function mergeOwnPrices(input: unknown, before: OwnPrices): { ok: true; v
   return { ok: true, value: Object.keys(out).length ? out : null };
 }
 
+/** A617: ZapTill's flag for a client on the free-Themes deal (migration 185 sets it on every business that had Themes). */
+export const THEMES_FREE_FLAG = 'themes_free';
+
+/**
+ * A617 (owner, 2026-11-01: a current client's new branches "do not pay for now"): what a branch row the server MAKES starts
+ * with — Themes at an own price of 0 while the business is on the deal, else nothing. A super admin's later edit wins. Pure.
+ */
+export function newBranchPremium(themesFree: boolean): { premium: PremiumKey[]; own_prices: OwnPrices | null } {
+  return themesFree ? { premium: ['themes'], own_prices: { themes: 0 } } : { premium: [], own_prices: null };
+}
+
 /** A branch's lines on an invoice for one period — A617: each at the branch's own price when it has one. Pure. */
 export function branchBill(row: Pick<BranchPlanRow, 'amount' | 'premium' | 'package' | 'period' | 'own_prices'>, branchName: string, prices: BillingPrices,
   months: number): BranchBill {
@@ -165,3 +176,12 @@ export async function readBillingDetails(now: number = Date.now()): Promise<Bill
   return v;
 }
 export function forgetBillingDetails(): void { detailsKept = null; }
+
+/** A617: is the business on the free-Themes deal? A failed read: no (the branch is billed as usual, never a crash). */
+export async function themesFreeFor(businessId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.from('feature_flags').select('enabled')
+      .eq('business_id', businessId).eq('key', THEMES_FREE_FLAG).maybeSingle();
+    return !error && (data as { enabled?: boolean } | null)?.enabled === true;
+  } catch { return false; }
+}

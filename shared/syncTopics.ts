@@ -120,6 +120,7 @@ export const CONFIG_KEYS = {
   money: ['paymentMethods', 'paymentMethodsEnabled', 'mpesa', 'receiptPayLabel', 'receiptPayNumber', 'vatRate', 'ctlRate',
     'currency', 'maxDiscountPct', 'loyaltyEnabled', 'posFeatures', 'reversalRules', 'webPosEnabled', 'continuousOperation',
     'businessDayCutoff', 'cashierHistoryMethods', 'cashierSeesShiftSales', 'cashierHistoryTotals',
+    'platformPrices',   // A619: the delivery platforms' prices (delivery_platform_* settings: money by their prefix)
     'cloudBackup'],   // A601: the desktop-only cut-off (the cloud_backup flag is a feature_flags row: a money change)
   look: ['receiptHeader', 'receiptFooter', 'businessName'],
   setup: ['kitchenExclusions', 'noteQuickPicks', 'businessType', 'support', 'branchId', 'pricingBranchId', 'scaleBarcodes',
