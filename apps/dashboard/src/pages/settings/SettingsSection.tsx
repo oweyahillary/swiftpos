@@ -50,35 +50,47 @@ export default function SettingsSection(
   );
 }
 
-/** A620: the grouped menu — on the left from md up, a dropdown above the page on a phone. */
+/**
+ * A620: the grouped menu — on the left from md up, a dropdown above the page on a phone. ONE scroller: the dashboard's
+ * main area scrolls the page as everywhere else, and the menu stays pinned beside it (owner, 2026-11-02: an inner
+ * scroller under Branding "leads to endless scrolling"; "make the navbar a bit visible").
+ */
 function GroupedSection({ title, groups, context }: { title: string; groups: SettingsGroup[]; context?: unknown }) {
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-800 flex-shrink-0">
+    <div className="flex flex-col">
+      <div className="px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-800">
         <h1 className="text-white text-xl sm:text-2xl font-bold">{title}</h1>
         <PhoneMenu groups={groups} />
       </div>
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex items-start">
         <nav aria-label={`${title} settings`} data-testid="settings-groups"
-          className="hidden md:block w-56 flex-shrink-0 border-r border-gray-800 overflow-y-auto py-4 px-3">
+          className="hidden md:block w-60 flex-shrink-0 sticky top-0 self-start max-h-screen overflow-y-auto border-r border-gray-800 bg-gray-900/60 py-5 px-3">
           {groups.map(g => (
-            <div key={g.title} className="mb-4">
-              <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-600">{g.title}</p>
+            <div key={g.title} className="mb-5 last:mb-0">
+              <p className="px-3 mb-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">{g.title}</p>
               <div className="flex flex-col gap-0.5">
                 {g.tabs.map(t => (
-                  <NavLink key={t.to} to={t.to} end={t.end} className={linkClass}>{t.label}</NavLink>
+                  <NavLink key={t.to} to={t.to} end={t.end} className={groupLinkClass}>{t.label}</NavLink>
                 ))}
               </div>
             </div>
           ))}
         </nav>
-        <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="flex-1 min-w-0">
           <Outlet context={context} />
         </div>
       </div>
     </div>
   );
 }
+
+/** A620: a link in the grouped menu — brighter than the top tabs, the current page marked with a teal bar. */
+const groupLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `px-3 py-2 rounded-lg text-sm border-l-2 transition-colors ${
+    isActive
+      ? 'border-swift bg-gray-800 text-white font-medium'
+      : 'border-transparent text-gray-300 hover:text-white hover:bg-gray-800/60'
+  }`;
 
 /** A620: on a phone, the same menu as one dropdown (grouped options). */
 function PhoneMenu({ groups }: { groups: SettingsGroup[] }) {

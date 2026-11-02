@@ -26,7 +26,10 @@ console.log('\nA620 — Settings › Business: a grouped left menu; Integrations
 ok('the section shell: groups → a left menu (md up) and a dropdown on a phone; tabs alone → the top tabs as before', () => {
   const s = read(D + 'pages/settings/SettingsSection.tsx');
   assert.match(s, /if \(groups\?\.length\) return <GroupedSection/);
-  assert.match(s, /className="hidden md:block w-56 flex-shrink-0 border-r border-gray-800/);
+  assert.match(s, /className="hidden md:block w-60 flex-shrink-0 sticky top-0 self-start max-h-screen overflow-y-auto border-r border-gray-800 bg-gray-900\/60/);
+  // one scroller (2026-11-02: an inner one under Branding scrolled "endlessly"): the page content has no overflow of its own
+  assert.match(s, /<div className="flex-1 min-w-0">\n\s*<Outlet context=\{context\} \/>/);
+  assert.match(s, /'border-swift bg-gray-800 text-white font-medium'/);
   assert.match(s, /<select aria-label="Settings page"[\s\S]*className="md:hidden/);
   assert.match(s, /<optgroup key=\{g\.title\} label=\{g\.title\}>/);
   assert.doesNotMatch(read(D + 'pages/settings/UsersAccessPage.tsx'), /groups=/);
