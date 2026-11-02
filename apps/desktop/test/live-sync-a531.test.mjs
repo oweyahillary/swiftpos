@@ -255,6 +255,21 @@ try {
   await LS.catchUp('test');
   ok('a till moved to another branch takes the whole catalogue for it (and back)', movedPull === 1 && hits(/^\/api\/pos\/init\?branch_id=br-1/) === 1, JSON.stringify(cloud.hits));
 
+  // 2026-11-02 (the owner's Glovo test): the old 1.0.22 applied the Glovo prices' money change and dropped them (it did not
+  // know platformPrices); the new version started after it and sold at normal prices. A new local schema takes it all once.
+  ok('the whole catalogue notes the local schema it was taken with', db.prepare(`SELECT value FROM maintenance_state WHERE key = 'live_schema'`).get()?.value === String(L.LOCAL_SCHEMA_VERSION));
+  cloud.hits = [];
+  db.prepare(`UPDATE maintenance_state SET value = '78' WHERE key = 'live_schema'`).run();
+  await LS.catchUp('test');
+  const upgradedPull = hits(/^\/api\/pos\/init/);
+  await LS.catchUp('test');
+  ok('a new version of ZapTill (a newer local schema) takes the whole catalogue ONCE, then changes only',
+    upgradedPull === 1 && hits(/^\/api\/pos\/init/) === 1 && db.prepare(`SELECT value FROM maintenance_state WHERE key = 'live_schema'`).get()?.value === String(L.LOCAL_SCHEMA_VERSION), JSON.stringify(cloud.hits));
+  db.prepare(`DELETE FROM maintenance_state WHERE key = 'live_schema'`).run();
+  cloud.hits = [];
+  await LS.catchUp('test');
+  ok('…a POS from before this check (no schema noted) takes it once too', hits(/^\/api\/pos\/init/) === 1, JSON.stringify(cloud.hits));
+
   // ── 6 ── this machine as the branch server
   DC.saveDeviceConfig({ device_role: 'node' });
   db.prepare(`DELETE FROM live_log`).run();
@@ -286,7 +301,7 @@ try {
   });
   await new Promise((r) => nodeSrv.listen(0, '127.0.0.1', r));
   DC.saveDeviceConfig({ device_role: 'till', node_url: `http://127.0.0.1:${nodeSrv.address().port}`, node_secret: 'sekret' });
-  db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('live_seq', '5', 'x'), ('live_node_local', 'L1', 'x'), ('live_full_at', ?, 'x'), ('live_scope', 'biz-1|br-1', 'x')`).run(new Date().toISOString());
+  db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('live_seq', '5', 'x'), ('live_node_local', 'L1', 'x'), ('live_full_at', ?, 'x'), ('live_scope', 'biz-1|br-1', 'x'), ('live_schema', ?, 'x')`).run(new Date().toISOString(), String(L.LOCAL_SCHEMA_VERSION));
   LS._resetLive();
   LS.startLiveSync();
   for (const s of [...sockets]) wsClose(s, 1000);

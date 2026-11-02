@@ -72,6 +72,10 @@ function mintedSurface(src, name) {
     const m = GRANT.slice(GRANT.indexOf('export function buildDeviceTokenPayload')).match(/^\s*surface:\s*(.+?),\s*$/m);
     return m ? m[1].trim() : null;
   }
+  // A608: the web POS session's claims come from one builder (webPosTokenPayload — /pos-login and /pos-session); the
+  // surface is its last argument.
+  const w = body.match(/webPosTokenPayload\([^;]*,\s*([^,()]+?)\s*\);/);
+  if (w) return w[1].trim();
   const m = body.match(/^\s*surface:\s*(.+?),\s*$/m);
   return m ? m[1].trim() : null;
 }

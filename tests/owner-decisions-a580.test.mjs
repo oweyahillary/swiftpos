@@ -295,7 +295,7 @@ try {
   globalThis.localStorage ??= { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
   globalThis.sessionStorage ??= globalThis.localStorage;
   const WL = await bundle('src/pages/WatchListPage.tsx', 'watch.mjs');
-  await ok('the Watch list (dashboard and manager portal) and the Loss prevention tab show the premium note on LOSS_ALERTS_OFF', () => {
+  await ok('the Watch list (dashboard) and the Loss prevention tab show the premium note on LOSS_ALERTS_OFF', () => {
     const html = renderToStaticMarkup(h(WL.WatchListLocked, { message: R.LOSS_OFF_MESSAGE }));
     assert.match(html, /data-testid="watch-list-locked"/);
     assert.match(html, /ZapTill Premium/);
@@ -306,7 +306,8 @@ try {
     assert.match(page, /if \(locked !== null\) return <WatchListLocked message=\{locked\} \/>;/);
     assert.match(tab, /if \(e\?\.code === LOSS_OFF_CODE\) setLocked\(e\?\.message \?\? ''\);/);
     assert.match(tab, /if \(!isOwner\) return <div[^>]*>Only the owner can change loss-prevention alerts\.<\/div>;\s*\n\s*if \(locked !== null\) return <WatchListLocked/, 'owner-only first, then the premium note');
-    assert.ok(read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx').includes('<WatchListPanel client={posApi} isOwner={false} portal />'), 'the portal uses the same panel');
+    // A608 (2026-10-29): the web manager portal is retired — its checks are gone; "the portal uses the same
+    // panel" pinned ManagerDashboard.tsx; the dashboard's WatchListPage (above) is the web's only Watch list now.
   });
   await ok('the route and the job read the same switch as Analytics (feature_flags \'analytics\')', () => {
     const route = read('apps/server/src/routes/lossAlerts.ts'), job = read('apps/server/src/jobs/lossAlerts.ts');

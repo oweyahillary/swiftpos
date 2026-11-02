@@ -179,7 +179,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   applyBtn: {
     padding: '7px 16px', background: 'rgb(var(--act-strong, 59 130 246))', border: 'none', borderRadius: 7,
-    color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0,
+    color: 'rgb(var(--act-on, 255 255 255))', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0,
   },
   error:   { color: '#fca5a5', fontSize: 13, margin: '8px 0' },
   center:  { display: 'flex', justifyContent: 'center', padding: 32 },

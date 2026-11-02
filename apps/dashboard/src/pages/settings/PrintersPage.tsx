@@ -16,6 +16,9 @@ import {
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 import type { BranchPrinter } from '../../lib/printKOT';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { useBusiness } from '../../context/BusinessContext';
+import { foodAreas } from '../../lib/businessTerms';
+import KitchenTicketSettings from './KitchenTicketSettings';   // A620
 
 interface Category { id: string; name: string; }
 
@@ -165,6 +168,7 @@ function HardwareFields({
 
 export default function PrintersPage({ branchId: propBranchId, branchName }: { branchId?: string; branchName?: string } = {}) {
   const { activeBranchId, branches: contextBranches } = useBranch();
+  const kitchenTicket = foodAreas(useBusiness().business?.type).tables;   // A620: where Restaurant setup showed it (a business with tables)
 
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [printers, setPrinters]     = useState<BranchPrinter[]>([]);
@@ -738,6 +742,14 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
             </div>
           </div>
         </div>
+      )}
+
+      {/* A620 (owner, 2026-11-01): what goes on the kitchen ticket — moved here from Restaurant setup. The whole business's. */}
+      {kitchenTicket && (
+        <section>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Kitchen ticket · every branch</p>
+          <KitchenTicketSettings />
+        </section>
       )}
 
       <ConfirmModal state={confirmState} onClose={closeConfirm} />

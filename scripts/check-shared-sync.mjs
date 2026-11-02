@@ -74,6 +74,47 @@ const SHARED = [
     ],
   },
   {
+    // A606: the customer screen — the slideshow rules, the cleaned state the customer sees, the premium gate, the screen.
+    name: 'customerScreen.ts',
+    copies: [
+      'shared/customerScreen.ts',
+      'apps/server/src/lib/customerScreen.ts',       // the owner's slideshow save, served with pos/init
+      'apps/desktop/src/main/customerScreen.ts',     // main cleans what the POS sends, gates the content, picks the screen
+      'apps/desktop/src/shared/customerScreen.ts',   // the customer screen page
+      'apps/dashboard/src/lib/customerScreen.ts',    // the Branding page's slideshow and the web customer screen
+    ],
+  },
+  {
+    // A607: the customer's details at the counter — phone / KRA PIN rules, the request to and the answer from a
+    // customer-facing form, the consent plan, the M-Pesa prompt as both screens show it, who gets what.
+    name: 'customerDetails.ts',
+    copies: [
+      'shared/customerDetails.ts',
+      'apps/server/src/lib/customerDetails.ts',       // the sale's buyer PIN (orders), the POS's M-Pesa prompt
+      'apps/desktop/src/main/customerDetails.ts',     // main checks what the customer screen sends back, the STK prompt
+      'apps/desktop/src/shared/customerDetails.ts',   // the POS's forms and the customer screen page
+      'apps/dashboard/src/lib/customerDetails.ts',    // the web POS's forms and its customer screen
+    ],
+  },
+  {
+    // A606: the customer screen's view — one drawing for the desktop's second window and the web POS's. Each copy sits
+    // beside a customerScreen.ts and a themes.ts copy (it imports ./customerScreen and ./themes).
+    name: 'CustomerScreenView.tsx',
+    copies: [
+      'apps/desktop/src/shared/CustomerScreenView.tsx',
+      'apps/dashboard/src/lib/CustomerScreenView.tsx',
+    ],
+  },
+  {
+    // A607: the form the customer fills in (the customer screen, and "Customer types it" on the cashier's screen) and the
+    // M-Pesa prompt's banner. Each copy sits beside a customerDetails.ts copy.
+    name: 'CustomerAskForm.tsx',
+    copies: [
+      'apps/desktop/src/shared/CustomerAskForm.tsx',
+      'apps/dashboard/src/lib/CustomerAskForm.tsx',
+    ],
+  },
+  {
     // A537: the POS's category side panel — menus as tabs, which categories and products a menu shows, the pin.
     name: 'menuFilter.ts',
     copies: [
@@ -184,6 +225,18 @@ const SHARED = [
       'apps/server/src/lib/paymentCatalogue.ts',      // the cloud checks the setting and sends it to the tills
       'apps/desktop/src/shared/paymentCatalogue.ts',  // the till's payment screen and Manager › Settings
       'apps/dashboard/src/lib/paymentCatalogue.ts',   // the web POS and the branch settings
+    ],
+  },
+  {
+    // A619: delivery platform prices — a platform's uplift (% or an amount per item), the business's rounding, an item's
+    // own platform price; the price both payment screens charge and the cloud and the till's main process check.
+    name: 'platformPrices.ts',
+    copies: [
+      'shared/platformPrices.ts',
+      'apps/server/src/lib/platformPrices.ts',        // the cloud re-derives a platform sale's prices; the settings
+      'apps/desktop/src/shared/platformPrices.ts',    // the till's payment screen
+      'apps/desktop/src/main/platformPrices.ts',      // the till's sale (main) checks the screen's platform prices
+      'apps/dashboard/src/lib/platformPrices.ts',     // the web POS, the branch settings and the product form
     ],
   },
   {

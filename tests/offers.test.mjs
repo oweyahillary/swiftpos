@@ -28,6 +28,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.OFFERS_TS) {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
 const O = await import(pathToFileURL(path.join(ROOT, 'shared/offers.ts')).href);
+const MH = await import(pathToFileURL(path.join(ROOT, 'shared/menuHours.ts')).href);   // the days in the same words
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); console.log(`  ok   ${name}`); pass++; } catch (e) { console.log(`  FAIL ${name}\n       ${e.message}`); fail++; } };
@@ -169,6 +170,17 @@ ok('applyOffers skips an offer that is not running, unless the cloud is re-check
   assert.equal(O.applyOffers(cart, [happy], { at: at('2026-10-17T17:00:00') }).total, 0);
   assert.equal(O.applyOffers(cart, [happy], { at: at('2026-10-17T17:00:00'), ignoreTiming: true }).total, 100);
 });
+ok('the cloud\'s re-check still asks the branch: a branch offer gives nothing to a sale without one (owner, 2026-11-01)', () => {
+  const cart = [line(SODA, 2)];
+  const b = offer({ name: 'Westlands', kind: 'percent_off', value: 10, branch_ids: ['br-w'] });
+  const recheck = (branchId) => O.applyOffers(cart, [b], { at: WED_5PM, ignoreTiming: true, branchId }).total;
+  assert.equal(recheck('br-w'), 20);
+  assert.equal(recheck('br-k'), 0, 'another branch');
+  assert.equal(recheck(null), 0, 'no branch: was 20 before');
+  assert.equal(recheck(undefined), 0);
+  assert.equal(O.applyOffers(cart, [{ ...b, branch_ids: null }], { at: WED_5PM, ignoreTiming: true, branchId: null }).total, 20, 'an offer for every branch still applies');
+  assert.equal(O.offerRunsAt(b, WED_5PM, null), false, 'the cart already refused it with no branch');
+});
 
 console.log('\nWhat a form may save\n');
 ok('a name, a kind and a sensible value are required', () => {
@@ -185,6 +197,14 @@ ok('every day of the week is stored as "every day"', () => {
 });
 ok('the screens\' words', () => {
   assert.equal(O.offerWhenLabel(happy), 'Mon–Fri · 16:00–19:00 · 2026-10-01 to 2026-10-31');
+  // Monday first, as menu hours word them (owner, 2026-11-01: offers said "Sun, Sat", menu hours "Sat, Sun")
+  const days = (d) => O.offerWhenLabel({ days: d, start_time: null, end_time: null, start_date: null, end_date: null });
+  assert.equal(days([0, 6]), 'Sat, Sun');
+  assert.equal(days([5, 6, 0]), 'Fri–Sun');
+  assert.equal(days([1, 2, 3, 5]), 'Mon–Wed, Fri');
+  assert.equal(days([1, 3, 5]), 'Mon, Wed, Fri');
+  assert.equal(days([0, 1, 2, 3, 4, 5, 6]), 'Every day');
+  for (const d of [[0, 6], [5, 6, 0], [1, 2, 3, 5], [1, 2, 3, 4, 5], [0], [2, 4]]) assert.equal(days(d), MH.daysLabel(d), `same words as menu hours for ${d}`);
   assert.equal(O.offerWhatLabel(offer({ name: 'x', kind: 'buy_get', buy_qty: 2, get_qty: 1, get_product_id: 'soda', applies_to: 'all' }), (id) => id === 'soda' ? 'Soda' : id), 'Buy 2 get 1 Soda free');
 });
 

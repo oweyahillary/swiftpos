@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { cashierHistoryView } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { getHistoryMethods } from '../lib/historyMethods';
 import { cashierHistoryTotals, historyTotal } from '../lib/cashierShiftSales';   // A418
@@ -52,6 +52,10 @@ import { isSoldByWeight, weighedAmountAccepted } from '../lib/scaleBarcode';   /
 import { loadCreditRule, onApproverList, type CreditApprovalRule } from '../lib/creditApprovers';   // A585
 import { isMasked, seesCustomerContacts, maskPhone } from '../lib/personalData';   // A595
 import { branchCreditEnabled, branchLimitOf, owedAtBranch, creditAvailable, CREDIT_OFF_HERE } from '../lib/branchCredit';   // A595 D4
+import { backfillQuiet } from '../lib/backfill';   // A602
+import { saleBuyerPin } from '../lib/customerDetails';   // A607
+import { platformUnitPrice, platformModifierPrice, platformRecord, salePlatform, cleanRule, cleanRounding, type PlatformPricing, type PlatformRecord } from '../lib/platformPrices';   // A619
+import { loadPlatformPricing, ownPlatformPrices } from '../lib/platformPricing';   // A619
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -92,7 +96,7 @@ function logTillMadeSale(req: any, what: string): void {
 }
 
 /** A494 + A505: POST / — orders.create, except a till's own sale sent under a person's till sign-in (tillMadeSale). */
-const sellsOrTillSale = (req: any, res: any, next: any): void => {
+export const sellsOrTillSale = (req: any, res: any, next: any): void => {   // A602: exported for the backfill
   if (tillMadeSale(req) && !can(req, 'orders.create')) { logTillMadeSale(req, 'orders.create'); next(); return; }
   sells(req, res, next);
 };
@@ -343,7 +347,9 @@ type RecomputeOk   = { ok: true; lines: { unitPrice: number; lineTotal: number }
   /** A445: the part of `discount` that offers took off, and which offers. */
   offerDiscount: number; offers: AppliedOffer[];
   /** P0-2 (a till's sale only): lines the catalogue could not price — valued at the till's price, and why. */
-  fallbacks: TillLineFallback[] };
+  fallbacks: TillLineFallback[];
+  /** A619: a delivery platform's sale — the lines are at its prices; what they come to at normal prices, and the rule. */
+  platform: { code: string; pricing: PlatformPricing; normalSubtotal: number } | null };
 export interface TillLineFallback { index: number; reason: string; unknownProduct: boolean }
 type RecomputeFail = { ok: false; status: number; error: string };
 type RecomputeResult = RecomputeOk | RecomputeFail;
@@ -424,7 +430,7 @@ async function recomputeOrderTotals(
   claim: OfferClaim = { amount: 0, ids: [] },
   /** P0-2: a till's sale (made, printed and paid already) — a line the catalogue cannot price is valued at the till's
    *  price and reported in `fallbacks`, never refused. A web / live sale is refused as before (anti-tampering). */
-  opts: { tillSale?: boolean } = {},
+  opts: { tillSale?: boolean; platform?: string | null } = {},
 ): Promise<RecomputeResult> {
   const fallbacks: TillLineFallback[] = [];
   const vKey = (pid: string, g: string, o: string) => `${pid}::${g}::${o}`;
@@ -438,6 +444,11 @@ async function recomputeOrderTotals(
   const modifierPriceMap = new Map<string, number>();
   const categoryMap = new Map<string, string | null>();   // A445
   const weighedIds = new Set<string>();   // A577: products sold by weight (their quantity is kg)
+  // A619: a delivery platform's sale is priced HERE with its rule (shared/platformPrices.ts) — never at the POS's word.
+  const platform = opts.platform ?? null;
+  let platformPricing: PlatformPricing | null = null;
+  let ownPrices = new Map<string, number>();
+  let normalSubtotal = 0;
 
   if (lineProductIds.length) {
     const { data: bizProducts } = await supabase
@@ -478,6 +489,10 @@ async function recomputeOrderTotals(
       (g.modifier_options ?? []).forEach(o =>
         modifierPriceMap.set(vKey(g.product_id, g.name, o.name), Number(o.price))));
   }
+  if (platform) {
+    platformPricing = await loadPlatformPricing(businessId, branchId || null);
+    ownPrices = await ownPlatformPrices(businessId, lineProductIds, platform);
+  }
 
   const lines: { unitPrice: number; lineTotal: number }[] = [];
   for (const [index, item] of items.entries()) {
@@ -488,6 +503,7 @@ async function recomputeOrderTotals(
     const atTillPrice = (reason: string, unknownProduct: boolean) => {
       fallbacks.push({ index, reason, unknownProduct });
       lines.push({ unitPrice: round2(Math.max(0, Number(item.unitPrice) || 0)), lineTotal: tillLineTotal(item) });
+      normalSubtotal += tillLineTotal(item);
     };
 
     if (pid) {
@@ -525,6 +541,13 @@ async function recomputeOrderTotals(
       if (unknown) { atTillPrice(unknown, false); continue; }
       // Every option is known: the catalogue's values replace the client's (the display rows stay truthful).
       (item.selectedVariants ?? []).forEach((v, i) => { v.priceAdjustment = adjs[i]; unit += adjs[i]; });
+      if (platformPricing && platform) {
+        const p = platformLine(unit, adjs, mprices, ownPrices.get(pid) ?? null, platform, platformPricing);
+        (item.selectedModifiers ?? []).forEach((m, i) => { m.price = p.modifiers[i]; });   // the display rows: the platform's
+        normalSubtotal += round2((unit + mprices.reduce((s, x) => s + x, 0)) * qty);
+        lines.push({ unitPrice: p.unitPrice, lineTotal: round2((p.unitPrice + p.modifiers.reduce((s, x) => s + x, 0)) * qty) });
+        continue;
+      }
       let modifierTotal = 0;
       (item.selectedModifiers ?? []).forEach((m, i) => { m.price = mprices[i]; modifierTotal += mprices[i]; });
       // A577: a weighed line keeps the amount the till charged when it is what the weight gives to within half a gram
@@ -535,12 +558,14 @@ async function recomputeOrderTotals(
       const keep = weighedIds.has(pid) && modifierTotal === 0 && item.lineTotal !== undefined && item.lineTotal !== null
         && item.lineTotal !== '' && weighedAmountAccepted(unit, qty, asked);
       lines.push({ unitPrice: round2(unit), lineTotal: keep ? round2(asked) : priced });
+      normalSubtotal += keep ? round2(asked) : priced;
     } else {
       // Non-catalogue charge (parking/fuel/quick-add) — trust client price, clamped >= 0.
       const unit = Math.max(0, Number(item.unitPrice) || 0);
       const modifierTotal = (item.selectedModifiers ?? [])
         .reduce((s: number, m: { price?: number | string }) => s + Math.max(0, Number(m.price) || 0), 0);
       lines.push({ unitPrice: round2(unit), lineTotal: round2((unit + modifierTotal) * qty) });
+      normalSubtotal += round2((unit + modifierTotal) * qty);
     }
   }
 
@@ -559,7 +584,39 @@ async function recomputeOrderTotals(
 
   const { vat, ctl } = await taxSplit(businessId, total);
 
-  return { ok: true, lines, subtotal, discount, total, vat, ctl, offerDiscount, offers, fallbacks };
+  return { ok: true, lines, subtotal, discount, total, vat, ctl, offerDiscount, offers, fallbacks,
+    platform: platform && platformPricing ? { code: platform, pricing: platformPricing, normalSubtotal: round2(normalSubtotal) } : null };
+}
+
+/**
+ * A619: one catalogue line at a delivery platform's prices — its unit price (its own platform price, else the rule on the
+ * catalogue's price and options) and each add-on's.
+ */
+function platformLine(unit: number, variantAdjs: number[], modifierPrices: number[], own: number | null, platform: string,
+  pricing: PlatformPricing): { unitPrice: number; modifiers: number[] } {
+  const rule = pricing.rules[platform] ?? null;
+  return {
+    unitPrice: platformUnitPrice({ unit, variants: variantAdjs.reduce((s, a) => s + a, 0), own }, rule, pricing.rounding),
+    modifiers: modifierPrices.map((m) => platformModifierPrice(m, rule, pricing.rounding)),
+  };
+}
+
+/**
+ * A619: what an order records of the platform pricing that applied (orders.price_list / platform_rule / platform_uplift),
+ * so a later change of the rate never rewrites it. A till's sale stored at its own prices keeps the rule it applied when
+ * it says one (an offline sale made before a rate change), else the cloud's.
+ */
+export function platformOrderRecord(recomputed: { platform: { code: string; pricing: PlatformPricing; normalSubtotal: number } | null },
+  storedSubtotal: number, tillClaim?: unknown): PlatformRecord | null {
+  const p = recomputed.platform;
+  if (!p) return null;
+  const rec = platformRecord(p.code, p.pricing, round2(storedSubtotal - p.normalSubtotal));
+  const claim = tillClaim && typeof tillClaim === 'object' ? tillClaim as { kind?: unknown; value?: unknown; rounding?: unknown } : null;
+  if (claim) {
+    const rule = cleanRule(claim);
+    rec.platform_rule = { kind: rule?.kind ?? null, value: rule?.value ?? 0, rounding: cleanRounding(claim.rounding) };
+  }
+  return rec;
 }
 
 // ── P0-2: an offline till sale priced differently from the cloud's catalogue ──
@@ -587,7 +644,9 @@ export function tillPricing(items: OrderItemInput[], cat: RecomputeOk, body: { t
     : Math.max(0, subtotal - (Number(body?.discount_amount) || 0)));
   const difference = round2(cat.total - total);
   if (Math.abs(difference) < 0.01 && !cat.fallbacks.length) return null;
-  const reasons = [...(Math.abs(difference) >= 0.01 && cat.fallbacks.length < items.length ? ['price changed before sync'] : []),
+  // A619: a platform's sale priced differently — its rule or an item's own platform price changed before it synced.
+  const changed = cat.platform ? `${cat.platform.code} price changed before sync` : 'price changed before sync';
+  const reasons = [...(Math.abs(difference) >= 0.01 && cat.fallbacks.length < items.length ? [changed] : []),
     ...cat.fallbacks.map((f) => f.reason)];
   return {
     lines, subtotal, discount: round2(Math.max(0, subtotal - total)), total,
@@ -700,13 +759,21 @@ async function awardLoyaltyPoints(
 // POST /api/orders
 // Creates order, order_items, order_item_variants, order_item_modifiers, payment,
 // deducts stock, creates kitchen ticket, and handles loyalty earn/redeem.
-router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own sale is never refused for its person's keys
+/**
+ * POST /api/orders — the sale itself. A602: a named, exported handler (was inline) so the bulk history backfill
+ * (routes/backfill.ts, POST /api/sync/backfill) runs EXACTLY this for each sale it carries — the same validation, the same
+ * idempotency (X-Idempotency-Key = the POS's order id), the same writes and effects. No second copy of the rules.
+ */
+export async function createOrder(req: Request, res: Response): Promise<void> {
   // Idempotency — the desktop sync engine (and any retrying client) sends
   // X-Idempotency-Key. If we've already created an order for this key, return
   // the existing one with 200 instead of creating a duplicate. This makes a
   // lost-response retry safe.
   const idempotencyKey = (req.header('X-Idempotency-Key') || req.body?.idempotency_key || '').trim();
-  if (idempotencyKey) {
+  // A602: the backfill looked up its whole batch's keys in ONE read first (lib/backfill.ts) — a sale it found new skips this
+  // per-sale read. A race (two copies at once) is still caught below: create_order_atomic's 23505 on the key → duplicate.
+  const quiet = backfillQuiet(req);
+  if (idempotencyKey && !quiet?.knownNew) {
     const { data: existing } = await supabase
       .from('orders')
       .select('id, order_number')
@@ -749,6 +816,14 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
   } = req.body;
   const deliveryFee = order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
   const deliveryFree = isFreeDelivery(order_type, deliveryFee, deliveryFreeRaw);
+  // A607: the buyer's KRA PIN for THIS sale (orders.buyer_kra_pin → the receipt and KRA eTIMS); none when not sent. A POS
+  // checks it before it sends, so a malformed one is refused (400 BAD_BUYER_PIN) — but the history backfill drops it
+  // instead: an old sale is never refused over its PIN (and the backfill never fiscalises anyway).
+  const buyerPin = saleBuyerPin(req.body?.buyer_kra_pin);
+  if (buyerPin === 'bad' && !quiet) {
+    res.status(400).json({ error: "The buyer's KRA PIN is not a KRA PIN (A or P, 9 digits and a letter — A123456789Z).", code: 'BAD_BUYER_PIN' });
+    return;
+  }
 
   // Normalise to array — support both old single `payment` and new `payments` array
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -855,7 +930,9 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       await mapCanonicalProducts(req.businessId, items);   // P1-8a: a product the till created offline, known here by another id
       saleItems = JSON.parse(JSON.stringify(items));
     }
-    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, saleItems, discount_amount, offerClaimFrom(req.body), { tillSale });   // A445
+    // A619: a sale paid by a delivery platform alone, claiming its prices (price_list), is priced at them — re-derived here.
+    const platform = salePlatform(req.body?.price_list, paymentLegs.map((l) => l.method));
+    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, saleItems, discount_amount, offerClaimFrom(req.body), { tillSale, platform });   // A445
     if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     // A490: a manual discount on a LIVE web sale is sales.discount (offers are not a manual discount). A till's sale was
     // made already — never refused for it (the till checks its own person).
@@ -898,7 +975,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     // stored total remains the authoritative re-priced figure — but now the
     // discrepancy is visible instead of silent, and can be reviewed.
     const clientTotal = Number(total);
-    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01) {
+    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01 && quiet) quiet.repriced++;   // A602: counted, one line per batch
+    else if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01) {
       const isOffline = !!(req.body?.created_at || req.body?.client_created_at);
       console.warn(
         `[reprice-divergence]${isOffline ? ' OFFLINE' : ''} order ${order_number}: ` +
@@ -1092,7 +1170,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         // Empty access = all branches (same rule verify-pin applies).
         claimValid = access.length === 0 || access.some(b => b.branch_id === branch_id);
       }
-      if (!claimValid) {
+      if (!claimValid && quiet) quiet.cashierClaims++;   // A602: counted, one line per batch
+      else if (!claimValid) {
         console.warn(`[orders] rejected cashier claim ${claimedCashier} on branch ${branch_id} — not an active branch cashier; crediting ${req.userId ?? 'no one (the till\'s own session)'}`);
       }
     }
@@ -1229,6 +1308,21 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         .eq('id', createdRow.order_id).eq('business_id', req.businessId);
       if (noteErr) console.error('[order-create] the order note was not saved:', noteErr.message);
     }
+    // A607: the sale's buyer KRA PIN — written before the invoice is sent to KRA below (create_order_atomic does not carry
+    // it, as the note). A failure is logged, never the sale's.
+    if (buyerPin && buyerPin !== 'bad') {
+      const { error: pinErr } = await supabase.from('orders').update({ buyer_kra_pin: buyerPin })
+        .eq('id', createdRow.order_id).eq('business_id', req.businessId);
+      if (pinErr) console.error('[order-create] the buyer KRA PIN was not saved (is migration 181 applied?):', pinErr.message);
+    }
+    // A619: which platform's prices applied, its rule and what they added (create_order_atomic does not carry them — written
+    // right after, like the note). A failure is logged, never the sale's.
+    const platformRec = platformOrderRecord(recomputed, authSubtotal, variance ? req.body?.platform_rule : undefined);
+    if (platformRec) {
+      const { error: plErr } = await supabase.from('orders').update(platformRec)
+        .eq('id', createdRow.order_id).eq('business_id', req.businessId);
+      if (plErr) console.error('[order-create] the platform pricing was not recorded (is migration 187 applied?):', plErr.message);
+    }
     const order = {
       id: createdRow.order_id,
       order_number: createdRow.order_number,
@@ -1278,10 +1372,11 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     }
 
 
-    // 7. Kitchen ticket
+    // 7. Kitchen ticket. A602: a sale from the history backfill (weeks or months old) is recorded as already collected —
+    //    never a new ticket on today's kitchen screen.
     const { error: ktErr } = await supabase
       .from('kitchen_tickets')
-      .insert({ order_id: order.id, branch_id, status: 'new' });
+      .insert({ order_id: order.id, branch_id, status: quiet ? 'collected' : 'new' });
     if (ktErr) console.error('Failed to create kitchen ticket:', ktErr.message);
 
     // 7b. Low-stock alerts now fire inside applyStockEffects, so the dine-in
@@ -1359,8 +1454,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       await supabase.rpc('increment_discount_usage', { discount_uuid: discount_id });
     }
 
-    // 10. Fire webhook — non-blocking
-    fireWebhook(req.businessId, 'order.completed', {
+    // 10. Fire webhook — non-blocking. A602: not for the history backfill (old sales are not "order completed" news).
+    if (!quiet) fireWebhook(req.businessId, 'order.completed', {
       order_id: order.id, order_number: order.order_number,
       order_type, total: authTotal, branch_id, cashier_id: resolvedCashierId,
     }).catch(() => {});
@@ -1392,14 +1487,16 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       });
     }
 
-    // 11. Fiscalise with KRA eTIMS — non-blocking; never fails the sale.
-    fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));
+    // 11. Fiscalise with KRA eTIMS — non-blocking; never fails the sale. A602: never for the history backfill — old sales
+    //     are not sent to KRA as new invoices by an upload the owner did not mean as fiscalisation.
+    if (!quiet) fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));
 
     res.status(201).json({ orderId: order.id, orderNumber: order.order_number });
   } catch (err) {
     sendError(res, err, { message: 'Failed to create order' });
   }
-});
+}
+router.post('/', sellsOrTillSale, createOrder);   // A505: a till's own sale is never refused for its person's keys
 
 // GET /api/orders
 router.get('/', async (req, res) => {
@@ -2422,6 +2519,12 @@ router.post('/:id/pay', sells, async (req, res) => {
     res.status(400).json({ error: 'At least one payment leg is required' });
     return;
   }
+  // A607: the buyer's KRA PIN, given at payment of an order already open (a restaurant's bill) — as POST /orders.
+  const payBuyerPin = saleBuyerPin(req.body?.buyer_kra_pin);
+  if (payBuyerPin === 'bad') {
+    res.status(400).json({ error: "The buyer's KRA PIN is not a KRA PIN (A or P, 9 digits and a letter — A123456789Z).", code: 'BAD_BUYER_PIN' });
+    return;
+  }
 
   try {
     // 1. Load the open order
@@ -2877,6 +2980,13 @@ router.post('/:id/pay', sells, async (req, res) => {
       order_type: order.order_type, total: payTotal,
       branch_id: order.branch_id, cashier_id: req.userId,
     }).catch(() => {});
+
+    // A607: the buyer's KRA PIN, before the invoice goes to KRA. A failure is logged, never the payment's.
+    if (payBuyerPin) {
+      const { error: pinErr } = await supabase.from('orders').update({ buyer_kra_pin: payBuyerPin })
+        .eq('id', order.id).eq('business_id', req.businessId);
+      if (pinErr) console.error('[order-pay] the buyer KRA PIN was not saved (is migration 181 applied?):', pinErr.message);
+    }
 
     // 8. Fiscalise with KRA eTIMS — non-blocking; never fails the sale.
     fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));

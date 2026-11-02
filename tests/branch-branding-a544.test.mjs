@@ -20,7 +20,7 @@
 //   C  /api/pos/changes: a branch_branding entry answered with THIS branch's override; another branch's entry never
 //      answered (even when the log hands it over); the themes switch's `branding` entry carries the override too.
 //   W  the web: Settings › Branding's Per branch section (premium note with themes off, the picker / colour / footer
-//      controls, the shared checks, PATCH / DELETE) and the manager portal's Branch branding; the web POS resolves its
+//      controls, the shared checks, PATCH / DELETE) (the manager portal's Branch branding: retired, A608); the web POS resolves its
 //      branch's footer and theme with the shared rule.
 //
 // MUTATIONS TO CONFIRM BITE (checked by hand, 2026-10-21):
@@ -266,11 +266,11 @@ try {
     assert.equal(k.status, 200, k.text.slice(0, 300));
     assert.equal(k.body.branchBranding.accentHex, '#f5b800'); assert.equal(k.body.branchBranding.branchId, BR2);
   });
-  await ok('themes off: init carries no override (null) and no theme — stored, not applied', async () => {
+  await ok('themes off: init carries no override (null) — stored, not applied; A617: the business\'s free theme (Ocean) still served', async () => {
     reset(false);
     const r = await call('GET', `/api/pos/init?branch_id=${BR}`, T.till, undefined, { 'x-device-id': 'dev-T1' });
     assert.equal(r.status, 200, r.text.slice(0, 300));
-    assert.equal(r.body.branchBranding, null); assert.equal(r.body.themeId, null);
+    assert.equal(r.body.branchBranding, null); assert.equal(r.body.themeId, 'ocean'); assert.equal(r.body.themesPremium, false);
     assert.ok(bb(BR), 'the row is kept');
   });
   await ok('before migration 156 (no table): init still answers, with no override', async () => {
@@ -310,7 +310,6 @@ try {
   console.log('\nW. the web\n');
   const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
   const tab = read('apps/dashboard/src/pages/settings/BrandingTab.tsx');
-  const mgr = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
   const pos = read('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
   const tv = read('apps/dashboard/src/lib/themeVars.ts');
   const layer = read('apps/dashboard/src/components/ThemeLayer.tsx');
@@ -327,15 +326,13 @@ try {
     assert.match(tab, /const accentErr = accent\.trim\(\) \? accentWriteError\(accent\.trim\(\)\) : null;/);
     assert.match(tab, /const footerErr = footerWriteError\(footer\);/);
     assert.match(tab, /line \{i \+ 1\}: \{l\.length\}\/\{lineMax\}/);
-    assert.match(tab, /<TillPreview theme=\{resolveTheme\(look\.themeId\)\} brandHex=\{look\.accentHex\} \/>/);
+    assert.match(tab, /<TillPreview theme=\{resolveTheme\(look\.themeId\)\} brandHex=\{look\.accentHex\}(?: primaryHex=\{look\.primaryHex\} secondaryHex=\{look\.secondaryHex\})? \/>/);
     assert.match(tab, /client\.patch<BranchBrandingRow>\(`\/api\/business\/branding\/branches\/\$\{row\.branch_id\}`/);
     assert.match(tab, /client\.delete\(`\/api\/business\/branding\/branches\/\$\{row\.branch_id\}`\)/);
     assert.match(tab, /disabled=\{busy \|\| !!accentErr \|\| !!footerErr\}/);
   });
-  await ok('the manager portal: Branch branding (receipt.manage or settings.business) under the manager\'s own sign-in', async () => {
-    assert.match(mgr, /key: 'branding',.*permission: \['receipt\.manage', 'settings\.business'\], group: 'Settings'/);
-    assert.match(mgr, /case 'branding':[^\n]*\n\s*return <div[^>]*><BranchBrandingSection client=\{\{ get: posApi\.get, patch: posApi\.patch, delete: posApi\.delete \}\} \/><\/div>;/);
-  });
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's Branch branding tab
+  // (ManagerDashboard.tsx) is gone; Settings › Branding's Per branch section (above) is where it is set on the web.
   await ok('the web POS: its branch\'s footer and theme with the shared rule (themes off → the business\'s)', async () => {
     assert.match(pos, /const look = resolveBranchBranding\(\s*\{ themeId: init\.themeId \?\? null, accentHex: init\.branding\?\.accentHex \?\? null, receiptFooter: init\.receiptFooter \?\? '' \},\s*branchBrandingFromWire\(init\.branchBranding\)\);/);
     assert.match(pos, /setReceiptFooter\(look\.receiptFooter\);/);
@@ -380,7 +377,8 @@ try {
     assert.equal((await call('GET', `/api/business/branding/branches/${BR}/served`)).status, 401);
     reset(false);
     const off = await call('GET', `/api/business/branding/branches/${BR}/served`, T.owner);
-    assert.equal(off.status, 200); assert.equal(off.body.themeId, null); assert.equal(off.body.branchBranding, null, 'themes off → nothing served');
+    // A617: Ocean is a free theme — served without themes; the branch's override (premium) is not.
+    assert.equal(off.status, 200); assert.equal(off.body.themeId, 'ocean'); assert.equal(off.body.branchBranding, null, 'themes off → no override served');
   });
   // The REAL reprint (lib/reprintReceipt.ts) bundled with the API, the print server and the renderer stubbed: what it hands
   // the renderer as the footer, given what each route answers.

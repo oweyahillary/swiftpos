@@ -27,7 +27,7 @@ import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { PAYMENT_METHODS_ENABLED_KEY, enabledFromSetting } from '../lib/paymentCatalogue';
-import { STOCK_ZERO_KEYS } from '../lib/posFeatures';   // A563
+import { STOCK_ZERO_KEYS, STANDARD_POS_FEATURES } from '../lib/posFeatures';   // A563; A604
 import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '../lib/stockGate';   // A563
 
 /** The POS options the owner sets (settings.pos). */
@@ -53,6 +53,14 @@ export function ownerSetsFeature(key: string): string | null {
     return 'This is set per role now — the owner gives or takes the permission on Settings › Roles and permissions.';
   }
   return null;
+}
+
+/** A604: the STANDARD keys (lib/posFeatures.ts STANDARD_POS_FEATURES — blind shift close, cashier figures at confirm,
+ *  manager approval of kitchen voids) are always on for every business; a stored value is ignored, so the admin portal's
+ *  write is refused (409 ALWAYS_ON) rather than stored and shown as if it changed something. */
+export const ALWAYS_ON_REFUSAL = 'This is always on for every business (blind shift close, cashier figures at confirm, manager approval of kitchen voids) — there is nothing to switch.';
+export function alwaysOnFeature(key: string): string | null {
+  return (STANDARD_POS_FEATURES as readonly string[]).includes(key) ? ALWAYS_ON_REFUSAL : null;
 }
 
 const router = safeRouter();

@@ -150,6 +150,8 @@ const WRITES = [
   ['POST', `/api/orders/${PAID}/refund`, { reason: 'returned', override_pin: '1234', authorizer_id: MGR }],
   ['POST', `/api/orders/${OPEN}/void`, { reason: 'customer left' }],                                                    // unpaid, the holding till
   ['POST', '/api/sync/push', { business_days: [], shifts: [], float_transactions: [], expenses: [], kitchen_voids: [] }],
+  // A602: the sales history in bulk — each sale through the same rules as POST /api/orders (a credit sale included)
+  ['POST', '/api/sync/backfill', { orders: [{ id: id(), body: sale(3) }, { id: id(), body: sale(4, { customer_id: CUST, payments: [{ method: 'credit', amount: 200 }] }) }] }],
   ['POST', '/api/branch-prices/sync', { branch_id: BR, prices: [] }],
   ['POST', `/api/shifts/${SHIFT}/close`, { closing_float: 0, counted: {} }],
   ['POST', `/api/shifts/${SHIFT}/force-close`, { reason: 'end of day' }],

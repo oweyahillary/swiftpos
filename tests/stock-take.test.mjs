@@ -187,8 +187,8 @@ await ok('the screens: the difference only for a reviewer; a blind printed sheet
   assert.match(sc, /const showDiff = take\.can_review && \(take\.status === 'review' \|\| take\.status === 'posted'\);/);
   assert.match(sc, /: \[\{ label: 'Item' \}, \{ label: 'Category' \}, \{ label: 'Unit' \}, \{ label: 'Counted', align: 'right' \}\],/);
   assert.match(sc, /\{\(isOwner \|\| canFreeze\) && <FreezeSwitch client=\{client\} \/>\}/);
-  const md = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
-  assert.match(md, /key: 'counts',[^\n]+permission: 'inventory\.count', group: 'Inventory' \}/);
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's Counts tab
+  // (ManagerDashboard.tsx) is gone; the dashboard's Stock › Stock Counts (route + nav, below) is where a manager counts.
   assert.match(read('apps/dashboard/src/App.tsx'), /<Route path="stock\/counts"\s+element=\{<StockCountsPage \/>\} \/>/);
   assert.match(read('apps/dashboard/src/components/DashboardLayout.tsx'), /\{ to: '\/dashboard\/stock\/counts',\s+label: 'Stock Counts'/);
 });

@@ -40,6 +40,10 @@ import { registerReportHandlers, registerBranchReportHandlers } from './ipc/repo
 import { registerExpenseHandlers } from './ipc/expenses';
 import { registerReversalHandlers } from './ipc/reversals';
 import { registerTechHandlers } from './ipc/tech';
+import { registerBackupHandlers } from './ipc/backup';   // A600
+import { registerHistoryUploadHandlers } from './ipc/historyUpload';   // A602
+import { registerCustomerDisplayHandlers } from './ipc/customerDisplay';   // A606
+import { registerCustomerDetailsHandlers } from './ipc/customerDetails';   // A607
 
 export function registerIpcHandlers() {
 
@@ -80,5 +84,9 @@ export function registerIpcHandlers() {
   registerExpenseHandlers(ctx);
   registerReversalHandlers(ctx);
   registerTechHandlers(ctx);
+  registerBackupHandlers(ctx);   // A600: Manager › Settings › Backup
+  registerHistoryUploadHandlers(ctx);   // A602: the history upload (going online later)
+  registerCustomerDisplayHandlers(ctx);   // A606: the customer screen (a dual-screen POS)
+  registerCustomerDetailsHandlers(ctx);   // A607: customer details on both screens, the M-Pesa prompt
   registerBranchReportHandlers(ctx);   // reports.ts
 }

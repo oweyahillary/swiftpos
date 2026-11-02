@@ -1,7 +1,5 @@
 // scripts/escpos-renderer/buffer-shim.js
-if (typeof globalThis.Buffer === "undefined") {
-  globalThis.Buffer = { from: (a) => Uint8Array.from(a) };
-}
+var PrinterBuffer = typeof globalThis.Buffer !== "undefined" ? globalThis.Buffer : { from: (a) => Uint8Array.from(a) };
 
 // shared/printing/src/document.ts
 var DocBuilder = class {
@@ -627,6 +625,7 @@ function renderReceipt(ctx) {
     else d.lines(wrap(voided, cols));
   }
   if (full && business.kitchenTickets !== false) info(`Kots: ${order.kotCount}`);
+  if (order.buyerPin) info(`Buyer PIN: ${order.buyerPin}`);
   for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, void 0, 0));
   minorRule();
   d.line("Item".padEnd(c.name) + "Qty".padStart(c.qty) + "Amt".padStart(c.amt));
@@ -1075,7 +1074,7 @@ function toEscPos(doc, opts = {}) {
   const feed = opts.cut && doc.cutFeed !== void 0 ? doc.cutFeed : opts.feedBeforeCut;
   if (feed) push(ESC, 100, Math.max(0, Math.min(255, feed)));
   if (opts.cut) push(GS, 86, 66, 0);
-  return Buffer.from(out);
+  return PrinterBuffer.from(out);
 }
 
 // shared/printing/src/routing.ts

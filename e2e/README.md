@@ -1,7 +1,9 @@
 # SwiftPOS — E2E UI tests (Playwright)
 
-Browser tests for the dashboard web app across its three surfaces (owner
-`/dashboard`, POS `/pos`, manager `/manager`) plus public routes. Complements the
+Browser tests for the dashboard web app across its surfaces (owner
+`/dashboard`, POS `/pos`) plus public routes. (A608, 2026-10-29: the manager portal
+`/manager` is retired — it redirects to `/dashboard`; managers sign in to the dashboard
+with email and password.) Complements the
 API/integration suite in `../tests` — this layer catches the render/wiring bugs a
 real browser sees (the "stale build" class of issue), and it already caught a real
 dine-in bug (see below).
@@ -30,11 +32,11 @@ only) the workflow uses; `npm run guard` checks the target by hand.
 
 ## What's covered (10 tests + 1 skipped)
 
-**Auth (all three surfaces)**
+**Auth (every surface)**
 - Owner login → `/dashboard`, session reused across specs via `storageState`.
 - Cashier PIN login → `/pos/cashier`.
 - Custom Waiter-role PIN login → `/pos/cashier`.
-- Manager PIN login → `/manager`.
+- Manager PIN on the web POS → refused, pointed to the dashboard sign-in (A608).
 
 **POS sales & regressions**
 - Variant product → cash checkout completes (the old 100%-blocker).
@@ -54,7 +56,8 @@ only) the workflow uses; `npm run guard` checks the target by hand.
 ## How it's built
 
 - **Owner** logs in once (setup project) → session saved to `playwright/.auth/` and
-  reused. **POS/manager/custom** log in per-test with a PIN (`lib/pos-login.ts`).
+  reused. **POS/custom** log in per-test with a PIN (`lib/pos-login.ts`); the manager
+  spec types its PIN by hand and expects the refusal.
 - **Shared POS flow** in `lib/pos-flow.ts`: open shift → open a dine-in table →
   add a variant product → sell for cash. These encode the real pre-conditions a
   sale passes through (shift float, table selection, covers).

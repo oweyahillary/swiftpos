@@ -156,6 +156,7 @@ router.get('/log-requests/mine', requireAuth, async (req: any, res) => {
 router.get('/terminal-codes', requireAuth, async (req: any, res) => {
   const branchId = String(req.query.branch_id ?? '');
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  if (req.pausedBranches?.has(branchId)) { res.status(404).json({ error: 'Branch not found' }); return; }   // A612: paused
   const allowed = req.isTill ? (!req.branchId || req.branchId === branchId)
     : (req.isOwner || (can(req, 'devices.approve') && (req.allBranches || inBranchSet(req) ? assertBranchAccess(req, branchId) : (!req.branchId || req.branchId === branchId))));   // A550, A582: a partner's set
   if (!allowed) { res.status(403).json({ error: 'Only this branch\'s own POS, the owner or someone who approves devices can see this.', code: 'FORBIDDEN' }); return; }

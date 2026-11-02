@@ -59,19 +59,21 @@ ok('the cloud\'s OWNER_SETS refusal is shown with its own message', () => {
   assert.match(ap, /async function toggleFeature\(key, enabled\) \{\s*if \(!adminSwitches\(key\)\)/);
 });
 
-ok('Features: the POS switches are read-only (a state pill, no switch), with where the owner sets them', () => {
+ok('Features: the POS switches are read-only ("On" / "Off", no switch), with where the owner sets them', () => {
   const f = tab('features');
   assert.match(f, /\{POS_FEATURES\.map\(pf => \{/);
-  assert.match(f, /\{statePill\(on, pf\.label\)\}/);
+  // A604: a plain value, not a pill; the per-role note is one line (tests/admin-pos-options-a604.test.mjs), not per row.
+  assert.match(f, /\{ownerValue\(on, pf\.label\)\}/);
   assert.doesNotMatch(f, /toggleFeature\(pf\.key/);
-  assert.match(f, /\{OWNER_POS_OPTIONS_WHERE\}/);
-  assert.match(f, /\{PER_ROLE_WHERE\}: “\{perRole\}”\. The stored value shown no longer applies once roles hold the permission\./);
+  assert.match(f, /\{OWNER_POS_OPTIONS_NOTE\}/);
+  assert.doesNotMatch(f, /The stored value shown no longer applies once roles hold the permission/);
 });
 
 ok('Features: other flags switch only when the portal holds them (loyalty_enabled read-only); themes still toggles', () => {
   const f = tab('features');
-  assert.match(f, /\{adminSwitches\(f\.key\) \? toggle\(f\.enabled, \(\) => toggleFeature\(f\.key, !f\.enabled\), f\.key\) : statePill\(f\.enabled, f\.key\)\}/);
-  assert.match(f, /toggle\(hasThemes, \(\) => toggleThemes\(!hasThemes\), "App themes"\)/);
+  // A604: loyalty_enabled is listed with the owner's options now; what is left is named (OTHER_FLAG_LABELS).
+  assert.match(f, /\{adminSwitches\(f\.key\) \? toggle\(f\.enabled, \(\) => toggleFeature\(f\.key, !f\.enabled\), OTHER_FLAG_LABELS\[f\.key\]\?\.label \?\? f\.key\) : ownerValue\(f\.enabled, f\.key\)\}/);
+  assert.match(f, /toggle\(hasThemes, \(\) => toggleThemes\(!hasThemes\), "App themes and brand colours"\)/);   // A597: relabelled
   assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/features\/themes`/);
   assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/features\/web_hosting`/);
   assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/web-access`/);

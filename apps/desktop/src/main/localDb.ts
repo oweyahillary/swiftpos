@@ -6,6 +6,7 @@ import { app } from 'electron';
 import { monoRasterFromRGBA, monoRasterToString } from '@swiftpos/printing';
 import { validateBrandingWrite } from './brandingGuard';
 import { branchBrandingFromWire, resolveBranchBranding, type BranchBranding } from './branchBranding';   // A544
+import { applyPendingRestore } from './restoreSwap';   // A600
 
 // Resolved lazily, NOT at import time.
 //
@@ -29,6 +30,8 @@ export function closeLocalDb(): void {
 export function getLocalDb(): Database.Database {
   if (_db) return _db;
 
+  // A600: a restore chosen on Manager › Settings › Backup is swapped in here, before the file is opened.
+  applyPendingRestore(getDbPath());
   _db = new Database(getDbPath());
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
@@ -155,7 +158,9 @@ function initSchema(db: Database.Database) {
       logo_receipt  TEXT,
       synced_at     TEXT,
       receipt_logo_enabled INTEGER NOT NULL DEFAULT 0,
-      theme_id      TEXT
+      theme_id      TEXT,
+      primary_hex   TEXT,
+      secondary_hex TEXT
     );
 
     -- ── Active staff (PIN login) — singleton, layered on top of till session ─
@@ -1123,6 +1128,10 @@ function initSchema(db: Database.Database) {
   migrateColumns(db, 'branding', [['receipt_logo_enabled', 'INTEGER NOT NULL DEFAULT 0']]);
   // A325 (schema 54): the EFFECTIVE action theme the cloud serves (null = themes off → today's look).
   migrateColumns(db, 'branding', [['theme_id', 'TEXT']]);
+  // A597: the owner's brand colours (#rrggbb, pulled with the branding row; null while themes are off). NO schema bump: they
+  // are pulled only, never pushed (nothing the cloud stores goes unsent), and migrateColumns adds them on every start —
+  // a database without them reads as "none" (getBranding's fallback), which is today's look.
+  migrateColumns(db, 'branding', [['primary_hex', 'TEXT'], ['secondary_hex', 'TEXT']]);
   migrateColumns(db, 'device_config', [
     ['device_id', 'TEXT'],
     ['device_role', "TEXT NOT NULL DEFAULT 'till'"],
@@ -1205,6 +1214,9 @@ function initSchema(db: Database.Database) {
     // A577 (77): how the business's weighing scales print their labels — JSON (shared/scaleBarcode.ts). Pulled
     // (scaleBarcodes), never pushed. NULL = not told yet = the default layout (21–29, item 5, price 5).
     ['scale_barcodes', 'TEXT'],
+    // A619 (79): the delivery platforms' prices — JSON { rounding, rules } (shared/platformPrices.ts). Pulled (platformPrices),
+    // never pushed. NULL = not told yet = normal prices.
+    ['platform_prices', 'TEXT'],
   ]);
 
   // A445 (70): offers — the branch's offers, pulled with the menu (pos/init `offers`) and applied to the cart by the till's
@@ -1281,6 +1293,14 @@ function initSchema(db: Database.Database) {
     // unit ('kg', or 'g' for an item shown in grams). Pulled, never pushed. NULL = sold each (every till before 77).
     ['sold_by', 'TEXT'],
     ['unit_label', 'TEXT'],
+    // A619 (79): the item's own price per delivery platform, JSON ({"glovo": 1200}; migration 187). Pulled, never pushed.
+    // NULL = the platform's uplift.
+    ['platform_prices', 'TEXT'],
+  ]);
+  // A607 (78): the buyer's KRA PIN on this sale (customer details at the counter) — in the order payload (POST /api/orders
+  // buyer_kra_pin → the receipt and KRA eTIMS); migration 181. NULL = none.
+  migrateColumns(db, 'orders', [
+    ['buyer_kra_pin', 'TEXT'],
   ]);
 }
 
@@ -1357,7 +1377,10 @@ function initSchema(db: Database.Database) {
 // 76 adds A578: menus.availability (pulled — a menu's hours, days and time windows; migration 165). REQUIRED moves.
 // 77 adds A577: products.sold_by + products.unit_label (pulled — items sold by weight) and device_config.scale_barcodes
 // (pulled — the scale label layout). REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 77;
+// 78 adds A607: orders.buyer_kra_pin (the order payload — the buyer's KRA PIN for this sale; migration 181). REQUIRED moves.
+// 79 adds A619: device_config.platform_prices and products.platform_prices (both pulled — the delivery platforms' prices;
+// migration 187). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 79;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {
@@ -1400,8 +1423,12 @@ export interface BrandingRow {
   /** A544: this till's branch's override, as pulled (null = none, or themes off). accentHex / themeId above stay the
    *  BUSINESS's (the till's branding editor edits those); `effective` is what the screens wear. */
   branch?: BranchBranding | null;
-  /** A544: resolved per field — the branch's override → the business's → the ZapTill default (branchBranding.ts). */
-  effective?: { themeId: string | null; accentHex: string | null };
+  /** A597: the owner's brand colours as pulled (null = none, or themes off). */
+  primaryHex?: string | null;
+  secondaryHex?: string | null;
+  /** A544: resolved per field — the branch's override → the business's → the ZapTill default (branchBranding.ts).
+   *  A597: + the brand colours the screens wear (none while a branch's own theme overrides, or themes are off). */
+  effective?: { themeId: string | null; accentHex: string | null; primaryHex?: string | null; secondaryHex?: string | null };
 }
 
 /** A544: the override of THIS till's branch (device_config.branch_id), or null. Fail-soft (a database before 74 → null). */
@@ -1417,6 +1444,16 @@ export function getBranchBranding(): BranchBranding | null {
   }
 }
 
+/** A597: the brand colours, or none on a database that has not added the columns yet (fail-soft: today's look). */
+function getBrandColours(): { primary_hex: string | null; secondary_hex: string | null } {
+  try {
+    return (getLocalDb().prepare(`SELECT primary_hex, secondary_hex FROM branding LIMIT 1`).get() as
+      { primary_hex: string | null; secondary_hex: string | null } | undefined) ?? { primary_hex: null, secondary_hex: null };
+  } catch {
+    return { primary_hex: null, secondary_hex: null };
+  }
+}
+
 export function getBranding(): BrandingRow | null {
   try {
     const row = getLocalDb().prepare(
@@ -1424,15 +1461,19 @@ export function getBranding(): BrandingRow | null {
       { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null; theme_id: string | null } | undefined;
     if (!row) return null;
     const branch = getBranchBranding();
-    const eff = resolveBranchBranding({ themeId: row.theme_id ?? null, accentHex: row.accent_hex ?? null }, branch);
+    const colours = getBrandColours();
+    const eff = resolveBranchBranding({ themeId: row.theme_id ?? null, accentHex: row.accent_hex ?? null,
+      primaryHex: colours.primary_hex ?? null, secondaryHex: colours.secondary_hex ?? null }, branch);
     return {
       accentHex: row.accent_hex ?? null,
       logoPng: row.logo_png ?? null,
       logoReceipt: row.logo_receipt ?? null,
       receiptLogoEnabled: row.receipt_logo_enabled === 1,
       themeId: row.theme_id ?? null,
+      primaryHex: colours.primary_hex ?? null,
+      secondaryHex: colours.secondary_hex ?? null,
       branch,
-      effective: { themeId: eff.themeId, accentHex: eff.accentHex },
+      effective: { themeId: eff.themeId, accentHex: eff.accentHex, primaryHex: eff.primaryHex, secondaryHex: eff.secondaryHex },
     };
   } catch {
     return null;
@@ -1567,6 +1608,8 @@ export function applyPulledBranding(b: {
   accentHex: string | null; logoPng: string | null;
   /** A311: absent on an older cloud → keep the local value (COALESCE below), not clear it. */
   logoReceipt?: string | null; receiptLogoEnabled?: boolean | null;
+  /** A597: the owner's brand colours. Absent (an older cloud, or a branch server on an older build) → keep. */
+  primaryHex?: string | null; secondaryHex?: string | null;
 }): void {
   const db = getLocalDb();
   const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as
@@ -1590,4 +1633,9 @@ export function applyPulledBranding(b: {
        receipt_logo_enabled = CASE WHEN ? = 1 THEN branding.receipt_logo_enabled ELSE COALESCE(?, 0) END,
        synced_at  = excluded.synced_at`,
   ).run(sess.business_id, b.accentHex, b.logoPng, lr, en, now, lrKeep, enKeep, en);
+  // A597: the brand colours — their own write, remote-wins, only when the cloud said (undefined = keep). Anything but a
+  // #rrggbb colour is stored as null (none). The row exists: the write above made it.
+  const hex = (v: unknown) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
+  if (b.primaryHex !== undefined) db.prepare(`UPDATE branding SET primary_hex = ? WHERE business_id = ?`).run(hex(b.primaryHex), sess.business_id);
+  if (b.secondaryHex !== undefined) db.prepare(`UPDATE branding SET secondary_hex = ? WHERE business_id = ?`).run(hex(b.secondaryHex), sess.business_id);
 }

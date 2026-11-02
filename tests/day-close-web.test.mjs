@@ -1,39 +1,18 @@
 /**
- * A275 — the manager Remote Day Close panel + the cloud migration. SOURCE-ASSERTION
+ * A275 — the manager Remote Day Close panel (retired with the web manager portal, A608) + the cloud migration. SOURCE-ASSERTION
  * guards (no browser / no Postgres on the bench, rule 16). Mutation-checked.
  */
 import assert from 'node:assert';
 import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const r = p => fs.readFileSync(path.join(root, p), 'utf8');
-const UI  = 'apps/dashboard/src/pages/manager/RemoteDayClose.tsx';
-const TAB = 'apps/dashboard/src/pages/manager/ManagerShiftTab.tsx';
 const MIG = 'migrations/102_day_close_instructions.sql';
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log('PASS ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n   ' + e.message); } };
 
-// A490: the day close is its own key — shifts.close_day (what force_close / settings.manage stood for here).
-ok('A275: the panel is gated on shifts.close_day (A490)', () => {
-  const s = r(UI);
-  assert.match(s, /const allowed = hasPermission\('shifts\.close_day'\);/);
-  assert.doesNotMatch(s, /settings\.manage/);
-  assert.match(s, /if \(!allowed\) return null;/);
-});
-
-ok('A275: it queues a close with a real counted_cash (never estimates)', () => {
-  const s = r(UI);
-  assert.match(s, /posApi\.post\('\/api\/day-close\/instruct'/);
-  assert.match(s, /counted_cash:\s+amount/);
-  assert.match(s, /Enter the cash counted at the POS/);
-  // it must read open days, not close them client-side
-  assert.match(s, /posApi\.get<\{ tills: TillDay\[\] \}>\('\/api\/day-close\/overview'\)/);
-});
-
-ok('A275: the panel is mounted in the manager shift tab', () => {
-  const s = r(TAB);
-  assert.match(s, /import RemoteDayClose from '\.\/RemoteDayClose'/);
-  assert.match(s, /<RemoteDayClose currency=\{currency\} \/>/);
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; 
+// the Remote Day Close panel (RemoteDayClose.tsx, mounted in ManagerShiftTab.tsx) is gone. The owner/manager day
+// close on the web is Tills & days (components/TillsAndDays.tsx). The cloud migration below still holds.
 
 ok('A275: the migration creates the relay table + one-pending-per-till-per-day index', () => {
   const s = r(MIG);

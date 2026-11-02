@@ -317,8 +317,10 @@ try {
   await ok('a write of the business: read again at once; the beat\'s day close / log request / clear as they are now', async () => {
     reset();
     await drawers();
-    mem.db.day_close_instructions[0].status = 'acked';
-    await call('POST', '/api/day-close/ack', T.till2, { instruction_id: 'nope', ok: true }, { 'x-device-id': 'dev-T2' }); await settle();   // a write of B
+    // A611: the till acks its own pending close — a real write of B (an ack that matches no row writes nothing, and no
+    // longer makes the server forget: tests/quiet-refusals-a611.test.mjs).
+    await call('POST', '/api/day-close/ack', T.till2, { instruction_id: 'dci-1', ok: true }, { 'x-device-id': 'dev-T2' }); await settle();   // a write of B
+    assert.equal(mem.db.day_close_instructions[0].status, 'acked');
     const r = await callsOf(() => drawers());
     assert.ok(tables(r.calls).includes('day_close_instructions:select'), tables(r.calls).join(' '));
     assert.deepEqual(r.out.body.beat.day_close_devices, []);

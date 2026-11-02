@@ -355,7 +355,9 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
     // A581: the cloud plan lapsed past its grace — the cloud refuses the tills' sync on purpose; the owner hears it from the
     // plan's reminders, never as "till not syncing".
     // (not remembered: a grace period runs out by the clock, with no write)
-    const planLapsed = (await standingFor(biz.id).catch(() => null))?.syncRefused === true;
+    // A601: and a desktop-only business from the cut-off — its POSs send no backup on purpose.
+    const planStanding = await standingFor(biz.id).catch(() => null);
+    const planLapsed = planStanding?.syncRefused === true || planStanding?.desktopOnly?.backupOff === true;
     devicesSeen = seen ?? { rows: devices, open: openBranches, at: now.getTime() };
     for (const d of devices) {
       // A477: the till's sign-in used from another computer — to the owner, once per incident.

@@ -21,6 +21,7 @@ import reportsDailyRoutes  from './reports-daily';
 import reportsMonthlyRoutes from './reports-monthly';   // A455
 import reportsRoutes       from './reports';
 import analyticsRoutes     from './analytics';   // A549
+import attendanceRoutes    from './attendance';  // A599
 import lossAlertsRoutes    from './lossAlerts';  // A576
 import loyaltyRoutes       from './loyalty';
 import creditRoutes        from './credit';
@@ -46,6 +47,7 @@ import expensesRoutes      from './expenses';
 import recipesRoutes       from './recipes';
 import printersRoutes      from './printers';
 import mpesaRoutes         from './mpesa';
+import mpesaSettingsRoutes from './mpesaSettings';   // A618
 import webhooksRoutes      from './webhooks';
 import { fuelTanksRouter, pumpsRouter } from './fueltanks';
 import combosRoutes        from './combos';
@@ -56,6 +58,7 @@ import etimsRoutes         from './etims';
 import adminRoutes         from './admin';
 import techRoutes          from './tech';
 import syncRoutes          from './sync';
+import backfillRoutes      from './backfill';   // A602
 import devicesRoutes       from './devices';
 import parkingRoutes       from './parking';
 import controlsRoutes      from './controls';   // A490: the owner's business options
@@ -69,6 +72,7 @@ import opsRoutes           from './ops';            // A525: the GitHub workflow
 import opsAdminRoutes      from './opsAdmin';       // A525: the admin portal's System page reads them
 import adminInstallerRoutes from './adminInstaller';   // A570: Download ZapTill, through the cloud
 import cloudPlanAdminRoutes from './cloudPlanAdmin';   // A581: the cloud payment plan
+import billingDetailsAdminRoutes from './billingDetailsAdmin';   // A612: ZapTill's billing details and prices
 import { forgetOnWrite }   from '../lib/forgetOnWrite';   // A528
 import { ringDrawersOnWrite } from '../lib/drawerBell';   // A535
 import branchDrawersRoutes from './branchDrawers';       // A535: a branch server asks about every drawer of its branch at once
@@ -139,6 +143,7 @@ router.use('/loyalty',        loyaltyRoutes);
 router.use('/credit',         creditRoutes);
 router.use('/notifications',  notificationsRoutes);
 router.use('/webhooks',       webhooksRoutes);
+router.use('/mpesa/settings', mpesaSettingsRoutes);   // A618: the STK push details per branch — before /mpesa
 router.use('/mpesa',          mpesaRoutes);
 router.use('/fuel-tanks',     fuelTanksRouter);
 router.use('/pumps',          pumpsRouter);
@@ -152,17 +157,20 @@ router.use('/reports/export', reportsDailyRoutes);
 router.use('/reports/export', reportsExportRoutes);
 router.use('/reports',        reportsRoutes);
 router.use('/analytics',      analyticsRoutes);   // A549: Analytics v1 (premium, the 'analytics' flag)
+router.use('/attendance',     attendanceRoutes);  // A599: Attendance (premium, the 'attendance' flag) — the web report and the branch server's /node/*
 router.use('/loss-alerts',    lossAlertsRoutes);  // A576: the watch list and the owner's loss-prevention settings
 
 router.use('/admin/version',  adminVersionRouter);   // before /admin, which takes the rest of /admin/*
 router.use('/admin/support-logs', supportAdminRoutes);   // A519: before /admin, which takes the rest of /admin/*
 router.use('/admin/clients', logRequestsAdminRoutes);   // A533: …/:id/log-requests only; the rest falls through to /admin
 router.use('/admin/clients', cloudPlanAdminRoutes);   // A581: …/:id/cloud-plan only; the rest falls through to /admin
+router.use('/admin/billing-details', billingDetailsAdminRoutes);   // A612
 router.use('/admin/tills-days', tillsDaysAdminRoutes);   // A523: before /admin, which takes the rest of /admin/*
 router.use('/admin/ops',      opsAdminRoutes);   // A525: before /admin, which takes the rest of /admin/*
 router.use('/admin/desktop',  adminInstallerRoutes);   // A570: before /admin, which takes the rest of /admin/*
 router.use('/admin',          adminRoutes);
 router.use('/tech',           techRoutes);
+router.use('/sync/backfill',  backfillRoutes);   // A602: before /sync (its own requireAuth, its own body limit — index.ts)
 router.use('/sync',           syncRoutes);
 router.use('/devices',        devicesRoutes);
 router.use('/parking-sessions', parkingRoutes);

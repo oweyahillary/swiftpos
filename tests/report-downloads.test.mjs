@@ -12,7 +12,7 @@
  *     time zone: a Sunday, a Monday, the 1st of a month, New Year, a leap February, and a UTC-evening instant that is
  *     already tomorrow in Nairobi.
  * Pins: every data tab on the owner's Reports page renders the Download Excel button (not Monthly pack, not Exports),
- * each manager report tab passes its sheets, and the presets row scrolls on a phone.
+ * and the presets row scrolls on a phone (A608: the manager portal's Reports page is retired).
  *
  * MUTATIONS TO CONFIRM BITE (both checked on the bench):
  *   - weekStart's `(d.getDay() + 6) % 7` → `d.getDay()` (Sunday weeks)   → "a Sunday: This week is Mon 5 → Sun 11" fails
@@ -217,19 +217,8 @@ await ok('presets: the owner bar uses reportPresets and scrolls sideways on a ph
   assert(/data-testid="report-presets" className="[^"]*max-w-full overflow-x-auto/.test(page), 'scrolling row');
 });
 
-// ── manager web ──
-const mgr = read('src/pages/manager/ManagerReportsPage.tsx');
-await ok('manager Reports: every tab passes its sheets to the date bar\'s Download Excel', () => {
-  const bars = (mgr.match(/<DateBar [\s\S]*?\/>/g) || [])
-    .filter((b) => /\s+report="[^"]+" sheets=\{sheets\} branchName=\{session\?\.branchName\} \/>$/.test(b));
-  eq(bars.length, 8, 'DateBars with a download:');
-  eq((mgr.match(/const sheets: ReportSheet\[\] =/g) || []).length, 8, 'tabs building sheets:');
-  assert(/<DownloadExcelButton loading=\{loading \|\| pending\}/.test(mgr), 'disabled while loading or a reload is pending');
-});
-await ok('manager presets: This week, Last week, This month, Last month from reportPresets; the row scrolls', () => {
-  assert(/const P = reportPresets\(\);/.test(mgr) && /\.\.\.P\.slice\(2\)\.map\(p => \(\{ label: p\.label, f: p\.from, t: p\.to \}\)\)/.test(mgr), 'presets');
-  assert(/data-testid="report-presets" className="[^"]*max-w-full overflow-x-auto/.test(mgr), 'scrolling row');
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; the manager Reports page
+// (ManagerReportsPage.tsx) is gone; a manager downloads from the owner's Reports page, pinned above.
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);

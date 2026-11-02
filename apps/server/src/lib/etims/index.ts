@@ -11,6 +11,7 @@ import { encryptSecret, decryptSecret } from '../crypto';
 import { etimsEnabledGlobally, getProvider } from './provider';
 import { transmit } from './queue';
 import type { EtimsInvoiceDTO, EtimsInvoiceType, EtimsBranchConfig, EtimsLine } from './types';
+import { saleBuyerPin } from '../customerDetails';   // A607
 
 // ── Eligibility ──────────────────────────────────────────────────────────────
 async function getBranchConfig(branchId: string): Promise<EtimsBranchConfig | null> {
@@ -37,6 +38,28 @@ async function businessFlagEnabled(businessId: string): Promise<boolean> {
     .from('feature_flags').select('enabled')
     .eq('business_id', businessId).eq('key', 'etims_enabled').maybeSingle();
   return !!data?.enabled;
+}
+
+/**
+ * A607: the buyer's KRA PIN for KRA's custTin — the sale's own (orders.buyer_kra_pin: a walk-in who gave a PIN for this
+ * invoice), else the attached customer's kra_pin (A595 D1), else null. Read on its own so a database before migration 181
+ * (no buyer_kra_pin) still fiscalises — without a buyer PIN, as before. Only a valid PIN is ever sent.
+ */
+export async function buyerPinFor(orderId: string): Promise<string | null> {
+  let customerId: string | null = null;
+  const { data: o, error } = await supabase.from('orders').select('buyer_kra_pin, customer_id').eq('id', orderId).maybeSingle();
+  if (!error && o) {
+    const own = saleBuyerPin((o as any).buyer_kra_pin);
+    if (own && own !== 'bad') return own;
+    customerId = (o as any).customer_id ?? null;
+  } else {
+    const { data: o2 } = await supabase.from('orders').select('customer_id').eq('id', orderId).maybeSingle();
+    customerId = (o2 as any)?.customer_id ?? null;
+  }
+  if (!customerId) return null;
+  const { data: c } = await supabase.from('customers').select('kra_pin').eq('id', customerId).maybeSingle();
+  const pin = saleBuyerPin((c as any)?.kra_pin);
+  return pin && pin !== 'bad' ? pin : null;
 }
 
 // ── DTO builder (also reused by the retry worker) ────────────────────────────
@@ -104,6 +127,7 @@ export async function buildInvoiceDTO(
     branch,
     buyerName: order.customer_name ?? null,
     buyerPhone: order.customer_phone ?? null,
+    buyerPin: await buyerPinFor(orderId).catch(() => null),   // A607
     lines,
     subtotal: Number(order.subtotal),
     vatAmount: Number(order.vat_amount),

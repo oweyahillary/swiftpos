@@ -41,6 +41,7 @@ import { api } from '../lib/api';
 import Toast from '../components/Toast';
 import ShiftConfirmations from '../components/ShiftConfirmations';
 import CountedCloseModal from '../components/CountedCloseModal';   // A462
+import { printShiftReport } from '../lib/printShiftReport';   // A608: from the retired manager portal's Shifts tab
 import { useToast } from '../hooks/useToast';
 import { money, dateTime } from '../lib/format';
 import { useBusiness } from '../context/BusinessContext';
@@ -82,6 +83,9 @@ export default function OpenShiftsPage() {
   const [confirmKey, setConfirmKey] = useState(0);
   const { toast, showToast } = useToast();
   const more = useRowMore();   // A464: a phone shows Cashier, Expected cash and the actions
+  // A608: the shift report printed on the branch receipt printer (the print server) — the manager portal had it; it is
+  // retired (owner, 2026-10-29, "yes to all"), so it lives here.
+  const [reportId, setReportId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -193,6 +197,11 @@ export default function OpenShiftsPage() {
                         {money(s.expected_cash_live, currency, { blank: 'unavailable' })}
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <button data-testid={`shift-report-${s.id}`} disabled={reportId === s.id}
+                          onClick={async () => { setReportId(s.id); const r = await printShiftReport(s.id); setReportId(null); showToast(r.message, r.ok ? 'success' : 'error'); }}
+                          className="mr-2 text-xs px-3 py-1.5 rounded-md border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors disabled:opacity-50">
+                          {reportId === s.id ? 'Printing…' : 'Shift report'}
+                        </button>
                         <button data-testid={`count-close-${s.id}`} onClick={() => setCounting(s)}
                           className="mr-2 text-xs px-3 py-1.5 rounded-md border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors">
                           Close with count

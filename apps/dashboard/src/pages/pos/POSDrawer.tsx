@@ -220,8 +220,9 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 9, fontWeight: 600, textTransform: 'uppercase' as const,
     letterSpacing: '0.4px', textAlign: 'center' as const, transition: 'all 0.15s ease',
   },
+  // A609: the active marker in the owner's SECONDARY colour when one is chosen (index.css --act-accent), else as before.
   railTabActive: {
-    color: '#93c5fd', borderLeftColor: 'rgb(var(--act-fill, 59 130 246))', background: 'rgb(var(--act-fill, 59 130 246) / 0.08)',
+    color: '#93c5fd', borderLeftColor: 'rgb(var(--act-accent, var(--act-fill, 59 130 246)))', background: 'rgb(var(--act-fill, 59 130 246) / 0.08)',
   },
   railIcon:  { fontSize: 20 },
   railLabel: { lineHeight: 1.2, width: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },

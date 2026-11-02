@@ -1249,3 +1249,12 @@ the dataviz reference categorical slots (blue `#2a78d6` / `#3987e5`, aqua `#1baf
 `#0ca30c` dark). Each mode is selected for its own surface and was run through the dataviz validator. Nothing pressed,
 selected or linked uses them — the page's buttons, tabs and period presets stay `swift-*`; chart text stays in the gray
 classes.
+
+## Addendum 2026-10-28 — A599 the Attendance report's palette (`lib/attendanceView.ts`, baseline 10)
+
+Reviewed: the 10 hits are **data** colours (not actions), all in the one palette the Attendance page reads — the summary
+cards' identity colours (hours blue `#2a78d6` / `#3987e5`, days aqua `#1baf7a` / `#199e70`, average violet `#6250d6` /
+`#9085e9`, the same dataviz slots as A553) and the teal-green heat ramp of hours a day (`#d6f5ec` → `#0b7a64` light,
+`#123b33` → `#5fceb0` dark; days off grey). Each card also carries its label and figure, each heat cell its hours and a
+legend — never colour alone. Nothing pressed, selected or linked uses them: the page's buttons and period presets stay
+`swift-*`; the single-series accent takes the shop's brand colour (A597) when it has one.

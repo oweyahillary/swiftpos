@@ -43,7 +43,7 @@ export const SHADE = {
   cyan: ['#155e75', '#164e63'], violet: ['#6d28d9', '#5b21b6'], rose: ['#be123c', '#9f1239'], lime: ['#3f6212', '#365314'],
 };
 export const PALE_GRAY = { 100: '#1e293b', 200: '#334155', 300: '#475569' };        // slate 800 / 700 / 600
-const LINE = '226,232,240';   // #e2e8f0 — the light theme's border gray (index.css)
+const LINE = '219,226,234';   // #dbe2ea — the light theme's card-edge gray (index.css; A609, 2026-10-29: was #e2e8f0)
 const FILL = '241,245,249';   // #f1f5f9 — its gray-800 surface
 const TW_DARK = { 'text-white': '#ffffff', 'text-gray-300': '#d1d5db', 'text-gray-400': '#9ca3af', 'text-gray-500': '#6b7280',
   'text-gray-600': '#4b5563', 'bg-gray-800': '#1f2937', 'bg-gray-900': '#111827', 'bg-gray-950': '#030712', 'bg-gray-700': '#374151',

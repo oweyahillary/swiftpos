@@ -30,6 +30,7 @@ import { nodeUrl, nodeHeaders } from './nodeClient';
 import { liveCloudGet, setDrawerSource, type DrawerSource, type DrawerBeat, type DrawerWebSales } from './syncEngine';
 import { liveStatus, openDrawers, setDrawersBell, notePeerLogRequest } from './liveSync';
 import type { CloudShiftState } from './remoteShiftClose';
+import { cloudBackupOffNow } from './cloudBackup';   // A601
 import type { WebOrder, OwnReversal } from './webSales';
 
 export const BEAT_SOCKET_UP_MS = 60_000;
@@ -81,6 +82,9 @@ function fresh(now: number): boolean { return copy.okAt > 0 && now - copy.okAt <
 // ── the server: one call for the whole branch ───────────────────────────────────────────────────────────────────────
 async function pollOnce(why: string, now: number): Promise<boolean> {
   if (!isServer() || now < unsupportedUntil) return false;
+  // A601: the desktop-only cut-off — the cloud holds none of the branch's drawers (no backup, no web): no poll. The
+  // tills' own checks then get no answer from this copy and skip the cloud too (syncEngine); the shop network is untouched.
+  if (cloudBackupOffNow(now)) return false;
   lastPollAt = now;
   lastPollOk = false;   // A542: true only when this poll gets to its end
   const full = !copy.fullAt || now - copy.fullAt >= FULL_EVERY_MS;

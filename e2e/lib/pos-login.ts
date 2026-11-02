@@ -1,11 +1,13 @@
 import { Page, expect } from '@playwright/test';
 
 /**
- * Log in on the POS/manager PIN screen (apps/dashboard/src/pages/pos/POSLoginScreen.tsx).
+ * Log in on the web POS PIN screen (apps/dashboard/src/pages/pos/POSLoginScreen.tsx).
  *
  * Flow: go to /pos → fill email → tap PIN digits on the on-screen keypad. The app
- * auto-submits at 4 digits; after login it resolves the staff member's route
- * (manager/supervisor → /manager, everyone else → /pos/cashier).
+ * auto-submits at 4 digits; after login a cashier lands on /pos/cashier.
+ * A608 (2026-10-29): the web manager portal (/manager) is retired and the web POS refuses a
+ * back-office PIN (manager, supervisor…) — it points them to the dashboard sign-in instead
+ * (see specs/manager/manager-login.smoke.spec.ts). Use this helper for cashier-type staff only.
  *
  * Single-branch environments (like Test Café Corner) auto-resolve the branch and
  * navigate straight through. If you run this against a MULTI-branch business, a

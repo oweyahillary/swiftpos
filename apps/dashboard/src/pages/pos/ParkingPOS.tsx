@@ -876,7 +876,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   btnPrimary: {
     flex: 2, padding: '12px', background: 'rgb(var(--act-strong, 29 78 216))',
-    border: 'none', borderRadius: 10, color: '#fff',
+    border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))',
     fontSize: 14, fontWeight: 700, cursor: 'pointer',
     fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },

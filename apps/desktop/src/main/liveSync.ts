@@ -49,7 +49,7 @@
  *     no answer within PONG_WAIT_MS → the socket is dead (a half-open line behind a proxy) and it reconnects at once.
  *     An older cloud (no `ping` in `ready`) is not pinged — it pings the till itself every 45 s (ws pings).
  */
-import { getLocalDb } from './localDb';
+import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { logLine } from './logFile';
 import { activitySnapshot } from './activityTracker';
@@ -84,7 +84,8 @@ export type LiveMode = 'unknown' | 'direct' | 'peer' | 'legacy';
 // ── state (maintenance_state) ────────────────────────────────────────────────────────────────────────────────────────
 const K = { seq: 'live_seq', recent: 'live_recent', pending: 'live_pending', full: 'live_full_at', topics: 'live_topics',
   local: 'live_node_local', stock: 'live_stock_at', floor: 'live_floor', scope: 'live_scope',
-  serves: 'live_serves_stock' } as const;   // A535: '1' = stock levels arrive as changes (no 30-minute re-read)
+  serves: 'live_serves_stock',   // A535: '1' = stock levels arrive as changes (no 30-minute re-read)
+  schema: 'live_schema' } as const;   // the local schema the whole catalogue was last taken with (a new one takes it again)
 function getKv(key: string): string | null {
   try { return (getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(key) as { value?: string } | undefined)?.value ?? null; }
   catch { return null; }
@@ -262,6 +263,7 @@ async function fullResync(why: string, now: number): Promise<boolean> {
   if (shape() === 'direct') void refreshStaffRosterNow(`whole catalogue (${why})`);
   setKv(K.seq, String(Number(base.body.last_seq)));
   setKv(K.scope, scopeKey());
+  setKv(K.schema, String(LOCAL_SCHEMA_VERSION));
   setKv(K.pending, null);
   setKv(K.full, new Date(now).toISOString());
   if (base.body.local !== undefined) setKv(K.local, String(base.body.local ?? ''));
@@ -306,8 +308,12 @@ async function catchUpOnce(why: string, now: number): Promise<boolean> {
     // A number belongs to one business and branch: a till moved to another branch (or rejoined elsewhere) takes the whole
     // catalogue for where it is now, as the branch change always did.
     const moved = held !== null && getKv(K.scope) !== scopeKey();
-    if (held === null || moved) {
-      const ok = await fullResync(moved ? 'moved to another branch' : 'first start', now);
+    // 2026-11-02 (the owner's Glovo test): a new version reads fields the old one dropped — the old 1.0.22 applied the
+    // money change with the Glovo prices and threw them away, and the new one started after it, so Glovo sold at normal
+    // prices. A new local schema (the convention: a new pulled field moves it) takes the whole catalogue once.
+    const upgraded = held !== null && !moved && getKv(K.schema) !== String(LOCAL_SCHEMA_VERSION);
+    if (held === null || moved || upgraded) {
+      const ok = await fullResync(moved ? 'moved to another branch' : upgraded ? 'a new version of ZapTill' : 'first start', now);
       if (ok && mode !== 'legacy') mode = shape();
       return ok;
     }

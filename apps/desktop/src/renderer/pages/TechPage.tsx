@@ -8,6 +8,9 @@ import TechFindServer from '../components/TechFindServer';   // A502
 import BranchSyncPanel from '../components/BranchSyncPanel';   // A501
 import ServerDistributionPanel from '../components/ServerDistributionPanel';   // A534 (A23)
 import DrawersCopyPanel from '../components/DrawersCopyPanel';   // A542
+import AttendanceDevicesPanel from '../components/AttendanceDevicesPanel';   // A599
+import HistoryUploadPanel from '../components/HistoryUploadPanel';   // A602
+import CustomerScreenPanel from '../components/CustomerScreenPanel';   // A606
 import type { TechSession, TechStatus } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
 
@@ -252,6 +255,9 @@ export default function TechPage({ onExit }: Props) {
           </dl>
         </section>
 
+        {/* A606: the customer screen (a dual-screen POS) — on / off, which screen, identify, test */}
+        <CustomerScreenPanel className="bg-[#0d1424] border-[#1e293b]" />
+
         {/* Sync health */}
         <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Sync</h2>
@@ -322,6 +328,8 @@ export default function TechPage({ onExit }: Props) {
           {(dev?.device_role === 'node' || dev?.device_role === 'office') && <ServerDistributionPanel />}
           {/* A542: on the branch server — its copy of the branch's drawers (A535) */}
           {(dev?.device_role === 'node' || dev?.device_role === 'office') && <DrawersCopyPanel />}
+          {/* A599: on the branch server with the 'attendance' flag on — the attendance devices (hidden entirely otherwise) */}
+          {(dev?.device_role === 'node' || dev?.device_role === 'office') && <AttendanceDevicesPanel />}
         </section>
 
         {/* A415: Rejoin this till */}
@@ -463,6 +471,9 @@ export default function TechPage({ onExit }: Props) {
           </div>
           {backupMsg && <p className={`text-xs mt-2 ${/FAILED|failed/.test(backupMsg) ? 'text-red-400' : 'text-green-400'}`}>{backupMsg}</p>}
         </section>
+
+        {/* A602: going online later — the sales history's upload, how far back, quiet hours */}
+        <HistoryUploadPanel />
 
         {/* Read-only database console */}
         <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">

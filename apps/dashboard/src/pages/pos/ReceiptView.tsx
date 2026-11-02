@@ -33,6 +33,8 @@ interface Props {
   promoDiscount?: number;
   promoName?: string;
   customerName?: string;
+  /** A607: the buyer's KRA PIN for this sale. */
+  buyerPin?: string;
   footerMessage?: string;
   /** KRA eTIMS fiscal data — present only once the invoice is signed.
    *  When absent, no fiscal block renders (non-fiscalised installs unchanged). */
@@ -71,7 +73,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
   {
     business, branchName, orderNumber, cart, total, subtotal, vatAmount, ctlAmount = 0, ctlRate = 0, currency,
     payments, tendered, change, tip = 0, deliveryFee = 0, deliveryFree = false,
-    loyaltyDiscount = 0, promoDiscount = 0, promoName, customerName,
+    loyaltyDiscount = 0, promoDiscount = 0, promoName, customerName, buyerPin,
     footerMessage = 'Thank you for your business!',
     etims = null,
     compact = false,
@@ -150,6 +152,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
           </>
         )}
         {customerName && <p style={{ fontSize: '11px' }}>Customer: {customerName}</p>}
+        {buyerPin && <p style={{ fontSize: '11px' }} data-testid="receipt-buyer-pin">Buyer PIN: {buyerPin}</p>}
       </div>
 
       {divider()}

@@ -81,7 +81,7 @@ await ok('Auditor: exactly the view keys — holds no write key', () => {
 await ok('General Manager: every catalogue key — and no owner-only capability (no \'*\'; the owner\'s role is never theirs)', () => {
   const gm = keys('General Manager');
   // A595 D3 (owner, 2026-10-27): every key but webhooks and report e-mails (the owner's — report e-mails the partners' too).
-  assert.deepEqual([...gm].sort(), P.PERMISSION_KEYS.filter((k) => k !== 'settings.webhooks' && k !== 'settings.report_emails').sort());
+  assert.deepEqual([...gm].sort(), P.PERMISSION_KEYS.filter((k) => k !== 'settings.webhooks' && k !== 'settings.report_emails' && k !== 'attendance.devices').sort());   // A599: attendance devices the owner's / partners'
   assert.ok(!gm.has('*'), 'never the owner\'s wildcard');
   const held = ceiling.callerHeld({ isOwner: false, permissionKeys: [...gm] });
   assert.equal(ceiling.isOwnerHeld(held), false);

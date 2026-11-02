@@ -337,8 +337,8 @@ try {
     assert.match(tab, /api\.get<Record<string, boolean>>\('\/api\/flags'\)/);
     assert.match(tab, /setApprovalPin\(approvalPinOn\(flags\)\);/);
     // A595: an approval PIN is set or removed by someone holding staff.pins.
-    assert.match(tab, /\{approvalPin && rights\.pins && \(\s*<div data-testid="approval-pin">/);
-    assert.match(tab, /\{!approvalPin && editing && hasApprovalPin && rights\.pins && \(\s*<p className="text-xs text-gray-500" data-testid="approval-pin-left">/);
+    assert.match(tab, /\{approvalPin && rights\.pins && !webOnly && \(\s*<div data-testid="approval-pin">/);
+    assert.match(tab, /\{\(!approvalPin \|\| webOnly\) && editing && hasApprovalPin && rights\.pins && \([^\n]*\s*<p className="text-xs text-gray-500" data-testid="approval-pin-left">/);
     assert.match(tab, /clearOverride \? \{ override_pin: '' \}\s*: approvalPin && overridePin && mayApprove \? \{ override_pin: overridePin \}\s*: \{\};/);
   });
   await ok('the till\'s add form: the approval PIN only while the switch is on, and never sent otherwise', () => {

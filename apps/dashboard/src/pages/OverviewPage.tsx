@@ -21,6 +21,8 @@ import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
 import { money, litres, time, elapsed } from '../lib/format';
 import { whenVisible, refreshOnShow } from '../lib/visiblePoll';   // A591
+import ParkingLivePanel from '../components/ParkingLivePanel';   // A608
+import { businessTerms } from '../lib/businessTerms';   // A608
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -323,6 +325,12 @@ export default function OverviewPage() {
           </button>
         </div>
       </div>
+
+      {/* ── A608: the parking bays now — parking only (moved here from the retired web manager portal) ── */}
+      {businessTerms(business?.type).type === 'parking' && (
+        <ParkingLivePanel branchId={branches.some(b => b.id === activeBranchId) ? activeBranchId : null}
+          branchName={activeBranch?.name ?? null} currency={currency} />
+      )}
 
       {/* ── Pump Monitor — petrol only ─────────────────────────────────── */}
       {isPetrol && pumpMonitor && (

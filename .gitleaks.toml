@@ -18,6 +18,9 @@
 #   • c2lnbmF0dXJlLXNlY3JldA                   — the signature ("signature-secret") of the made-up JWT
 #                                               {"sub":"dev-T1"} in apps/desktop/test/log-pull-a533.test.mjs (A533),
 #                                               fed in to prove a pulled log is redacted.
+#   • kilimani-consumer-key-0042               — a made-up Daraja consumer key for the stand-in Daraja in
+#                                               tests/a618-branch-mpesa.test.mjs (A618, commit 7d80c7c): never a
+#                                               Safaricom credential; allowlisted so scans over that commit pass.
 # Matched on the exact benign strings (regexTarget = match), so real secrets are
 # untouched and the suppression survives line/commit changes.
 
@@ -36,4 +39,5 @@ regexes = [
   '''sOmEsIgNaTuRe_value-123''',
   '''c2lnbmF0dXJlLXg''',
   '''c2lnbmF0dXJlLXNlY3JldA''',
+  '''kilimani-consumer-key-0042''',
 ]

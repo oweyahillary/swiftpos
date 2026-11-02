@@ -69,6 +69,82 @@
     "created_by": "\"uuid\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "attendance_device_actions": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "device_id": "\"uuid\" NOT NULL",
+    "action": "\"text\" NOT NULL",
+    "person_id": "\"uuid\"",
+    "attendance_no": "\"integer\" NOT NULL",
+    "name": "\"text\"",
+    "overwrite": "\"boolean\" NOT NULL",
+    "status": "\"text\" NOT NULL",
+    "attempts": "\"integer\" NOT NULL",
+    "last_error": "\"text\"",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "done_at": "\"timestamp with time zone\""
+  },
+  "attendance_device_users": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "device_id": "\"uuid\" NOT NULL",
+    "device_user_id": "\"text\" NOT NULL",
+    "device_uid": "\"integer\"",
+    "name": "\"text\"",
+    "privilege": "\"integer\" NOT NULL",
+    "seen_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "attendance_devices": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "ip": "\"text\" NOT NULL",
+    "port": "\"integer\" NOT NULL",
+    "comm_key": "\"integer\" NOT NULL",
+    "serial": "\"text\"",
+    "model": "\"text\"",
+    "firmware": "\"text\"",
+    "last_pull_at": "\"timestamp with time zone\"",
+    "last_error": "\"text\"",
+    "last_error_at": "\"timestamp with time zone\"",
+    "clock_drift_s": "\"integer\"",
+    "users_on_device": "\"integer\"",
+    "punches_on_device": "\"integer\"",
+    "removed_at": "\"timestamp with time zone\"",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "attendance_people": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "user_id": "\"uuid\"",
+    "name": "\"text\" NOT NULL",
+    "attendance_no": "\"integer\" NOT NULL",
+    "active": "\"boolean\" NOT NULL",
+    "deactivated_at": "\"timestamp with time zone\"",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "shift_id": "\"uuid\""
+  },
+  "attendance_shifts": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "start_min": "\"integer\" NOT NULL",
+    "end_min": "\"integer\" NOT NULL",
+    "grace_min": "\"integer\" NOT NULL",
+    "active": "\"boolean\" NOT NULL",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "attribute_groups": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -104,6 +180,37 @@
     "receipt_footer": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "branch_cloud_plans": {
+    "branch_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "period": "\"text\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "currency": "\"text\" NOT NULL",
+    "custom_until": "\"timestamp with time zone\"",
+    "paid_until": "\"timestamp with time zone\"",
+    "billing_from": "\"timestamp with time zone\"",
+    "web_off": "\"boolean\" NOT NULL",
+    "notes": "\"text\"",
+    "updated_by": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "premium": "\"ARRAY\" NOT NULL",
+    "package": "\"boolean\" NOT NULL",
+    "own_prices": "\"jsonb\""
+  },
+  "branch_mpesa_settings": {
+    "branch_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "type": "\"text\" NOT NULL",
+    "shortcode": "\"text\" NOT NULL",
+    "till_number": "\"text\"",
+    "consumer_key": "\"text\" NOT NULL",
+    "consumer_secret": "\"text\" NOT NULL",
+    "passkey": "\"text\" NOT NULL",
+    "environment": "\"text\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_by": "\"uuid\""
   },
   "branch_prices": {
     "id": "\"uuid\" NOT NULL",
@@ -170,7 +277,9 @@
     "receipt_logo_enabled": "\"boolean\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "theme_id": "\"text\""
+    "theme_id": "\"text\"",
+    "primary_hex": "\"text\"",
+    "secondary_hex": "\"text\""
   },
   "business_days": {
     "id": "\"uuid\" NOT NULL",
@@ -269,11 +378,25 @@
   "clock_events": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
-    "staff_id": "\"uuid\" NOT NULL",
+    "staff_id": "\"uuid\"",
     "branch_id": "\"uuid\"",
     "event_type": "\"text\" NOT NULL",
     "recorded_at": "\"timestamp with time zone\" NOT NULL",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "source": "\"text\" NOT NULL",
+    "person_id": "\"uuid\"",
+    "device_id": "\"uuid\"",
+    "device_serial": "\"text\"",
+    "device_user_id": "\"text\"",
+    "attendance_no": "\"integer\"",
+    "raw_status": "\"integer\"",
+    "raw_punch": "\"integer\"",
+    "reason": "\"text\"",
+    "created_by": "\"uuid\"",
+    "corrects_id": "\"uuid\"",
+    "voided_at": "\"timestamp with time zone\"",
+    "voided_by": "\"uuid\"",
+    "void_reason": "\"text\""
   },
   "cloud_payments": {
     "id": "\"uuid\" NOT NULL",
@@ -290,7 +413,8 @@
     "recorded_by": "\"uuid\"",
     "recorded_by_email": "\"text\" NOT NULL",
     "recorded_at": "\"timestamp with time zone\" NOT NULL",
-    "note": "\"text\""
+    "note": "\"text\"",
+    "branch_ids": "\"ARRAY\""
   },
   "cloud_plan_reminders": {
     "id": "\"uuid\" NOT NULL",
@@ -615,7 +739,9 @@
     "period_end": "\"timestamp with time zone\"",
     "paid_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "kind": "\"text\""
+    "kind": "\"text\"",
+    "branch_ids": "\"ARRAY\"",
+    "lines": "\"jsonb\""
   },
   "kitchen_tickets": {
     "id": "\"uuid\" NOT NULL",
@@ -768,6 +894,23 @@
     "note": "\"text\"",
     "recorded_by": "\"uuid\"",
     "recorded_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "mpesa_stk_requests": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "device_id": "\"text\"",
+    "requested_by": "\"uuid\"",
+    "client_ref": "\"text\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "mpesa_phone": "\"text\" NOT NULL",
+    "mpesa_checkout_id": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "reference": "\"text\"",
+    "paid_amount": "\"numeric\"",
+    "mpesa_result_desc": "\"text\"",
+    "mpesa_requested_at": "\"timestamp with time zone\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "notifications": {
@@ -938,7 +1081,11 @@
     "delivery_fee": "\"numeric\" NOT NULL",
     "delivery_free": "\"boolean\" NOT NULL",
     "offer_discount": "\"numeric\" NOT NULL",
-    "offers": "\"jsonb\""
+    "offers": "\"jsonb\"",
+    "buyer_kra_pin": "\"text\"",
+    "price_list": "\"text\"",
+    "platform_rule": "\"jsonb\"",
+    "platform_uplift": "\"numeric\""
   },
   "parking_sessions": {
     "id": "\"uuid\" NOT NULL",
@@ -1128,7 +1275,8 @@
     "is_kitchen": "\"boolean\"",
     "menu_visible": "\"boolean\" NOT NULL",
     "portions": "\"integer\" NOT NULL",
-    "show_days": "\"ARRAY\""
+    "show_days": "\"ARRAY\"",
+    "platform_prices": "\"jsonb\""
   },
   "promotions": {
     "id": "\"uuid\" NOT NULL",

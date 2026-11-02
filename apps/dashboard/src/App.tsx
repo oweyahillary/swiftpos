@@ -33,7 +33,6 @@ const ProductsPage            = lazy(() => import('./pages/products/ProductsPage
 const LabelsPage              = lazy(() => import('./pages/products/LabelsPage'));   // A571
 const POSPage                 = lazy(() => import('./pages/pos/POSPage'));
 const POSEntryPage            = lazy(() => import('./pages/pos/POSEntryPage'));
-const ManagerDashboard        = lazy(() => import('./pages/manager/ManagerDashboard'));
 const InventoryPage           = lazy(() => import('./pages/inventory/InventoryPage'));
 // Settings › three sections (register A133). Container pages default-export;
 // their child route wrappers are named exports pulled via the {default} shim so
@@ -50,10 +49,13 @@ const BusinessProfileTab  = lazy(() => import('./pages/settings/BusinessProfileT
 const BrandingTab         = lazy(() => import('./pages/settings/BrandingTab'));
 const VoidRefundRulesTab  = lazy(() => import('./pages/settings/VoidRefundRulesTab'));
 const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
-const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
+const IntegrationsIndexRoute = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsIndexRoute })));   // A620
+const MpesaRoute          = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.MpesaRoute })));
+const WebhooksRoute       = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.WebhooksRoute })));
 const PosOptionsTab       = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.PosOptionsTab })));     // A491
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
 const AnalyticsPage           = lazy(() => import('./pages/analytics/AnalyticsPage'));   // A549
+const AttendancePage          = lazy(() => import('./pages/attendance/AttendancePage'));   // A599 (premium: the 'attendance' flag)
 const WatchListPage           = lazy(() => import('./pages/WatchListPage'));   // A576
 const LossAlertsTab           = lazy(() => import('./pages/settings/LossAlertsTab'));   // A576
 const CreditApproversTab       = lazy(() => import('./pages/settings/CreditApproversTab'));   // A585
@@ -61,6 +63,7 @@ const ScaleLabelsTab          = lazy(() => import('./pages/settings/ScaleLabelsT
 const ShiftReportsPage        = lazy(() => import('./pages/ShiftReportsPage'));
 const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
 const KDSPage                 = lazy(() => import('./pages/kds/KDSPage'));
+const CustomerDisplayWebPage = lazy(() => import('./pages/pos/CustomerDisplayWebPage'));   // A606
 const CustomersPage           = lazy(() => import('./pages/crm/CustomersPage'));
 const CreditAccountsPage      = lazy(() => import('./pages/customers/CreditAccountsPage'));
 const TableTurnoverPage       = lazy(() => import('./pages/pos/TableTurnoverPage'));
@@ -113,6 +116,8 @@ export default function App() {
 
               {/* ── Public routes (no auth) ─────────────────────────── */}
               <Route path="/kds"         element={<KDSPage />} />
+              {/* A606: the web POS's customer screen — it only listens to the POS window (BroadcastChannel), fetches nothing. */}
+              <Route path="/customer-display" element={<CustomerDisplayWebPage />} />
               <Route path="/menu/:slug"  element={<QRMenuPage />} />
               {/* 0.6.35 (A384): "What to do when" — open to anyone (a locked-out cashier needs it most). */}
               <Route path="/help"        element={<HelpPage />} />
@@ -126,14 +131,10 @@ export default function App() {
                 </ErrorBoundary>
               } />
 
-              {/* ── Manager surface — PIN auth ───────────────────────── */}
-              <Route path="/manager" element={
-                <ErrorBoundary>
-                  <POSAuthProvider>
-                    <ManagerDashboard />
-                  </POSAuthProvider>
-                </ErrorBoundary>
-              } />
+              {/* ── A608 (owner, 2026-10-29, "yes to all"): the web manager portal is retired — managers sign in to the web
+                  dashboard by email and password (and sell with Open POS). An old link or bookmark goes to the dashboard;
+                  signed out, its guard (ProtectedRoute) sends them to /login. ─────────────────────────────────────── */}
+              <Route path="/manager/*" element={<Navigate to="/dashboard" replace />} />
 
               {/* ── Owner dashboard — Supabase session ──────────────── */}
               <Route path="*" element={
@@ -154,6 +155,7 @@ export default function App() {
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
                       <Route path="analytics"                 element={<AnalyticsPage />} />
+                      <Route path="attendance"                element={<AttendancePage />} />
                       <Route path="watch-list"                element={<WatchListPage />} />
                       <Route path="shift-reports"             element={<ShiftReportsPage />} />
                       <Route path="orders"                    element={<OrdersPage />} />
@@ -197,7 +199,7 @@ export default function App() {
                         <Route path="profile"      element={<BusinessProfileTab />} />
                         <Route path="branding"     element={<BrandingTab />} />
                         <Route path="branches"     element={<BranchesPage />} />
-                        <Route path="tax"          element={<EtimsSettingsPage />} />
+                        <Route path="tax"          element={<Navigate to="/dashboard/settings/business/integrations/kra" replace />} />   {/* A620: moved */}
                         <Route path="payments"     element={<PaymentMethodsPage />} />
                         <Route path="voids-refunds" element={<VoidRefundRulesTab />} />
                         <Route path="pos-options"  element={<PosOptionsTab />} />
@@ -205,7 +207,11 @@ export default function App() {
                         <Route path="credit-approvals" element={<CreditApproversTab />} />
                         <Route path="scale-labels" element={<ScaleLabelsTab />} />
                         <Route path="setup"        element={<VerticalSetupRoute />} />
-                        <Route path="integrations" element={<IntegrationsRoute />} />
+                        {/* A620: Integrations — M-Pesa, KRA eTIMS, Webhooks (each its own page in the left menu) */}
+                        <Route path="integrations"          element={<IntegrationsIndexRoute />} />
+                        <Route path="integrations/mpesa"    element={<MpesaRoute />} />
+                        <Route path="integrations/kra"      element={<EtimsSettingsPage />} />
+                        <Route path="integrations/webhooks" element={<WebhooksRoute />} />
                       </Route>
 
                       {/* back-compat: old deep links redirect into the new sections */}
@@ -213,7 +219,7 @@ export default function App() {
                       <Route path="settings/minimart"   element={<Navigate to="/dashboard/settings/business/setup" replace />} />
                       <Route path="settings/parking"    element={<Navigate to="/dashboard/settings/business/setup" replace />} />
                       <Route path="settings/petrol"     element={<Navigate to="/dashboard/settings/business/setup" replace />} />
-                      <Route path="settings/etims"      element={<Navigate to="/dashboard/settings/business/tax" replace />} />
+                      <Route path="settings/etims"      element={<Navigate to="/dashboard/settings/business/integrations/kra" replace />} />
                       <Route path="printers"            element={<Navigate to="/dashboard/settings/devices/printers" replace />} />
                       <Route path="stations"            element={<Navigate to="/dashboard/settings/devices/stations" replace />} />
                       <Route path="stock/ingredients"         element={<IngredientsPage />} />

@@ -20,6 +20,8 @@ import { reportPresets, activePreset } from '../lib/reportPeriods';   // A467; a
 import * as fmt from '../lib/format';   // A471: one money/number/date format ('money' here is the Excel column shorthand)
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '../lib/paginate';
+import { usePermissions } from '../context/PermissionsContext';   // A620: who may set the report e-mails
+import ReportSchedulerTab from './settings/ReportSchedulerTab';   // A620: moved here from Settings › Integrations
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,7 +42,8 @@ interface MasterReport {
     totalDeliveryFees?: number; totalTips?: number; totalCollected?: number;
   };
   channels: { channel: string; amount: number; pct: number }[];
-  payments: { method: string; amount: number }[];
+  /** A619: `uplift` — of a delivery platform's sales, what its prices added (platform − normal prices). */
+  payments: { method: string; amount: number; uplift?: number }[];
   categoryBreakdown: { category: string; superCategory: string; qty: number; netSales: number }[];
   expenses: { total: number; breakdown: { category: string; amount: number }[] };
 }
@@ -294,9 +297,9 @@ function MasterTab({ range, branchId, currency, meta, staffId }: TabProps) {
     { name: 'Order Channels', columns: [col('channel', 'Channel'), money('amount', 'Amount'), num('pct', 'Share %', 1)],
       rows: channels.filter(c => c.amount > 0).sort((a, b) => b.amount - a.amount)
         .map(c => ({ channel: CHANNEL_LABELS[c.channel] ?? c.channel, amount: c.amount, pct: c.pct })) },
-    { name: 'Payment Methods', columns: [col('method', 'Method'), money('amount', 'Amount'), num('pct', 'Share %', 1)],
+    { name: 'Payment Methods', columns: [col('method', 'Method'), money('amount', 'Amount'), num('pct', 'Share %', 1), money('uplift', 'Of which uplift')],
       rows: [...[...payments].sort((a, b) => b.amount - a.amount)
-        .map(p => ({ method: p.method.replace(/_/g, ' '), amount: p.amount, pct: share(p.amount, paidTotal) })),
+        .map(p => ({ method: p.method.replace(/_/g, ' '), amount: p.amount, pct: share(p.amount, paidTotal), uplift: p.uplift ?? null })),   // A619
         ...(payments.length > 0 ? [{ method: 'Total paid', amount: paidTotal, pct: null }] : [])] },
     { name: 'Category Breakdown',
       columns: [col('category', 'Category'), col('superCategory', 'Super Category'), num('qty', 'Qty', 3), money('netSales', 'Net Sales'), num('pct', 'Share %', 1)],
@@ -382,7 +385,10 @@ function MasterTab({ range, branchId, currency, meta, staffId }: TabProps) {
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {payments.sort((a, b) => b.amount - a.amount).map(p => (
                 <tr key={p.method}>
-                  <td className="py-2 text-gray-700 dark:text-gray-300 capitalize">{p.method.replace(/_/g, ' ')}</td>
+                  <td className="py-2 text-gray-700 dark:text-gray-300 capitalize">{p.method.replace(/_/g, ' ')}
+                    {/* A619: a delivery platform's sales at its own prices — what those prices added */}
+                    {p.uplift ? <span className="block text-xs normal-case text-gray-400" data-testid="platform-uplift">of which uplift {fmt.money(p.uplift, currency)}</span> : null}
+                  </td>
                   <td className="py-2 text-right font-medium tabular-nums text-gray-900 dark:text-white">{fmt.money(p.amount, currency, { blank: '—' })}</td>
                   {/* A451: a share of what was PAID (it includes delivery fees and tips) — the shares add up to 100%. */}
                   <td className="py-2 text-right text-gray-400 w-14">{fmt.pct(paidTotal > 0 ? (p.amount / paidTotal) * 100 : 0)}</td>
@@ -2550,13 +2556,31 @@ export default function ReportsPage() {
     branchName: branchId ? ((branches ?? []).find(b => b.id === branchId)?.name ?? '') : (allMine ? allLabel : ''),   // A582
   };
   const tabProps: TabProps = { range, branchId, currency, meta, staffId };
+  // A620 (owner, 2026-11-01: "emails we can add it in reports"): who receives the scheduled report e-mails — the owner's
+  // and the partners' (the cloud's mayReportEmails), opened from here instead of Settings › Integrations.
+  const { isOwner, isPartner, can } = usePermissions();
+  const mayEmails = isOwner || isPartner || can('settings.report_emails');
+  const [emailsOpen, setEmailsOpen] = useState(false);
 
   return (
     <div className="p-4 sm:p-6 w-full">
-      <div className="mb-5">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Reports</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sales analysis · Tax · Staff performance · Voids</p>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Reports</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sales analysis · Tax · Staff performance · Voids</p>
+        </div>
+        {mayEmails && (
+          <button type="button" data-testid="report-emails-toggle" onClick={() => setEmailsOpen((o) => !o)} aria-expanded={emailsOpen}
+            className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">
+            {emailsOpen ? 'Close email schedule' : 'Email schedule'}
+          </button>
+        )}
       </div>
+      {mayEmails && emailsOpen && (
+        <div data-testid="report-emails" className="mb-6 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+          <ReportSchedulerTab />
+        </div>
+      )}
 
       <DateRangeBar range={range} onChange={setRange} branches={branches ?? []} branchId={branchId} onBranchChange={setBranchId}
         allLabel={allLabel} showAll={allowAll || allMine} />

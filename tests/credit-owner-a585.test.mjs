@@ -404,9 +404,8 @@ try {
     // A587: the owner, or a partner at one of their branches (hooks/useSetsLimits.ts)
     assert.match(read('apps/dashboard/src/components/CreditLimitEditor.tsx'), /const \{ setsLimits: mayCredit, line \} = useSetsLimits\(\);[\s\S]*\{line\}/);
     assert.match(read('apps/dashboard/src/pages/customers/CreditAccountsPage.tsx'), /const \{ setsLimits, line: limitLine \} = useSetsLimits\(\);/);
-    const md = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
-    assert.match(md, /const setsLimits = limitBoxForRole\(session\?\.role\);/);
-    assert.match(md, /\{setsLimits \? \([\s\S]{0,900}onClick=\{saveLimit\}[\s\S]{0,700}\{OWNER_SETS_LIMITS_LINE\}/, 'the web POS manager screen: the box for a manager, the line for others');
+    // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the portal's credit-limit box
+    // (ManagerDashboard.tsx, limitBoxForRole) is gone; CreditLimitEditor / CreditAccountsPage (useSetsLimits, above) cover the dashboard.
     assert.match(read('apps/dashboard/src/pages/crm/CustomersPage.tsx'), /<CreditHistoryPanel customerId=\{customer\.id\} currency=\{currency\} \/>/);
     assert.match(read('apps/dashboard/src/pages/settings/BusinessPage.tsx'), /isOwner \? \[\{ to: 'credit-approvals', label: 'Credit approvals' \}\]/);
     assert.match(read('apps/dashboard/src/App.tsx'), /<Route path="credit-approvals" element=\{<CreditApproversTab \/>\} \/>/);

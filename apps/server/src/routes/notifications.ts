@@ -3,7 +3,7 @@ import { sendError } from '../lib/sendError';
 import { requireAuth } from "../middleware/auth";
 import { supabase } from "../lib/supabase";
 import { sendEmailChecked } from "../lib/mailer";
-import { branchScope, branchFilter } from "../middleware/rbac";
+import { branchScope, branchFilter, withoutPaused } from "../middleware/rbac";
 
 /**
  * A494: what a non-owner may see and mark — their branch's notifications that are addressed to nobody in particular or
@@ -13,7 +13,7 @@ import { branchScope, branchFilter } from "../middleware/rbac";
 function forCaller(req: any, q: any): any {
   // A576: a loss-prevention alert's team copy (addressed to a partner or a manager) is theirs — the owner has their own
   // copy (type loss_alert), so the owner's bell neither shows it twice nor marks a manager's copy as read.
-  if (req.isOwner) return q.neq("type", "loss_alert_team");
+  if (req.isOwner) return withoutPaused(q.neq("type", "loss_alert_team"), req);   // A612: never a paused branch's
   const me = req.userId ? String(req.userId) : null;
   // A550: a partner of every branch reads every branch's (or the one picked) — still only rows addressed to nobody or to
   // them, never the owner's own.
@@ -27,6 +27,7 @@ function forCaller(req: any, q: any): any {
   return me ? q.or(`user_id.is.null,user_id.eq.${me}`) : q.is("user_id", null);
 }
 const mayRead = (req: any, row: { branch_id?: string | null; user_id?: string | null }): boolean => {
+  if (row.branch_id && req.pausedBranches?.has(row.branch_id)) return false;   // A612
   if (req.isOwner) return true;
   const scope = branchScope(req);
   const f = branchFilter(req);   // A582

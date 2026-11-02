@@ -4,10 +4,12 @@ import { effectiveKeysForRow, clientPermissionMap } from '../lib/effectivePermis
 import { offersForBranch } from './offers';   // A445
 import { promotionOffersFor } from '../lib/promotionOffers';   // A518
 import { enabledFromSetting } from '../lib/paymentCatalogue';   // A429
+import { loadPlatformPricing } from '../lib/platformPricing';   // A619
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
 import { parseReversalRules, REVERSAL_SETTING_KEYS } from '../lib/reversalRules';
 import { parsePosFeatures, POS_FEATURE_KEYS } from '../lib/posFeatures';
+import { ATTENDANCE_FLAG } from '../lib/attendanceRules';   // A599
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -15,7 +17,7 @@ import { isNodeRole } from '../lib/deviceRegistry';
 import { checkDeviceBranch } from '../lib/deviceBinding';   // A446
 import { createHash } from 'crypto';   // A446
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
-import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
+import { themesEnabled, effectiveThemeId, effectiveBrandColours, selectBusinessBranding } from '../lib/themeAccess';   // A597
 import { getWebAccess } from '../lib/webAccess';
 import { worksAtBranch } from '../lib/branchAccess';   // A426
 import { isConfirmedBranchServer } from '../lib/deviceRole';   // A427
@@ -40,8 +42,13 @@ import { assertBranchAccess, can } from '../middleware/rbac';                   
 import { maskPhone, seesCustomerContacts } from '../lib/personalData';           // A595
 import { branchCreditEnabled, branchLimitsAt, owedByCustomerAt } from '../lib/branchCredit';   // A595 D4
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
+import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '../lib/customerScreen';   // A606
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
+import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601
+import { BRANCH_PICKED_PAUSED_BODY } from '../lib/branchPauseScope';   // A612
+import { cloudFactsFor } from '../lib/cloudPlan';                     // A612
+import { featureBranches } from '../lib/branchBilling';               // A612: premium per branch
 /** A593: GET /test-data-clears per (business, the POS's last applied clear) — lib/quietMemo.ts. */
 const clearsMemo = quietMemo<unknown[]>('pos.test_clears');
 
@@ -327,6 +334,12 @@ router.get('/init', async (req, res) => {
   // is unchanged for anything not yet sending branch_id.
   const requestedBranchId =
     typeof req.query.branch_id === 'string' ? req.query.branch_id : null;
+  // A612: a paused branch's menu and prices are nobody's — its own POS was refused before (accessRefusal); a web POS or the
+  // dashboard naming it is too.
+  if (requestedBranchId && req.pausedBranches?.has(requestedBranchId)) {
+    res.status(403).json(BRANCH_PICKED_PAUSED_BODY);
+    return;
+  }
 
   // A531 (owner, 2026-10-19: "asking for the same 10 times an hour is not logical"): the answer is built once per
   // catalogue version (buildInit below, kept by lib/posInit.ts) — the next till of the business, and the next ask while
@@ -417,6 +430,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       // same shape of thing: owner-authored, per business, cached on every till.
       .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
         SCALE_SETTINGS_KEY,   // A577: the business's scale label layout
+        CUSTOMER_SCREEN_KEY,   // A606: the customer screen's slideshow (the owner's images)
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -461,17 +475,13 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A304: client branding (accent + base64 logo) for this business, pulled to
     // the till's local `branding` mirror (remote-wins). maybeSingle — the absent
     // row is the norm (branding is optional) and must not fail the pull closed.
-    supabase
-      .from('business_branding')
-      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id')
-      .eq('business_id', req.businessId)
-      .maybeSingle(),
+    // A597: + the owner's brand colours (migration 179; read without them on a database not yet migrated).
+    selectBusinessBranding(req.businessId, 'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, primary_hex, secondary_hex'),
   ]);
   // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
   // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
   // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
-  const themesOn = await themesEnabled(req.businessId);
-  const themeId = effectiveThemeId(themesOn, branding?.theme_id);
+  const themesBusiness = await themesEnabled(req.businessId);
   // A346: does the business have the web POS? Same entitlement as web sign-in (lib/webAccess.ts) — fully usable = active
   // or in grace (owner, 2026-09-27: "stock should only appear if the web pos is enabled"; reports-only week → no).
   const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
@@ -483,6 +493,12 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // The branch the till OPERATES on (the licence gate, in the route, reads its desktop_licensed — D11): the bound branch it
   // sent, falling back to the main branch only for legacy callers with no binding.
   const opBranch = boundBranch ?? mainBranch;
+  // A612 phase 4 (premium per branch): billed per branch, Themes only on a branch that pays for it (premium or the package);
+  // another branch's POS keeps the standard look. Billed as one: the business's flag alone, as before.
+  const themesPaying = featureBranches(await cloudFactsFor(req.businessId).catch(() => null), 'themes');
+  const themesOn = themesBusiness && (!themesPaying || themesPaying.includes(String((opBranch as { id?: string } | null)?.id ?? '')));
+  // A617: without Themes here, a free theme (Ocean, Teal, Sky) the owner chose, else ZapTill's default look (null).
+  const themeId = effectiveThemeId(themesOn, branding?.theme_id);
   // A544: this branch's override of the business branding (theme, brand colour, receipt footer) — only while the business
   // has themes (A325); null otherwise, so a till and the web POS apply none (stored, never applied). Only the till's own
   // branch's row: another branch's override never reaches it.
@@ -611,8 +627,15 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       // A311: the receipt raster + the client's opt-in toggle ride the same pull.
       logoReceipt: branding.logo_receipt ?? null,
       receiptLogoEnabled: branding.receipt_logo_enabled === true,
+      // A597: the owner's brand colours — null while themes are off (the POS keeps today's look). They win over the
+      // curated theme's action shades; a branch's own theme still wins over them (lib/branchBranding.ts).
+      ...effectiveBrandColours(themesOn, branding),
     } : null,
     themeId,
+    // A617: does this POS have Themes (the flag and, billed per branch, its branch pays)? themeId alone no longer says so —
+    // a free theme (Ocean, Teal, Sky) is served without it. The customer screen's logo and colours follow this (an older
+    // POS ignores it and reads themeId as before).
+    themesPremium: themesOn,
     // A544: the branch's own override ({ branchId, themeId, accentHex, receiptFooter }), or null. The till and the web POS
     // resolve per field: branch → business → ZapTill default (lib/branchBranding.ts). Older tills ignore it.
     branchBranding,
@@ -631,11 +654,18 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     cashierHistoryTotals: historyTotalsOn(receiptText.cashier_sees_shift_sales, receiptText.cashier_history_totals),
     // A429: the payment methods this branch takes (catalogue codes); the branch's own value wins; absent = the defaults.
     paymentMethodsEnabled: enabledFromSetting(receiptText.payment_methods_enabled),
+    // A619: the delivery platforms' prices — the business's rounding and this branch's rule per platform (its own, else
+    // the business's); { rounding: 'exact', rules: {} } = normal prices. Always sent; older POSs ignore it.
+    platformPrices: await loadPlatformPricing(req.businessId, (opBranch as { id?: string } | null)?.id ?? null),
     // 0.6.35 (A384): the tech allocated to this client (admin portal) — their name and number on the till's Help.
     // Always sent: null = no tech → the Help shows SwiftPOS support's numbers (shared/support.ts). Older tills ignore it.
     support: await getSupportContact(req.businessId),
     // A346: the till shows its Stock screen only when this is true (cached on the till; older tills ignore it).
     webPosEnabled,
+    // A601: the desktop-only cut-off — on: the cloud takes this POS's backup; phase 'notice' / 'cut' and the date for the
+    // manager's notice ('none': nothing to say). The standing is remembered (lib/cloudPlan.ts standingFor); a failed read
+    // sends no key, so the POS keeps what it had. Older POSs ignore it.
+    ...(!req.businessId ? {} : await standingFor(req.businessId).then((s) => (s ? { cloudBackup: cloudBackupWire(s) } : {})).catch(() => ({}))),
     receiptFooter: receiptText.receipt_footer ?? '',
     // A450: how a customer pays the business by M-Pesa, printed under the payments ("Buy Goods: 123456", "Paybill: …").
     // '' = not set (the receipt prints no such line). The branch's own value wins, as for the header and footer.
@@ -665,13 +695,25 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A577: how this business's weighing scales print their labels (shared/scaleBarcode.ts) — always sent, the default
     // when unset or unreadable, so the till and the web POS read scale labels offline. Older tills ignore it.
     scaleBarcodes: scaleSettingsOrDefault(receiptTextRows?.find((r: any) => r.key === SCALE_SETTINGS_KEY)?.value ?? null),
+    // A606: the customer screen's slideshow — the owner's images in order and the seconds each shows; null = none. The POS
+    // shows it (and fetches each image, once) only with the online licence (webPosEnabled). Older POSs ignore it.
+    customerScreen: slidesFromWire(receiptTextRows?.find((r: any) => r.key === CUSTOMER_SCREEN_KEY)?.value ?? null),
     // 0.6.27: the per-client switches the admin portal sets (feature_flags). Always every key, true or false — an unset
     // switch is off. Older tills ignore it.
-    posFeatures: await (async () => {
+    // A599: the same read carries the 'attendance' flag (premium) — on, the web POS hides its PIN clock-in (the device
+    // records every punch) and the cloud refuses it. Older tills ignore attendanceDevice.
+    ...(await (async () => {
       const { data } = await supabase.from('feature_flags').select('key, enabled')
-        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS]);
-      return parsePosFeatures(data ?? []);
-    })(),
+        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS, ATTENDANCE_FLAG, 'etims_enabled']);
+      const rows = (data ?? []) as Array<{ key: string; enabled: boolean }>;
+      return {
+        posFeatures: parsePosFeatures(rows.filter((r) => r.key !== ATTENDANCE_FLAG && r.key !== 'etims_enabled')),
+        attendanceDevice: rows.some((r) => r.key === ATTENDANCE_FLAG && r.enabled === true),
+        // A607: KRA eTIMS is on for the business — the POS then asks for the buyer's KRA PIN (customer details at the
+        // counter) and sends it with the sale. Older POSs ignore it.
+        etimsEnabled: rows.some((r) => r.key === 'etims_enabled' && r.enabled === true),
+      };
+    })()),
     // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules — always every rule, defaults where
     // unset. Older tills ignore it.
     reversalRules: parseReversalRules((receiptTextRows ?? []) as Array<{ key: string; value: unknown }>),

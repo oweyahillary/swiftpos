@@ -185,6 +185,8 @@ router.post('/ack', async (req: any, res) => {
       .select('id, status')
       .maybeSingle();
     if (wErr) { sendError(res, wErr); return; }
+    // A611: still pending, only the reason's note moved — no POS's pending list or branch drawers answer holds it.
+    res.locals.forgetNothing = true;
     res.json({ ...(still ?? { id: instructionId, status: 'pending' }), waiting: true, code: waiting });
     return;
   }
@@ -200,6 +202,8 @@ router.post('/ack', async (req: any, res) => {
     .select('id, status')
     .maybeSingle();
   if (error) { sendError(res, error); return; }
+  // A611: no pending instruction of this POS matched (answered already, cancelled, another till's) — nothing was written.
+  if (!data) res.locals.forgetNothing = true;
   res.json(data ?? { id: instructionId, status: ok ? 'acked' : 'failed' });
 });
 

@@ -25,7 +25,7 @@ const { posError } = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n       ${e.message}`); } };
 
-console.log('\nWeb POS / manager portal\n');
+console.log('\nWeb POS\n');
 ok('a wrong clock PIN keeps the cashier signed in (the cloud answers 401 "Invalid PIN"; the renewed retry\'s refusal is thrown outside the try)', () => {
   assert.match(staffRoute, /res\.status\(401\)\.json\(\{ error: 'Invalid PIN' \}\)/);   // the reason this matters
   assert.match(pos, /retryError = posError\(retryJson, retryRes\.status\);\s*\}\s*\} catch \{\s*\/\/ fall through to clean expiry\s*\}\s*if \(retryError\) throw retryError;/);
@@ -106,19 +106,16 @@ ok('the renewal chain, run: a token renewed twice is followed to its newest succ
   assert.strictEqual(newestOf('R0'), 'R2');
   assert.strictEqual(newestOf('X'), 'X');
 });
-ok('a blind count reads "being counted" on the manager\'s transfer picker (quantity null — never "in stock: 0")', () => {
-  const r = read('apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx');
-  assert.match(r, /stock: r\.quantity === null \|\| r\.quantity === undefined \? null : Number\(r\.quantity\) \|\| 0/);
-  assert.match(r, /p\.stock === null \? 'being counted' : `in stock: \$\{p\.stock\}`/);
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; the manager transfer picker's
+// "being counted" (ManagerReceivingTab.tsx) is gone with it.
 ok('stripped count values read "—", never "KES 0.00"', () => {
   const c = read('apps/dashboard/src/components/StockCounts.tsx');
   assert.match(c, /const cash = \(v: unknown, currency: string\): string => \{ const n = num\(v\); return n === null \? '—' : money\(n, currency\); \};/);
   assert.doesNotMatch(c, /money\(s\.(short|over|net)Value/);
 });
-ok('History asks for transfers only with inventory.transfer; Expiry offers batch edits only with receive / adjust', () => {
-  assert.match(read('apps/dashboard/src/pages/manager/ManagerHistoryTab.tsx'), /hasPermission\('inventory\.transfer'\) \? posApi\.get<TRow\[\]>\('\/api\/stock\/transfers'\)/);
-  assert.match(read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), /canEditBatches=\{hasPermission\('inventory\.receive'\) \|\| hasPermission\('inventory\.adjust'\)\}/);
+ok('Expiry offers batch edits only when told (canEditBatches)', () => {
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; the History half
+  // (ManagerHistoryTab.tsx) and the portal's canEditBatches wiring (ManagerDashboard.tsx) are gone; the component's gate stays.
   assert.match(read('apps/dashboard/src/components/Expiry.tsx'), /\{canEditBatches && <button disabled=\{!branchId\} onClick=\{\(\) => setAdding\(true\)\}/);
 });
 ok('a QR order refusal (429 / unknown item) is shown in the cart, not as "Menu unavailable"', () => {

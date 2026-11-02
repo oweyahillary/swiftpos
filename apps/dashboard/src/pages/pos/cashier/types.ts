@@ -83,10 +83,14 @@ export interface POSInitResponse {
   reversalRules?: unknown;
   receiptHeader?: string;
   /** A304/A311: branding from /pos/init; null when the business has no row. */
-  branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean } | null;
+  branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean;
+    /** A597: the owner's brand colours (null while themes are off). */
+    primaryHex?: string | null; secondaryHex?: string | null } | null;
   receiptFooter?: string;
-  /** A325: the business's effective action theme (null = themes off). */
+  /** A325: the business's effective action theme (null = ZapTill's default look). A617: a free theme without Themes too. */
   themeId?: string | null;
+  /** A617: does this POS have Themes? (absent: an older cloud — themeId alone said so) */
+  themesPremium?: boolean;
   /** A544: this branch's override of the theme, brand colour and receipt footer (null = none, or themes off). */
   branchBranding?: unknown;
   receiptPayLabel?: string;    // A450
@@ -107,6 +111,8 @@ export interface POSInitResponse {
   paymentMethodsEnabled?: string[];
   /** A445: the offers this branch runs (shared/offers.ts applies them to the cart). Absent from an older cloud = none. */
   offers?: unknown[];
+  /** A619: the delivery platforms' prices ({ rounding, rules }). Absent from an older cloud = normal prices. */
+  platformPrices?: unknown;
 }
 
 export type { CartItem, Product, Category, VariantGroup, VariantOption };

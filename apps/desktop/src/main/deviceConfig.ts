@@ -25,6 +25,7 @@ import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
 import { parseStockCountFreeze, freezeExpired, NO_FREEZE, type StockCountFreeze } from './stockCountFreeze';   // A394, A521
 import { logLine } from './logFile';   // A521
 import { cleanScaleSettings, scaleSettingsOrDefault, type ScaleSettings } from './scaleBarcode';   // A577
+import { cleanPricing, type PlatformPricing } from './platformPrices';   // A619
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -346,6 +347,62 @@ export function setPosFeatures(features: Record<string, boolean> | null | undefi
   getLocalDb().prepare(`UPDATE device_config SET pos_features = ? WHERE id = 1`).run(JSON.stringify(parsePosFeatures(features)));
 }
 
+/**
+ * A599: the business's 'attendance' flag (premium, set by ZapTill in the admin portal) as the catalogue pull heard it
+ * (pos/init attendanceDevice). Kept in maintenance_state (the key/value table) — no device_config column, no schema
+ * change. undefined = not said (an older cloud, or a branch server's bundle) → keep. The ONLY writer: a renderer can
+ * never switch it on. Off until told.
+ */
+const ATTENDANCE_FLAG_KEY = 'attendance_flag';
+export function setAttendanceFlag(on: boolean | undefined): void {
+  if (typeof on !== 'boolean') return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(ATTENDANCE_FLAG_KEY, on ? '1' : '0', new Date().toISOString());
+}
+export function getAttendanceFlag(): boolean {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(ATTENDANCE_FLAG_KEY) as { value?: string } | undefined;
+    return row?.value === '1';
+  } catch { return false; }
+}
+
+/**
+ * A607: is KRA eTIMS on for the business (pos/init etimsEnabled)? On, the POS asks for the buyer's KRA PIN with the
+ * customer's details and sends it with the sale. Kept in maintenance_state like the attendance flag — no device_config
+ * column. undefined = not said (an older cloud or branch server) → keep. The ONLY writer; off until told.
+ */
+const ETIMS_FLAG_KEY = 'etims_flag';
+export function setEtimsFlag(on: boolean | undefined): void {
+  if (typeof on !== 'boolean') return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(ETIMS_FLAG_KEY, on ? '1' : '0', new Date().toISOString());
+}
+export function getEtimsFlag(): boolean {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(ETIMS_FLAG_KEY) as { value?: string } | undefined;
+    return row?.value === '1';
+  } catch { return false; }
+}
+
+/**
+ * A617 (owner, 2026-11-01: "basic themes for everyone, the rest premium"): does this POS have Themes (pos/init
+ * themesPremium)? A free theme id (Ocean, Teal, Sky) is served without it, so the theme id alone no longer says so; the
+ * customer screen's logo and colours follow this. Kept in maintenance_state like the eTIMS flag. undefined = not said
+ * (an older cloud or branch server) → keep. null from the getter = never told: the theme id decides, as before.
+ */
+export const THEMES_PREMIUM_KEY = 'themes_premium';
+export function setThemesPremium(on: boolean | undefined): void {
+  if (typeof on !== 'boolean') return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(THEMES_PREMIUM_KEY, on ? '1' : '0', new Date().toISOString());
+}
+export function getThemesPremium(): boolean | null {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(THEMES_PREMIUM_KEY) as { value?: string } | undefined;
+    return row?.value === '1' ? true : row?.value === '0' ? false : null;
+  } catch { return null; }
+}
+
 /** 0.6.27: the switches as the till last heard them (all off until told). */
 export function getPosFeatures(): PosFeatures {
   return parsePosFeatures(getDeviceConfig()?.pos_features ?? null);
@@ -481,6 +538,26 @@ export function getScaleSettings(): ScaleSettings {
     return scaleSettingsOrDefault(r?.scale_barcodes ?? null);
   } catch {
     return scaleSettingsOrDefault(null);
+  }
+}
+
+/**
+ * A619: cache the delivery platforms' prices (the cloud's `platformPrices`: { rounding, rules }, shared/platformPrices.ts).
+ * undefined / null = not said (an older cloud or branch server) → keep what this POS holds. Stored cleaned. The ONLY writer.
+ */
+export function setPlatformPricing(raw: unknown): void {
+  if (raw === undefined || raw === null || typeof raw !== 'object') return;
+  try { getLocalDb().prepare(`UPDATE device_config SET platform_prices = ? WHERE id = 1`).run(JSON.stringify(cleanPricing(raw))); }
+  catch { /* a database before local schema 79 */ }
+}
+
+/** A619: the delivery platforms' prices this POS charges (normal prices until told — offline too). */
+export function getPlatformPricing(): PlatformPricing {
+  try {
+    const r = getLocalDb().prepare(`SELECT platform_prices FROM device_config WHERE id = 1`).get() as { platform_prices?: string | null } | undefined;
+    return cleanPricing(r?.platform_prices ?? null);
+  } catch {
+    return cleanPricing(null);
   }
 }
 

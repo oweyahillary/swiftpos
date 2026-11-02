@@ -57,6 +57,8 @@ import { seesCosts } from '../lib/costAccess';
 import { getDayCutoff } from '../lib/dayCutoff';
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { analyticsEnabled } from '../lib/analyticsAccess';
+import { cloudFactsFor } from '../lib/cloudPlan';                   // A612
+import { featureBranches } from '../lib/branchBilling';             // A612: premium per branch
 import {
   ANALYTICS_OFF_MESSAGE, rangeError, defaultRange, classifyMenu, menuWithoutCosts, summariseHeatmap, summariseLeaks,
   leaksWithoutWastageValue, summariseCredit, buildInsights, previousPeriod, buildOverview, summariseItemTimes,
@@ -153,6 +155,19 @@ async function context(req: Request, res: Response): Promise<Ctx | null> {
     const asked = typeof q === 'string' ? q.trim() : '';
     if (asked && asked !== req.branchId) { res.status(403).json({ error: 'You can see your own branch only.', code: 'BRANCH_SCOPE' }); return null; }
     branch = req.branchId;
+  }
+
+  // A612 phase 4 (premium per branch): billed per branch, Analytics covers the branches that pay for it (premium or the
+  // package) — one named that does not: off for it; none named: those of the branches in view.
+  const paying = featureBranches(await cloudFactsFor(businessId).catch(() => null), 'analytics');
+  if (paying) {
+    (req as { analyticsBranches?: string[] }).analyticsBranches = paying;
+    if (branch && !paying.includes(branch)) { res.status(403).json({ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' }); return null; }
+    if (!branch) {
+      const inView = (branches ?? paying).filter((b) => paying.includes(b) && !req.pausedBranches?.has(b));
+      if (!inView.length) { res.status(403).json({ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' }); return null; }
+      branches = inView;
+    }
   }
 
   // the period, in business dates (the owner's day cut-off, as every report)
@@ -347,6 +362,15 @@ const branchKey = (c: Ctx, within: string[] | null = null) =>
  * a partner of some branches (two or more): exactly theirs, whichever is in view; anyone else: undefined (not offered).
  */
 function compareWithin(req: Request): string[] | null | undefined {
+  const w = compareWithinBranches(req);
+  // A612: billed per branch — only the branches that pay for Analytics (context() set them).
+  const paying = (req as { analyticsBranches?: string[] }).analyticsBranches;
+  if (!paying || w === undefined) return w;
+  return (w ?? paying).filter((b) => paying.includes(b));
+}
+function compareWithinBranches(req: Request): string[] | null | undefined {
+  // A612: some branches paused — the owner (a partner of every branch) compares the open ones only.
+  if (req.pausedBranches?.size && (req.isOwner || req.allBranches)) return [...(req.openBranches ?? [])];
   if (allBranchAccess(req)) return null;
   if (req.webPartner === true && !req.allBranches && (req.partnerBranches ?? []).length >= 2) return [...req.partnerBranches];
   return undefined;

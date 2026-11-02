@@ -10,7 +10,7 @@ import ScreenBoundary from './components/ScreenBoundary';
 import UpdateBanner from './pages/UpdateBanner';
 import JoinPrompt from './components/JoinPrompt';   // A427
 import OnScreenKeyboard from './components/OnScreenKeyboard';   // A417
-import { computeThemeVars, applyThemeVars } from './lib/themeVars';
+import { computeThemeVars, applyThemeVars, stripBackground } from './lib/themeVars';
 import { schedulePreload, browserPreloadDeps } from './lib/preloadScreens';   // A517
 
 // A517: the screens a till opens now and then are their own chunks, loaded when first opened — the PIN screen and the
@@ -93,9 +93,11 @@ function AppScreens() {
       posApi.branding.get().then((b) => {
         if (cancelled) return;
         // A544: what this till's branch wears — its override per field, else the business's (main resolves it).
-        const t = computeThemeVars(b ? { themeId: b.effective?.themeId ?? b.themeId ?? null, accentHex: b.effective ? b.effective.accentHex : b.accentHex } : null);
+        // A597: + the owner's brand colours, resolved the same way (none while a branch's own theme overrides).
+        const t = computeThemeVars(b ? { themeId: b.effective?.themeId ?? b.themeId ?? null, accentHex: b.effective ? b.effective.accentHex : b.accentHex,
+          primaryHex: b.effective?.primaryHex ?? null, secondaryHex: b.effective?.secondaryHex ?? null } : null);
         applyThemeVars(t);
-        setBrandStrip(t?.strip ?? null);
+        setBrandStrip(stripBackground(t));
       }).catch(() => { /* keep what is applied; the defaults are today's look */ });
     };
     load();

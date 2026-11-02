@@ -322,7 +322,12 @@ export interface UpdateCheckResult {
   /** A496: one plain sentence — what was decided and why. */
   reason?: string;
   timedOut?: boolean;
+  /** A601: held because the business is desktop only — ZapTill support releases its updates. */
+  bySupport?: boolean;
 }
+
+/** A601: the Tech page's words while a desktop-only business's updates are held for ZapTill support to release. */
+export const UPDATES_BY_SUPPORT = 'Updates for this business are released by ZapTill support';
 
 /** One A348 check: ask the cloud, and only for an approved NEWER version open the feed and check it. Never throws. */
 export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckResult> {
@@ -334,6 +339,7 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
   let token = d.token();
   if (!cloud || !token) return say({ decision: 'unreachable', approved: null, reason: `not checked: ${!cloud ? 'no cloud address' : 'this POS is not signed in to the cloud'}` });
   let approved: string | null = null;
+  let bySupport = false;   // A601
   try {
     let res = await ask(token);
     if (res.status === 401 && await d.refresh().catch(() => false)) {
@@ -341,8 +347,9 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
       if (token) res = await ask(token);
     }
     if (!res.ok) return say({ decision: 'unreachable', approved: null, reason: `update status: HTTP ${res.status} — holding` });
-    const body = await res.json() as { approvedVersion?: unknown; reportsState?: unknown };
+    const body = await res.json() as { approvedVersion?: unknown; reportsState?: unknown; bySupport?: unknown };
     approved = typeof body?.approvedVersion === 'string' ? body.approvedVersion : null;
+    bySupport = approved === null && body?.bySupport === true;   // A601: the desktop-only cut-off
     try { d.cloudReportsState?.(body?.reportsState === true); } catch { /* never stops a check */ }   // A534
   } catch (e: any) {
     return say({ decision: 'unreachable', approved: null, reason: `update status unreachable (${e?.message ?? e}) — holding` });
@@ -359,7 +366,11 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
       else shared = d.share.route();
     }
   }
-  if (decision === 'hold') return say({ decision, approved, reason: 'the business is on hold (no version approved) — nothing to download' });
+  if (decision === 'hold') {
+    // A601: a plain hold, like any other — checked again at the next hourly check, never in a loop.
+    if (bySupport) return say({ decision, approved, bySupport, reason: 'updates for this business are released by ZapTill support (desktop only) — nothing to download' });
+    return say({ decision, approved, reason: 'the business is on hold (no version approved) — nothing to download' });
+  }
   if (decision !== 'update' || !approved || !token) return say({ decision, approved, reason: `approved ${approved}, this machine runs ${d.running} — nothing to download` });
   if (d.selfUpdate === false) return say({ decision, approved, reason: `approved ${approved}: this machine's own download is already under way` });
   const via = shared ?? d.route?.(cloud) ?? { base: cloud, headers: {} };
@@ -581,6 +592,7 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
       const note = r.timedOut ? 'the update feed did not answer — asked again on the next check'
         : r.waiting ? (r.reason ?? 'waiting for the branch server')
         : held && r.decision !== 'update' ? `${held} downloaded — installs when ZapTill is closed`
+        : r.decision === 'hold' && r.bySupport ? UPDATES_BY_SUPPORT   // A601
         : r.decision === 'hold' ? 'updates are on hold for this business'
         : r.decision === 'current' ? `up to date (approved ${r.approved})`
         : r.decision === 'unreachable' ? (r.reason ?? 'the cloud could not be asked')

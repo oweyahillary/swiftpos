@@ -65,7 +65,9 @@ try {
     allLabel: 'All my branches (1)', onPick() {} }));
   ok('one branch: just it, disabled, no "all"', /disabled=""/.test(single) && options(single).length === 1, single);
   let picked = 'unset';
-  const el = BP.default({ branches: LIST, activeId: 'y', allowAll: false, allowMine: true, allLabel: 'All my branches (3)', onPick: (v) => { picked = v; } });
+  const tree = BP.default({ branches: LIST, activeId: 'y', allowAll: false, allowMine: true, allLabel: 'All my branches (3)', onPick: (v) => { picked = v; } });
+  // the select inside the picker's frame (the pin and the chevron sit around it)
+  const el = [tree.props.children].flat().find((c) => c && c.type === 'select');
   el.props.onChange({ target: { value: 'all' } });
   ok('choosing "All my branches" picks null (every branch of theirs)', picked === null);
   el.props.onChange({ target: { value: 'z' } });

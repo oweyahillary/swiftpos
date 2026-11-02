@@ -33,6 +33,7 @@ import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own
 import { isRenewalPath, renewalKey, RENEWALS_PER_WINDOW } from './lib/authLimits';   // A415
 import { authLimiterKeyFor, apiLimiterKeyFor, BUCKET_VERIFY_OPTIONS } from './lib/limiterKeys';   // A494, A505
 import jwt from 'jsonwebtoken';
+import { backfillBodyParser, BACKFILL_JSON_LIMIT } from './lib/backfill';   // A602
 
 const app  = express();
 const PORT = process.env.PORT ?? 4000;
@@ -91,6 +92,9 @@ app.use(cors({
   credentials: true,
 }));
 
+// A602: the POS's sales history in bulk (gzip'd, up to 500 sales a call) has its own, larger limit — on the INFLATED size.
+// Mounted first: the 1 MB parser below then sees a body already read and leaves it alone.
+app.use('/api/sync/backfill', backfillBodyParser);
 app.use(express.json({ limit: '1mb' })); // explicit limit — prevents oversized payload DoS
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -317,7 +321,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
   // express.json() throws this when body exceeds the limit
   if ((err as any).type === 'entity.too.large') {
-    res.status(413).json({ error: 'Payload too large (max 1MB)' });
+    res.status(413).json({ error: `Payload too large (max ${/^\/api\/sync\/backfill/.test(_req.originalUrl ?? '') ? BACKFILL_JSON_LIMIT.toUpperCase() : '1MB'})`, code: 'PAYLOAD_TOO_LARGE' });
     return;
   }
 

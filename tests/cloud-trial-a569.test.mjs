@@ -287,7 +287,8 @@ try {
   });
   await ok('auth.ts answers every web sign-in refusal from webAccessRefusal; the login page knows CLOUD_TRIAL_ENDED; tills never ask', () => {
     const a = read('apps/server/src/routes/auth.ts');
-    assert.equal((a.match(/res\.status\(403\)\.json\(webAccessRefusal\(webAccess\)\)/g) ?? []).length, 2);
+    // A608: + POST /api/auth/pos-session (Open POS from the dashboard) — a lapsed web portal refuses it the same way.
+    assert.equal((a.match(/res\.status\(403\)\.json\(webAccessRefusal\(webAccess\)\)/g) ?? []).length, 3);
     assert.doesNotMatch(a, /Your web portal subscription has expired/, 'the words live in lib/webAccess.ts only');
     assert.match(read('apps/dashboard/src/pages/LoginPage.tsx'), /CLOUD_TRIAL_ENDED: \{[\s\S]*?Your cloud trial has ended/);
     assert.doesNotMatch(read('apps/server/src/routes/enrol.ts'), /getWebAccess/, 'a till\'s enrolment never checks web access');

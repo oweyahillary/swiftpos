@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cashier = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/pos/CashierScreen.tsx'), 'utf8');
 const routing = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/posRouting.ts'), 'utf8');
-const mgr = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (n, fn) => { try { fn(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n       ${e.message}`); } };
@@ -29,16 +28,15 @@ ok('routing: a manager resolves to /manager (why the old guard bounced them)', (
 });
 
 ok('cashier guard: only the OWNER is redirected (managers may ring sales)', () => {
-  assert.match(cashier, /if \(dest === '\/'\) navigate\(dest, \{ replace: true \}\);/,
-    "the guard must redirect only dest === '/' (owner)");
+  // A608: … and not even the owner when they opened the POS from the dashboard (Open POS — they sell as themselves).
+  assert.match(cashier, /if \(dest === '\/' && !session\.fromDashboard\) navigate\(dest, \{ replace: true \}\);/,
+    "the guard must redirect only dest === '/' (owner), and not an owner who opened the POS from the dashboard");
   assert.doesNotMatch(cashier, /if \(dest !== '\/pos\/cashier'\) navigate/,
     'the old over-broad guard (bounces managers) must be gone');
 });
 
-ok('manager dashboard still exposes the Open POS button', () => {
-  assert.match(mgr, /navigate\('\/pos\/cashier'\)[\s\S]{0,120}Open POS/,
-    'the Open POS button must navigate to /pos/cashier');
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; 
+// the portal's Open POS button is gone; Open POS from the dashboard is pinned by staff-signin-by-role-a608.
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);

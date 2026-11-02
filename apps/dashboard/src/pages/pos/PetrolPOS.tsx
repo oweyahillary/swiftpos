@@ -780,7 +780,7 @@ const s: Record<string, React.CSSProperties> = {
 
   pumpActionBtn: {
     flex: 1, padding: '10px', background: 'rgb(var(--act-strong, 29 78 216))',
-    border: 'none', borderRadius: 10, color: '#fff',
+    border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))',
     fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%',
     fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },

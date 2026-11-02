@@ -57,6 +57,41 @@ export interface Forecourt {
 
 export type DeviceRole = 'till' | 'node' | 'office';
 
+/** A606: the customer screen's setup (main/customerDisplay.ts DisplayStatus). */
+export interface CustomerDisplayStatus {
+  choice: { enabled: boolean; displayId: number | null };
+  screens: Array<{ id: number; n: number; width: number; height: number; primary: boolean }>;
+  open: boolean;
+  on: number | null;
+  note: string | null;
+}
+
+/** A602: the history upload — going online later (main/historyUpload.ts historyUploadStatus). */
+export interface HistoryUploadStatus {
+  active: boolean; fromCut: boolean; window: '3m' | '12m' | 'all'; windowLabel: string; quietFrom: string; quietTo: string;
+  done: number; remaining: number; percent: number; progress: string; why: string | null; running: boolean; localOnly: number;
+  startedAt: string | null; finishedAt: string | null; lastBatchAt: string | null; lastResult: string | null;
+}
+
+/** A600: the Backup panel (main/maintenance.ts backupStatus + backupService). */
+export interface BackupStatus {
+  last_backup_at: string | null; last_backup_path: string | null; last_backup_bytes: number | null;
+  last_backup_status: string | null; failed: boolean; warn: boolean;
+  /** A600 follow-up: why the last copy was made; hours since it; the space the copies take; a copy skipped for space. */
+  last_backup_reason: 'scheduled' | 'manual' | 'folder' | 'day_close' | 'shift_close' | null; hours_since: number | null;
+  copies_bytes: number; space_short: { drive: string; free: number; need: number; message: string } | null;
+  dir: string; default_dir: string; custom_dir: boolean; same_disk: boolean; keep: number; copies: number; running: boolean;
+  can_restore: boolean;
+  last_restore: { at: string; applied: boolean; source: string; by: string; error: string | null } | null;
+}
+/** A600: what a chosen backup file is, and whether it may be restored here (main/backupService.ts inspectBackup). */
+export interface BackupCheck {
+  ok: boolean; refusal: string | null; warnings: string[]; needs_tech: boolean; takes_over_device: string | null;
+  backup: { file: string; bytes: number; taken_at: string | null; business_name: string | null; pos_name: string | null;
+            orders: number; last_sale_at: string | null } | null;
+  token: string | null;
+}
+
 export interface TechSession {
   techId: string; techName: string; branchId: string;
   startedAt: number; expiresAt: number; tokenHash: string;
@@ -93,6 +128,21 @@ export type ServerDrawers =
       status: { role: 'server' | 'peer' | 'direct'; mode: string; drawers: number; lastOkAt: string | null; polls: number; error: string | null;
         lastPollAt: string | null; lastPollOk: boolean | null; open: number; awaitingConfirmation: number; peersLastHour: number;
         channel: string; fallback: boolean; fallbackUntil: string | null; fresh: boolean } };
+
+/** A599: what attendance:status answers (main/attendanceSync.ts AttendanceJob.status). Never the comm key. */
+export interface AttendanceDeviceView {
+  id: string; name: string; ip: string; port: number; serial: string | null; model: string | null; firmware: string | null;
+  lastContactAt: string | null; lastError: string | null; lastErrorAt: string | null; driftS: number | null;
+  usersOnDevice: number | null; punchesOnDevice: number | null; sentLastRun: number; lastSentAt: string | null;
+}
+export type AttendanceDevicesStatus =
+  | { visible: false }
+  | { visible: true;
+      status: { lastRunAt: string | null; lastRunOk: boolean | null; lastError: string | null; everyS: number; driftWarnS: number;
+        waitUntil: string | null; utcOffsetMinutes: number | null; devices: AttendanceDeviceView[] } };
+export interface AttendanceDeviceCheck {
+  ok: boolean; error?: string; serial?: string; model?: string; firmware?: string; deviceTime?: string; pcTime?: string; driftS?: number;
+}
 
 export interface TechStatus {
   device: {
@@ -543,6 +593,13 @@ declare global {
         /** A542: on a branch server, its copy of the branch's drawers (Tech page). */
         drawersStatus: () => Promise<ServerDrawers>;
       };
+      /** A599: the attendance devices — only on the branch server with the 'attendance' flag on (Tech page). */
+      attendance: {
+        status: () => Promise<AttendanceDevicesStatus>;
+        test: (device_id: string) => Promise<AttendanceDeviceCheck>;
+        setTime: (device_id: string) => Promise<AttendanceDeviceCheck>;
+        pullNow: () => Promise<{ ran: boolean; skipped?: string; error?: string; devices: Array<{ id: string; ok: boolean; error?: string; sent: number; actionsDone: number; actionsFailed: number }> }>;
+      };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
       // tracking can).
@@ -586,7 +643,8 @@ declare global {
         forecourt: () => Promise<Forecourt>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
         /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
-        paymentMethodsEnabled: () => Promise<{ enabled: string[] | null }>;
+        /** A429; A619: + the delivery platforms' prices ({ rounding, rules }; absent from an older main = normal prices). */
+        paymentMethodsEnabled: () => Promise<{ enabled: string[] | null; platformPrices?: unknown }>;
         /** A445: the branch's offers as the till holds them, and its branch (an offer may be for chosen branches). */
         offers: () => Promise<{ offers: import('../../shared/offers').Offer[]; branchId: string | null }>;
         onCatalogueChanged: (cb: () => void) => () => void;   // A278
@@ -755,7 +813,9 @@ declare global {
         get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null;
                              /** A544: this till's branch's override (null = none) and the look resolved branch → business → default. */
                              branch?: { branchId: string; themeId: string | null; accentHex: string | null; receiptFooter: string | null } | null;
-                             effective?: { themeId: string | null; accentHex: string | null } } | null>;
+                             /** A597: + the owner's brand colours the screens wear (none while themes are off or a branch theme overrides). */
+                             primaryHex?: string | null; secondaryHex?: string | null;
+                             effective?: { themeId: string | null; accentHex: string | null; primaryHex?: string | null; secondaryHex?: string | null } } | null>;
         // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
         // Rejects (throws) on a bad hex, an SVG, a non-raster data-URI, or a logo over 250 KB.
         // A312: logoRgba = the logo's pixels (≤384×240 RGBA); main thresholds them into the receipt
@@ -824,6 +884,57 @@ declare global {
         sendLogs: () => Promise<{ ok: true; reference: string } | { ok: false; offline: boolean; message: string }>;
         /** A519: the same text saved where the technician chooses. */
         saveLog: () => Promise<{ ok: boolean; canceled?: boolean; path?: string }>;
+      };
+      /** A600: Manager › Settings › Backup — the owner, a manager or a technician (restore: the owner or a technician). */
+      backup: {
+        status: () => Promise<BackupStatus>;
+        now: () => Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
+        /** The folder dialog (null = cancelled). */
+        chooseDir: () => Promise<string | null>;
+        /** null = the default folder. A backup is written there at once; on failure the old folder stays. */
+        setDir: (dir: string | null) => Promise<{ ok: boolean; path?: string; error?: string; dir: string; same_disk: boolean }>;
+        /** The file dialog and the checks (null = cancelled). */
+        chooseRestoreFile: () => Promise<BackupCheck | null>;
+        /** The checked file's token and the typed word RESTORE; ZapTill restarts when ok. */
+        restore: (token: string, confirm: string) => Promise<{ ok: boolean; error?: string; safety_copy?: string; restart?: boolean }>;
+      };
+      /** A602: going online later — the history upload (the Backup panel's people). */
+      historyUpload: {
+        status: () => Promise<HistoryUploadStatus>;
+        setSettings: (s: { window?: '3m' | '12m' | 'all'; quietFrom?: string; quietTo?: string }) => Promise<HistoryUploadStatus>;
+      };
+      /** A606: the customer screen (main/customerDisplay.ts). The state's shape is shared/customerScreen.ts DisplayState. */
+      customerDisplay: {
+        update: (state: Record<string, unknown>) => Promise<{ ok: boolean }>;
+        current: () => Promise<any>;
+        content: () => Promise<any>;
+        slide: (key: string) => Promise<string | null>;
+        status: () => Promise<CustomerDisplayStatus>;
+        set: (c: { enabled: boolean; displayId?: number | null }) => Promise<CustomerDisplayStatus>;
+        test: () => Promise<CustomerDisplayStatus>;
+        identify: () => Promise<{ screens: number }>;
+        onState: (cb: (s: any) => void) => () => void;
+        /** A607: the customer types their details on the customer screen (main/ipc/customerDetails.ts). */
+        askable: () => Promise<{ allowed: boolean; why: string | null; touch: boolean; licensed: boolean }>;
+        ask: (a: Record<string, unknown>) => Promise<{ ok: true; ask: any } | { ok: false; why: string }>;
+        cancelAsk: (id?: string) => Promise<{ ok: boolean }>;
+        answer: (a: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; errors: Record<string, string> }>;
+        setTouch: (on: boolean) => Promise<{ touch: boolean }>;
+        onAsk: (cb: (a: any) => void) => () => void;
+        onStk: (cb: (s: any) => void) => () => void;
+        onAnswered: (cb: (a: { id: string; answer?: any; skipped?: boolean; cancelled?: boolean }) => void) => () => void;
+      };
+      /** A607: customer details at the counter — is KRA eTIMS on, may this person see customers' numbers in full. */
+      customerDetails: {
+        saleInfo: () => Promise<{ etimsEnabled: boolean; seesContacts: boolean }>;
+      };
+      /** A607: the M-Pesa prompt from this POS (main/mpesaStk.ts StkState). */
+      mpesa: {
+        stkOffered: () => Promise<{ offered: boolean }>;
+        stkStart: (p: { phone: string; amount: number; ref: string; currency?: string }) => Promise<any>;
+        stkReset: () => Promise<any>;
+        stkState: () => Promise<any>;
+        onStk: (cb: (s: any) => void) => () => void;
       };
       /** 0.6.28: what went to the kitchen, and kitchen voids. */
       kitchen: {

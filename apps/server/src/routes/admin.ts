@@ -71,10 +71,12 @@ import { signTechToken, generateRevealCode } from '../lib/techToken';
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
 import { resolveOwnerUserId } from '../lib/ownerBusiness';
 import { listDesktopReleasesOrStale } from '../lib/desktopReleases';
-import { ownerSetsFeature } from './controls';        // A490
+import { ownerSetsFeature, alwaysOnFeature } from './controls';        // A490; A604 alwaysOnFeature
 import { checkApprovableVersion } from '../lib/desktopVersionApproval';   // A493: the admin approves till updates
 import { startTrialIfEligible, readTrial, trialPhase, planLabel, planLabelsFor } from '../lib/cloudTrial';   // A569
-import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds, standingView, type CloudStanding } from '../lib/cloudPlan';   // A581, A584
+import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds, standingView, type CloudStanding,
+  CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG, desktopOnlyView, desktopOnlyCutoffAt, cutoffPhase } from '../lib/cloudPlan';   // A581, A584, A601
+import { newBranchPremium, themesFreeFor, THEMES_FREE_FLAG } from '../lib/branchBilling';   // A617: a new branch on the free-Themes deal
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
@@ -610,6 +612,17 @@ router.get('/clients', requireAdmin, async (req, res) => {
     onlyIds = [...facts.entries()].filter(([, f]) => !f.suspended && billingFilterMatch(expiry, cloudStanding(f, now))).map(([id]) => id);
     if (!onlyIds.length) { res.json({ clients: [], total: 0 }); return; }
   }
+  // A601: "Desktop only" — every business the billing rules do not concern, or concern as not_on_plan (no plan, no date,
+  // no trial, no web access): the ones the desktop-only cut-off (DESKTOP_ONLY_CUTOFF_AT) is about.
+  if (expiry === 'desktop_only') {
+    const now = Date.now();
+    const governed = await readCloudFacts(await gatedBusinessIds().catch(() => [])).catch(() => new Map());
+    const notDesktop = new Set([...governed.entries()].filter(([, f]) => !cloudStanding(f, now).desktopOnly.is).map(([id]) => id));
+    const { data: all, error: allErr } = await supabase.from('businesses').select('id').limit(10000);
+    if (allErr) { sendError(res, allErr); return; }
+    onlyIds = ((all ?? []) as Array<{ id: string }>).map((b) => b.id).filter((id) => !notDesktop.has(id));
+    if (!onlyIds.length) { res.json({ clients: [], total: 0, cutoff: cutoffView() }); return; }
+  }
 
   let query = supabase
     .from('businesses')
@@ -638,8 +651,17 @@ router.get('/clients', requireAdmin, async (req, res) => {
     const s = cloudStanding(f, now);
     return s.gated || s.state === 'no_expiry' || s.state === 'off' ? standingView(s) : null;
   };
-  res.json({ clients: rows.map((r) => ({ ...r, plan_label: labels.get(r.id) ?? null, cloud: cloud(r.id) })), total: count ?? 0 });
+  // A601: a desktop-only client's cut-off phase (notice / backup off / exempt), null for every other client.
+  const desktopOnly = (id: string) => { const f = facts.get(id); return f && !f.suspended ? desktopOnlyView(cloudStanding(f, now).desktopOnly) : null; };
+  res.json({ clients: rows.map((r) => ({ ...r, plan_label: labels.get(r.id) ?? null, cloud: cloud(r.id), desktop_only: desktopOnly(r.id) })),
+    total: count ?? 0, cutoff: cutoffView() });
 });
+
+/** A601: the desktop-only cut-off as set on this cloud (DESKTOP_ONLY_CUTOFF_AT): its date and where it stands now. */
+function cutoffView(): { at: string | null; phase: 'none' | 'notice' | 'cut' } {
+  const at = desktopOnlyCutoffAt();
+  return { at, phase: cutoffPhase(at, Date.now()) };
+}
 
 router.get('/clients/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
@@ -693,6 +715,9 @@ router.get('/clients/:id', requireAdmin, async (req, res) => {
     recent_orders: recentOrders ?? [],
     revenue_mtd:   revenueMtd,
     features:      flags ?? [],
+    // A601: the desktop-only cut-off for this client (null: on a plan, a trial, a date or web access) and the cloud's date.
+    desktop_only:  await readCloudFacts([String(id)]).then((m) => { const f = m.get(String(id)); return f && !f.suspended ? desktopOnlyView(cloudStanding(f, Date.now()).desktopOnly) : null; }).catch(() => null),
+    desktop_only_cutoff: cutoffView(),
     // A378: the full sign-in address, or null (none set, or TENANT_ROOT_DOMAIN not configured on the cloud).
     sign_in_address:    signInAddress((biz as any).subdomain),
     tenant_root_domain: tenantRootDomain() || null,
@@ -1184,7 +1209,8 @@ router.get('/clients/:id/features', requireAdmin, async (req, res) => {
   res.json(data ?? []);
 });
 
-const PAID_FEATURES = new Set(['web_hosting']);   // A495
+// A495. A601: the desktop-only cut-off's exemption (cloud_backup) and update release (desktop_updates) are paid too.
+const PAID_FEATURES = new Set(['web_hosting', CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG, THEMES_FREE_FLAG]);   // A617: the free-Themes deal
 
 router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   const { id, key } = req.params;
@@ -1193,10 +1219,14 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   // permissions per role. The portal shows them read-only.
   const refusal = ownerSetsFeature(key);
   if (refusal) { res.status(403).json({ error: refusal, code: 'OWNER_SETS' }); return; }
+  // A604: the STANDARD keys are always on (a stored value is ignored) — nothing to store.
+  const alwaysOn = alwaysOnFeature(key);
+  if (alwaysOn) { res.status(409).json({ error: alwaysOn, code: 'ALWAYS_ON' }); return; }
   if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled must be true or false' }); return; }
   // A495: web access is paid (A584: the cloud plan) — switching it is a super admin's call.
   if (PAID_FEATURES.has(key) && req.adminRole !== 'super_admin') {
-    res.status(403).json({ error: 'Only a super admin can switch web access (a paid licence).', code: 'SUPER_ADMIN_REQUIRED' });
+    const what = key === CLOUD_BACKUP_FLAG ? 'the cloud backup' : key === DESKTOP_UPDATES_FLAG ? 'desktop updates' : key === THEMES_FREE_FLAG ? 'the free-Themes deal' : 'web access (a paid licence)';
+    res.status(403).json({ error: `Only a super admin can switch ${what}.`, code: 'SUPER_ADMIN_REQUIRED' });
     return;
   }
 
@@ -1235,7 +1265,8 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
     .single();
 
   if (error) { sendError(res, error); return; }
-  if (key === 'web_hosting') forgetStanding(String(id));   // A581: the lapse gate reads afresh
+  // A581: the lapse gate reads afresh. A601: and the desktop-only cut-off (backup kept, updates released).
+  if (PAID_FEATURES.has(key)) forgetStanding(String(id));
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -1724,13 +1755,33 @@ router.post('/clients/:id/branches', requireAdmin, async (req: any, res) => {
     .single();
   if (error) { sendError(res, error); return; }
 
+  // A612: a client billed per branch — the new branch gets its own plan (the business's period and amount), due today: its
+  // first invoice goes with today's billing pass, then its 7 days. Never a branch quietly unbilled.
+  let billedFrom: string | null = null;
+  const { data: plans } = await supabase.from('branch_cloud_plans').select('branch_id').eq('business_id', businessId).limit(1);
+  if ((plans ?? []).length) {
+    const { data: plan } = await supabase.from('cloud_plans').select('period, amount, currency, custom_until').eq('business_id', businessId).maybeSingle();
+    if (plan) {
+      billedFrom = new Date().toISOString();
+      const start = newBranchPremium(await themesFreeFor(businessId));   // A617: the free-Themes deal, when the client is on it
+      const bp = await supabase.from('branch_cloud_plans').insert({
+        branch_id: (branch as { id: string }).id, business_id: businessId, period: (plan as any).period, amount: (plan as any).amount,
+        currency: (plan as any).currency ?? 'KES', custom_until: (plan as any).custom_until ?? null, paid_until: billedFrom,
+        created_at: billedFrom, updated_by: req.adminEmail ?? null, notes: 'A612: a new branch — billed from the day it was made',
+        premium: start.premium, ...(start.own_prices ? { own_prices: start.own_prices } : {}),
+      });
+      if (bp.error) { console.error('[admin] new branch plan not written:', bp.error.message); billedFrom = null; }
+      else forgetStanding(businessId);
+    }
+  }
+
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
     action: 'business.create_branch', resource: 'branch',
-    businessId, businessName: biz.name, after: { name, address, phone },
+    businessId, businessName: biz.name, after: { name, address, phone, cloud_billed_from: billedFrom },
   });
 
-  res.status(201).json(branch);
+  res.status(201).json({ ...(branch as object), cloud_billed_from: billedFrom });
 });
 
 /**
@@ -1907,8 +1958,9 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
     });
     return;
   }
-  // A581: a lapsed cloud plan (past its grace) — no new till and no rejoin until the payment is recorded.
-  if (await enrolRefusal(String(businessId)).catch(() => null)) {
+  // A581: a lapsed cloud plan (past its grace) — no new till and no rejoin until the payment is recorded. A612: billed per
+  // branch — this branch's own plan.
+  if (await enrolRefusal(String(businessId), String(branchId)).catch(() => null)) {
     res.status(409).json({
       error: 'This client\'s cloud plan has lapsed, so a POS cannot be joined. Record the payment on Plan & billing first.',
       code:  'CLOUD_SUBSCRIPTION_ENDED',

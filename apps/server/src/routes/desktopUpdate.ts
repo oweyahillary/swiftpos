@@ -14,27 +14,37 @@ import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { assetDownloadUrl, assetFor, isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
 import { cleanUpdateState } from '../lib/updateState';   // A534
+import { standingFor } from '../lib/cloudPlan';            // A601
 
 const router = safeRouter();
 router.use(requireAuth);
 
-async function approvedVersion(businessId: string): Promise<{ version: string | null; error: any }> {
+/**
+ * A601 (owner, 2026-10-28: "desktop updates are cut too — an update becomes a paid support extra"): from the desktop-only
+ * cut-off (DESKTOP_ONLY_CUTOFF_AT), a desktop-only business is offered no version unless ZapTill releases updates to it —
+ * the admin-only desktop_updates flag (admin portal › Features); the version itself is still the admin's per-business
+ * approval below. bySupport: the POS says "Updates for this business are released by ZapTill support". A failed standing
+ * read holds nothing back (as every cloud-plan gate).
+ */
+async function approvedVersion(businessId: string): Promise<{ version: string | null; error: any; bySupport: boolean }> {
   const { data, error } = await supabase
     .from('businesses')
     .select('desktop_approved_version')
     .eq('id', businessId)
     .maybeSingle();
   const v = (data as any)?.desktop_approved_version ?? null;
-  return { version: isVersion(v) ? v : null, error };
+  const held = (await standingFor(businessId).catch(() => null))?.desktopOnly?.updatesHeld === true;
+  return { version: !held && isVersion(v) ? v : null, error, bySupport: held };
 }
 
 // What may this business's tills update to? null = hold (stay on the version they run).
 router.get('/status', async (req, res) => {
-  const { version, error } = await approvedVersion(req.businessId);
+  const { version, error, bySupport } = await approvedVersion(req.businessId);
   if (error) { sendError(res, error); return; }
   res.set('Cache-Control', 'no-store');
   // A534: reportsState — this cloud takes a till's update state (POST /state below); a till sends none without it.
-  res.json({ approvedVersion: version, held: version === null, reportsState: true });
+  // A601: bySupport — held because the business is desktop only (a POS before A601 reads a plain hold).
+  res.json({ approvedVersion: version, held: version === null, reportsState: true, ...(bySupport ? { bySupport: true } : {}) });
 });
 
 // A534 (owner, 2026-10-20: "add all of them since effort is small"): a till's update state — downloading, downloaded and
@@ -68,8 +78,12 @@ router.post('/state', async (req, res) => {
 router.get('/v/:version/:file', async (req, res) => {
   const want = String(req.params.version);
   const file = String(req.params.file);
-  const { version, error } = await approvedVersion(req.businessId);
+  const { version, error, bySupport } = await approvedVersion(req.businessId);
   if (error) { sendError(res, error); return; }
+  if (bySupport) {
+    res.status(403).json({ error: 'Updates for this business are released by ZapTill support.', code: 'DESKTOP_UPDATES_BY_SUPPORT' });
+    return;
+  }
   if (!isVersion(want) || version !== want) {
     res.status(403).json({ error: 'This version is not approved for your business.', code: 'DESKTOP_VERSION_NOT_APPROVED' });
     return;

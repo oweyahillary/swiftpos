@@ -252,8 +252,13 @@ async function request<T>(
   if (!res.ok) {
     // A584: the cloud paused this business (unpaid 7 days after its due date, or a trial ended) — every web request is
     // refused; the paused screen (components/CloudPausedScreen.tsx) covers the dashboard at once.
-    if (res.status === 403 && (json?.code === 'CLOUD_ACCESS_PAUSED' || json?.code === 'CLOUD_TRIAL_ENDED')) {
+    // A612: billed per branch — the user's own branch paused (BRANCH_PAUSED) is the same screen, in a branch's words.
+    if (res.status === 403 && (json?.code === 'CLOUD_ACCESS_PAUSED' || json?.code === 'CLOUD_TRIAL_ENDED' || json?.code === 'BRANCH_PAUSED')) {
       window.dispatchEvent(new CustomEvent('zaptill:cloud-paused', { detail: { code: json.code, error: json.error } }));
+    }
+    // A612: a paused branch was picked while others are open — the branch list reloads and an open branch is picked.
+    if (res.status === 403 && json?.code === 'BRANCH_PICKED_PAUSED') {
+      window.dispatchEvent(new CustomEvent('zaptill:branch-picked-paused'));
     }
     // A257: the validate() middleware returns { error:'Validation failed',
     // errors:[{field,message}] }. Showing only `error` gave the user a bare

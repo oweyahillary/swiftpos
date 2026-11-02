@@ -15,6 +15,7 @@ import { rearmNodeOutbox, rearmFailedNodeRows, rearmPeerQuarantine, retryPeerQua
 import { channelHealth, serverInfo, protocolVerdict, NODE_PROTOCOL } from '../nodeHealth';   // A501
 import { distributionLag } from '../distributionLag';   // A534 (A23)
 import { drawersStatus } from '../branchDrawers';   // A542
+import { attendanceJob } from '../attendanceDevice';   // A599
 import { lastFollowLook } from '../nodeFollow';   // A501
 import { setNodeDeviceToken, nodeDeviceToken, joinProofHeaders } from '../nodeClient';   // F7, A503
 import { readServerCert, pinnedFetch, securityCode, setTillPin, tillPin, nodeTlsStatus, serverSecurityCode, forgetPinForRetrust } from '../lanTls';   // A489
@@ -303,6 +304,40 @@ export function registerJoinHandlers(ctx: IpcShared) {
     if (!getActiveSession() && !signedInCan('settings.business')) throw new Error('Only a technician or someone who manages the business settings can see that.');
     if (!isNodeRole(getDeviceConfig()?.device_role)) return { role: 'not_server' as const };
     return { role: 'server' as const, status: drawersStatus() };
+  });
+  // A599: the attendance devices (ZKTeco) this branch server pulls punches from — ONLY on the branch server with the
+  // 'attendance' flag on (else { visible: false } and the Tech page shows no section at all). The comm key never leaves
+  // main. The same gate as the rows above; a test, a clock set and a pull are logged as tech actions.
+  const attendanceGate = (what: string) => {
+    const tech = getActiveSession();
+    if (!tech && !signedInCan('settings.business')) throw new Error(`Only a technician or someone who manages the business settings can ${what}.`);
+    if (!attendanceJob.visible()) throw new Error('Attendance devices are handled by the branch server, with attendance turned on for the business.');
+    return tech;
+  };
+  handle('attendance:status', async () => {
+    if (!getActiveSession() && !signedInCan('settings.business')) throw new Error('Only a technician or someone who manages the business settings can see that.');
+    if (!attendanceJob.visible()) return { visible: false as const };
+    return { visible: true as const, status: attendanceJob.status() };
+  });
+  handle('attendance:test', async (_event, payload) => {
+    const { device_id } = assertPayload<{ device_id: string }>({ device_id: { t: 'string', min: 1 } }, payload);
+    const tech = attendanceGate('test a device');
+    const r = await attendanceJob.testDevice(device_id);
+    if (tech) logTechAction('attendance.test', { device_id, ok: r.ok });
+    return r;
+  });
+  handle('attendance:setTime', async (_event, payload) => {
+    const { device_id } = assertPayload<{ device_id: string }>({ device_id: { t: 'string', min: 1 } }, payload);
+    const tech = attendanceGate("set a device's clock");
+    const r = await attendanceJob.setDeviceTime(device_id);
+    if (tech) logTechAction('attendance.setTime', { device_id, ok: r.ok, drift_s: r.driftS ?? null });
+    return r;
+  });
+  handle('attendance:pullNow', async () => {
+    const tech = attendanceGate('pull from the devices');
+    const r = await attendanceJob.runOnce('Pull now on the Tech page');
+    if (tech) logTechAction('attendance.pullNow', { ran: r.ran, devices: r.devices.length });
+    return r;
   });
   // A501: "Retry failed records" — the rows the server refused (after five tries) go to it again, and the rows held back
   // from other tills are tried again now. Same gate as the row above.

@@ -397,7 +397,7 @@ const s: Record<string, React.CSSProperties> = {
   btnCharge: {
     flex: 2, padding: '13px',
     background: 'linear-gradient(135deg,rgb(var(--act-strong, 29 78 216)),rgb(var(--act-strong, 37 99 235)))',
-    border: 'none', borderRadius: 10, color: '#fff',
+    border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))',
     fontSize: 14, fontWeight: 700, fontFamily: "'DM Sans','Segoe UI',sans-serif",
     transition: 'opacity 0.2s',
   },

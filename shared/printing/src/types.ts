@@ -127,6 +127,9 @@ export interface Order {
   kotCount: number;
   /** A367: the cashier's note on the whole order ("deliver to gate B"). Printed under the header. Omitted = none. */
   note?: string;
+  /** A607: the buyer's KRA PIN for this sale ("Buyer PIN: A123456789Z", under the order's lines of information). Omitted =
+   *  none — the receipt is byte-identical to before. */
+  buyerPin?: string;
 }
 
 /** ─── Configuration ────────────────────────────────────────────────────────

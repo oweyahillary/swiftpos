@@ -11,7 +11,6 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pp = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/settings/PrintersPage.tsx'), 'utf8');
-const md = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); pass++; console.log(`PASS  ${name}`); } catch (e) { fail++; console.log(`FAIL  ${name}\n       ${e.message}`); } };
@@ -22,9 +21,8 @@ ok('PrintersPage accepts a branchId prop', () => {
 ok('the passed branchId is preferred over the (owner-only) BranchContext', () => {
   assert.match(pp, /const branchId = propBranchId \?\? activeBranchId/);
 });
-ok('the manager passes its session branch', () => {
-  assert.match(md, /<PrintersPage branchId=\{session\.branchId\} branchName=\{session\.branchName\} \/>/);
-});
+// A608 (2026-10-29): the web manager portal is retired — its checks are gone; 
+// "the manager passes its session branch" pinned ManagerDashboard.tsx. PrintersPage's branchId prop is still pinned above.
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);

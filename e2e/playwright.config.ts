@@ -62,6 +62,8 @@ export default defineConfig({
     // storageState — the cashier session marker lives in sessionStorage, which
     // storageState doesn't capture, so a fresh PIN login is simpler and robust.
     // Specs self-skip until `npm run seed:users` has populated the PINs in .env.
+    // A608 (2026-10-29): the 'manager' project no longer reaches /manager (retired) — its spec
+    // checks that a manager's web POS PIN is refused and pointed to the dashboard sign-in.
     {
       name: 'pos',
       testMatch: /specs\/pos\/.*\.spec\.ts/,

@@ -202,7 +202,7 @@ export function registerTechHandlers(ctx: IpcShared) {
     return res.canceled || !res.filePaths?.[0] ? null : res.filePaths[0];
   });
   handle('tech:setBackupDir', async (_e, payload) => {
-    const { dir } = assertPayload<{ dir: string | null }>({ dir: { t: 'any' } }, payload ?? {});
+    const { dir } = assertPayload<{ dir: string | null }>({ dir: { t: 'any', optional: true } }, payload ?? {});   // A600: null = the default
     if (!getActiveSession()) throw new Error('Tech session required');
     const clean = typeof dir === 'string' && dir.trim() ? dir.trim() : null;
     logTechAction('backup.dir', { dir: clean ?? '(default)' });

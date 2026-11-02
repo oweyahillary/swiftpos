@@ -65,7 +65,7 @@ ok('a dine-in order opened from the web keeps its order note', () => {
 });
 ok('pos/init sends the quick picks (always a list)', () => {
   const pos = read('apps/server/src/routes/pos.ts');
-  assert.match(pos, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',(?: 'receipt_pay_label', 'receipt_pay_number',(?: 'receipt_pay_account',)?)?\s*(?:SCALE_SETTINGS_KEY,[^\n]*\n\s*)?\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // A577: + the scale label layout   // A492: + the Paybill account   // A450: + the receipt's M-Pesa line   // A429   // 0.6.37: + History methods   // 0.6.30: + the owner's void/refund rules
+  assert.match(pos, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',(?: 'receipt_pay_label', 'receipt_pay_number',(?: 'receipt_pay_account',)?)?\s*(?:SCALE_SETTINGS_KEY,[^\n]*\n\s*)?(?:CUSTOMER_SCREEN_KEY,[^\n]*\n\s*)?\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // A606: + the customer screen's slideshow   // A577: + the scale label layout   // A492: + the Paybill account   // A450: + the receipt's M-Pesa line   // A429   // 0.6.37: + History methods   // 0.6.30: + the owner's void/refund rules
   assert.match(pos, /\n\s+noteQuickPicks: parseNotePicks\(receiptTextRows\?\.find\(\(r: any\) => r\.key === 'order_note_picks'\)\?\.value\)/);
 });
 ok('the owner\'s list is readable by the settings page', () => {
@@ -123,10 +123,12 @@ ok('the web cashier screen has the note editor on lines and on the order, with t
   assert.match(cs, /picks=\{notePicks\}/);
   assert.match(read('apps/dashboard/src/pages/pos/cashier/usePOSData.ts'), /setNotePicks\(parseNotePicks\(init\.noteQuickPicks \?\? null\)\)/);
 });
-ok('the owner edits the quick picks beside the kitchen list', () => {
-  const rs = read('apps/dashboard/src/pages/settings/RestaurantSettingsPage.tsx');
+ok('the owner edits the quick picks beside the kitchen list (A620: on Printers, moved from Restaurant setup)', () => {
+  const rs = read('apps/dashboard/src/pages/settings/KitchenTicketSettings.tsx');
   assert.match(rs, /Quick notes for orders/);
   assert.match(rs, /saveSetting\('order_note_picks', JSON\.stringify\(list\)\)/);
+  assert.match(read('apps/dashboard/src/pages/settings/PrintersPage.tsx'), /<KitchenTicketSettings \/>/);
+  assert.doesNotMatch(read('apps/dashboard/src/pages/settings/RestaurantSettingsPage.tsx'), /Quick notes for orders<\/h2>/);
 });
 ok('the kitchen display shows the order note above the dishes', () => {
   assert.match(read('apps/dashboard/src/pages/kds/KDSPage.tsx'), /\{ticket\.orders\?\.notes && \(/);

@@ -190,7 +190,7 @@ try {
   const appTsx = src('renderer/App.tsx');
   const pin = src('renderer/pages/PinPage.tsx');
   ok('the screens wear the effective look: App\'s theme layer and the lock screen read b.effective',
-    /computeThemeVars\(b \? \{ themeId: b\.effective\?\.themeId \?\? b\.themeId \?\? null, accentHex: b\.effective \? b\.effective\.accentHex : b\.accentHex \} : null\)/.test(appTsx)
+    /computeThemeVars\(b \? \{ themeId: b\.effective\?\.themeId \?\? b\.themeId \?\? null, accentHex: b\.effective \? b\.effective\.accentHex : b\.accentHex(?:,\s*primaryHex: b\.effective\?\.primaryHex \?\? null, secondaryHex: b\.effective\?\.secondaryHex \?\? null)? \} : null\)/.test(appTsx)   // A597: + the brand colours
     && /const accent = b\?\.effective \? b\.effective\.accentHex : b\?\.accentHex \?\? null;/.test(pin)
     && /const theme = b\?\.effective \? b\.effective\.themeId : b\?\.themeId \?\? null;/.test(pin));
 } finally {

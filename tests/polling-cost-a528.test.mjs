@@ -135,6 +135,10 @@ try {
   console.log('\nC. catalogue-version — one row, remembered 15 s\n');
   await ok('answers "cv:<version>" from sync_versions with ONE query — none of the 16 tables', async () => {
     reset();
+    // A612: a POS's reads pass the per-branch cloud gate too; its billing facts are kept up to 10 minutes (lib/cloudPlan.ts),
+    // so a running server has them — read them once here, then count only what the route itself asks.
+    await require(path.join(DIST, 'lib/cloudPlan.js')).branchPauseFor(B);
+    mem.calls = [];
     const r = await tillGet('/api/pos/catalogue-version?branch_id=' + BR);
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.deepEqual(r.body, { version: 'cv:7' });

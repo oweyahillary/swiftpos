@@ -9,6 +9,7 @@
  *   POST /api/mpesa/callback           — Daraja webhook (public, no auth)
  *   GET  /api/mpesa/status/:checkoutId — poll payment status
  *   GET  /api/mpesa/config             — check if M-Pesa is configured
+ *   POST /api/mpesa/stk-push-pos       — A607: a DESKTOP POS's prompt (no cloud order yet; mpesa_stk_requests)
  *
  * HOW IT WORKS
  * ────────────
@@ -26,6 +27,9 @@
  *   mpesa_shortcode        — till number or paybill number
  *   mpesa_passkey          — from Safaricom
  *   mpesa_type             — 'CustomerBuyGoodsOnline' | 'CustomerPayBillOnline'
+ *
+ *   A618 (2026-11-01): these are the business's DEFAULT; a branch may have its own (branch_mpesa_settings, migration 186).
+ *   Both are put in on Settings › Business › Integrations › M-Pesa (STK push) — routes/mpesaSettings.ts; lib/branchMpesa.ts reads them.
  *
  * ENVIRONMENT VARIABLES
  * ─────────────────────
@@ -46,9 +50,10 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, oneBranchOnly } from '../middleware/rbac';
-import { decryptSecret } from '../lib/crypto';
+import { getMpesaConfig, stkParties, type MpesaConfig } from '../lib/branchMpesa';   // A618: per branch, the business's as default
 import { sendError }   from '../lib/sendError';
 import { maskCustomerContacts } from '../lib/personalData';   // A595
+import { normaliseKenyanPhone, stkAmount } from '../lib/customerDetails';   // A607
 
 const router = safeRouter();
 
@@ -113,59 +118,16 @@ const STK_TIMEOUT_MS = 70_000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-interface MpesaConfig {
-  consumerKey:    string;
-  consumerSecret: string;
-  shortcode:      string;
-  passkey:        string;
-  type:           'CustomerBuyGoodsOnline' | 'CustomerPayBillOnline';
-}
+// A618 (owner, 2026-11-01: "it should be per branch since different branches might have different payment method some
+// paybill some buy goods"): the details come from lib/branchMpesa.ts — the branch's own (migration 186) when complete,
+// else the business's (business_settings, H9-encrypted secret and passkey, legacy plain text still read), else null.
+// The STK request's parties from stkParties: Buy Goods signs with the store number and pays the Till number.
+const NOT_CONFIGURED_MESSAGE = 'M-Pesa is not set up for this branch. The owner adds it in Settings › Business › Integrations › M-Pesa (STK push).';
 
-// Decrypt without throwing — a missing/rotated APP_ENCRYPTION_KEY or a
-// corrupt value shouldn't crash the payment flow; getMpesaConfig() already
-// treats a missing credential as "M-Pesa not configured", which is the
-// correct, visible failure mode here (same pattern lib/etims/index.ts uses).
-function safeDecrypt(v: string): string | null {
-  try { return decryptSecret(v); } catch { return null; }
-}
-
-async function getMpesaConfig(businessId: string): Promise<MpesaConfig | null> {
-  const { data, error } = await supabase
-    .from('business_settings')
-    .select('key, value')
-    .eq('business_id', businessId)
-    .in('key', [
-      'mpesa_consumer_key',
-      'mpesa_consumer_secret',
-      'mpesa_shortcode',
-      'mpesa_passkey',
-      'mpesa_type',
-    ]);
-
-  if (error || !data?.length) return null;
-
-  const cfg: Record<string, string> = {};
-  data.forEach(row => { cfg[row.key] = row.value; });
-
-  // H9: consumer_secret and passkey are encrypted at rest (business.ts write
-  // path) — decrypt here. decryptSecret() itself passes any legacy plaintext
-  // value through unchanged, so this also works for rows written before this
-  // fix, without needing the one-time backfill to have run yet.
-  const consumerSecret = cfg.mpesa_consumer_secret ? safeDecrypt(cfg.mpesa_consumer_secret) : null;
-  const passkey        = cfg.mpesa_passkey ? safeDecrypt(cfg.mpesa_passkey) : null;
-
-  if (!cfg.mpesa_consumer_key || !consumerSecret ||
-      !cfg.mpesa_shortcode    || !passkey) {
-    return null;
-  }
-
-  return {
-    consumerKey:    cfg.mpesa_consumer_key,
-    consumerSecret,
-    shortcode:      cfg.mpesa_shortcode,
-    passkey,
-    type:           (cfg.mpesa_type as MpesaConfig['type']) ?? 'CustomerBuyGoodsOnline',
-  };
+/** A618: the branch a web POS order was made at — the prompt uses that branch's details (the session's when unknown). */
+async function orderBranch(businessId: string, orderId: string, fallback: string | null): Promise<string | null> {
+  const { data } = await supabase.from('orders').select('branch_id').eq('id', orderId).eq('business_id', businessId).maybeSingle();
+  return ((data as { branch_id?: string | null } | null)?.branch_id) ?? fallback;
 }
 
 async function getDarajaToken(config: MpesaConfig): Promise<string> {
@@ -264,11 +226,9 @@ router.post('/stk-push', requireAuth, async (req, res) => {
     return;
   }
 
-  const config = await getMpesaConfig(req.businessId);
+  const config = await getMpesaConfig(req.businessId, await orderBranch(req.businessId, String(order_id), req.branchId ?? null));   // A618
   if (!config) {
-    res.status(422).json({
-      error: 'M-Pesa not configured for this business. Add M-Pesa credentials in Settings.',
-    });
+    res.status(422).json({ error: NOT_CONFIGURED_MESSAGE, code: 'NOT_CONFIGURED' });
     return;
   }
 
@@ -286,13 +246,11 @@ router.post('/stk-push', requireAuth, async (req, res) => {
     const callbackUrl = `${CALLBACK_BASE}/api/mpesa/callback`;
 
     const stkBody = {
-      BusinessShortCode: config.shortcode,
+      ...stkParties(config),   // A618: BusinessShortCode, PartyB (Buy Goods: the Till number), TransactionType
       Password:          password,
       Timestamp:         timestamp,
-      TransactionType:   config.type,
       Amount:            amountInt,
       PartyA:            formattedPhone,
-      PartyB:            config.shortcode,
       PhoneNumber:       formattedPhone,
       CallBackURL:       callbackUrl,
       AccountReference:  (account_reference ?? order_id).slice(0, 12),
@@ -348,6 +306,127 @@ router.post('/stk-push', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to initiate M-Pesa payment' });
   }
 });
+
+// ── POST /api/mpesa/stk-push-pos ──────────────────────────────────────────────
+// A607: the DESKTOP POS's M-Pesa prompt. A desktop sale is made on the POS first and reaches the cloud later (offline
+// first), so at payment there is no cloud order and no pending payments row for /stk-push to charge. The POS sends the
+// amount it is collecting (whole shillings, 1–250,000 — Daraja's limits), the customer's number and its own reference for
+// the payment (client_ref: its bill); the prompt is kept in mpesa_stk_requests (migration 181), keyed by Safaricom's
+// CheckoutRequestID as payments rows are, and the callback and /status read it when no payments row has the checkout id.
+// The customer approves exactly that amount on their own phone; the callback still refuses a shortfall. The web POS keeps
+// /stk-push (order first), unchanged. Same rights as a sale (orders.create — a POS's own session holds it).
+//
+// The row is written BEFORE Daraja is asked, so a prompt the customer pays is never without its row.
+router.post('/stk-push-pos', requireAuth, requirePermission('orders.create'), async (req, res) => {
+  const body = (req.body ?? {}) as { phone?: unknown; amount?: unknown; client_ref?: unknown };
+  const amountInt = stkAmount(body.amount);
+  if (amountInt === null) {
+    res.status(400).json({ error: 'The amount must be 1 to 250,000 shillings.', code: 'BAD_AMOUNT' });
+    return;
+  }
+  const formattedPhone = normaliseKenyanPhone(body.phone);
+  if (!formattedPhone) {
+    res.status(400).json({ error: 'Enter a Kenyan mobile number (07XX / 01XX).', code: 'BAD_PHONE' });
+    return;
+  }
+  const clientRef = typeof body.client_ref === 'string' && /^[A-Za-z0-9-]{1,40}$/.test(body.client_ref) ? body.client_ref : null;
+  if (!clientRef) {
+    res.status(400).json({ error: 'client_ref is required (letters, digits and dashes).', code: 'BAD_REF' });
+    return;
+  }
+  const config = await getMpesaConfig(req.businessId, req.branchId ?? null);   // A618: this POS's branch
+  if (!config) {
+    res.status(422).json({ error: NOT_CONFIGURED_MESSAGE, code: 'NOT_CONFIGURED' });
+    return;
+  }
+
+  const { data: row, error: insErr } = await supabase.from('mpesa_stk_requests').insert({
+    business_id: req.businessId, branch_id: req.branchId ?? null, device_id: req.deviceId ?? null, requested_by: req.userId ?? null,
+    client_ref: clientRef, amount: amountInt, mpesa_phone: formattedPhone, status: 'pending', mpesa_requested_at: new Date().toISOString(),
+  }).select('id').single();
+  if (insErr || !row) {
+    sendError(res, insErr, { message: 'Could not start the M-Pesa prompt (is migration 181 applied?)' });
+    return;
+  }
+  const rowId = (row as { id: string }).id;
+  const fail = async (desc: string) => {
+    await supabase.from('mpesa_stk_requests').update({ status: 'failed', mpesa_result_desc: desc }).eq('id', rowId).eq('business_id', req.businessId);
+  };
+
+  try {
+    const token     = await getDarajaToken(config);
+    const timestamp = generateTimestamp();
+    const password  = generatePassword(config.shortcode, config.passkey, timestamp);
+    const stkRes = await fetch(`${DARAJA_BASE}/mpesa/stkpush/v1/processrequest`, {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...stkParties(config),   // A618: BusinessShortCode, PartyB (Buy Goods: the Till number), TransactionType
+        Password:          password,
+        Timestamp:         timestamp,
+        Amount:            amountInt,
+        PartyA:            formattedPhone,
+        PhoneNumber:       formattedPhone,
+        CallBackURL:       `${CALLBACK_BASE}/api/mpesa/callback`,
+        AccountReference:  clientRef.slice(-12),
+        TransactionDesc:   'ZapTill Payment'.slice(0, 13),
+      }),
+    });
+    const stkData = await stkRes.json() as any;
+    if (!stkRes.ok || stkData.ResponseCode !== '0') {
+      console.error('[mpesa] POS STK push failed:', stkData?.errorMessage ?? stkData?.ResponseDescription ?? stkRes.status);
+      await fail(String(stkData?.errorMessage ?? stkData?.ResponseDescription ?? 'The prompt was not sent'));
+      res.status(502).json({ error: 'M-Pesa STK push failed', details: stkData?.errorMessage ?? stkData?.ResponseDescription ?? 'Unknown error' });
+      return;
+    }
+    const checkoutId = String(stkData.CheckoutRequestID ?? '');
+    const { error: upErr } = await supabase.from('mpesa_stk_requests')
+      .update({ mpesa_checkout_id: checkoutId, mpesa_requested_at: new Date().toISOString() })
+      .eq('id', rowId).eq('business_id', req.businessId);
+    if (upErr) {
+      console.error(`[mpesa] POS prompt ${rowId} was sent (checkout ${checkoutId}) but its checkout id was NOT saved — reconcile by hand:`, upErr.message);
+    }
+    res.json({ checkoutRequestId: checkoutId, merchantRequestId: stkData.MerchantRequestID, responseDescription: stkData.ResponseDescription });
+  } catch (err: any) {
+    console.error('[mpesa] POS STK push error:', err?.message);
+    await fail('The prompt could not be sent').catch(() => {});
+    res.status(500).json({ error: 'Failed to initiate M-Pesa payment' });
+  }
+});
+
+/**
+ * A607: a callback for a desktop POS's prompt (no payments row had the checkout id). Idempotent against Daraja's retries
+ * (a completed row is never touched again); a shortfall is refused exactly as for an order's leg. true = it was one.
+ */
+async function settlePosPrompt(checkoutId: string, r: { ok: boolean; mpesaRef?: string; paidAmount?: number; phone?: string; desc?: string }): Promise<boolean> {
+  const { data: rows, error } = await supabase.from('mpesa_stk_requests')
+    .select('id, business_id, amount, status').eq('mpesa_checkout_id', checkoutId);
+  if (error) {
+    console.error(`[mpesa] could not look up POS prompt ${checkoutId} — NOT recorded; reconcile against the Daraja statement.`, error.message);
+    return true;
+  }
+  const row = (rows ?? [])[0] as any;
+  if (!row) return false;
+  if (row.status === 'completed') return true;
+  if (!r.ok) {
+    await supabase.from('mpesa_stk_requests').update({ status: 'failed', mpesa_result_desc: r.desc ?? 'Not completed' })
+      .eq('id', row.id).neq('status', 'completed');
+    return true;
+  }
+  const expected = Math.ceil(Number(row.amount ?? 0));
+  if (expected > 0 && Number(r.paidAmount ?? 0) < expected) {
+    const msg = `Amount mismatch: paid ${r.paidAmount}, expected ${expected}`;
+    console.error(`[mpesa] AMOUNT MISMATCH on POS prompt ${checkoutId}: ${msg}`);
+    await supabase.from('mpesa_stk_requests').update({ status: 'failed', reference: r.mpesaRef ?? null, paid_amount: r.paidAmount ?? null, mpesa_result_desc: msg })
+      .eq('id', row.id).neq('status', 'completed');
+    return true;
+  }
+  await supabase.from('mpesa_stk_requests').update({
+    status: 'completed', reference: r.mpesaRef ?? null, paid_amount: r.paidAmount ?? null, mpesa_phone: r.phone || undefined, mpesa_result_desc: null,
+  }).eq('id', row.id).neq('status', 'completed');
+  console.log(`[mpesa] POS prompt completed: ${r.mpesaRef} — KES ${r.paidAmount}`);
+  return true;
+}
 
 // ── POST /api/mpesa/callback ──────────────────────────────────────────────────
 // PUBLIC — no requireAuth. Daraja calls this directly. Source is authenticated
@@ -418,6 +497,8 @@ router.post('/callback', async (req, res) => {
       const payment = (payments ?? [])[0] as any;
 
       if (!payment) {
+        // A607: a desktop POS's prompt (mpesa_stk_requests) — no order exists in the cloud for it yet.
+        if (await settlePosPrompt(checkoutId, { ok: true, mpesaRef, paidAmount, phone: /^254[17]\d{8}$/.test(phone) ? phone : undefined })) return;
         console.warn(`[mpesa] Success callback for unknown checkout ${checkoutId} — ignored`);
         return;
       }
@@ -516,6 +597,7 @@ router.post('/callback', async (req, res) => {
         // A495: a late or replayed failure callback must never undo a payment
         // that already completed (the till would show it unpaid, the order paid).
         .neq('status', 'completed');
+      await settlePosPrompt(checkoutId, { ok: false, desc: 'Customer cancelled the payment request' });   // A607
 
     } else {
       // Other failure
@@ -524,6 +606,7 @@ router.post('/callback', async (req, res) => {
         .update({ status: 'failed', mpesa_result_desc: resultDesc })
         .eq('mpesa_checkout_id', checkoutId)
         .neq('status', 'completed'); // A495: never overwrite a completed payment
+      await settlePosPrompt(checkoutId, { ok: false, desc: resultDesc });   // A607
 
       console.warn(`[mpesa] Payment failed: ${resultDesc}`);
     }
@@ -549,12 +632,24 @@ router.get('/status/:checkoutId', requireAuth, maskCustomerContacts(), async (re
     .eq('business_id', req.businessId)
     .maybeSingle();
 
-  if (!payment) {
+  // A607: a desktop POS's prompt has no payments row — its own row (mpesa_stk_requests) answers the same shape.
+  let posPrompt = false;
+  let found: any = payment;
+  if (!found) {
+    const { data: req2 } = await supabase
+      .from('mpesa_stk_requests')
+      .select('status, reference, amount, mpesa_phone, mpesa_result_desc, mpesa_requested_at')
+      .eq('mpesa_checkout_id', checkoutId)
+      .eq('business_id', req.businessId)
+      .maybeSingle();
+    if (req2) { found = req2; posPrompt = true; }
+  }
+  if (!found) {
     res.status(404).json({ status: 'not_found', error: 'No pending payment found for this checkout ID' });
     return;
   }
 
-  const p = payment as any;
+  const p = found as any;
   let status: string = p.status;
   let error: string | null = p.mpesa_result_desc ?? null;
 
@@ -567,7 +662,7 @@ router.get('/status/:checkoutId', requireAuth, maskCustomerContacts(), async (re
       status = 'failed';
       error  = error ?? 'Timeout — customer did not respond';
       void supabase
-        .from('payments')
+        .from(posPrompt ? 'mpesa_stk_requests' : 'payments')   // A607
         .update({ status: 'failed', mpesa_result_desc: error })
         .eq('mpesa_checkout_id', checkoutId)
         .eq('business_id', req.businessId)
@@ -588,11 +683,12 @@ router.get('/status/:checkoutId', requireAuth, maskCustomerContacts(), async (re
 // Returns whether M-Pesa is configured — no secrets exposed.
 
 router.get('/config', requireAuth, async (req, res) => {
-  const config = await getMpesaConfig(req.businessId);
+  const config = await getMpesaConfig(req.businessId, req.branchId ?? null);   // A618: the session's branch (the default without one)
   res.json({
     configured: config !== null,
     type:       config?.type ?? null,
     shortcode:  config?.shortcode ?? null,
+    source:     config?.source ?? null,   // A618: 'branch' (its own) | 'business' (the default)
     environment: ENV,
   });
 });

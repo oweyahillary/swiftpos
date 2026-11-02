@@ -295,6 +295,7 @@ export function createIpcShared(handle: IpcHandle) {
           tableNumber:    payload.table_number ?? undefined,
           deliveryPerson: payload.delivery_person ?? undefined,
           note:           payload.notes ?? null,   // A367: the order's note, on the kitchen ticket and the receipt
+          buyerPin:       typeof payload.buyer_kra_pin === 'string' ? payload.buyer_kra_pin : undefined,   // A607: "Buyer PIN: …"
           cart:           payload.items ?? [],
           payments:       payload.payments ?? [],
           // A552: a sale on account — the customer and what they owe after it (prepareCreditSale set it).

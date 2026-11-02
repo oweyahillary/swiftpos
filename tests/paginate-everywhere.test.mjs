@@ -6,7 +6,7 @@
  *   node tests/paginate-everywhere.test.mjs
  *
  * A472 paged the web Products page (tests/paginate.test.mjs runs the maths). This pins the same pager on every other
- * long list of the web dashboard (owner, manager, web POS drawer) and the admin portal — source pins, React is not run:
+ * long list of the web dashboard (owner, web POS drawer; the manager portal is retired, A608) and the admin portal — source pins, React is not run:
  *   - the screen imports the Pager and lib/paginate, and remembers its page size under its own key;
  *   - its rows map ONE PAGE of the full filtered list (`<paged>.items.map`), never the full list;
  *   - the Pager sits under the rows;
@@ -47,7 +47,7 @@ const D = 'apps/dashboard/src/';
 /**
  * One paged list. full = what paginate is given (every filtered row); paged / page = its names; deps = the reset
  * effect's deps (null: nothing narrows the list, so there is none); rows = how the page's rows are drawn when that is
- * not a plain `<paged>.items.map(` (the manager's menu groups the page under its categories); old = the row map it
+ * not a plain `<paged>.items.map(` (e.g. a menu grouping the page under its categories); old = the row map it
  * replaced (must be gone);
  * keep = source that proves totals / prints / exports still use every row.
  */
@@ -122,27 +122,8 @@ const LISTS = [
     deps: '[range.from, range.to, branchId]', keep: ['rows: ((deliveryLog ?? []) as any[]).map((d: any) => ({ ...d, date: localStamp(d.recorded_at) })) },'] },
   { file: 'pages/ReportsPage.tsx', scope: 'function MatrixQuad(', name: 'Reports › Menu Matrix quadrants', key: 'reports.matrix', full: 'items', paged: 'quadPaged', page: 'quadPage',
     deps: '[resetKey]', old: '{items.map(p => (', keep: ['<span className="text-xs text-gray-400 tabular-nums">{items.length}</span>'] },
-  // ── the manager's web ──
-  { file: 'pages/manager/ManagerDashboard.tsx', scope: 'function POSExpensesTab(', name: 'Manager › Expenses', key: 'manager.expenses', full: 'expenses', paged: 'expensePaged', page: 'expensePage',
-    deps: '[from, to]', keep: ['{money(total, currency)}'] },
-  { file: 'pages/manager/ManagerDashboard.tsx', scope: 'function ManagerCreditTab(', name: 'Manager › Credit', key: 'manager.credit', full: 'rows', paged: 'creditPaged', page: 'creditPage',
-    deps: '[search]', keep: ['const totalOwed = rows.reduce('] },
-  { file: 'pages/manager/ManagerDashboard.tsx', scope: 'function ManagerCreditTab(', name: 'Manager › Credit statement', key: 'manager.credit.statement', full: 'ledger', paged: 'ledgerPaged', page: 'ledgerPage',
-    deps: '[selected?.id]', keep: [] },
-  { file: 'pages/manager/ManagerReportsPage.tsx', scope: 'function ItemMixTab(', name: 'Manager › Reports › Item Mix', key: 'manager.reports.itemMix', full: 'byRevenue', paged: 'itemPaged', page: 'itemPage',
-    deps: '[from, to, search]', keep: ['const totalRev = rows.reduce(', 'rows: [...filtered].sort((a, b) => b.revenue - a.revenue)'] },
-  { file: 'pages/manager/ManagerReportsPage.tsx', scope: 'function VoidsTab(', name: 'Manager › Reports › Voids', key: 'manager.reports.voids', full: 'rows', paged: 'voidPaged', page: 'voidPage',
-    deps: '[from, to]', keep: ['const totalVoided = rows.reduce(', 'rows: rows.map(r => ({ ...r, time: localStamp(r.voided_at) })) },'] },
-  { file: 'pages/manager/ManagerReportsPage.tsx', scope: 'function ShiftsTab(', name: 'Manager › Reports › Shifts', key: 'manager.reports.shifts', full: 'rows', paged: 'shiftPaged', page: 'shiftPage',
-    deps: '[from, to]', keep: ['rows: rows.map(r => ({'] },
-  { file: 'pages/manager/ManagerReportsPage.tsx', scope: 'function WetStockTab(', name: 'Manager › Reports › Wet stock deliveries', key: 'manager.reports.wetStock.deliveries', full: '((data?.deliveryLog ?? []) as any[])', paged: 'deliveryPaged', page: 'deliveryPage',
-    deps: '[from, to]', keep: ['rows: (data.deliveryLog ?? []).map((d: any) => ({ ...d, date: localStamp(d.recorded_at) })) },'] },
-  { file: 'pages/manager/ManagerHistoryTab.tsx', name: 'Manager › History › Deliveries', key: 'manager.history.deliveries', full: 'grns', paged: 'grnPaged', page: 'grnPage',
-    deps: '[branchId]', keep: ['grns.length ? ` (${grns.length})`'] },
-  { file: 'pages/manager/ManagerHistoryTab.tsx', name: 'Manager › History › Transfers', key: 'manager.history.transfers', full: 'transfers', paged: 'transferPaged', page: 'transferPage',
-    deps: '[branchId]', keep: ['transfers.length ? ` (${transfers.length})`'] },
-  { file: 'pages/manager/ManagerMenuTab.tsx', name: 'Manager › Menu', key: 'manager.menu', full: 'menuRows', paged: 'menuPaged', page: 'menuPage',
-    deps: '[q]', rows: 'for (const p of menuPaged.items) {', keep: [] },
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; its eleven lists (Manager › Expenses,
+  // Credit, Reports, History, Menu) left LISTS; the dashboard's own pages above are the web's lists now.
 ];
 
 for (const L of LISTS) {
@@ -261,9 +242,8 @@ const SKIPPED = [
   ['apps/dashboard/src/pages/QRMenuPage.tsx', 'the customer\'s QR menu — browsed by category like the POS grid, not a management list', null],
   ['apps/dashboard/src/pages/pos/TableTurnoverPage.tsx', 'bounded by a branch\'s tables', null],
   ['apps/dashboard/src/pages/reports/MonthlyPackTab.tsx', 'bounded by the days of a month (≤ 31)', null],
-  ['apps/dashboard/src/pages/manager/ManagerShiftTab.tsx', 'open shifts at one branch — one per till', null],
-  ['apps/dashboard/src/pages/manager/RemoteDayClose.tsx', 'a branch\'s tills', null],
-  ['apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx', 'open-work queues (the received record is paged in History); the pickers are search boxes in a scroll area', null],
+  // A608 (2026-10-29): the web manager portal is retired — its checks are gone; ManagerShiftTab / RemoteDayClose /
+  // ManagerReceivingTab left SKIPPED.
   ['apps/admin/src/MigrationsPage.tsx', 'the last 25 migration runs', null],
   ['apps/admin/src/AlertsPage.tsx', 'open alerts — a worklist, grouped critical / warning', null],
 ];

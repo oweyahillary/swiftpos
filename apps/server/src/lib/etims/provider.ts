@@ -142,7 +142,7 @@ class VscuProvider implements EtimsProvider {
       bhfId:      dto.branch.bhfId ?? '00',
       invcNo:     dto.invoiceNo,
       orgInvcNo:  rcptTyCd === 'R' ? (dto.originalInvoiceNo ?? 0) : 0,
-      custTin:    null,
+      custTin:    dto.buyerPin ?? null,          // A607: the buyer's KRA PIN (the sale's, else the customer's), else none
       custNm:     dto.buyerName ?? null,
       salesTyCd:  'N',                         // Normal — VERIFY enum
       rcptTyCd,                                // 'S' sale, 'R' credit/refund — VERIFY
@@ -163,7 +163,7 @@ class VscuProvider implements EtimsProvider {
       regrId:     'SwiftPOS', regrNm: 'SwiftPOS',
       modrId:     'SwiftPOS', modrNm: 'SwiftPOS',
       receipt: {
-        custTin:    null,
+        custTin:    dto.buyerPin ?? null,        // A607
         custMblNo:  dto.buyerPhone ?? null,
         rptNo:      dto.invoiceNo,
         trdeNm:     null,

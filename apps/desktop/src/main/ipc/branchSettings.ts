@@ -12,7 +12,7 @@ import { tillBranchId } from '../deviceConfig';   // A446
 import { signedIn as sessionPerson, personKeys, hasMarker, isOwnerRole } from '../tillAccess';
 import { maySetMpesa } from '../permissions';   // A492
 import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from '../mpesaReceive';   // A492
-import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getCashierHistoryMethods, setCashierHistoryMethods, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from '../deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getCashierHistoryMethods, setCashierHistoryMethods, getPaymentMethodsEnabled, setPaymentMethodsEnabled, getPlatformPricing } from '../deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from '../reversalRules';
 import { type IpcShared } from './shared';
 
@@ -77,7 +77,9 @@ export function registerBranchSettingsHandlers(ctx: IpcShared) {
   // A429: the payment methods this branch takes — the payment screen reads them (null = not told yet = the catalogue's
   // defaults); a manager switches them for the branch (the cloud checks settings.manage and the codes), and this till uses
   // the new list at once, the branch's other tills on their next pull.
-  handle('pos:paymentMethodsEnabled', async () => ({ enabled: getPaymentMethodsEnabled() }));
+  // A619: with them, the delivery platforms' prices this POS charges (read again each time the payment screen opens, so the
+  // screen prices with exactly what order:create checks against).
+  handle('pos:paymentMethodsEnabled', async () => ({ enabled: getPaymentMethodsEnabled(), platformPrices: getPlatformPricing() }));
   // A443: on the branch server — the version it holds for its tills, and which version each till said it runs.
   handle('node:tillVersions', async () => {
     // A496: the version the server offers its tills is the approved one it holds (never a copy left from before a

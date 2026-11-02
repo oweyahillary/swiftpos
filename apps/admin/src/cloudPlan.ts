@@ -189,3 +189,42 @@ export function coversLine(c: CoverView | null | undefined): string | null {
   if (c.settles.length) return `Pays ${andList(c.settles.map((i) => `${i.invoice_number} (${span(i.period_start, i.period_end)})`))}; paid until ${trialDate(c.until)}.`;
   return `Covers ${span(c.from, c.until)} (a new paid invoice); paid until ${trialDate(c.until)}.`;
 }
+
+// ── A601: the desktop-only cut-off (lib/cloudPlan.ts desktopOnlyView; the cloud's DESKTOP_ONLY_CUTOFF_AT) ────────────
+/** A desktop-only client's cut-off, as GET /clients rows' `desktop_only` and GET /clients/:id carry it. */
+export interface DesktopOnlyView {
+  phase: "none" | "notice" | "cut"; cutoff_at: string | null; exempt: boolean; updates_released: boolean;
+  backup_off: boolean; updates_held: boolean; notice: boolean;
+}
+/** The cloud's cut-off date, as the client list and detail carry it. */
+export interface CutoffView { at: string | null; phase: "none" | "notice" | "cut" }
+
+/**
+ * A601: a desktop-only client's line — the client list's Billing column (when nothing is billed) and the Features tab:
+ *   "Desktop only" (no date set) · "Desktop only — backup stops 1 Dec 2026" · "Desktop only — backup off since …" ·
+ *   "Desktop only — backup kept (exempt)". null: not desktop only.
+ */
+export function desktopOnlyText(d: DesktopOnlyView | null | undefined): { text: string; tone: Tone } | null {
+  if (!d) return null;
+  if (d.exempt) return { text: "Desktop only — backup kept (exempt)", tone: "ok" };
+  if (d.phase === "notice") return { text: `Desktop only — backup stops ${trialDate(d.cutoff_at)}`, tone: "warn" };
+  if (d.phase === "cut") return { text: `Desktop only — backup off since ${trialDate(d.cutoff_at)}`, tone: "bad" };
+  return { text: "Desktop only", tone: "muted" };
+}
+
+/** A601: the cut-off date in words for the Features tab and the list header. */
+export function cutoffLine(c: CutoffView | null | undefined): string {
+  if (!c || !c.at || c.phase === "none") return "No cut-off date is set on the cloud (DESKTOP_ONLY_CUTOFF_AT): desktop-only clients keep the cloud backup and updates.";
+  return c.phase === "notice"
+    ? `Cut-off ${trialDate(c.at)}: until then desktop-only POSs show the notice; from then their backup and updates stop unless switched on below.`
+    : `Cut-off ${trialDate(c.at)} has passed: desktop-only POSs no longer back up to the cloud and get no update unless switched on below.`;
+}
+
+/** A601: the update line for a desktop-only client (the Desktop updates tab). null: updates follow the approval as usual. */
+export function desktopUpdatesLine(d: DesktopOnlyView | null | undefined): string | null {
+  if (!d || d.phase === "none") return null;
+  if (d.updates_released) return "Desktop only: updates are released to this client (Features › Release desktop updates) — the approved version below is offered.";
+  return d.phase === "cut"
+    ? "Desktop only: no update is offered (the POS says “Updates for this business are released by ZapTill support”). To release one, approve the version and switch on Features › Release desktop updates."
+    : `Desktop only: from ${trialDate(d.cutoff_at)} no update is offered unless released (Features › Release desktop updates).`;
+}

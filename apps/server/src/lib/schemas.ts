@@ -144,8 +144,10 @@ export const CreateStaffSchema = z.object({
   name: nonEmptyString.max(100),
   email: z.string().email().optional().nullable(),
   phone: z.string().optional().nullable(),
-  role_id: uuid,
-  pin: z.string().regex(/^\d{4,6}$/, 'PIN must be 4–6 digits'),
+  // A603: a partner is given the General Manager role by the cloud — no role_id sent then (checked in the handler).
+  role_id: uuid.optional(),
+  // A603: a partner (no PIN needed — they sign in to the web dashboard with a password); checked in the handler.
+  pin: z.string().regex(/^\d{4,6}$/, 'PIN must be 4–6 digits').optional(),
   branch_ids: z.array(uuid).optional().default([]),
   // Per-user manager-override PIN. 4–6 digits to set; '' to clear (revoke
   // override authority); omit to leave unchanged. Validated again in the handler.
@@ -155,9 +157,14 @@ export const CreateStaffSchema = z.object({
   // A490: the same overrides by permission KEY ({ 'reports.sales': true, 'sales.void': false }).
   override_keys: z.record(z.string(), z.boolean()).optional(),
   hourly_rate: z.union([z.number(), z.string(), z.null()]).optional(),
+  // A603: "Partner" in the Role list — the owner's alone (routes/staff.ts POST /): the General Manager role and web
+  // dashboard access in one step.
+  partner: z.boolean().optional(),
+  // A608: a General Manager or Manager added by the owner — web dashboard access in the same step (all or nothing).
+  web_access: z.boolean().optional(),
 });
 
-export const UpdateStaffSchema = CreateStaffSchema.partial().extend({
+export const UpdateStaffSchema = CreateStaffSchema.omit({ partner: true, web_access: true }).partial().extend({
   status: z.enum(['active', 'inactive']).optional(),
   // A459: NO default here. .partial() kept CreateStaffSchema's `.default([])`, so an edit that did not mention branches
   // (a rename, a role, Deactivate) arrived as branch_ids: [] — and PATCH /api/staff/:id deleted every branch the person

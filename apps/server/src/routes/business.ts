@@ -9,12 +9,14 @@ import { BRANCH_BRANDING_COLUMNS, type BranchBrandingRow, servedBranchBranding }
 import { effectiveThemeId } from '../lib/themeRules';   // A547
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
-import { themesEnabled, themeWriteError } from '../lib/themeAccess';
+import { themesEnabled, themeWriteError, brandColourWriteError, BRAND_COLOUR_FIELDS, selectBusinessBranding,
+  isMissingBrandColourColumn, withoutBrandColourColumns } from '../lib/themeAccess';   // A597: brand colours
 import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules';
 import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/paymentCatalogue';   // A429
+import { PLATFORM_PRICES_KEY, PLATFORM_ROUNDING_KEY, rulesSettingValue, roundingSettingValue } from '../lib/platformPrices';   // A619
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
@@ -25,6 +27,8 @@ import { CREDIT_APPROVERS_KEY } from '../lib/creditApprovers';         // A585
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
 import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
+import { CUSTOMER_SCREEN_KEY, cleanCustomerScreen, slidesFromWire, customerScreenWriteError } from '../lib/customerScreen';   // A606
+import { getWebAccess } from '../lib/webAccess';   // A606: the slideshow is part of the online licence
 
 const router = safeRouter();
 
@@ -119,6 +123,7 @@ export function settingPermission(key: string): string | null {
   if (key === STOCK_COUNT_FREEZE_KEY) return 'inventory.count_freeze';  // A502
   if (RECEIPT_SETTING_KEYS.has(key)) return 'receipt.manage';
   if (key === PAYMENT_METHODS_ENABLED_KEY) return 'settings.payments';
+  if (key === PLATFORM_PRICES_KEY || key === PLATFORM_ROUNDING_KEY) return 'settings.payments';   // A619
   if (LOYALTY_SETTING_KEYS.has(key)) return 'settings.pos';
   // A595 (F3): scheduled report e-mails send the business's figures to any address — their own part of
   // settings.integrations (settings.report_emails).
@@ -172,6 +177,8 @@ const READABLE_SETTING_KEYS = new Set([
   'cashier_history_methods',
   // A429: the payment methods switched on (a JSON list of catalogue codes; absent = the defaults).
   'payment_methods_enabled',
+  // A619: the delivery platforms' price rules (JSON by platform) and the business's rounding of their prices.
+  'delivery_platform_prices', 'delivery_platform_rounding',
   // A416: a cashier closing a shift sees their sales ("true"); off by default (lib/cashierShiftSales.ts).
   'cashier_sees_shift_sales',
   // A418: a cashier's History shows the total of what is filtered ("true"); only while cashier_sees_shift_sales is on.
@@ -306,21 +313,23 @@ router.get('/cloud-trial', requireAuth, async (req, res) => {
   res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null, plan: null });
 });
 
+// A597: + the owner's brand colours (primary_hex / secondary_hex, migration 179).
+const BRANDING_COLUMNS = 'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, primary_hex, secondary_hex, updated_at';
+
 // GET /api/business/branding
 // The client branding row (accent + logo) for this business, or null when unset (A303).
 // Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
 router.get('/branding', requireAuth, async (req, res) => {
   const [{ data, error }, enabled] = await Promise.all([
-    supabase
-      .from('business_branding')
-      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
-      .eq('business_id', req.businessId)
-      .maybeSingle(),
+    selectBusinessBranding(req.businessId, BRANDING_COLUMNS),   // A597: falls back before migration 179
     themesEnabled(req.businessId),   // A325: the web shows the theme picker only when the business has themes
   ]);
   if (error) { sendError(res, error); return; }
-  // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column.
-  res.json(data ? { ...data, themes_enabled: enabled } : (enabled ? { themes_enabled: true } : null));
+  // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column. A597: + whether
+  // this caller may choose the brand colours (the owner, signed in as themselves — the Branding page shows the fields).
+  const brandColoursEditable = req.isOwner === true && !req.isTill && req.webPartner !== true;
+  res.json(data ? { ...data, themes_enabled: enabled, brand_colours_editable: brandColoursEditable }
+    : (enabled ? { themes_enabled: true, brand_colours_editable: brandColoursEditable } : null));
 });
 
 // PUT /api/business/branding
@@ -390,17 +399,30 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     row.receipt_logo_enabled = req.body.receipt_logo_enabled;
   }
   if (has('theme_id')) {
-    // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag.
+    // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag — A617: except a
+    // free theme (FREE_THEME_IDS: Ocean, Teal, Sky), which every business may choose.
     const err = themeWriteError(req.body.theme_id, await themesEnabled(req.businessId));
     if (err) { res.status(400).json({ error: err }); return; }
     row.theme_id = req.body.theme_id;
   }
+  // A597 (owner, 2026-10-27): the business's primary and secondary colours — ANY #rrggbb (the apps derive readable shades,
+  // never refuse one), null clears. The OWNER's alone (as the approval PIN option, A594: never a partner, a manager with
+  // receipt.manage / settings.business, or a POS's own session) and premium: the 'themes' flag. Omitted = left as is, so
+  // a manager's or a POS's branding save never touches them.
+  const colourFields = BRAND_COLOUR_FIELDS.filter((f) => has(f));
+  if (colourFields.length) {
+    const who = { owner: req.isOwner === true && !req.isTill && req.webPartner !== true, enabled: await themesEnabled(req.businessId) };
+    for (const f of colourFields) {
+      const refusal = brandColourWriteError(f, req.body[f], who);
+      if (refusal) { res.status(refusal.status).json({ error: refusal.error, code: refusal.code }); return; }
+      row[f] = req.body[f] === null ? null : String(req.body[f]).trim().toLowerCase();
+    }
+  }
 
-  const { data, error } = await supabase
-    .from('business_branding')
-    .upsert(row, { onConflict: 'business_id' })
-    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
-    .single();
+  const upsert = (cols: string) => supabase.from('business_branding').upsert(row, { onConflict: 'business_id' }).select(cols).single();
+  let { data, error } = await upsert(BRANDING_COLUMNS);
+  // A597: a database before migration 179 — the same save without the colour columns (a colour write itself then fails).
+  if (isMissingBrandColourColumn(error) && !colourFields.length) ({ data, error } = await upsert(withoutBrandColourColumns(BRANDING_COLUMNS)));
   if (error) { sendError(res, error); return; }
   res.json(data);
 });
@@ -554,6 +576,45 @@ router.delete('/branding/branches/:branchId', requireAuth, requireAnyPermission(
   res.json({ branch_id: branch.id, cleared: true });
 });
 
+// ── A606: the customer screen's slideshow ─────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-28: a dual-screen POS shows the customer what is rung up; while idle, premium clients show a slideshow of
+// their own offers or pictures. The images are uploaded like product pictures (the dashboard's image store) and the list
+// (in order, and how many seconds each shows) is kept in business_settings under 'customer_screen' — served to every POS
+// with /api/pos/init (customerScreen). The OWNER's alone, signed in as themselves (never a partner, a manager or a POS's
+// own session), and part of the online licence (lib/webAccess fullAccess, the POS's webPosEnabled). Emptying the list
+// needs no licence, so an owner can always take the images down. Rules: lib/customerScreen.ts (up to 10, uploaded JPEG /
+// PNG / WebP only, 3–60 seconds).
+const customerScreenWho = async (req: any) => ({
+  owner: req.isOwner === true && !req.isTill && req.webPartner !== true,
+  licensed: (await getWebAccess(req.businessId)).fullAccess === true,
+});
+
+// GET /api/business/customer-screen — the list, whether this caller may change it, and whether the licence is there.
+router.get('/customer-screen', requireAuth, async (req, res) => {
+  const { data, error } = await supabase.from('business_settings').select('value')
+    .eq('business_id', req.businessId).eq('key', CUSTOMER_SCREEN_KEY).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  const who = await customerScreenWho(req);
+  const list = slidesFromWire(data?.value ?? null) ?? { slides: [], seconds: 8 };
+  res.json({ ...list, editable: who.owner, licensed: who.licensed });
+});
+
+// PUT /api/business/customer-screen — { slides: [{ url }], seconds } replaces the list (an empty list takes it down).
+router.put('/customer-screen', requireAuth, async (req, res) => {
+  const c = cleanCustomerScreen(req.body);
+  if ('error' in c) { res.status(400).json({ error: c.error, code: 'INVALID_VALUE' }); return; }
+  const refusal = customerScreenWriteError(await customerScreenWho(req), c.value.slides.length === 0);
+  if (refusal) { res.status(refusal.status).json({ error: refusal.error, code: refusal.code }); return; }
+  const value = JSON.stringify(c.value);
+  const { data: existing } = await supabase
+    .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', CUSTOMER_SCREEN_KEY).maybeSingle();
+  const { error } = existing
+    ? await supabase.from('business_settings').update({ value, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    : await supabase.from('business_settings').insert({ business_id: req.businessId, key: CUSTOMER_SCREEN_KEY, value });
+  if (error) { sendError(res, error); return; }
+  res.json(c.value);
+});
+
 // GET /api/business/settings
 // Returns all key/value settings for this business.
 router.get('/settings', requireAuth, async (req, res) => {
@@ -629,6 +690,11 @@ router.post('/settings', requireAuth, (req, res, next) => {
   // A514: the business-wide supervisor PIN is retired — refused for everyone, before any other check or write.
   if (isRetiredSupervisorPinKey(String(key))) {
     res.status(410).json({ ...SUPERVISOR_PIN_RETIRED });
+    return;
+  }
+  // A606: the customer screen's slideshow has its own rules (owner, online licence, uploaded images) — its own route.
+  if (String(key) === CUSTOMER_SCREEN_KEY) {
+    res.status(400).json({ error: 'The customer screen images are saved on Settings › Branding › Customer screen.', code: 'USE_CUSTOMER_SCREEN' });
     return;
   }
   // A492: the M-Pesa number is per branch, set on the branch's till by its manager — not business-wide.
@@ -765,6 +831,25 @@ router.post('/settings', requireAuth, (req, res, next) => {
       ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingPm.id)
       : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
     if (pmErr) { sendError(res, pmErr); return; }
+    res.json({ key, value: clean });
+    return;
+  }
+
+  // ── A619: the delivery platforms' prices (rules by platform) and their rounding — only clean values are stored ──
+  if (key === PLATFORM_PRICES_KEY || key === PLATFORM_ROUNDING_KEY) {
+    const clean = key === PLATFORM_PRICES_KEY ? rulesSettingValue(value) : roundingSettingValue(value);
+    if (clean === null) {
+      res.status(400).json({ error: key === PLATFORM_PRICES_KEY
+        ? 'Each platform takes a percentage (up to 500%) or an amount per item.'
+        : 'Choose exact, nearest shilling, up to the nearest 5 or up to the nearest 10.', code: 'INVALID_VALUE' });
+      return;
+    }
+    const { data: existingPp } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: ppErr } = existingPp
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingPp.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (ppErr) { sendError(res, ppErr); return; }
     res.json({ key, value: clean });
     return;
   }

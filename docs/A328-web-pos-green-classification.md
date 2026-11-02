@@ -111,3 +111,15 @@ audited — none. No line mixes categories.
 | `apps/dashboard/src/pages/pos/DiscountPanel.tsx:66` | `text-green-400` | reviewed: an amount or a discount code line |
 | `apps/dashboard/src/pages/pos/LoyaltyPanel.tsx:183` | `text-green-400` | reviewed: an amount or a discount code line |
 | `apps/dashboard/src/pages/pos/PaymentModal.tsx:746` | `text-green-400` | reviewed: an amount or a discount code line |
+
+## A608 (2026-10-30): the parking bays panel moved from the retired /manager portal — stays (4)
+
+The same colours the portal drew (pages/manager/ManagerDashboard.tsx, outside this check's scope); moved unchanged into
+`components/ParkingLivePanel.tsx`, which is in scope.
+
+| File:line | Colour | Why |
+|---|---|---|
+| `apps/dashboard/src/components/ParkingLivePanel.tsx:65` | `#22c55e` | status: the occupancy bar under 60% (amber over 60, red over 80) |
+| `apps/dashboard/src/components/ParkingLivePanel.tsx:80` | `#22c55e` | status: free bays |
+| `apps/dashboard/src/components/ParkingLivePanel.tsx:81` | `#3b82f6` | data: occupancy figure (red over 80%) |
+| `apps/dashboard/src/components/ParkingLivePanel.tsx:113` | `text-green-400` | money: the amount due for a car in time (amber when over) |
