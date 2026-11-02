@@ -274,6 +274,12 @@ try {
     const shown = pc.win().sent.filter(([ch]) => ch === 'customerDisplay:stk').map(([, p]) => p);
     ok('the customer screen shows the same progress — the stage and the amount, never the phone or the receipt',
       shown.map((x) => x.stage).join(',') === 'failed,sending,waiting,paid' && !/254712|0712|QJK7/.test(JSON.stringify(shown)) && shown.at(-1).amount === 450);
+    // 2026-11-02 (the owner's STK test): once paid, a second prompt is refused until the panel closes (reset).
+    const sent = () => cloud.calls.filter(([, p]) => p === '/api/mpesa/stk-push-pos').length;
+    const before = sent();
+    const again = await prompt.start({ phone: '0712345678', amount: 450, ref: 'POS-ABD' });
+    ok('paid: a second prompt is refused (nothing sent, still paid) until the panel closes', again.stage === 'paid' && sent() === before && again.mpesaRef === 'QJK7XT3L5P');
+    prompt.reset();
     await prompt.start({ phone: '0712345678', amount: 100, ref: 'POS-2' });
     cloud.status.push({ status: 'failed', error: 'Customer cancelled the payment request' });
     await tick();
@@ -300,8 +306,15 @@ try {
       /get: async \(p\) => asAnswer\(await liveCloudGet\(p\)\)/.test(src('main/ipc/customerDetails.ts')) && /post: async \(p, b\) => asAnswer\(await liveCloudPost\(p, b\)\)/.test(src('main/ipc/customerDetails.ts')));
     ok('the payment screen offers it under an M-Pesa leg, loaded on demand; the receipt fills the leg\'s reference',
       /const MpesaStk = lazy\(\(\) => import\('\.\/MpesaStkPanel'\)\)/.test(src('renderer/components/PaymentModal.tsx'))
-      && /leg\.method === 'mpesa' && <Suspense fallback=\{null\}><MpesaStk [^\n]*onPaid=\{\(r\) => setLeg\(i, \{ reference: r \}\)\}/.test(src('renderer/components/PaymentModal.tsx'))
+      && /leg\.method === 'mpesa' && <Suspense fallback=\{null\}><MpesaStk [^\n]*onStage=\{setStkStage\}\n\s*onPaid=\{\(r, paid\) => \{ stkCompletes\.current = paid \+ EPSILON >= leg\.resolvedAmount; setLeg\(i, \{ reference: r \}\); \}\}/.test(src('renderer/components/PaymentModal.tsx'))
       && /if \(!offered\) return null;/.test(src('renderer/components/MpesaStkPanel.tsx')));
+    // 2026-11-02 (owner): "once prompting is confirmed and paid by the customer it should print direct no need to click charge"
+    const pm = src('renderer/components/PaymentModal.tsx');
+    ok('a prompt out: no Charge button ("The sale completes and prints when the customer pays")',
+      /const stkOut = stkStage === 'sending' \|\| stkStage === 'waiting';/.test(pm) && /\) : stkOut \? \(\n\s*<p [^\n]*data-testid="stk-completes">\n\s*The sale completes and prints when the customer pays/.test(pm));
+    ok('paid: the sale completes by itself (as Charge) when that payment settles the bill — never a platform, else Charge as before',
+      /if \(!stkCompletes\.current\) return;\n\s*stkCompletes\.current = false;\n\s*if \(canConfirm && !platform\) handleConfirm\(\);\n\s*\}, \[legs\]\);/.test(pm)
+      && /onPaid\(s\.mpesaRef, Number\(s\.amount\) \|\| 0\)/.test(src('renderer/components/MpesaStkPanel.tsx')));
   }
 
   console.log('\n5. Premium: the customer typing on the customer screen');

@@ -97,6 +97,8 @@ export function createStkPrompt(deps: StkDeps) {
     const amount = stkAmount(p.amount);
     const ref = typeof p.ref === 'string' && /^[A-Za-z0-9-]{1,40}$/.test(p.ref) ? p.ref : null;
     const currency = typeof p.currency === 'string' && /^[A-Z]{3}$/.test(p.currency) ? p.currency : 'KES';
+    // 2026-11-02 (the owner's STK test): a paid prompt stays paid until the panel closes (reset) — never a second prompt.
+    if (state.stage === 'paid') { deps.log('stk: already paid — no second prompt'); return { ...state }; }
     stop(); run++; checkout = null;
     const mine = run;
     if (!phone) { set({ ...IDLE, stage: 'failed', currency, reason: 'Enter a Kenyan mobile number — 07XX or 01XX.' }); return { ...state }; }

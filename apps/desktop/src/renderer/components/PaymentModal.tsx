@@ -1,6 +1,6 @@
 import MethodDot from './MethodDot';
 import { methodColour, methodSolid, methodTint } from '../../shared/paymentColours';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT, platformOfLegs, legsAfterPick } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
 import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
@@ -206,6 +206,14 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
 
   const removeLeg = (i: number) => setLegs(prev => prev.filter((_, idx) => idx !== i));
 
+  // 2026-11-02 (owner: "once prompting is confirmed and paid by the customer it should print direct no need to click
+  // charge"): while an M-Pesa prompt is out Charge is not shown; once the customer pays (the receipt fills the leg) the
+  // sale completes and prints by itself — when that payment settles the bill (a split with another leg still to take, an
+  // account sale, or a failed charge: Charge, as before).
+  const [stkStage, setStkStage] = useState<string>('idle');
+  const stkCompletes = useRef(false);
+  const stkOut = stkStage === 'sending' || stkStage === 'waiting';
+
   const handleConfirm = () => {
     setLocalError('');
     if (!balanced) { setLocalError(`Payments must add up to ${currency} ${amountDue.toLocaleString()}`); return; }
@@ -233,6 +241,11 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
       ...(quote ? { platform: quote } : {}),   // A619: the lines at the platform's prices
     });
   };
+  useEffect(() => {
+    if (!stkCompletes.current) return;
+    stkCompletes.current = false;
+    if (canConfirm && !platform) handleConfirm();
+  }, [legs]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmt = (n: number) => `${currency} ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -400,7 +413,8 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
                   </div>
                 )}
               </div>
-              {leg.method === 'mpesa' && <Suspense fallback={null}><MpesaStk amount={leg.resolvedAmount} currency={currency} phone={stkPhone} masked={stkMasked} onPaid={(r) => setLeg(i, { reference: r })} /></Suspense>}
+              {leg.method === 'mpesa' && <Suspense fallback={null}><MpesaStk amount={leg.resolvedAmount} currency={currency} phone={stkPhone} masked={stkMasked} onStage={setStkStage}
+                onPaid={(r, paid) => { stkCompletes.current = paid + EPSILON >= leg.resolvedAmount; setLeg(i, { reference: r }); }} /></Suspense>}
 
               {/* A552: On account — the customer (search by name or phone), what they owe and have left, the PIN */}
               {leg.method === 'credit' && (
@@ -507,6 +521,10 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
               </button>
             </div>
           </div>
+        ) : stkOut ? (
+          <p className="w-full rounded-xl bg-gray-800 py-3 text-center text-sm text-sky-300" data-testid="stk-completes">
+            The sale completes and prints when the customer pays
+          </p>
         ) : (
         <button
           onClick={platform ? () => setConfirmingPlatform(true) : handleConfirm}   // A619: a platform asks first
