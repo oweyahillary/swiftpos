@@ -7,7 +7,7 @@
  *     First / Prev / 1 … 4 5 6 … 25 / Next / Last.
  *   - The POS grids get no page buttons — a cashier scrolls. They draw GRID_STEP tiles, then GRID_STEP more each time
  *     the grid is scrolled near its end.
- * Pure, no imports. ONE file: shared/paginate.ts, copied to the web and the till (scripts/check-shared-sync.mjs).
+ * Pure, no imports. One module in packages/core (@zaptill/core/paginate), used by the web and the desktop POS.
  */
 
 export const PAGE_SIZES = [25, 50, 100] as const;

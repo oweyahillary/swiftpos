@@ -13,7 +13,7 @@ import type { OrderDetail } from '@zaptill/core/orderDetail';
 import { reverseActionFor, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';   // A490
 // A595: loaded when a void / refund is opened (the main chunk's budget, lazy-load-a517).
 const VoidModal = lazy(() => import('./VoidModal'));
-import MethodDot from './MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 
 interface Props {
   orderId: string;

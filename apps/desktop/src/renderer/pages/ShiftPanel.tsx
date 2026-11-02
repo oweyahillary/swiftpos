@@ -1,4 +1,4 @@
-import MethodDot from '../components/MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { useEffect, useRef, useState } from 'react';
 import { printShiftReport } from '../lib/printShiftReport';
 import { posApi } from '../lib/posApi';

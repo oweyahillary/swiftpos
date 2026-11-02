@@ -3,9 +3,9 @@
  *
  * The same words on the till's Help screen (offline, from the PIN pad, the POS and the manager screens), the printable
  * A4 card and the web's Help page. The last topic ("Who to call") is filled with the shop's own tech or SwiftPOS support
- * (shared/support.ts).
+ * (support.ts).
  *
- * ONE file: shared/helpTopics.ts, copied to the till's renderer and the web (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/helpTopics), used by the desktop POS's renderer and the web.
  */
 
 export interface HelpTopic {
@@ -119,7 +119,7 @@ export function helpTopicsFor(foodService: boolean): HelpTopic[] {
   });
 }
 
-/** The last topic, filled with who to call (shared/support.ts supportContact → name + display numbers). */
+/** The last topic, filled with who to call (support.ts supportContact → name + display numbers). */
 export function whoToCallSteps(name: string, phones: string[]): string[] {
   return [
     `${name}: ${phones.join(' or ')} (call or WhatsApp).`,

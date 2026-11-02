@@ -44,8 +44,9 @@ const ok = (n, c, d = '') => { if (c) { console.log(`PASS  ${n}`); pass++; } els
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const bundleDir = fs.mkdtempSync(path.join(DASH, 'node_modules', '.a578-'));
 const bundle = (entry, out) => {
+  // preserveSymlinks: @zaptill/ui/CategoryPanel (shared components batch G) finds @zaptill/core through this app's node_modules, as Vite does.
   require('esbuild').buildSync({ entryPoints: [path.join(DASH, entry)], bundle: true, format: 'esm', platform: 'node',
-    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', external: ['react', 'react-dom'] });
+    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', preserveSymlinks: true, external: ['react', 'react-dom'] });
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };
 const at = (s) => new Date(s);   // local clock (the till's / the browser's)

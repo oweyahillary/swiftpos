@@ -2,13 +2,9 @@
  * contrast.ts — WCAG contrast maths + the A295 branding accent resolver.
  *
  * ══════════════════════════════════════════════════════════════════════════════
- *  SHARED FILE. Byte-identical copies live at:
- *      shared/contrast.ts
- *      apps/desktop/src/shared/contrast.ts   (the renderer / PinPage imports this)
- *      apps/desktop/src/main/contrast.ts     (compiled to dist/main → the unit test)
- *      apps/dashboard/src/lib/contrast.ts    (the web Branding page — A319)
- *  scripts/check-shared-sync.mjs fails CI if they diverge. Edit ONE copy, copy it
- *  to the others verbatim, run the vectors. Do not "fix" one side in place.
+ *  SHARED MODULE: packages/core (@zaptill/core/contrast), used by the desktop
+ *  POS (the renderer's PinPage; main, for the unit test) and the web Branding
+ *  page (A319). Change it in one place and run the vectors.
  * ══════════════════════════════════════════════════════════════════════════════
  *
  * WHY THIS FILE EXISTS

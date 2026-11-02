@@ -6,7 +6,7 @@
  * dashboard also asks the cloud for its own and says so when the two differ (one was deployed, the other not yet).
  *
  * RELEASE moves with apps/desktop/package.json's version in the same commit (tests/release-version.test.mjs fails
- * otherwise). ONE file: shared/release.ts, copied to the cloud, the dashboard and the admin portal (check-shared-sync).
+ * otherwise). One module in packages/core (@zaptill/core/release), used by the cloud, the dashboard and the admin portal.
  */
 
 export const RELEASE = '1.0.22';

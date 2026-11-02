@@ -21,8 +21,8 @@
  *   - '*' is everything (the owner). The owner is never refused anything (the cloud's isOwner, the till's owner role).
  *   - Keys are `module.action` — one dot, lowercase, underscores — so the CI scanners read them.
  *
- * Copies: shared/permissions.ts → apps/{server/src/lib, dashboard/src/lib, admin/src/lib, desktop/src/shared,
- * desktop/src/main}/permissions.ts, kept identical by scripts/check-shared-sync.mjs. Pure: no imports.
+ * One module in packages/core (@zaptill/core/permissions), used by the cloud, the web dashboard, the admin portal and
+ * the desktop POS (renderer and main). Pure: no imports.
  */
 
 export type PermissionSurface = 'web' | 'till' | 'both';
@@ -458,7 +458,10 @@ export const MAP_MARKER = 'catalogue.v2';
 export function expandMap(map: Record<string, unknown> | null | undefined, openBefore?: boolean, partsBefore = false): Set<string> {
   if (openBefore === undefined) openBefore = !(map && (map as Record<string, unknown>)[MAP_MARKER] === true);
   const granted: string[] = [], denied: string[] = [];
-  for (const [k, v] of Object.entries(map ?? {})) (v === true ? granted : v === false ? denied : []).push(k);
+  for (const [k, v] of Object.entries(map ?? {})) {
+    if (v === true) granted.push(k);
+    else if (v === false) denied.push(k);   // anything else (null, 1, 'yes') is neither
+  }
   const out = expandKeys(granted, openBefore);
   for (const k of expandKeys(denied)) if (k !== '*') out.delete(k);
   // A595: before the split (partsBefore) every parent still held brings its parts — so a taken-away parent takes away
@@ -511,7 +514,7 @@ export function defaultKeysFor(kind: 'owner' | 'manager' | 'cashier' | 'none'): 
 export const FUEL_BUSINESS_TYPES: readonly string[] = ['petrol_station'];
 /**
  * A580 (owner, 2026-10-23: "how can shops have waiter and kitchen roles unless requested keep them off we only have
- * cashier and other roles"): the business types that run a kitchen and serve at tables (shared/businessTerms.ts
+ * cashier and other roles"): the business types that run a kitchen and serve at tables (businessTerms.ts
  * FOOD_SERVICE_TYPES). Only these get the built-in Waiter, Kitchen and Kitchen Manager roles; a shop (retail, minimart),
  * a petrol station, a car park or "other" does not. Migration 169 takes the unused ones off existing shops.
  */

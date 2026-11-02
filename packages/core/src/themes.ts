@@ -1,11 +1,8 @@
 /**
  * themes.ts — the curated ACTION themes and the BRAND-colour rule for client branding Phase 2 (A323/A324).
  *
- *  Byte-identical copies live at:
- *      shared/themes.ts                      (canonical)
- *      apps/desktop/src/shared/themes.ts     (the till)
- *      apps/dashboard/src/lib/themes.ts      (the web)
- *  scripts/check-shared-sync.mjs fails CI if they diverge. The cloud's copy joins when it validates theme ids.
+ *  One module in packages/core (@zaptill/core/themes), used by the desktop POS, the web dashboard, packages/ui's
+ *  customer screen and the cloud (which validates theme ids with it, as branchBranding.ts does).
  *
  *  Self-contained on purpose (no imports), so every app, the cloud and plain-Node tests load the same file.
  *
@@ -110,9 +107,13 @@ export function deltaE(h1: Hex, h2: Hex): number {
   const RT = -Math.sin(2 * dT * rad) * RC;
   return Math.sqrt((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2 + RT * (dC / SC) * (dH / SH));
 }
-export function hue(h: Hex): number { const [, a, b] = lab(h); const x = (Math.atan2(b, a) * 180) / Math.PI; return x < 0 ? x + 360 : x; }
+export function hue(h: Hex): number { const [, a, b] = lab(h); return hueDegrees(a, b); }
 /** Black or white — whichever reads better on the fill (the till's rule, as in contrast.ts). */
 export function labelOn(fill: Hex): Hex { return contrast('#ffffff', fill) >= contrast('#000000', fill) ? '#ffffff' : '#000000'; }
+/** The hue angle of (a, b) in degrees, 0–360. */
+function hueDegrees(a: number, b: number): number { const x = (Math.atan2(b, a) * 180) / Math.PI; return x < 0 ? x + 360 : x; }
+/** `x` kept within 0–1 (a lightness, a channel). */
+const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
 const minContrast = (h: Hex, panels: Hex[]) => Math.min(...panels.map((p) => contrast(h, p)));
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -254,13 +255,12 @@ function oklabToLinear(L: number, a: number, b: number): [number, number, number
 /** sRGB hex → OKLCH { L 0–1, C (chroma), H (hue, degrees) }. */
 export function oklch(hex: Hex): { L: number; C: number; H: number } {
   const [L, a, b] = oklab(hex);
-  const H = (Math.atan2(b, a) * 180) / Math.PI;
-  return { L, C: Math.hypot(a, b), H: H < 0 ? H + 360 : H };
+  return { L, C: Math.hypot(a, b), H: hueDegrees(a, b) };
 }
 const inGamut = (c: number[]) => c.every((x) => x >= -1e-4 && x <= 1 + 1e-4);
 /** OKLCH → the nearest sRGB hex of the SAME lightness and hue (chroma reduced until it fits the screen's colours). */
 export function oklchHex(L: number, C: number, H: number): Hex {
-  const Lc = Math.min(1, Math.max(0, L)), h = (H * Math.PI) / 180;
+  const Lc = clamp01(L), h = (H * Math.PI) / 180;
   const at = (c: number) => oklabToLinear(Lc, c * Math.cos(h), c * Math.sin(h));
   let lin = at(C);
   if (!inGamut(lin)) {
@@ -268,7 +268,7 @@ export function oklchHex(L: number, C: number, H: number): Hex {
     for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (inGamut(at(mid))) lo = mid; else hi = mid; }
     lin = at(lo);
   }
-  return '#' + lin.map((x) => Math.round(Math.min(1, Math.max(0, toGam(x))) * 255).toString(16).padStart(2, '0')).join('');
+  return '#' + lin.map((x) => Math.round(clamp01(toGam(x)) * 255).toString(16).padStart(2, '0')).join('');
 }
 
 // ── The tonal scale ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -287,7 +287,7 @@ function toneOf(hex: Hex): Tone { const o = oklch(hex); return { hex, ...o }; }
  */
 export function brandTone(t: Tone, L: number): Hex {
   if (Math.abs(L - t.L) < 1e-9) return t.hex;
-  const Lc = Math.min(1, Math.max(0, L));
+  const Lc = clamp01(L);
   // chroma follows the bell every colour family has (most colourful in the middle, none at white or black), scaled so
   // the colour's own lightness gives its own chroma — a navy's middle shades are blue, not grey (at most 2.5x)
   const C = t.C * Math.min(2.5, chromaBell(Lc) / Math.max(1e-6, chromaBell(t.L)));
@@ -301,7 +301,7 @@ export function brandTone(t: Tone, L: number): Hex {
   return oklchHex(Lc, C, H);
 }
 /** How colourful a family is at lightness L, relative to its most colourful shade (peak near L 0.62). */
-function chromaBell(L: number): number { return Math.sin(Math.PI * Math.min(1, Math.max(0, L)) ** 1.45) ** 0.8; }
+function chromaBell(L: number): number { return Math.sin(Math.PI * clamp01(L) ** 1.45) ** 0.8; }
 /** The colour's tonal scale, 50 (lightest) – 950 (darkest), in even perceptual steps; `baseStep` is the colour itself,
  *  exactly as chosen. null when it is not a #rrggbb colour. PURE. */
 export function brandScale(hex: unknown): { steps: Record<BrandStep, Hex>; baseStep: BrandStep } | null {
@@ -401,14 +401,14 @@ function modeTokens(t: Tone, ink: Hex, mode: 'light' | 'dark', moved: { status: 
   const onPrimary = labelFor(primary, ink);
   // hover / pressed: a touch darker (the usual), or lighter when darker would weaken the label
   const Lp = oklch(primary).L;
-  const at = (dir: number, d: number) => brandTone(t, Math.min(1, Math.max(0, Lp + dir * d)));
+  const at = (dir: number, d: number) => brandTone(t, clamp01(Lp + dir * d));
   const reads = (h: Hex) => h !== primary && contrast(onPrimary, h) >= RULES.text;
   const dir = reads(at(-1, 0.04)) || !reads(at(1, 0.04)) ? -1 : 1;
   const pressStep = (d: number) => { const h = at(dir, d); return contrast(onPrimary, h) >= RULES.text ? h : primary; };
   const subtle = mode === 'light' ? oklchHex(0.965, Math.min(t.C, 0.035), t.H) : oklchHex(0.28, Math.min(t.C, 0.06), t.H);
   const text = guardedTone(t, (h) => minContrast(h, [...S, subtle]) >= RULES.text, away, moved);
   const Lt = oklch(text).L;
-  const textHover = brandTone(t, Math.min(1, Math.max(0, Lt + away * 0.07)));
+  const textHover = brandTone(t, clamp01(Lt + away * 0.07));
   const ring = nearestTone(t, (h) => minContrast(h, S) >= RULES.fill, away) ?? (away > 0 ? W : K);
   const chart = nearestTone(t, (h) => contrast(h, mode === 'light' ? '#ffffff' : '#111827') >= RULES.fill, away) ?? (away > 0 ? W : K);
   const tintL = mode === 'light' ? 0.985 : 0.235, sideText = SIDEBAR_TEXT[mode];
@@ -430,7 +430,7 @@ export function colourName(hex: unknown): string {
 }
 
 /** Every job's shade of a brand colour — the tonal scale and each mode's tokens — or null when it is not a #rrggbb
- *  colour. PURE, and the same in every app (5 byte-identical copies). */
+ *  colour. PURE, and the same in every app (one module, @zaptill/core/themes). */
 export function brandPalette(hex: unknown): BrandPalette | null {
   const base = cleanBrandHex(hex);
   if (!base) return null;
@@ -488,7 +488,7 @@ export function brandTokens(hex: unknown): BrandTokens | null {
   // and a black one on the dark screens.
   const fill = nearestTone(t, (h) => minContrast(h, BRAND_SURFACES.darkLabels) >= RULES.text && contrast(h, W) >= BRAND_EDGE, 1) ?? '#d4d4d4';
   const strong = nearestTone(t, (h) => contrast(W, h) >= RULES.text && minContrast(h, BRAND_SURFACES.darkText) >= BRAND_EDGE, -1) ?? '#525252';
-  const step = (h: Hex, d: number, keep: (x: Hex) => boolean) => { const x = brandTone(t, Math.min(1, Math.max(0, oklch(h).L + d))); return keep(x) ? x : h; };
+  const step = (h: Hex, d: number, keep: (x: Hex) => boolean) => { const x = brandTone(t, clamp01(oklch(h).L + d)); return keep(x) ? x : h; };
   const textDark = nearestTone(t, (h) => minContrast(h, BRAND_SURFACES.darkText) >= RULES.text, 1) ?? W;
   const textLight = nearestTone(t, (h) => minContrast(h, BRAND_SURFACES.lightText) >= RULES.text, -1) ?? K;
   return {

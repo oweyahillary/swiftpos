@@ -9,6 +9,9 @@
     "./CustomerScreenView": "./src/CustomerScreenView.tsx",
     "./CustomerAskForm": "./src/CustomerAskForm.tsx",
     "./numberInputs": "./src/numberInputs.ts",
+    "./MethodDot": "./src/MethodDot.tsx",
+    "./Pager": "./src/Pager.tsx",
+    "./CategoryPanel": "./src/CategoryPanel.tsx",
     "./package.json": "./package.json"
   },
   "peerDependencies": {

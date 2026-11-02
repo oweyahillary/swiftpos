@@ -14,9 +14,9 @@
  *   (d) the receipt printer (ESC/POS): GS k (EAN-13 / UPC-A / CODE128) or the bars as a raster image — escposLabel.
  *
  * Pure (no DOM, no Node): every renderer returns a string or a byte array. The bars come from barcode.ts
- * (EncodedBarcode), passed in — this file imports nothing, so each copy compiles on its own.
- * Copies (scripts/check-shared-sync.mjs): apps/server/src/lib (cleanLabelSettings), apps/dashboard/src/lib,
- * apps/desktop/src/shared, apps/desktop/src/main.
+ * (EncodedBarcode), passed in — this file imports nothing (the caller hands it barcode.ts's encodeBarcode).
+ * One module in packages/core (@zaptill/core/labels), used by the cloud (cleanLabelSettings), the web dashboard and the
+ * desktop POS (renderer and main).
  *
  * Layout is worked out in printer DOTS at the chosen dpi (8 dots/mm at 203 dpi, 12 at 300), so the bars land on whole
  * dots on a label printer, and the SVG / HTML page is the same picture scaled to millimetres.
@@ -100,26 +100,17 @@ const num = (v: unknown, lo: number, hi: number, dflt: number): number => {
 };
 const bool = (v: unknown, dflt: boolean): boolean => (typeof v === 'boolean' ? v : dflt);
 
-/** Whatever was stored or sent, as settings every renderer can use (sizes clamped, unknown keys dropped). */
-export function cleanLabelSettings(raw: unknown): LabelSettings {
+/** Stored settings arrive as an object or its JSON text; anything else reads as "nothing stored" ({}). */
+function storedObject(raw: unknown): any {
   let r: any = raw;
   if (typeof r === 'string') { try { r = JSON.parse(r); } catch { r = null; } }
-  if (!r || typeof r !== 'object') r = {};
+  return r && typeof r === 'object' ? r : {};
+}
+
+/** Whatever was stored or sent, as settings every renderer can use (sizes clamped, unknown keys dropped). */
+export function cleanLabelSettings(raw: unknown): LabelSettings {
+  const r = storedObject(raw);
   const d = DEFAULT_LABEL_SETTINGS;
-  const s: any = r.sheet && typeof r.sheet === 'object' ? r.sheet : {};
-  const preset: SheetPresetId = ['3x7', '3x8', '4x10', '5x13', 'custom'].includes(s.preset) ? s.preset : d.sheet.preset;
-  const base: SheetSettings = preset === 'custom' ? { ...d.sheet, preset: 'custom' } : { ...SHEET_PRESETS[preset] };
-  const sheet: SheetSettings = preset === 'custom' ? {
-    preset: 'custom',
-    paper: s.paper === 'Letter' ? 'Letter' : 'A4',
-    cols: Math.round(num(s.cols, 1, 10, base.cols)),
-    rows: Math.round(num(s.rows, 1, 30, base.rows)),
-    labelWidthMm: base.labelWidthMm, labelHeightMm: base.labelHeightMm,
-    marginTopMm: num(s.marginTopMm, 0, 60, base.marginTopMm),
-    marginLeftMm: num(s.marginLeftMm, 0, 60, base.marginLeftMm),
-    gapXMm: num(s.gapXMm, 0, 30, base.gapXMm),
-    gapYMm: num(s.gapYMm, 0, 30, base.gapYMm),
-  } : base;
   return {
     widthMm: num(r.widthMm, 15, 150, d.widthMm),
     heightMm: num(r.heightMm, 10, 200, d.heightMm),
@@ -131,8 +122,28 @@ export function cleanLabelSettings(raw: unknown): LabelSettings {
     showBusiness: bool(r.showBusiness, d.showBusiness),
     unitText: typeof r.unitText === 'string' ? r.unitText.replace(/[\x00-\x1f]/g, '').trim().slice(0, 20) : d.unitText,
     dpi: Number(r.dpi) === 300 ? 300 : 203,
-    sheet: { ...sheet, ...(preset === 'custom' ? customCell(sheet) : {}) },
+    sheet: cleanSheet(r.sheet),
   };
+}
+
+/** The stored sheet: a known preset as sold, or a custom one (clamped) with its label size worked out from the page. */
+function cleanSheet(stored: unknown): SheetSettings {
+  const s: any = stored && typeof stored === 'object' ? stored : {};
+  const preset: SheetPresetId = ['3x7', '3x8', '4x10', '5x13', 'custom'].includes(s.preset) ? s.preset : DEFAULT_LABEL_SETTINGS.sheet.preset;
+  if (preset !== 'custom') return { ...SHEET_PRESETS[preset] };
+  const base: SheetSettings = { ...DEFAULT_LABEL_SETTINGS.sheet, preset: 'custom' };
+  const sheet: SheetSettings = {
+    preset: 'custom',
+    paper: s.paper === 'Letter' ? 'Letter' : 'A4',
+    cols: Math.round(num(s.cols, 1, 10, base.cols)),
+    rows: Math.round(num(s.rows, 1, 30, base.rows)),
+    labelWidthMm: base.labelWidthMm, labelHeightMm: base.labelHeightMm,
+    marginTopMm: num(s.marginTopMm, 0, 60, base.marginTopMm),
+    marginLeftMm: num(s.marginLeftMm, 0, 60, base.marginLeftMm),
+    gapXMm: num(s.gapXMm, 0, 30, base.gapXMm),
+    gapYMm: num(s.gapYMm, 0, 30, base.gapYMm),
+  };
+  return { ...sheet, ...customCell(sheet) };
 }
 
 /** A custom sheet's label size: the page less the margins (the same each side) and gaps, shared by the columns / rows. */
@@ -285,94 +296,144 @@ export function layoutLabel(settings: LabelSettings, item: LabelItem, bars: Labe
   const widthMm = opts.widthMm ?? settings.widthMm;
   const heightMm = opts.heightMm ?? settings.heightMm;
   const dpmm = dotsPerMm(settings.dpi);
-  const ratio = opts.charWidth ?? 0.6;
-  const W = Math.round(widthMm * dpmm);
-  const H = Math.round(heightMm * dpmm);
+  const widthDots = Math.round(widthMm * dpmm);
+  const heightDots = Math.round(heightMm * dpmm);
   const pad = Math.round(Math.min(2.5, Math.max(1, Math.min(widthMm, heightMm) * 0.06)) * dpmm);
-  const innerW = W - 2 * pad;
-  const innerH = H - 2 * pad;
-  const gap = Math.max(2, Math.round(0.4 * dpmm));
-  const minFont = Math.round(1.5 * dpmm);
-  const maxFont = Math.round(6 * dpmm);
+  const innerH = heightDots - 2 * pad;
   const warnings: string[] = [];
-
-  // A574: the bars are always drawn (settings.showBarcode is always true).
-  const priceText = settings.showPrice && item.price != null && Number.isFinite(item.price)
-    ? formatLabelPrice(item.price, item.currency ?? 'KES') + (settings.unitText ? ` ${settings.unitText}` : '')
-    : (settings.unitText && settings.showPrice ? settings.unitText : '');
+  const priceText = labelPriceText(settings, item);
   const business = settings.showBusiness ? String(item.business ?? '').trim() : '';
   const name = settings.showName ? String(item.name ?? '').trim() : '';
 
-  // The bars' width is fixed by the label's width — work it out first.
-  let barsBox: LabelBarsBox | null = null;
-  let barsW = 0;
-  let moduleDots = 0;
-  {
-    const total = bars.modules.length + bars.quietLeft + bars.quietRight;
-    const avail = W - 2 * Math.round(0.5 * dpmm);   // the quiet zones may use the label's padding
-    moduleDots = Math.max(1, Math.min(Math.round(0.4 * dpmm), Math.floor(avail / total)));
-    barsW = bars.modules.length * moduleDots;
-    if (total * moduleDots > W) warnings.push('The barcode is wider than the label: use a wider label or a shorter code');
-    else if (moduleDots / dpmm < 0.2) warnings.push('The bars are very thin on this label: test-scan one, or use a wider label');
-  }
+  // The bars' width is fixed by the label's width — work it out first. (A574: the bars are always drawn.)
+  const sizing = barsSizing(bars, widthDots, dpmm);
+  if (sizing.warning) warnings.push(sizing.warning);
+
+  const text: TextFit = {
+    business, name, priceText,
+    showDigits: settings.showDigits, digits: bars.text,
+    innerW: widthDots - 2 * pad,
+    barsW: sizing.barsW,
+    ratio: opts.charWidth ?? 0.6,
+    gap: Math.max(2, Math.round(0.4 * dpmm)),
+    minFont: Math.round(1.5 * dpmm),
+  };
   const minBars = Math.max(Math.round(innerH * 0.28), Math.round(4 * dpmm));
   const maxBars = Math.round(Math.max(minBars, innerH * 0.55));
-
-  type Row = { kind: LabelTextKind; text: string; h: number; bold: boolean };
-  const plan = (b: number, nameLines: number, withBusiness: boolean): { rows: Row[]; textH: number } => {
-    const rows: Row[] = [];
-    const fitH = (t: string, h: number) => Math.max(minFont, Math.min(h, Math.floor(innerW / Math.max(1, t.length * ratio))));
-    if (withBusiness && business) {
-      const h = Math.max(minFont, Math.round(b * 0.75));
-      rows.push({ kind: 'business', text: wrapText(business, Math.floor(innerW / (h * ratio)), 1)[0] ?? '', h, bold: false });
-    }
-    if (name) {
-      for (const line of wrapText(name, Math.floor(innerW / (b * ratio)), nameLines)) rows.push({ kind: 'name', text: line, h: b, bold: true });
-    }
-    if (priceText) {
-      const h = Math.max(minFont, Math.round(b * 1.3));
-      const fitted = fitH(priceText, h);
-      rows.push({ kind: 'price', text: wrapText(priceText, Math.floor(innerW / (fitted * ratio)), 1)[0] ?? '', h: fitted, bold: true });
-    }
-    if (settings.showDigits) {
-      const h = Math.max(Math.round(minFont * 0.8), Math.min(Math.round(b * 0.8), Math.floor(barsW / Math.max(1, bars.text.length * ratio))));
-      rows.push({ kind: 'digits', text: bars.text, h, bold: false });
-    }
-    const textH = rows.reduce((s, r) => s + r.h, 0) + gap * Math.max(0, rows.length);
-    return { rows, textH };
-  };
-
-  const base = Math.max(minFont, Math.min(maxFont, Math.round(innerH * 0.16)));
-  const NO_BIZ = 'The business name is left off: the label is too small';
-  const ONE_LINE = 'The name is cut to one line to fit the label';
-  const tries: Array<[number, number, boolean, string[]]> = [];
-  for (let b = base; b >= minFont; b--) tries.push([b, 2, true, []]);
-  for (let b = base; b >= minFont; b--) tries.push([b, 2, false, business ? [NO_BIZ] : []]);
-  for (let b = base; b >= minFont; b--) tries.push([b, 1, false, business ? [NO_BIZ, ONE_LINE] : [ONE_LINE]]);
-  let chosen = plan(minFont, 1, false);
-  let notes: string[] = ['The label is too small for everything: the barcode is short'];
-  for (const [b, lines, withBiz, why] of tries) {
-    const p = plan(b, lines, withBiz);
-    if (innerH - p.textH >= minBars) { chosen = p; notes = why; break; }
-  }
-  warnings.push(...notes);
+  const baseFont = Math.max(text.minFont, Math.min(Math.round(6 * dpmm), Math.round(innerH * 0.16)));
+  const chosen = chooseRows(text, baseFont, innerH, minBars);
+  warnings.push(...chosen.notes);
 
   const barsH = Math.max(Math.round(2 * dpmm), Math.min(maxBars, innerH - chosen.textH));
-  const total = chosen.textH + barsH;
-  let y = pad + Math.max(0, Math.floor((innerH - total) / 2));
-  const texts: LabelText[] = [];
-  for (const r of chosen.rows) {
-    if (r.kind === 'digits' && barsBox === null) {
-      barsBox = { x: Math.round((W - barsW) / 2), y, h: barsH, moduleDots, widthDots: barsW };
-      y += barsH + gap;
-    }
-    texts.push({ kind: r.kind, text: r.text, x: pad, y, w: innerW, h: r.h, bold: r.bold });
-    y += r.h + gap;
-  }
-  const box: LabelBarsBox = barsBox ?? { x: Math.round((W - barsW) / 2), y, h: barsH, moduleDots, widthDots: barsW };
+  const placed = placeRows(chosen.rows, {
+    top: pad + Math.max(0, Math.floor((innerH - (chosen.textH + barsH)) / 2)),
+    pad, innerW: text.innerW, gap: text.gap,
+    barsX: Math.round((widthDots - sizing.barsW) / 2), barsH, moduleDots: sizing.moduleDots, barsW: sizing.barsW,
+  });
 
-  return { widthMm, heightMm, dpi: settings.dpi, dotsPerMm: dpmm, widthDots: W, heightDots: H, texts,
-    bars, barsBox: box, warnings };
+  return { widthMm, heightMm, dpi: settings.dpi, dotsPerMm: dpmm, widthDots, heightDots, texts: placed.texts,
+    bars, barsBox: placed.barsBox, warnings };
+}
+
+/** The price line: the price (and the unit text after it), the unit text alone when there is no price, or ''. */
+function labelPriceText(settings: LabelSettings, item: LabelItem): string {
+  if (settings.showPrice && item.price != null && Number.isFinite(item.price)) {
+    return formatLabelPrice(item.price, item.currency ?? 'KES') + (settings.unitText ? ` ${settings.unitText}` : '');
+  }
+  return settings.unitText && settings.showPrice ? settings.unitText : '';
+}
+
+/** The module width in whole dots (at most 0.4 mm; the quiet zones may use the label's padding), the bars' width, and a
+ *  warning when they do not fit or are very thin. */
+function barsSizing(bars: LabelBars, widthDots: number, dpmm: number): { moduleDots: number; barsW: number; warning: string | null } {
+  const total = bars.modules.length + bars.quietLeft + bars.quietRight;
+  const avail = widthDots - 2 * Math.round(0.5 * dpmm);
+  const moduleDots = Math.max(1, Math.min(Math.round(0.4 * dpmm), Math.floor(avail / total)));
+  const barsW = bars.modules.length * moduleDots;
+  let warning: string | null = null;
+  if (total * moduleDots > widthDots) warning = 'The barcode is wider than the label: use a wider label or a shorter code';
+  else if (moduleDots / dpmm < 0.2) warning = 'The bars are very thin on this label: test-scan one, or use a wider label';
+  return { moduleDots, barsW, warning };
+}
+
+/** What the text rows are fitted from: the words to show ('' / null: not shown) and the label's measures in dots. */
+interface TextFit {
+  business: string;
+  name: string;
+  priceText: string;
+  /** The digits under the bars (shown only with showDigits). */
+  showDigits: boolean;
+  digits: string;
+  innerW: number;
+  barsW: number;
+  /** Average character width as a share of its height. */
+  ratio: number;
+  gap: number;
+  minFont: number;
+}
+interface TextRow { kind: LabelTextKind; text: string; h: number; bold: boolean }
+interface RowPlan { rows: TextRow[]; textH: number }
+
+/** The text rows at name height `nameH` (the name on up to `nameLines` lines, the business name only `withBusiness`)
+ *  and the height they take with their gaps. */
+function planRows(f: TextFit, nameH: number, nameLines: number, withBusiness: boolean): RowPlan {
+  const rows: TextRow[] = [];
+  const charsIn = (h: number) => Math.floor(f.innerW / (h * f.ratio));
+  if (withBusiness && f.business) {
+    const h = Math.max(f.minFont, Math.round(nameH * 0.75));
+    rows.push({ kind: 'business', text: wrapText(f.business, charsIn(h), 1)[0] ?? '', h, bold: false });
+  }
+  if (f.name) {
+    for (const line of wrapText(f.name, charsIn(nameH), nameLines)) rows.push({ kind: 'name', text: line, h: nameH, bold: true });
+  }
+  if (f.priceText) {
+    const h = Math.max(f.minFont, Math.round(nameH * 1.3));
+    const fitted = Math.max(f.minFont, Math.min(h, Math.floor(f.innerW / Math.max(1, f.priceText.length * f.ratio))));
+    rows.push({ kind: 'price', text: wrapText(f.priceText, charsIn(fitted), 1)[0] ?? '', h: fitted, bold: true });
+  }
+  if (f.showDigits) {
+    const h = Math.max(Math.round(f.minFont * 0.8), Math.min(Math.round(nameH * 0.8), Math.floor(f.barsW / Math.max(1, f.digits.length * f.ratio))));
+    rows.push({ kind: 'digits', text: f.digits, h, bold: false });
+  }
+  const textH = rows.reduce((s, r) => s + r.h, 0) + f.gap * Math.max(0, rows.length);
+  return { rows, textH };
+}
+
+/** The biggest text that leaves the bars `minBars` dots: text shrinks first; then the business name goes; then the name
+ *  keeps one line — each step a warning (`notes`). Nothing fits: the smallest text, one line, and a short barcode. */
+function chooseRows(f: TextFit, baseFont: number, innerH: number, minBars: number): RowPlan & { notes: string[] } {
+  const NO_BIZ = 'The business name is left off: the label is too small';
+  const ONE_LINE = 'The name is cut to one line to fit the label';
+  const steps: Array<{ nameLines: number; withBusiness: boolean; notes: string[] }> = [
+    { nameLines: 2, withBusiness: true, notes: [] },
+    { nameLines: 2, withBusiness: false, notes: f.business ? [NO_BIZ] : [] },
+    { nameLines: 1, withBusiness: false, notes: f.business ? [NO_BIZ, ONE_LINE] : [ONE_LINE] },
+  ];
+  for (const step of steps) {
+    for (let nameH = baseFont; nameH >= f.minFont; nameH--) {
+      const plan = planRows(f, nameH, step.nameLines, step.withBusiness);
+      if (innerH - plan.textH >= minBars) return { ...plan, notes: step.notes };
+    }
+  }
+  return { ...planRows(f, f.minFont, 1, false), notes: ['The label is too small for everything: the barcode is short'] };
+}
+
+/** The rows top to bottom from `top`, the bars just above the digits (or below the last row when the digits are off). */
+function placeRows(rows: TextRow[], at: { top: number; pad: number; innerW: number; gap: number; barsX: number; barsH: number;
+  moduleDots: number; barsW: number }): { texts: LabelText[]; barsBox: LabelBarsBox } {
+  let y = at.top;
+  let barsBox: LabelBarsBox | null = null;
+  const barsBoxAt = (top: number): LabelBarsBox => ({ x: at.barsX, y: top, h: at.barsH, moduleDots: at.moduleDots, widthDots: at.barsW });
+  const texts: LabelText[] = [];
+  for (const r of rows) {
+    if (r.kind === 'digits' && barsBox === null) {
+      barsBox = barsBoxAt(y);
+      y += at.barsH + at.gap;
+    }
+    texts.push({ kind: r.kind, text: r.text, x: at.pad, y, w: at.innerW, h: r.h, bold: r.bold });
+    y += r.h + at.gap;
+  }
+  return { texts, barsBox: barsBox ?? barsBoxAt(y) };
 }
 
 /** What to print: an item, its stored barcode, how many labels. */
@@ -506,6 +567,15 @@ export function tsplFont(dpi: 203 | 300, h: number, text: string, w: number): { 
 
 const tsplQuote = (s: string): string => asciiText(s).replace(/"/g, '\\["]');
 
+/** An EAN / UPC code as the printers take it, without its check digit (they add it): EAN-13 12 digits, EAN-8 7, UPC-A 11.
+ *  null for Code 128 (sent whole). */
+function gs1Body(bars: Pick<LabelBars, 'symbology' | 'data'>): string | null {
+  if (bars.symbology === 'EAN13') return bars.data.slice(0, 12);
+  if (bars.symbology === 'EAN8') return bars.data.slice(0, 7);
+  if (bars.symbology === 'UPCA') return bars.data.slice(0, 11);
+  return null;
+}
+
 /** One label in TSPL (TSC, most Xprinter label models): SIZE / GAP / CLS / TEXT / BARCODE / PRINT, CRLF-ended. */
 export function tsplLabel(l: LabelLayout, gapMm: number, copies = 1): string {
   assertLabelBars(l);   // A574
@@ -525,13 +595,10 @@ export function tsplLabel(l: LabelLayout, gapMm: number, copies = 1): string {
     const y = t.y + Math.max(0, t.h - f.ch);
     out.push(`TEXT ${x},${y},"${f.id}",0,${f.mul},${f.mul},"${tsplQuote(text)}"`);
   }
-  {
-    const b = l.barsBox, m = b.moduleDots;
-    const [type, data] = l.bars.symbology === 'EAN13' ? ['EAN13', l.bars.data.slice(0, 12)]
-      : l.bars.symbology === 'EAN8' ? ['EAN8', l.bars.data.slice(0, 7)]
-      : l.bars.symbology === 'UPCA' ? ['UPCA', l.bars.data.slice(0, 11)] : ['128', l.bars.data];
-    out.push(`BARCODE ${b.x},${b.y},"${type}",${b.h},0,0,${m},${m},"${tsplQuote(data)}"`);
-  }
+  const b = l.barsBox, m = b.moduleDots;
+  const body = gs1Body(l.bars);
+  const [type, data] = body === null ? ['128', l.bars.data] : [l.bars.symbology, body];
+  out.push(`BARCODE ${b.x},${b.y},"${type}",${b.h},0,0,${m},${m},"${tsplQuote(data)}"`);
   out.push(`PRINT 1,${Math.max(1, Math.floor(copies))}`);
   return out.join('\r\n') + '\r\n';
 }
@@ -552,16 +619,18 @@ export function zplLabel(l: LabelLayout, copies = 1): string {
   for (const t of l.texts) {
     out.push(`^FO${t.x},${t.y}^A0N,${t.h}^FB${t.w},1,0,C,0^FH^FD${zplField(t.text)}^FS`);
   }
-  {
-    const b = l.barsBox;
-    const sym = l.bars.symbology === 'EAN13' ? `^BEN,${b.h},N,N^FD${l.bars.data.slice(0, 12)}`
-      : l.bars.symbology === 'EAN8' ? `^B8N,${b.h},N,N^FD${l.bars.data.slice(0, 7)}`
-      : l.bars.symbology === 'UPCA' ? `^BUN,${b.h},N,N,N^FD${l.bars.data.slice(0, 11)}`
-      : `^BCN,${b.h},N,N,N,N^FH^FD${zplField(zplCode128Data(l.bars.segments ?? [{ set: 'B', text: l.bars.data }]))}`;
-    out.push(`^FO${b.x},${b.y}^BY${b.moduleDots}${sym}^FS`);
-  }
+  const b = l.barsBox;
+  out.push(`^FO${b.x},${b.y}^BY${b.moduleDots}${zplBarcode(l.bars, b.h)}^FS`);
   out.push(`^PQ${Math.max(1, Math.floor(copies))}`, '^XZ');
   return out.join('\n') + '\n';
+}
+
+/** ZPL's barcode field for the bars, `h` dots tall: ^BE (EAN-13), ^B8 (EAN-8), ^BU (UPC-A) or ^BC (Code 128). */
+function zplBarcode(bars: LabelBars, h: number): string {
+  if (bars.symbology === 'EAN13') return `^BEN,${h},N,N^FD${gs1Body(bars)}`;
+  if (bars.symbology === 'EAN8') return `^B8N,${h},N,N^FD${gs1Body(bars)}`;
+  if (bars.symbology === 'UPCA') return `^BUN,${h},N,N,N^FD${gs1Body(bars)}`;
+  return `^BCN,${h},N,N,N,N^FH^FD${zplField(zplCode128Data(bars.segments ?? [{ set: 'B', text: bars.data }]))}`;
 }
 
 /** A string as bytes: TSPL as Latin-1 (asciiText keeps it ASCII), ZPL as UTF-8 (^CI28). */
@@ -589,15 +658,21 @@ export interface EscposLabelOptions {
   barHeightDots?: number;
 }
 
+/** The ESC/POS command bytes used here. */
+const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
+
 /** The receipt printer's printable dots: 384 on 58 mm paper, 576 on 80 mm. */
 export const escposDots = (paperWidthMm: 58 | 80): number => (paperWidthMm === 58 ? 384 : 576);
 
 /** GS k data for the bars: EAN-13 12 digits (m 67), EAN-8 7 (m 68), UPC-A 11 (m 65), CODE128 with its {B / {C subset
  *  codes (m 73). */
 export function escposBarcodeCommand(bars: LabelBars): number[] {
-  if (bars.symbology === 'EAN13') { const d = textBytes(bars.data.slice(0, 12)); return [0x1d, 0x6b, 67, d.length, ...d]; }
-  if (bars.symbology === 'EAN8') { const d = textBytes(bars.data.slice(0, 7)); return [0x1d, 0x6b, 68, d.length, ...d]; }
-  if (bars.symbology === 'UPCA') { const d = textBytes(bars.data.slice(0, 11)); return [0x1d, 0x6b, 65, d.length, ...d]; }
+  const body = gs1Body(bars);
+  if (body !== null) {
+    const m = bars.symbology === 'EAN13' ? 67 : bars.symbology === 'EAN8' ? 68 : 65;
+    const d = textBytes(body);
+    return [0x1d, 0x6b, m, d.length, ...d];
+  }
   const data: number[] = [];
   for (const s of bars.segments ?? [{ set: 'B' as const, text: bars.data }]) {
     data.push(0x7b, s.set === 'C' ? 0x43 : 0x42);   // {C / {B
@@ -628,34 +703,50 @@ export function escposBarsRaster(bars: LabelBars, paperWidthMm: 58 | 80, heightD
  *  A574: no bars, no label — it throws NO_BARCODE rather than print a slip without a barcode. */
 export function escposLabel(settings: LabelSettings, item: LabelItem, bars: LabelBars | null, o: EscposLabelOptions): number[] {
   if (!bars || !bars.modules) throw new Error(NO_BARCODE);
-  const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
-  const out: number[] = [ESC, 0x40];   // ESC @ — initialise
-  const line = (s: string) => { out.push(...textBytes(asciiText(s)), LF); };
   const height = Math.max(16, Math.min(255, Math.floor(o.barHeightDots ?? 80)));
   const copies = Math.max(1, Math.floor(o.copies ?? 1));
+  const out: number[] = [ESC, 0x40];   // ESC @ — initialise
   for (let c = 0; c < copies; c++) {
     out.push(ESC, 0x61, 0x01);   // ESC a 1 — centre
-    if (settings.showBusiness && item.business) line(item.business);
-    if (settings.showName && item.name) { out.push(ESC, 0x45, 0x01); line(item.name); out.push(ESC, 0x45, 0x00); }
-    if (settings.showPrice && item.price != null && Number.isFinite(item.price)) {
-      out.push(GS, 0x21, 0x11); line(formatLabelPrice(item.price, item.currency ?? 'KES')); out.push(GS, 0x21, 0x00);   // double size
-      if (settings.unitText) line(settings.unitText);
-    } else if (settings.showPrice && settings.unitText) line(settings.unitText);
-    {
-      if (o.mode === 'gsk') {
-        const total = bars.modules.length + bars.quietLeft + bars.quietRight;
-        const w = Math.max(2, Math.min(6, Math.floor(escposDots(o.paperWidthMm) / total)));
-        out.push(GS, 0x68, height);                              // GS h — bar height
-        out.push(GS, 0x77, w);                                   // GS w — module width
-        out.push(GS, 0x48, settings.showDigits ? 0x02 : 0x00);   // GS H — digits below (or none)
-        out.push(GS, 0x66, 0x00);                                // GS f — digits in font A
-        out.push(...escposBarcodeCommand(bars), LF);
-      } else {
-        out.push(...escposBarsRaster(bars, o.paperWidthMm, height));
-        if (settings.showDigits) line(bars.text);
-      }
-    }
+    out.push(...escposItemText(settings, item));
+    out.push(...(o.mode === 'gsk' ? escposPrinterBars(settings, bars, o.paperWidthMm, height)
+      : escposRasterBars(settings, bars, o.paperWidthMm, height)));
     out.push(LF, LF, LF, GS, 0x56, 0x42, 0x00);   // feed, GS V 66 0 — partial cut
   }
+  return out;
+}
+
+/** A line of text for the printer's own font (plain ASCII), then a line feed. */
+const escposLine = (s: string): number[] => [...textBytes(asciiText(s)), LF];
+
+/** The slip's text above the bars: the business, the name in bold, the price double size and the unit text. */
+function escposItemText(settings: LabelSettings, item: LabelItem): number[] {
+  const out: number[] = [];
+  if (settings.showBusiness && item.business) out.push(...escposLine(item.business));
+  if (settings.showName && item.name) out.push(ESC, 0x45, 0x01, ...escposLine(item.name), ESC, 0x45, 0x00);   // bold
+  if (settings.showPrice && item.price != null && Number.isFinite(item.price)) {
+    out.push(GS, 0x21, 0x11, ...escposLine(formatLabelPrice(item.price, item.currency ?? 'KES')), GS, 0x21, 0x00);   // double size
+    if (settings.unitText) out.push(...escposLine(settings.unitText));
+  } else if (settings.showPrice && settings.unitText) out.push(...escposLine(settings.unitText));
+  return out;
+}
+
+/** 'gsk': the printer draws the bars (GS k), the module as wide as the paper allows (2–6 dots), its digits below. */
+function escposPrinterBars(settings: LabelSettings, bars: LabelBars, paperWidthMm: 58 | 80, height: number): number[] {
+  const total = bars.modules.length + bars.quietLeft + bars.quietRight;
+  const w = Math.max(2, Math.min(6, Math.floor(escposDots(paperWidthMm) / total)));
+  return [
+    GS, 0x68, height,                              // GS h — bar height
+    GS, 0x77, w,                                   // GS w — module width
+    GS, 0x48, settings.showDigits ? 0x02 : 0x00,   // GS H — digits below (or none)
+    GS, 0x66, 0x00,                                // GS f — digits in font A
+    ...escposBarcodeCommand(bars), LF,
+  ];
+}
+
+/** 'raster': the bars sent as an image (GS v 0), the digits as a line of text. */
+function escposRasterBars(settings: LabelSettings, bars: LabelBars, paperWidthMm: 58 | 80, height: number): number[] {
+  const out = escposBarsRaster(bars, paperWidthMm, height);
+  if (settings.showDigits) out.push(...escposLine(bars.text));
   return out;
 }

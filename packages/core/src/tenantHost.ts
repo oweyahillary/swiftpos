@@ -9,7 +9,7 @@
  * The root domain is configuration, never written here: TENANT_ROOT_DOMAIN on the cloud, VITE_TENANT_ROOT_DOMAIN on the
  * web (e.g. "zaptill.co.ke"). Unset = the feature is off and every address behaves as before.
  *
- * ONE file: shared/tenantHost.ts, copied to the cloud, the web and the admin portal (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/tenantHost), used by the cloud, the web and the admin portal.
  */
 
 /** Our own names — never a client's (the apps, mail, DNS). Checked when one is set and when an address is read. */

@@ -6,7 +6,7 @@
  * OFF unless set, so an existing client sees no change. Stored as `feature_flags` rows (business_id, key, enabled); the
  * till and the web POS receive them with pos/init (`posFeatures`), and a branch node relays them to its peers.
  *
- * ONE file: shared/posFeatures.ts, copied to the till, the web, the cloud and the admin portal (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/posFeatures), used by the desktop POS, the web, the cloud and the admin portal.
  */
 
 export const POS_FEATURES = [
@@ -102,7 +102,7 @@ export const POS_FEATURES = [
     description: 'A separate approval PIN for managers (instead of their sign-in PIN). Off: managers approve voids, refunds, sales on account and drawers with their sign-in PIN, and the staff form offers no approval PIN. One already set keeps working until removed.',
   },
   // A563 (owner, 2026-10-22: "add a feature where an owner can enable not to prevent items with zero stock from appearing in
-  // the inventory or if they do they cannot be sold"). ONE owner choice carried by two switches (shared/stockGate.ts): neither
+  // the inventory or if they do they cannot be sold"). ONE owner choice carried by two switches (stockGate.ts): neither
   // = sell as normal; 'stock_zero_sold_out' = shown greyed "Sold out" and not sold; 'stock_zero_hide' (wins) = off the menu
   // while out. Products that track stock only. Set by the owner (Settings › Business › POS options), never the admin portal.
   {
@@ -154,7 +154,7 @@ export function kitchenFontBFrom(features: Partial<Record<string, unknown>> | nu
   return (features ?? {}).kitchen_font_b === true;
 }
 
-/** A563: the owner's "When an item's stock reaches zero" choice — two switches, one setting (shared/stockGate.ts). */
+/** A563: the owner's "When an item's stock reaches zero" choice — two switches, one setting (stockGate.ts). */
 export const STOCK_ZERO_KEYS = ['stock_zero_sold_out', 'stock_zero_hide'] as const;
 
 /** A562: the staff switches. A594 (owner, 2026-10-26: "some items can be permissions … I like your proposal"): the OWNER sets

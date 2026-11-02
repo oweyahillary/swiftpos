@@ -27,7 +27,7 @@ import { posApi, type BranchPeerShift, type ShiftMoneyView } from '../lib/posApi
 import { methodLabel } from '@zaptill/core/paymentCatalogue';   // A465
 import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_CODE, DRAWER_COUNT_WARNING, cashInAddsText } from '@zaptill/core/posFeatures';   // A594
 import { methodName, cashLines, type MethodOption } from '@zaptill/core/shiftConfirm';
-import MethodDot from '../components/MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { CreditAwaitingNotice } from '../components/CreditSalesTab';   // A545
 import ShiftPanel from './ShiftPanel';   // A520: the server's own drawer closes here, with the shift close everyone knows
 

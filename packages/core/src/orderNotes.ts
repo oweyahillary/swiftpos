@@ -5,7 +5,7 @@
  * pieces or they want exta cheese if it pizza or no salt etc". Decided: free text plus quick picks the owner sets; a note
  * on each line and one on the order; notes are free (anything priced stays a modifier in Menu).
  *
- * ONE file: shared/orderNotes.ts, copied to the till, the web and the cloud (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/orderNotes), used by the desktop POS, the web and the cloud.
  */
 
 /** Longest note kept on a line / on the order. Past this it is cut, never refused — a sale must not fail on a note. */

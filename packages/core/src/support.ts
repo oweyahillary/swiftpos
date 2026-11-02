@@ -6,8 +6,8 @@
  * with a phone); the admin allocates one to a client (admin portal › client). The till's and the web's Help show that
  * tech's name and number; a client with no tech (or a tech with no number) shows ZapTill support's two numbers.
  *
- * ONE file: shared/support.ts, copied to the cloud, the till (main + renderer), the web and the admin portal
- * (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/support), used by the cloud, the desktop POS (main + renderer), the web and
+ * the admin portal.
  */
 
 /** ZapTill support — shown when a client has no tech allocated. */

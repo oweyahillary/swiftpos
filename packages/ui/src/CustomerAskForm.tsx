@@ -9,8 +9,8 @@
  * cleanAnswer — in main on the desktop) and the cashier accepts or corrects it before anything is attached to the sale.
  * Also StkBanner: the M-Pesa prompt's progress as the customer sees it ("Waiting for M-Pesa… (check your phone)").
  *
- * Pure view: no bridge, no fetch. Copies kept identical by scripts/check-shared-sync.mjs: the desktop's renderer
- * (src/shared/) and the web dashboard (src/lib/), each beside its customerDetails.ts.
+ * Pure view: no bridge, no fetch. One component in packages/ui (@zaptill/ui), used by the desktop POS's renderer and
+ * the web dashboard; its rules come from @zaptill/core/customerDetails.
  */
 import { useState, type CSSProperties } from 'react';
 import { CONSENT_LINE, SAVE_LABEL, stkWords, type AskRequest, type StkView } from '@zaptill/core/customerDetails';

@@ -5,7 +5,7 @@
  * Permission required: orders.view_all
  */
 
-import MethodDot from '../../components/MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { useState, useEffect, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';

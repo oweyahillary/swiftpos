@@ -9,7 +9,7 @@
  *
  * Stored as the business setting 'business_day_cutoff' ("HH:MM"), overridable per branch (as continuous_operation).
  *
- * ONE file: shared/businessDay.ts, copied to the till, the web and the cloud (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/businessDay), used by the desktop POS, the web and the cloud.
  */
 
 export const BUSINESS_DAY_CUTOFF_KEY = 'business_day_cutoff';

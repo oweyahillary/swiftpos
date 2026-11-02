@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import MethodDot from './MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { PAYMENT_CATALOGUE, enabledFromSetting } from '@zaptill/core/paymentCatalogue';
 
 // A429 — Manager → Settings → Payment methods (shared/paymentCatalogue.ts).

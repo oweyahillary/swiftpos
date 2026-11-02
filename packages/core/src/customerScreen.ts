@@ -15,8 +15,8 @@
  * The slideshow is an ordered list of the owner's uploaded images (the same image store as product pictures) and how many
  * seconds each shows, kept in business_settings under CUSTOMER_SCREEN_KEY — no migration.
  *
- * Pure, no imports. Copies kept identical by scripts/check-shared-sync.mjs: shared/, apps/server/src/lib/,
- * apps/desktop/src/main/, apps/desktop/src/shared/, apps/dashboard/src/lib/.
+ * Pure, no imports. One module in packages/core (@zaptill/core/customerScreen), used by the cloud, the desktop POS (main
+ * and renderer) and the web dashboard; the view itself is packages/ui's CustomerScreenView.
  */
 
 // ── The slideshow (owner's images) ──────────────────────────────────────────────────────────────────────────────────
@@ -41,6 +41,9 @@ export function slideUrlOk(url: unknown): url is string {
   return typeof url === 'string' && url.length <= 500 && SLIDE_URL.test(url) && !url.includes('..');
 }
 
+/** A slide as sent: its address alone, or { url }. */
+const slideUrlOf = (s: unknown): unknown => (typeof s === 'string' ? s : (s as { url?: unknown } | null | undefined)?.url);
+
 const intIn = (v: unknown, min: number, max: number): number | null => {
   const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
   return typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max ? n : null;
@@ -53,8 +56,7 @@ export function cleanCustomerScreen(input: unknown): { ok: true; value: Customer
   if (o.slides.length > MAX_SLIDES) return { ok: false, error: `Up to ${MAX_SLIDES} images.` };
   const slides: Slide[] = [];
   for (let i = 0; i < o.slides.length; i++) {
-    const s = o.slides[i] as { url?: unknown } | string;
-    const url = typeof s === 'string' ? s : s?.url;
+    const url = slideUrlOf(o.slides[i]);
     if (!slideUrlOk(url)) return { ok: false, error: `Image ${i + 1} is not an uploaded JPEG, PNG or WebP image.` };
     if (!slides.some((x) => x.url === url)) slides.push({ url });
   }
@@ -70,7 +72,7 @@ export function slidesFromWire(v: unknown): CustomerScreenSlides | null {
   if (!o || typeof o !== 'object' || !Array.isArray((o as any).slides)) return null;
   const slides: Slide[] = [];
   for (const s of (o as any).slides as unknown[]) {
-    const url = typeof s === 'string' ? s : (s as any)?.url;
+    const url = slideUrlOf(s);
     if (slideUrlOk(url) && !slides.some((x) => x.url === url) && slides.length < MAX_SLIDES) slides.push({ url });
   }
   const seconds = intIn((o as any).seconds, SLIDE_SECONDS_MIN, SLIDE_SECONDS_MAX) ?? SLIDE_SECONDS_DEFAULT;
@@ -165,13 +167,7 @@ export function sanitiseDisplayState(raw: unknown): DisplayState {
   const currency = typeof r.currency === 'string' && /^[A-Z]{3}$/.test(r.currency) ? r.currency : 'KES';
   const since = Number.isFinite(Number(r.since)) && Number(r.since) > 0 ? Math.floor(Number(r.since)) : 0;
   if (stage === 'idle') return idleState(mode, currency, since);
-  const lines: DisplayLine[] = stage === 'thanks' ? [] : (Array.isArray(r.lines) ? r.lines : []).slice(-MAX_DISPLAY_LINES).map((x) => {
-    const l = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
-    const unit = l.unit === 'L' || l.unit === 'kg' || l.unit === 'g' ? l.unit : null;
-    const detail = text(l.detail, 80);
-    return { name: text(l.name, 60) || 'Item', detail: detail || null, qty: qty3(l.qty), unit,
-      unitPrice: money(l.unitPrice), lineTotal: money(l.lineTotal), discount: money(l.discount) };
-  });
+  const lines: DisplayLine[] = stage === 'thanks' ? [] : (Array.isArray(r.lines) ? r.lines : []).slice(-MAX_DISPLAY_LINES).map(sanitiseLine);
   const method: DisplayMethod | null = ['cash', 'mpesa', 'card', 'other'].includes(r.method as string) ? (r.method as DisplayMethod) : null;
   const table = (mode === 'restaurant' || mode === 'cafe') ? (text(r.table, 12) || null) : null;
   return {
@@ -180,6 +176,15 @@ export function sanitiseDisplayState(raw: unknown): DisplayState {
     paid: stage === 'sale' ? 0 : money(r.paid), change: stage === 'sale' ? 0 : money(r.change),
     method: stage === 'sale' ? null : method, table, since,
   };
+}
+
+/** One line of the sale, its whitelisted fields only (a line that is not an object shows as "Item"). */
+function sanitiseLine(x: unknown): DisplayLine {
+  const l = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
+  const unit = l.unit === 'L' || l.unit === 'kg' || l.unit === 'g' ? l.unit : null;
+  const detail = text(l.detail, 80);
+  return { name: text(l.name, 60) || 'Item', detail: detail || null, qty: qty3(l.qty), unit,
+    unitPrice: money(l.unitPrice), lineTotal: money(l.lineTotal), discount: money(l.discount) };
 }
 
 /** The stage the customer sees now: "Thank you" goes back to idle after THANKS_MS (no sale is left on the screen). */

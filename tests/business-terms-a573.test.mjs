@@ -67,8 +67,9 @@ const stubPlugin = {
 };
 const bundleDir = fs.mkdtempSync(path.join(DASH, 'node_modules', '.a573-'));
 const bundle = async (entry, out) => {
+  // preserveSymlinks: @zaptill/ui/CategoryPanel (shared components batch G) finds @zaptill/core through this app's node_modules, as Vite does.
   await require('esbuild').build({ entryPoints: [path.join(DASH, entry)], bundle: true, format: 'esm', platform: 'node',
-    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic',
+    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', preserveSymlinks: true,
     external: ['react', 'react-dom', 'react-router-dom', 'react/jsx-runtime'], plugins: [stubPlugin] });
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };

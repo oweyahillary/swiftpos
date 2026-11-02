@@ -4,7 +4,8 @@
  *
  * Owner, 2026-10-11: "the manager should be able to view items inside an order", with reprint and void / refund from
  * the same place, "on both online and desktop app". No screen showed an order's items: History and the Orders pages
- * listed only the bill. Pure; ONE file, copied to the till (shared + main) and the dashboard (check-shared-sync).
+ * listed only the bill. Pure; one module in packages/core (@zaptill/core/orderDetail), used by the desktop POS
+ * (renderer + main) and the dashboard.
  */
 
 export interface DetailLine {

@@ -5,7 +5,7 @@
  * Which sales a person may see is decided before this (the till's historyScope, the cloud's own-sales filter); this
  * only filters and orders what they already have. Used by the till's History and the web POS's Orders.
  *
- * ONE file: shared/historyView.ts, copied to the till and the web (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/historyView), used by the desktop POS and the web.
  */
 
 export type HistorySort = 'time' | 'method' | 'type' | 'cashier';

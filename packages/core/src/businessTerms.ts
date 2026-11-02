@@ -17,8 +17,8 @@
  * where that list lives. A business whose type is not known yet (still loading) reads the food words, as the dashboard
  * always did.
  *
- * Pure: no imports. Copied verbatim to the web dashboard, the till and (A575: analyticsTerms.ts builds on it) the cloud
- * (scripts/check-shared-sync.mjs).
+ * Pure: no imports. One module in packages/core (@zaptill/core/businessTerms), used by the web dashboard, the desktop
+ * POS and (A575: analyticsTerms.ts builds on it) the cloud.
  */
 
 export const BUSINESS_TYPE_KEYS = ['restaurant', 'cafe', 'retail', 'minimart', 'parking', 'petrol_station', 'other'] as const;
@@ -167,7 +167,7 @@ export function foodAreas(raw: string | null | undefined): FoodAreas {
 
 /**
  * The permission catalogue's words as a business of this type reads them on Settings › Roles and permissions.
- * shared/permissions.ts's labels and descriptions are frozen (migration 134 registers them word for word, and its test
+ * permissions.ts's labels and descriptions are frozen (migration 134 registers them word for word, and its test
  * reads them), so a shop's words are put in place at display time: only the entries that talk about a menu, a kitchen
  * or tables change; everything else is shown as the catalogue has it. Every type reads "POS", never "till" (A586).
  */
@@ -183,7 +183,7 @@ export function permissionWords(raw: string | null | undefined, key: string, lab
 }
 
 /**
- * A595 (docs/PERMISSIONS-AUDIT.md section 5.1): the words of each key that was split into parts (shared/permissions.ts
+ * A595 (docs/PERMISSIONS-AUDIT.md section 5.1): the words of each key that was split into parts (permissions.ts
  * SPLITS) — what the parent still guards on its own, the parts listed under it. Display only: the catalogue's own words
  * are frozen by migration 134.
  */
@@ -220,7 +220,7 @@ export function permissionGroupWords(raw: string | null | undefined, id: string,
 
 /**
  * A586 — owner, 2026-10-23: "ensure we use the word POS or point of sale instead of till". The product's own words say
- * POS; what is frozen in the old words (shared/permissions.ts's catalogue and built-in roles, registered word for word by
+ * POS; what is frozen in the old words (permissions.ts's catalogue and built-in roles, registered word for word by
  * migrations 134 and 142) or read back from the database is put right here, at display time. Safaricom's M-Pesa
  * "Buy Goods till number" is M-Pesa's own name and stays. Beside "web POS", a till reads "desktop POS"; a plural in a
  * sentence reads "points of sale"; a label ("Tills", "Tills and devices") reads "POS".

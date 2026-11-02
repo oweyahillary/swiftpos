@@ -12,7 +12,7 @@
  * receipt_pay_account (A450's keys, so a till on an older build keeps printing the line). The receipt prints
  * "Buy Goods: 123456" or "Paybill: 4098201, Account 1234" (mpesaReceiptNumber goes in A450's number field).
  *
- * Pure, no imports. Copies kept identical by scripts/check-shared-sync.mjs.
+ * Pure, no imports. One module in packages/core (@zaptill/core/mpesaReceive).
  */
 
 export type MpesaKind = 'buy_goods' | 'paybill';

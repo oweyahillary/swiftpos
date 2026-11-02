@@ -65,7 +65,7 @@ const FALLBACK_STATIONS = [
 import BranchCloseTab from './BranchCloseTab';
 import DayCloseTab from './DayCloseTab';
 import MenuWorkbench from './MenuWorkbench';
-import MethodDot from '../components/MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { methodColour } from '@zaptill/core/paymentColours';
 import ReportRangeBar from '../components/ReportRangeBar';
 import type { ReportRangeArg, ShiftSummary, ExpenseRow, BranchDay, BranchShiftState, BranchShiftRow, BranchShiftListRow } from '../lib/posApi';

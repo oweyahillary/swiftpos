@@ -9,7 +9,7 @@
  *   show_days = null (or every day) → shown every day (every product before 0.6.31).
  *   show_days = [2, 4]              → shown on Tuesday and Thursday. 0 = Sunday … 6 = Saturday (Date.getDay()).
  *
- * ONE file: shared/productDays.ts, copied to the till, the web and the cloud (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/productDays), used by the desktop POS, the web and the cloud.
  */
 
 export const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;

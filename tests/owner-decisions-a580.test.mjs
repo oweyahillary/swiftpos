@@ -54,8 +54,9 @@ const log = console.log;
 
 const bundleDir = fs.mkdtempSync(path.join(DASH, 'node_modules', '.a580-'));
 const bundle = (entry, out) => {
+  // preserveSymlinks: @zaptill/ui/CategoryPanel (shared components batch G) finds @zaptill/core through this app's node_modules, as Vite does.
   dreq('esbuild').buildSync({ entryPoints: [path.join(DASH, entry)], bundle: true, format: 'esm', platform: 'node', outfile: path.join(bundleDir, out),
-    logLevel: 'silent', jsx: 'automatic', external: ['react', 'react-dom'],
+    logLevel: 'silent', jsx: 'automatic', preserveSymlinks: true, external: ['react', 'react-dom'],
     define: { 'import.meta.env': JSON.stringify({ VITE_SUPABASE_URL: 'http://127.0.0.1:9', VITE_SUPABASE_ANON_KEY: 'test-only', VITE_API_URL: '' }) } });
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };

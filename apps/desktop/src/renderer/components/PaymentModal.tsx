@@ -1,4 +1,4 @@
-import MethodDot from './MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { methodColour, methodSolid, methodTint } from '@zaptill/core/paymentColours';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';

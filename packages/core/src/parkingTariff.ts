@@ -2,11 +2,8 @@
  * parkingTariff.ts — parking price calculation.
  *
  * ══════════════════════════════════════════════════════════════════════════════
- *  SHARED FILE. Byte-identical copies live at:
- *      apps/server/src/shared/parkingTariff.ts
- *      apps/desktop/src/shared/parkingTariff.ts
- *  scripts/check-shared-sync.mjs fails CI if they diverge. Edit one, copy to the
- *  other, run the golden vectors. Do not "fix" one side in place.
+ *  SHARED MODULE: packages/core (@zaptill/core/parkingTariff), used by the
+ *  cloud and the desktop POS. Change it in one place and run the golden vectors.
  * ══════════════════════════════════════════════════════════════════════════════
  *
  * WHY THIS FILE EXISTS AT ALL

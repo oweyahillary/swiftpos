@@ -7,11 +7,11 @@
  *
  * Pure (no DOM, no Node): the till parses offline with it, the web POS and the settings' test box with it, the cloud
  * cleans the stored settings and checks a weighed line's amount with it.
- * Copies (scripts/check-shared-sync.mjs keeps them identical): apps/server/src/lib, apps/dashboard/src/lib,
- * apps/desktop/src/shared (the till's sale screen) and apps/desktop/src/main (the till's receipt).
+ * One module in packages/core (@zaptill/core/scaleBarcode), used by the cloud, the web dashboard and the desktop POS (its
+ * sale screen, and main for the receipt).
  *
  * ── THE LABEL ────────────────────────────────────────────────────────────────────────────────────────────────────────
- * GS1 keeps EAN-13 prefixes 20–29 for numbers used inside one shop (shared/barcode.ts). ZapTill's own in-store codes use
+ * GS1 keeps EAN-13 prefixes 20–29 for numbers used inside one shop (barcode.ts). ZapTill's own in-store codes use
  * "20" (A571), so a code starting "20" is NEVER read as a scale label, whatever the settings say. Scales use 21–29:
  *
  *     prefix (2 digits, or the single "2")  +  item code  +  [value check digit]  +  value  +  EAN check digit
@@ -146,7 +146,7 @@ export function scaleSettingsOrDefault(raw: unknown): ScaleSettings {
 
 // ── Check digits ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** GS1 mod-10 check digit of a digit string without its check digit (same as shared/barcode.ts gs1CheckDigit). */
+/** GS1 mod-10 check digit of a digit string without its check digit (same as barcode.ts gs1CheckDigit). */
 export function eanCheckDigit(body: string): number {
   let sum = 0;
   for (let i = 0; i < body.length; i++) {

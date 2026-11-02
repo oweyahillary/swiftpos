@@ -8,8 +8,8 @@
  * comes to PIN change".
  *
  * ONE set of rules, run by the till (what it may record and how it shows) and the cloud (what it applies): which fields each
- * kind of change carries and how each is cleaned, and how a change compares with what the cloud holds. Pure; ONE file,
- * copied to the till (main) and the cloud (check-shared-sync).
+ * kind of change carries and how each is cleaned, and how a change compares with what the cloud holds. Pure; one module
+ * in packages/core (@zaptill/core/tillChanges), used by the desktop POS's main process and the cloud.
  */
 
 export type ChangeEntity = 'station' | 'category' | 'product' | 'staff' | 'staff_pin';

@@ -7,11 +7,10 @@
  * as **branch override → business branding → ZapTill default**. A branch may override only its colour, only its theme,
  * only its footer.
  *
- *  Byte-identical copies (scripts/check-shared-sync.mjs), each beside a copy of themes.ts:
- *      shared/branchBranding.ts                 (canonical)
- *      apps/server/src/lib/branchBranding.ts    (the cloud validates a write; /pos/init and /pos/changes)
- *      apps/desktop/src/shared/branchBranding.ts (the till resolves its own branch's look and receipt footer)
- *      apps/dashboard/src/lib/branchBranding.ts (Settings › Branding › Per branch; the web POS resolves its branch)
+ *  One module in packages/core (@zaptill/core/branchBranding), beside themes.ts, used by:
+ *      the cloud            (it validates a write; /pos/init and /pos/changes)
+ *      the desktop POS      (it resolves its own branch's look and receipt footer)
+ *      the web dashboard    (Settings › Branding › Per branch; the web POS resolves its branch)
  *
  *  Self-contained but for ./themes (the registry and the brand-colour rule — ONE rule for both levels).
  *

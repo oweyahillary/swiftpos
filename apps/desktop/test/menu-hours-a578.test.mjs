@@ -106,8 +106,9 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const bundleDir = fs.mkdtempSync(path.join(desktop, 'node_modules', '.a578-'));
 const bundle = (entry, out) => {
+  // preserveSymlinks: @zaptill/ui/CategoryPanel (shared components batch G) finds @zaptill/core through this app's node_modules, as Vite does.
   require('esbuild').buildSync({ entryPoints: [path.join(desktop, entry)], bundle: true, format: 'esm', platform: 'node',
-    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', external: ['react', 'react-dom'] });
+    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', preserveSymlinks: true, external: ['react', 'react-dom'] });
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };
 

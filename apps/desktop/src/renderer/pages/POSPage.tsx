@@ -16,7 +16,7 @@ import type { StationRouting } from '../lib/ticketLines';
 import type { ComboMap } from '../lib/ticketLines';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import VariantModal from '../components/VariantModal';
-import MethodDot from '../components/MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import PaymentModal from '../components/PaymentModal';
 import type { PaymentResult } from '../components/PaymentModal';
 import PrinterSettingsModal from '../components/PrinterSettingsModal';

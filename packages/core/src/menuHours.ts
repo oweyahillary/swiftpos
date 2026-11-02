@@ -14,7 +14,7 @@
  * 0 = Sunday … 6 = Saturday (Date.getDay(), as productDays / offers). A window's end is not included (11:00 is Lunch's).
  *
  * THE CLOCK. The till's own clock (offline too) and the browser's on the web POS — the machine's local time, as offers
- * (shared/offers.ts) and the business day (shared/businessDay.ts). The business day's cut-off (business_day_cutoff,
+ * (offers.ts) and the business day (businessDay.ts). The business day's cut-off (business_day_cutoff,
  * 00:00–06:00) decides which DAY a moment belongs to: with the day ending at 04:00, Saturday 01:30 is still Friday's
  * night, so "Fri 22:00–02:00" runs to 02:00 on Saturday morning and a Sunday-only menu does not open at Saturday-night
  * midnight. A window that ends before it starts runs past midnight and belongs to the day it STARTED (as an offer). With
@@ -37,9 +37,9 @@
  *
  * A stored value that cannot be read is treated as NO schedule — never hide a menu by mistake (as productDays).
  *
- * Pure (no React, no storage, no imports — Node runs it as is in the tests). Copied verbatim: shared/,
- * apps/desktop/src/shared/ (the till's sale screen), apps/dashboard/src/lib/ (the web POS and the Menus page),
- * apps/server/src/lib/ (the cloud checks what it stores) — scripts/check-shared-sync.mjs.
+ * Pure (no React, no storage, no imports — Node runs it as is in the tests). One module in packages/core
+ * (@zaptill/core/menuHours), used by the desktop POS (its sale screen), the web dashboard (the web POS and the Menus
+ * page) and the cloud (it checks what it stores).
  */
 
 export const MAX_MENU_WINDOWS = 6;
@@ -84,33 +84,43 @@ export function checkAvailability(raw: unknown): AvailabilityCheck {
   if (v === null) return yes(null);
   if (typeof v !== 'object' || Array.isArray(v)) return no('The hours must be days and times');
   const o = v as Record<string, unknown>;
-  let days: number[] | null = null;
-  if (o.days !== undefined && o.days !== null) {
-    if (!Array.isArray(o.days)) return no('The days must be a list of days');
-    const set = new Set<number>();
-    for (const d of o.days) {
-      const n = typeof d === 'string' && /^\d$/.test(d.trim()) ? Number(d) : d;
-      if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 6) return no('A day must be Sunday (0) to Saturday (6)');
-      set.add(n);
-    }
-    if (set.size === 0) return no('Choose at least one day');
-    days = set.size === 7 ? null : [...set].sort((a, b) => a - b);
-  }
-  const windows: MenuWindow[] = [];
-  if (o.windows !== undefined && o.windows !== null) {
-    if (!Array.isArray(o.windows)) return no('The times must be a list of from–to times');
-    if (o.windows.length > MAX_MENU_WINDOWS) return no(`At most ${MAX_MENU_WINDOWS} times a day`);
-    for (const w of o.windows) {
-      const start = cleanMenuTime((w as Record<string, unknown> | null)?.start);
-      const end = cleanMenuTime((w as Record<string, unknown> | null)?.end);
-      if (!start || !end) return no('Each time needs a from and a to, like 06:00 and 11:00');
-      if (start === end) return no(`${start} to ${end} is no time at all — the from and the to must differ`);
-      if (!windows.some((x) => x.start === start && x.end === end)) windows.push({ start, end });
-    }
-    windows.sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
-  }
+  const days = checkDays(o.days);
+  if (typeof days === 'string') return no(days);
+  const windows = checkWindows(o.windows);
+  if (typeof windows === 'string') return no(windows);
   if (days === null && windows.length === 0) return yes(null);
   return yes({ days, windows });
+}
+
+/** The days sent → 0–6 sorted and de-duplicated, null for every day (none sent, or all seven), or why not (a string). */
+function checkDays(raw: unknown): number[] | null | string {
+  if (raw === undefined || raw === null) return null;
+  if (!Array.isArray(raw)) return 'The days must be a list of days';
+  const set = new Set<number>();
+  for (const d of raw) {
+    const n = typeof d === 'string' && /^\d$/.test(d.trim()) ? Number(d) : d;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 6) return 'A day must be Sunday (0) to Saturday (6)';
+    set.add(n);
+  }
+  if (set.size === 0) return 'Choose at least one day';
+  return set.size === 7 ? null : [...set].sort((a, b) => a - b);
+}
+
+/** The times sent → at most six from–to windows, de-duplicated and sorted ([] for none), or why not (a string). */
+function checkWindows(raw: unknown): MenuWindow[] | string {
+  const windows: MenuWindow[] = [];
+  if (raw === undefined || raw === null) return windows;
+  if (!Array.isArray(raw)) return 'The times must be a list of from–to times';
+  if (raw.length > MAX_MENU_WINDOWS) return `At most ${MAX_MENU_WINDOWS} times a day`;
+  for (const w of raw) {
+    const start = cleanMenuTime((w as Record<string, unknown> | null)?.start);
+    const end = cleanMenuTime((w as Record<string, unknown> | null)?.end);
+    if (!start || !end) return 'Each time needs a from and a to, like 06:00 and 11:00';
+    if (start === end) return `${start} to ${end} is no time at all — the from and the to must differ`;
+    if (!windows.some((x) => x.start === start && x.end === end)) windows.push({ start, end });
+  }
+  windows.sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+  return windows;
 }
 
 /** The stored value as the POS reads it: a schedule, or null (always — also for anything unreadable). */
@@ -119,9 +129,12 @@ export function readAvailability(raw: unknown): MenuAvailability | null {
   return r.ok ? r.value : null;
 }
 
+/** The business day's cut-off in minutes after midnight: 0 (midnight) to 360 (06:00), whole minutes. */
+const clampCutoff = (cutoff: unknown): number => Math.max(0, Math.min(360, Math.round(Number(cutoff) || 0)));
+
 /** The business day a moment belongs to (0 = Sunday) and its minute within that business day (0 = the cut-off). */
 function businessClock(now: Date, cutoff: number): { day: number; minute: number } {
-  const c = Math.max(0, Math.min(360, Math.round(Number(cutoff) || 0)));
+  const c = clampCutoff(cutoff);
   const shifted = new Date(now.getTime() - c * 60_000);
   return { day: shifted.getDay(), minute: shifted.getHours() * 60 + shifted.getMinutes() };
 }
@@ -129,7 +142,7 @@ function businessClock(now: Date, cutoff: number): { day: number; minute: number
 /** Is a menu with this schedule open at `now` (local clock; `cutoff` = minutes after midnight the business day ends)? */
 export function isMenuOpenAt(av: MenuAvailability | null, now: Date, cutoff = 0): boolean {
   if (!av) return true;
-  const c = Math.max(0, Math.min(360, Math.round(Number(cutoff) || 0)));
+  const c = clampCutoff(cutoff);
   const { day, minute } = businessClock(now, c);
   const dayOk = (d: number) => !av.days || av.days.includes(d);
   if (av.windows.length === 0) return dayOk(day);
@@ -153,7 +166,7 @@ export function isMenuOpenAt(av: MenuAvailability | null, now: Date, cutoff = 0)
 export function nextMenuChange(avs: ReadonlyArray<MenuAvailability | null>, now: Date, cutoff = 0): Date | null {
   const scheduled = avs.filter((a): a is MenuAvailability => !!a);
   if (scheduled.length === 0) return null;
-  const c = Math.max(0, Math.min(360, Math.round(Number(cutoff) || 0)));
+  const c = clampCutoff(cutoff);
   const marks = new Set<number>([c]);
   for (const a of scheduled) for (const w of a.windows) { marks.add(minutesOf(w.start)); marks.add(minutesOf(w.end)); }
   const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -224,7 +237,7 @@ export interface MenuHoursView<M, C> {
 const isOn = (v: unknown): boolean => v === undefined || v === null ? true : v === true || v === 1 || v === '1' || v === 'true';
 
 /**
- * What the POS shows at `now`: the menus and categories to give the menu bar and the ☰ panel (shared/menuFilter.ts —
+ * What the POS shows at `now`: the menus and categories to give the menu bar and the ☰ panel (menuFilter.ts —
  * unchanged), which categories are asleep, the tabs' hints, and when to look again. `showAll` = a manager's "Show all"
  * for this session: everything shows, nothing is refused, the hints still say when each opens.
  */

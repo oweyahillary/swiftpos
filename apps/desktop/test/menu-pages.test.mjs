@@ -86,11 +86,16 @@ ok('Menu: the count line and the type counts still count every filtered item', (
 });
 
 // ── the pager ──
-const pager = read('src/renderer/components/Pager.tsx');
+// Shared components batch F: the pager is @zaptill/ui/Pager (packages/ui/src/Pager.tsx); the desktop's look — its class
+// names — stays in src/renderer/components/Pager.tsx. The pins read both.
+const look = read('src/renderer/components/Pager.tsx');
+const pager = read('../../packages/ui/src/Pager.tsx') + '\n' + look;
 ok('Pager: First / Prev / numbered window / Next / Last, current page in the theme (action-*), size in try/catch', () => {
   for (const id of ['pager-first', 'pager-prev', 'pager-page', 'pager-next', 'pager-last', 'pager-size', 'pager-range']) assert(pager.includes(`data-testid="${id}"`), id);
   assert(/pageWindow\(page, pages\)\.map/.test(pager), 'window');
-  assert(/slot === page \? 'bg-action-500\/10 text-action-400 font-semibold'/.test(pager), 'theme colour');
+  assert(/className=\{slot === page \? look\.pageOn : look\.page\}/.test(pager) && /pageOn: `\$\{BTN\} tabular-nums bg-action-500\/10 text-action-400 font-semibold`/.test(look), 'theme colour');
+  assert(/import SharedPager, \{ type PagerLook, type PagerProps \} from '@zaptill\/ui\/Pager';/.test(look) && /return <SharedPager \{\.\.\.props\} look=\{LOOK\} \/>;/.test(look), 'the shared pager, with the desktop look');
+  assert(!/rangeShort:|perPage:|pages:/.test(look), 'no phone-only parts on the desktop (its pager as before)');
   assert(!/green-|emerald-/.test(pager), 'no raw green');
   assert(pager.includes("from '@zaptill/core/paginate'"), 'shared helper');
   assert(/try \{ return cleanPageSize\(localStorage\.getItem\(key\)\); \} catch/.test(pager) && /try \{ localStorage\.setItem\(key, String\(c\)\); \} catch/.test(pager), 'storage guarded');

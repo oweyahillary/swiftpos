@@ -12,7 +12,7 @@
  * The setting (business default, branch override — the A387 pattern), key `payment_methods_enabled`: a JSON list of the
  * codes switched on. Absent (or unreadable) = the defaults.
  *
- * ONE file: shared/paymentCatalogue.ts, copied to the till, the web and the cloud (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/paymentCatalogue), used by the desktop POS, the web and the cloud.
  */
 
 export type MethodKind = 'cash' | 'mobile' | 'card' | 'bank' | 'account' | 'voucher' | 'room' | 'delivery';

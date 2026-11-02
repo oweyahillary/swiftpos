@@ -8,8 +8,8 @@
  * A manual discount still applies on top, capped as before on what is left after the offers.
  *
  * ONE engine for every surface — the till's cart, the web POS's cart and the cloud's check of a sale (which recomputes
- * the offers a sale claims on its own prices and never lets a sale claim more than this gives). Pure; ONE file, copied
- * to the till (shared + main), the dashboard and the cloud (check-shared-sync).
+ * the offers a sale claims on its own prices and never lets a sale claim more than this gives). Pure; one module in
+ * packages/core (@zaptill/core/offers), used by the desktop POS (renderer + main), the dashboard and the cloud.
  *
  * How a cart is priced (each unit of an item takes part in at most one item offer — no stacking on the same unit):
  *   1. custom meals   — a set of components ("any burger" + "any side" + "any soda") for one price; the most expensive
@@ -73,9 +73,9 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function cleanOffer(raw: any): { ok: true; offer: Offer } | { ok: false; error: string } {
   const r = raw ?? {};
   const kind = String(r.kind ?? '') as OfferKind;
-  if (!OFFER_KINDS.includes(kind)) return { ok: false, error: 'Choose what kind of offer this is.' };
+  if (!OFFER_KINDS.includes(kind)) return refuse('Choose what kind of offer this is.');
   const name = String(r.name ?? '').trim().slice(0, 80);
-  if (!name) return { ok: false, error: 'Give the offer a name the cashier and the receipt will show.' };
+  if (!name) return refuse('Give the offer a name the cashier and the receipt will show.');
   const value = round2(num(r.value));
   const applies_to = (['all', 'products', 'categories'].includes(r.applies_to) ? r.applies_to : 'all') as Offer['applies_to'];
   const product_ids = ids(r.product_ids);
@@ -103,28 +103,37 @@ export function cleanOffer(raw: any): { ok: true; offer: Offer } | { ok: false; 
     branch_ids: Array.isArray(r.branch_ids) && ids(r.branch_ids).length ? ids(r.branch_ids) : null,
     active: r.active !== false && r.active !== 0,
   };
-  if (start_date && end_date && end_date < start_date) return { ok: false, error: 'The offer ends before it starts.' };
-  if ((start_time && !end_time) || (!start_time && end_time)) return { ok: false, error: 'Give both a start and an end time, or neither.' };
-  if (start_time && start_time === end_time) return { ok: false, error: 'The start and end times are the same.' };
-  if (applies_to === 'products' && !product_ids.length && kind !== 'meal' && kind !== 'spend_get') return { ok: false, error: 'Choose the products this offer is for.' };
-  if (applies_to === 'categories' && !category_ids.length && kind !== 'meal' && kind !== 'spend_get') return { ok: false, error: 'Choose the categories this offer is for.' };
-  switch (kind) {
-    case 'percent_off': if (!(value > 0 && value <= 100)) return { ok: false, error: 'The % off must be between 1 and 100.' }; break;
-    case 'amount_off': if (!(value > 0)) return { ok: false, error: 'Enter the amount off each item.' }; break;
-    case 'special_price': if (!(value >= 0)) return { ok: false, error: 'Enter the special price.' }; break;
+  if (start_date && end_date && end_date < start_date) return refuse('The offer ends before it starts.');
+  if ((start_time && !end_time) || (!start_time && end_time)) return refuse('Give both a start and an end time, or neither.');
+  if (start_time && start_time === end_time) return refuse('The start and end times are the same.');
+  const forChosenItems = kind !== 'meal' && kind !== 'spend_get';   // a meal and a spend offer name no items
+  if (applies_to === 'products' && !product_ids.length && forChosenItems) return refuse('Choose the products this offer is for.');
+  if (applies_to === 'categories' && !category_ids.length && forChosenItems) return refuse('Choose the categories this offer is for.');
+  const kindError = offerKindError(offer);
+  return kindError ? refuse(kindError) : { ok: true, offer };
+}
+
+const refuse = (error: string): { ok: false; error: string } => ({ ok: false, error });
+
+/** What the offer's own kind still needs (its value, quantities, minimum spend or meal items), or null. */
+function offerKindError(offer: Offer): string | null {
+  const value = offer.value;
+  switch (offer.kind) {
+    case 'percent_off': return value > 0 && value <= 100 ? null : 'The % off must be between 1 and 100.';
+    case 'amount_off': return value > 0 ? null : 'Enter the amount off each item.';
+    case 'special_price': return value >= 0 ? null : 'Enter the special price.';
     case 'buy_get':
-      if (offer.buy_qty < 1 || offer.get_qty < 1) return { ok: false, error: 'Enter how many to buy and how many are free.' };
-      break;
+      return offer.buy_qty < 1 || offer.get_qty < 1 ? 'Enter how many to buy and how many are free.' : null;
     case 'spend_get':
-      if (!(offer.min_spend > 0)) return { ok: false, error: 'Enter how much the customer must spend.' };
-      if (!(value > 0) || (offer.spend_type === 'percent' && value > 100)) return { ok: false, error: 'Enter the reward (an amount, or 1–100 %).' };
-      break;
+      if (!(offer.min_spend > 0)) return 'Enter how much the customer must spend.';
+      if (!(value > 0) || (offer.spend_type === 'percent' && value > 100)) return 'Enter the reward (an amount, or 1–100 %).';
+      return null;
     case 'meal':
-      if (!meal_items.length) return { ok: false, error: 'Add the items that make up the meal.' };
-      if (!(value > 0)) return { ok: false, error: 'Enter the meal\'s price.' };
-      break;
+      if (!offer.meal_items.length) return 'Add the items that make up the meal.';
+      if (!(value > 0)) return 'Enter the meal\'s price.';
+      return null;
   }
-  return { ok: true, offer };
+  return null;
 }
 
 // ── When an offer runs ───────────────────────────────────────────────────────
@@ -174,94 +183,133 @@ export function applyOffers(lines: OfferLine[], offers: Offer[],
   opts: { at?: Date; branchId?: string | null; ignoreTiming?: boolean } = {}): OfferResult {
   const at = opts.at ?? new Date();
   const live = (offers ?? []).filter((o) => o && (opts.ignoreTiming ? o.active && (!o.branch_ids || !opts.branchId || o.branch_ids.includes(opts.branchId)) : offerRunsAt(o, at, opts.branchId ?? null)));
+  const units = cartUnits(lines);
+  const tally: Tally = { applied: new Map(), byLine: {} };
+  applyMeals(live, units, tally);
+  applyBuyGet(live, units, tally);
+  applyPerItem(live, units, tally);
+  applySpend(live, units, tally);
+  const list = [...tally.applied.values()].filter((a) => a.amount > 0);
+  return { total: round2(list.reduce((s, a) => s + a.amount, 0)), applied: list, byLine: tally.byLine };
+}
+
+/** The cart as units: a counted line is one unit per item; a weighed or measured line (2.5 kg, 30 litres) is one unit of
+ *  its whole amount (`weight`) — it takes % / amount / special price offers only. */
+function cartUnits(lines: OfferLine[]): Unit[] {
   const units: Unit[] = [];
   for (const l of lines ?? []) {
     const q = num(l.quantity), p = Math.max(0, num(l.unit_price));
     if (!(q > 0)) continue;
-    if (Number.isInteger(q)) for (let i = 0; i < q; i++) units.push({ key: l.key, product_id: l.product_id, category_id: l.category_id, price: p, weight: 1, taken: false });
-    // A weighed or measured line (2.5 kg, 30 litres) is one unit of its whole amount: % / amount / special price only.
-    else units.push({ key: l.key, product_id: l.product_id, category_id: l.category_id, price: p, weight: q, taken: false });
+    const unit = (weight: number): Unit => ({ key: l.key, product_id: l.product_id, category_id: l.category_id, price: p, weight, taken: false });
+    if (Number.isInteger(q)) for (let i = 0; i < q; i++) units.push(unit(1));
+    else units.push(unit(q));
   }
-  const whole = (u: Unit) => u.weight === 1;
-  const applied = new Map<string, AppliedOffer>();
-  const byLine: Record<string, number> = {};
-  const give = (o: Offer, amount: number, perUnit: Array<[Unit, number]>) => {
-    if (!(amount > 0)) return;
-    const a = applied.get(o.id) ?? { offer_id: o.id, name: o.name, amount: 0 };
-    a.amount = round2(a.amount + amount);
-    applied.set(o.id, a);
-    for (const [u, v] of perUnit) byLine[u.key] = round2((byLine[u.key] ?? 0) + v);
-  };
-  const free = () => units.filter((u) => !u.taken);
-  const byPriceDesc = (a: Unit, b: Unit) => b.price - a.price;
+  return units;
+}
 
-  // 1. Custom meals — repeat while a full meal can be made from what is not yet in an offer, and it saves money.
+/** What the offers have taken off so far: per offer (in the order first given) and per line. */
+interface Tally { applied: Map<string, AppliedOffer>; byLine: Record<string, number> }
+
+/** Records `amount` off for offer `o`, and what each unit's line got of it. */
+function give(tally: Tally, o: Offer, amount: number, perUnit: Array<[Unit, number]>): void {
+  if (!(amount > 0)) return;
+  const a = tally.applied.get(o.id) ?? { offer_id: o.id, name: o.name, amount: 0 };
+  a.amount = round2(a.amount + amount);
+  tally.applied.set(o.id, a);
+  for (const [u, v] of perUnit) tally.byLine[u.key] = round2((tally.byLine[u.key] ?? 0) + v);
+}
+
+const whole = (u: Unit) => u.weight === 1;
+const free = (units: Unit[]) => units.filter((u) => !u.taken);
+const byPriceDesc = (a: Unit, b: Unit) => b.price - a.price;
+const priceSum = (units: Unit[]) => units.reduce((s, u) => s + u.price, 0);
+
+/** 1. Custom meals — repeat while a full meal can be made from what is not yet in an offer, and it saves money. */
+function applyMeals(live: Offer[], units: Unit[], tally: Tally): void {
   for (const o of live.filter((x) => x.kind === 'meal')) {
     for (let guard = 0; guard < 100; guard++) {
-      const picked: Unit[] = [];
-      let complete = true;
-      for (const part of o.meal_items) {
-        const pool = free().filter((u) => whole(u) && !picked.includes(u) && inPart(part, u)).sort(byPriceDesc);
-        if (pool.length < part.qty) { complete = false; break; }
-        picked.push(...pool.slice(0, part.qty));
-      }
-      if (!complete) break;
-      const full = round2(picked.reduce((s, u) => s + u.price, 0));
+      const picked = pickMeal(o, units);
+      if (!picked) break;
+      const full = round2(priceSum(picked));
       const saving = round2(full - o.value);
       if (!(saving > 0)) break;
       picked.forEach((u) => { u.taken = true; });
-      // Spread the saving over the meal's items in proportion to their prices (the last takes the rounding).
-      let left = saving;
-      const parts: Array<[Unit, number]> = picked.map((u, i) => {
-        const v = i === picked.length - 1 ? left : round2(saving * (u.price / full));
-        left = round2(left - v);
-        return [u, v];
-      });
-      give(o, saving, parts);
+      give(tally, o, saving, spreadSaving(picked, saving, full));
     }
   }
+}
 
-  // 2. Buy X get Y free.
+/** The units for one meal — the most expensive free whole units of each part — or null when a part cannot be filled. */
+function pickMeal(o: Offer, units: Unit[]): Unit[] | null {
+  const picked: Unit[] = [];
+  for (const part of o.meal_items) {
+    const pool = free(units).filter((u) => whole(u) && !picked.includes(u) && inPart(part, u)).sort(byPriceDesc);
+    if (pool.length < part.qty) return null;
+    picked.push(...pool.slice(0, part.qty));
+  }
+  return picked;
+}
+
+/** A meal's saving spread over its items in proportion to their prices (the last takes the rounding). */
+function spreadSaving(picked: Unit[], saving: number, full: number): Array<[Unit, number]> {
+  let left = saving;
+  return picked.map((u, i) => {
+    const v = i === picked.length - 1 ? left : round2(saving * (u.price / full));
+    left = round2(left - v);
+    return [u, v];
+  });
+}
+
+/** 2. Buy X get Y free: of the same items (the cheapest of each group free), or of a named item that is in the cart. */
+function applyBuyGet(live: Offer[], units: Unit[], tally: Tally): void {
+  const giveFree = (o: Offer, gifts: Unit[]) => give(tally, o, round2(priceSum(gifts)), gifts.map((u) => [u, u.price] as [Unit, number]));
   for (const o of live.filter((x) => x.kind === 'buy_get' && x.buy_qty > 0 && x.get_qty > 0)) {
     if (!o.get_product_id) {
-      const pool = free().filter((u) => whole(u) && matches(o, u)).sort(byPriceDesc);
+      const pool = free(units).filter((u) => whole(u) && matches(o, u)).sort(byPriceDesc);
       const size = o.buy_qty + o.get_qty;
       for (let i = 0; i + size <= pool.length; i += size) {
         const group = pool.slice(i, i + size);
         group.forEach((u) => { u.taken = true; });
-        const gifts = group.slice(o.buy_qty);   // the cheapest of the group
-        give(o, round2(gifts.reduce((s, u) => s + u.price, 0)), gifts.map((u) => [u, u.price] as [Unit, number]));
+        giveFree(o, group.slice(o.buy_qty));   // the cheapest of the group
       }
-    } else {
-      const gifts = free().filter((u) => whole(u) && u.product_id === o.get_product_id).sort((a, b) => a.price - b.price);
-      const buys = free().filter((u) => whole(u) && matches(o, u) && u.product_id !== o.get_product_id).sort(byPriceDesc);
-      const groups = Math.min(Math.floor(buys.length / o.buy_qty), Math.floor(gifts.length / o.get_qty));
-      if (groups > 0) {
-        buys.slice(0, groups * o.buy_qty).forEach((u) => { u.taken = true; });
-        const given = gifts.slice(0, groups * o.get_qty);
-        given.forEach((u) => { u.taken = true; });
-        give(o, round2(given.reduce((s, u) => s + u.price, 0)), given.map((u) => [u, u.price] as [Unit, number]));
-      }
+      continue;
+    }
+    const gifts = free(units).filter((u) => whole(u) && u.product_id === o.get_product_id).sort((a, b) => a.price - b.price);
+    const buys = free(units).filter((u) => whole(u) && matches(o, u) && u.product_id !== o.get_product_id).sort(byPriceDesc);
+    const groups = Math.min(Math.floor(buys.length / o.buy_qty), Math.floor(gifts.length / o.get_qty));
+    if (groups > 0) {
+      buys.slice(0, groups * o.buy_qty).forEach((u) => { u.taken = true; });
+      const given = gifts.slice(0, groups * o.get_qty);
+      given.forEach((u) => { u.taken = true; });
+      giveFree(o, given);
     }
   }
+}
 
-  // 3. Per item: each unit not yet in an offer takes the best % / amount / special price that applies to it.
+/** 3. Per item: each unit not yet in an offer takes the best % / amount / special price that applies to it. */
+function applyPerItem(live: Offer[], units: Unit[], tally: Tally): void {
   const perItem = live.filter((x) => x.kind === 'percent_off' || x.kind === 'amount_off' || x.kind === 'special_price');
-  for (const u of free()) {
+  for (const u of free(units)) {
     let best: { o: Offer; off: number } | null = null;
     for (const o of perItem) {
       if (!matches(o, u)) continue;
-      const each = o.kind === 'percent_off' ? u.price * Math.min(o.value, 100) / 100
-        : o.kind === 'amount_off' ? Math.min(o.value, u.price)
-        : Math.max(0, u.price - o.value);
-      const off = round2(each * u.weight);
+      const off = round2(itemOffEach(o, u.price) * u.weight);
       if (off > 0 && (!best || off > best.off)) best = { o, off };
     }
-    if (best) { u.taken = true; give(best.o, best.off, [[u, best.off]]); }
+    if (best) { u.taken = true; give(tally, best.o, best.off, [[u, best.off]]); }
   }
+}
 
-  // 4. Spend over X: the best single reward on what is left of the bill.
-  const itemOff = round2([...applied.values()].reduce((s, a) => s + a.amount, 0));
+/** What a per-item offer takes off one unit at `price`. */
+function itemOffEach(o: Offer, price: number): number {
+  if (o.kind === 'percent_off') return price * Math.min(o.value, 100) / 100;
+  if (o.kind === 'amount_off') return Math.min(o.value, price);
+  return Math.max(0, price - o.value);
+}
+
+/** 4. Spend over X: the best single reward on what is left of the bill after the item offers. */
+function applySpend(live: Offer[], units: Unit[], tally: Tally): void {
+  const itemOff = round2([...tally.applied.values()].reduce((s, a) => s + a.amount, 0));
   const billLeft = round2(units.reduce((s, u) => s + u.price * u.weight, 0) - itemOff);
   let bestSpend: { o: Offer; off: number } | null = null;
   for (const o of live.filter((x) => x.kind === 'spend_get')) {
@@ -269,10 +317,7 @@ export function applyOffers(lines: OfferLine[], offers: Offer[],
     const off = round2(Math.min(billLeft, o.spend_type === 'percent' ? billLeft * Math.min(o.value, 100) / 100 : o.value));
     if (off > 0 && (!bestSpend || off > bestSpend.off)) bestSpend = { o, off };
   }
-  if (bestSpend) give(bestSpend.o, bestSpend.off, []);
-
-  const list = [...applied.values()].filter((a) => a.amount > 0);
-  return { total: round2(list.reduce((s, a) => s + a.amount, 0)), applied: list, byLine };
+  if (bestSpend) give(tally, bestSpend.o, bestSpend.off, []);
 }
 
 // ── Words for the screens ────────────────────────────────────────────────────

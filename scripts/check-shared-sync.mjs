@@ -116,10 +116,45 @@ const packaged = [
   ...(fs.existsSync(CORE_DIR) ? fs.readdirSync(CORE_DIR).filter((f) => f.endsWith('.ts')).map((mod) => ({ mod, pkg: 'core' })) : []),
   ...(fs.existsSync(UI_DIR) ? fs.readdirSync(UI_DIR).filter((f) => /\.tsx?$/.test(f)).map((mod) => ({ mod, pkg: 'ui' })) : []),
 ];
+// Batch F (2026-11-01): a screen piece lived in an app's components/ or pages/ folders, not only lib/ — so for
+// packages/ui the whole of each React app's source is searched by file name (MethodDot.tsx anywhere under the web's or
+// the desktop renderer's src is a copy).
+const UI_COPY_ROOTS = ['apps/dashboard/src', 'apps/desktop/src/renderer', 'apps/admin/src'];
+const findByName = (dir, name, out = []) => {
+  const abs = path.join(ROOT, dir);
+  if (!fs.existsSync(abs)) return out;
+  for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name === 'dist') continue;
+    const rel = `${dir}/${e.name}`;
+    if (e.isDirectory()) findByName(rel, name, out); else if (e.name === name) out.push(rel);
+  }
+  return out;
+};
+// Batch F: an app's LOOK for a shared piece keeps the piece's file name (its importers are unchanged): the class names
+// only, which that app's Tailwind build must find in its own src. It holds only while it stays a look: it imports the
+// piece from '@zaptill/ui/<name>', draws nothing of its own (no lowercase JSX tag, no React import) and is listed here.
+// A copy of the piece pasted over it draws <nav>/<button> and fails.
+const LOOK_WRAPPERS = {
+  'apps/dashboard/src/components/Pager.tsx': 'Pager.tsx',
+  'apps/desktop/src/renderer/components/Pager.tsx': 'Pager.tsx',
+  // Batch G: the category panel, the menu bar, the ☰, the chip and Later — each app's paint, bound with withLook.
+  'apps/dashboard/src/pages/pos/cashier/CategoryPanel.tsx': 'CategoryPanel.tsx',
+  'apps/desktop/src/renderer/components/CategoryPanel.tsx': 'CategoryPanel.tsx',
+};
+const isLookWrapper = (rel, src, mod) => {
+  if (LOOK_WRAPPERS[rel] !== mod) return false;
+  const name = mod.replace(/\.tsx?$/, '');
+  return new RegExp(`^import \\w+, \\{[^}]*\\} from '@zaptill/ui/${name}';$`, 'm').test(src)
+    && !/<[a-z]/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')) && !/from 'react'/.test(src);
+};
 let guarded = 0;
 for (const { mod, pkg } of packaged) {
-  const present = COPY_DIRS.map((d) => `${d}/${mod}`).filter((c) => fs.existsSync(path.join(ROOT, c)));
-  const different = present.filter((c) => isDifferentModule(c, text(c), text(`packages/${pkg}/src/${mod}`)));
+  const inDirs = COPY_DIRS.map((d) => `${d}/${mod}`).filter((c) => fs.existsSync(path.join(ROOT, c)));
+  const present = pkg === 'ui'
+    ? [...new Set([...inDirs, ...UI_COPY_ROOTS.flatMap((d) => findByName(d, mod))])]
+    : inDirs;
+  const different = present.filter((c) => isDifferentModule(c, text(c), text(`packages/${pkg}/src/${mod}`))
+    || (pkg === 'ui' && isLookWrapper(c, text(c), mod)));
   const regrown = present.filter((c) => !different.includes(c));
   const listed = SHARED.some((e) => e.name === mod);
   guarded++;
@@ -129,7 +164,7 @@ for (const { mod, pkg } of packaged) {
     if (listed) console.error(`  remove its entry from SHARED in scripts/check-shared-sync.mjs`);
     problems++;
   } else {
-    console.log(`  ok   ${mod.padEnd(24)} packages/${pkg} only (no copies)${different.length ? ` — ${different.join(', ')} is a different module (DIFFERENT_MODULE)` : ''}`);
+    console.log(`  ok   ${mod.padEnd(24)} packages/${pkg} only (no copies)${different.length ? ` — ${different.join(', ')} is ${pkg === 'ui' ? 'an app look (LOOK_WRAPPERS)' : 'a different module (DIFFERENT_MODULE)'}` : ''}`);
   }
 }
 

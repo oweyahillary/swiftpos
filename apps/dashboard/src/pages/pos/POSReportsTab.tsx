@@ -6,7 +6,7 @@
  * reports this screen shows; the drawer offers it to anyone holding any of them, and nothing is fetched without its key.
  */
 
-import MethodDot from '../../components/MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { methodColour } from '@zaptill/core/paymentColours';
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';

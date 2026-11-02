@@ -9,7 +9,7 @@
  * that method's expected total instead — the M-Pesa statement shows the money going out. An expense recorded before
  * this (no method) was cash, as every expense was.
  *
- * ONE file: shared/expenseMethod.ts, copied to the till, the web and the cloud (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/expenseMethod), used by the desktop POS, the web and the cloud.
  */
 
 /**

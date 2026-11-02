@@ -10,7 +10,7 @@
  *   hide      Hide when out of stock: the item is not on the menu while its stock at the branch is 0 or less; it comes
  *             back when stock comes in. It cannot be sold either (a held order that holds it is refused at Charge).
  *
- * Stored as two POS switches (feature_flags 'stock_zero_sold_out' and 'stock_zero_hide', shared/posFeatures.ts), so it
+ * Stored as two POS switches (feature_flags 'stock_zero_sold_out' and 'stock_zero_hide', posFeatures.ts), so it
  * reaches the tills, the branch server and the web POS the way every POS switch does — no migration. 'stock_zero_hide'
  * wins when both are on; neither = sell.
  *
@@ -35,7 +35,7 @@
 
 export type OutOfStockMode = 'sell' | 'sold_out' | 'hide';
 
-/** The two switches that carry the choice (feature_flags keys; shared/posFeatures.ts lists them). */
+/** The two switches that carry the choice (feature_flags keys; posFeatures.ts lists them). */
 export const STOCK_ZERO_SOLD_OUT_KEY = 'stock_zero_sold_out';
 export const STOCK_ZERO_HIDE_KEY = 'stock_zero_hide';
 

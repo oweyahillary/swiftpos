@@ -8,8 +8,8 @@
  * flashes; the slideshow cross-fades slowly and not at all for "reduce motion". The words follow the business type
  * (displayWords). "POS", never "till" — the M-Pesa "Till number" is Safaricom's own name for it.
  *
- * Pure view: no bridge, no fetch. Copies kept identical by scripts/check-shared-sync.mjs: the desktop's renderer
- * (src/shared/) and the web dashboard (src/lib/), each beside its customerScreen.ts and themes.ts.
+ * Pure view: no bridge, no fetch. One component in packages/ui (@zaptill/ui), used by the desktop POS's renderer and
+ * the web dashboard; its rules come from @zaptill/core/customerScreen and @zaptill/core/themes.
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { displayWords, lineQuantityText, shownStage, THANKS_MS, type DisplayState, type DisplayContent } from '@zaptill/core/customerScreen';

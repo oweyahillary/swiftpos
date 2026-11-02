@@ -1,6 +1,6 @@
 /**
- * forecourt.ts — A588: the petrol POS's pumps screen, worked out. Pure: no imports. Copied verbatim to the till
- * (apps/desktop/src/shared) and the web POS (apps/dashboard/src/lib) — scripts/check-shared-sync.mjs.
+ * forecourt.ts — A588: the petrol POS's pumps screen, worked out. Pure: no imports. One module in packages/core
+ * (@zaptill/core/forecourt), used by the desktop POS and the web POS.
  *
  * Owner, 2026-10-24: "FIX the petrol pos shop item, make it feel petrol-like, you can add gauges".
  *

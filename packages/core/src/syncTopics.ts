@@ -27,7 +27,7 @@
  *
  * This file is the ONE classification for the TypeScript side; public.sync_setting_topic (migration 151) is its SQL
  * mirror, and scripts/test-migration-151.mjs runs both on the same keys. To move a setting: change both, run that test.
- * Copied verbatim: shared/, apps/server/src/lib/, apps/desktop/src/main/ (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/syncTopics), used by the cloud and the desktop POS's main process.
  */
 
 export const SYNC_TOPICS = ['menu', 'staff', 'money', 'look', 'setup', 'stock'] as const;

@@ -279,9 +279,12 @@ try {
   ok('A554: a pin is never stored (only the menu) and a stored one (an older build) is not honoured',
     !/pinned/.test(stored) && M.parsePanelPrefs(stored).menu === 'drinks' && M.parsePanelPrefs('{"pinned":true,"menu":"tea"}').pinned === false, stored);
   ok('A554: the panel starts collapsed at every start — pinned or not', M.panelStartsOpen() === false);
+  // Shared components batch G: both POS's panel hook is @zaptill/ui/CategoryPanel's useCategoryPanel; each app's
+  // CategoryPanel.tsx re-exports it.
   ok('…the till and the web POS both open it collapsed (the hook takes no stored state for it)',
-    /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/.test(src('renderer/components/CategoryPanel.tsx'))
-    && /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/.test(fs.readFileSync(path.join(desktop, '..', 'dashboard', 'src', 'pages', 'pos', 'cashier', 'CategoryPanel.tsx'), 'utf8')));
+    /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/.test(fs.readFileSync(path.join(desktop, '..', '..', 'packages', 'ui', 'src', 'CategoryPanel.tsx'), 'utf8'))
+    && [src('renderer/components/CategoryPanel.tsx'), fs.readFileSync(path.join(desktop, '..', 'dashboard', 'src', 'pages', 'pos', 'cashier', 'CategoryPanel.tsx'), 'utf8')]
+      .every((s) => /^export \{ useCategoryPanel, type CategoryPanelState \} from '@zaptill\/ui\/CategoryPanel';$/m.test(s)));
   ok('…a pin still keeps it open after a pick during the session', M.panelOpenAfterPick({ pinned: true, menu: 'all' }) === true && M.panelOpenAfterPick({ pinned: false, menu: 'all' }) === false);
 } finally {
   console.error = realError;

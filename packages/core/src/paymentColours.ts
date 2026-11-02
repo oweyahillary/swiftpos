@@ -1,11 +1,8 @@
 /**
  * paymentColours.ts — one fixed colour per payment method (A344, 2026-09-27).
  *
- *  Byte-identical copies live at:
- *      shared/paymentColours.ts                   (canonical)
- *      apps/desktop/src/shared/paymentColours.ts  (the till)
- *      apps/dashboard/src/lib/paymentColours.ts   (the web)
- *  scripts/check-shared-sync.mjs fails CI if they diverge. Self-contained on purpose (no imports).
+ *  One module in packages/core (@zaptill/core/paymentColours), used by the desktop POS and the web.
+ *  Self-contained on purpose (no imports).
  *
  *  Owner, 2026-09-27: "we can make the payment method color full each with a color" — on the payment buttons AND the
  *  method labels in orders, the shift panel / Z-report and reports.

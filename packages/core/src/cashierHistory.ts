@@ -12,8 +12,8 @@
  * (the other legs, and the total, are not shown — the amount shown is what was paid by the allowed methods). A manager
  * and the owner see every sale, whole. Applied by the cloud (GET /api/orders — the web POS) and the till (its History).
  *
- * ONE file: shared/cashierHistory.ts, copied to the cloud, the till (main + renderer) and the web
- * (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/cashierHistory), used by the cloud, the desktop POS (main + renderer) and
+ * the web.
  */
 
 export const CASHIER_HISTORY_METHODS_KEY = 'cashier_history_methods';

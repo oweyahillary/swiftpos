@@ -11,9 +11,12 @@ features on the branch. Printing (`shared/printing`), the desktop main process's
 stay where they are.
 
 Status: **steps 1 and 2 done and committed on the branch (37ffe35, d639d40; `dev` merged in 859329a); batch E
-(section 8d) done, not committed — the last copies moved: 42 modules in `packages/core`, and step 3 started with
-`packages/ui` (3 pieces). No copy paths left (`SHARED` is empty). Not merged. Merging needs the one Render change in
-section 4 first.**
+(section 8d) committed (51d83a4) — the last copies moved: 42 modules in `packages/core`, and step 3 started with
+`packages/ui`. Batch F (section 8e) done, not committed: `MethodDot` and `Pager` moved to `packages/ui` (5 pieces);
+`WeightModal`, `NoteModal` and `KitchenVoidModal` left as they are, with the reasons. Batch G (section 8g) done, not
+committed: the category panel, menu bar, ☰, chip and Later button moved (6 pieces); the forecourt, the fuel keypad and
+the product tile left, with the reasons; the desktop main chunk +611 bytes, for the owner to accept or undo. No copy
+paths left (`SHARED` is empty). Not merged. Merging needs the one Render change in section 4 first.**
 
 ---
 
@@ -135,15 +138,15 @@ POS CSS variables (`--pos-*`, `--act-strong`) work in both apps without Tailwind
 
 | Piece | Desktop | Web | Size (D / W lines) | Changed lines | Notes |
 |---|---|---|---:|---:|---|
-| Payment-method dot | `components/MethodDot.tsx` | `components/MethodDot.tsx` | 9 / 9 | 2 | near-identical — the first UI pilot |
-| Weighed item (scale) modal | `components/WeightModal.tsx` | `pages/pos/WeightModal.tsx` | 88 / 88 | 68 | same logic (`scaleBarcode`), Tailwind vs inline |
-| List pager | `components/Pager.tsx` | `components/Pager.tsx` | 73 / 78 | 53 | used by manager lists too |
-| Note modal | `components/NoteModal.tsx` | `pages/pos/NoteModal.tsx` | 74 / 66 | 66 | uses `orderNotes` |
-| Kitchen void modal | `components/KitchenVoidModal.tsx` | `pages/pos/KitchenVoidModal.tsx` | 126 / 106 | 158 | |
-| Category side panel + menu bar (A537) | `components/CategoryPanel.tsx` | `pages/pos/cashier/CategoryPanel.tsx` | 257 / 271 | 200 | uses `menuFilter`/`menuHours`; the menu bar lives in both |
-| Forecourt: pumps / grades / gauges (A588) | `components/PumpsView.tsx` (`GradeGauge`, `Dispenser`), `POSPage.tsx` `ForecourtTabs` | `pages/pos/cashier/Forecourt.tsx` (`FuelStrip`, `PumpGrade`), `CashierScreen.tsx` | 306 / 79 | 361 | desktop has dispensers + gauges; web has strips + tank gauges |
-| Fuel keypad (KES / litres, quick amounts) | inline in `pages/POSPage.tsx` (fuel entry modal, ~l. 2343) | inline in `pages/pos/CashierScreen.tsx` / `PetrolPOS.tsx` presets | — | — | extract on each side first, then share |
-| Product tile | `POSPage.tsx` `ProductTile` (memo) | inline in `CashierScreen.tsx` | — | — | extract web side first |
+| Payment-method dot | `components/MethodDot.tsx` | `components/MethodDot.tsx` | 9 / 9 | 2 | near-identical — the first UI pilot. **Moved (8e): `@zaptill/ui/MethodDot`** |
+| Weighed item (scale) modal | `components/WeightModal.tsx` | `pages/pos/WeightModal.tsx` | 88 / 88 | 68 | same logic (`scaleBarcode`), Tailwind vs inline. **Left (8e)** |
+| List pager | `components/Pager.tsx` | `components/Pager.tsx` | 73 / 78 | 53 | used by manager lists too. **Moved (8e): `@zaptill/ui/Pager`, each app's look in its own `components/Pager.tsx`** |
+| Note modal | `components/NoteModal.tsx` | `pages/pos/NoteModal.tsx` | 74 / 66 | 66 | uses `orderNotes`. **Left (8e)** |
+| Kitchen void modal | `components/KitchenVoidModal.tsx` | `pages/pos/KitchenVoidModal.tsx` | 126 / 106 | 158 | **Left (8e): different behaviour** |
+| Category side panel + menu bar (A537) | `components/CategoryPanel.tsx` | `pages/pos/cashier/CategoryPanel.tsx` | 257 / 271 | 200 | uses `menuFilter`/`menuHours`; the menu bar lives in both. **Moved (8g): `@zaptill/ui/CategoryPanel`, each app's look in its own `CategoryPanel.tsx`** |
+| Forecourt: pumps / grades / gauges (A588) | `components/PumpsView.tsx` (`GradeGauge`, `Dispenser`), `POSPage.tsx` `ForecourtTabs` | `pages/pos/cashier/Forecourt.tsx` (`FuelStrip`, `PumpGrade`), `CashierScreen.tsx` | 306 / 79 | 361 | desktop has dispensers + gauges; web has strips + tank gauges. **Left (8g): different pieces** |
+| Fuel keypad (KES / litres, quick amounts) | in `components/PumpsView.tsx` (since A588) | inline in `pages/pos/CashierScreen.tsx` (two number fields, no keypad) / `PetrolPOS.tsx` presets | — | — | **Left (8g): the web has no keypad; different behaviour** |
+| Product tile | `POSPage.tsx` `ProductTile` (memo) | inline in `CashierScreen.tsx` | — | — | extract web side first. **Left (8g): both in A619-changed files; the badges' wording differs** |
 | Cart lines | inline in `POSPage.tsx` | inline in `CashierScreen.tsx` (`cashier/useCart.ts` logic) | — | — | extract both sides first |
 | Payment modal | `components/PaymentModal.tsx` | `pages/pos/PaymentModal.tsx` (+ split/discount/loyalty/M-Pesa panels) | 446 / 1038 | 1368 | large; only shared pieces (method buttons, tender keypad), late |
 | M-Pesa panel | `components/MpesaPanel.tsx` | `pages/pos/MpesaStkPanel.tsx` | 111 / 331 | 418 | different flows (till vs STK push) |
@@ -604,6 +607,295 @@ How the package is wired:
 - **From this batch:** `till-scope-enforce-a545` scanned `apps/desktop/src/shared` for the POS's own writes, and the
   folder is gone. It and `desktop-writes-allowed`, which skipped the missing folder silently, now scan
   `packages/core/src` and `packages/ui/src` (`.ts` and `.tsx`).
+
+## 8e. Batch F — step 3 continues (2026-11-01, not committed)
+
+Done overnight on the owner's instruction, on top of batch E (51d83a4). The next five pieces in step 3's order were
+looked at: `MethodDot`, `WeightModal`, `Pager`, `NoteModal`, `KitchenVoidModal`. The rule for each: the shared piece
+renders exactly what each app renders today, or the pair is left. **Two moved, three left.** `packages/ui` now holds
+**5 pieces** (plus `numberInputs`).
+
+**Moved:**
+- **`MethodDot`** — the two copies were byte-identical (inline styles only, no class names). One `git mv` from the
+  dashboard (R100), the desktop copy deleted. 11 app files import `'@zaptill/ui/MethodDot'` (8 desktop, 3 web).
+- **`Pager`** (and `usePageSize`) — the JavaScript was the same in both; the copies differed in class names only, plus
+  the web's phone layout (the short range `51–100 of 1,234`, "Per page" in a span that is `sr-only` on a phone, the
+  numbered pages in a span hidden below `sm`). `packages/ui/src/Pager.tsx` draws the one structure and takes a
+  **`look`**: every class name, and the web's three phone-only parts as optional fields (left out, the node is not
+  drawn, which is the desktop's pager as before). Each app's `components/Pager.tsx` is now its look and a one-line
+  wrapper (`<SharedPager {...props} look={LOOK} />`) that also re-exports `usePageSize`, so the **27 importers did not
+  change**.
+
+How the class names are handled (new in this batch — batch E's pieces had no Tailwind classes):
+- Tailwind builds each app's stylesheet from that app's `src/**` only (`tailwind.config.js` `content`). The shared
+  `Pager.tsx` holds **no class names at all**; they stay in each app's own `components/Pager.tsx`, where its build finds
+  them. Neither `content` list changed, and both stylesheets are byte-identical.
+- The web's short range text comes with its look (`rangeShort: { className, text: rangeShort }`), not from an import in
+  the shared file. A first version imported `rangeShort` in `Pager.tsx`: the desktop's main chunk, which holds the page
+  maths, then exported one more name for the lazy `ManagerPage` chunk (+9 bytes). Passing it through the look keeps
+  the desktop from ever referencing it; the main chunk is the same size as before.
+
+**Left as they are, and why:**
+- **`WeightModal`** — the keypad logic (`typeKey`, the keyboard handler) is the same, but the two differ in more than
+  style: the amount is formatted with the device's locale on the desktop (`toLocaleString(undefined, …)`) and with
+  `'en-KE'` on the web, so on a desktop whose Windows locale is not English the text differs; and the markup differs in
+  its elements (desktop `h3` / `p` in a wrapper `div`, web two bare `div`s; desktop `p` for the grams line, web `div`),
+  not only in classes. One component would need a look that switches element types — two markups in one file, nothing
+  shared. Next step if wanted: move the pure `typeKey` (identical, exported in both) to `packages/core`, leave the views.
+- **`NoteModal`** — the same element differences (`h3` / `p` vs `div`), and the order note's placeholder text differs
+  ("Customer will collect at 1pm" on the desktop, "Collect at 1pm" on the web): a visible difference, not style. To
+  share it, the owner first decides one wording and one markup (a visible change, needs the before/after screenshots
+  of step 3), then it moves.
+- **`KitchenVoidModal`** — **different behaviour**: the desktop modal calls `posApi.kitchen.void` itself, asks
+  `posApi.shift.canConfirm()` whether the signed-in person is a manager, takes the till's `KitchenLinePayload` lines
+  and closes only from its ✕; the web modal gets `signedInManager` and an `onSubmit` from the cashier screen, takes
+  `{ order_item_id, name, qty, amount }` lines, closes on a click outside, has a Cancel button and no spinner, and
+  formats money with the device's locale (desktop `'en-KE'`). Merging would change one app or the other.
+
+**`check-shared-sync.mjs`:**
+- For `packages/ui` pieces the "no copy grows back" search now covers the whole of `apps/dashboard/src`,
+  `apps/desktop/src/renderer` and `apps/admin/src` by file name (the screen pieces lived in `components/` and
+  `pages/pos/`, which the old `lib/` / `shared/` / `main/` list did not cover).
+- `LOOK_WRAPPERS`: the two `components/Pager.tsx` files are allowed under the piece's name only while each stays a look
+  — it imports the piece from `'@zaptill/ui/Pager'`, has no React import and draws no element of its own (no lowercase
+  JSX tag outside comments).
+- Mutations checked: `MethodDot.tsx` copied into `apps/dashboard/src/pages/pos` fails; the old desktop pager pasted
+  over the desktop's `components/Pager.tsx` fails ("delete apps/desktop/src/renderer/components/Pager.tsx").
+- Output: "47 modules live in packages/core and packages/ui with no copies".
+
+**Tests repointed:** `tests/paginate.test.mjs` and the desktop's `menu-pages.test.mjs` read the shared
+`packages/ui/src/Pager.tsx` together with the app's look; the class pins (teal / theme current page, the phone layout,
+the wrap) now pin the look's fields and the shared file's use of them; the desktop pin also checks that its look has no
+phone-only parts. `payment-colours`, `pages-everywhere` and `paginate-everywhere` needed no change (they pin the
+importers, which did not change).
+
+**Verification:**
+
+| Check | Result |
+|---|---|
+| `tsc` — server, dashboard, admin, desktop `tsconfig.json` and `tsconfig.main.json` | pass |
+| Builds — server, desktop main (`tsc -b tsconfig.main.json --force`) and renderer (`vite build`), dashboard, admin | pass |
+| Rendered markup, old against new (`react-dom/server`, both apps' pagers at 0–5,000 rows × 3 sizes × 7 pages × 2 nouns, `MethodDot` for six methods) | **762 renders, 0 differ** (the same harness with the apps swapped finds 182 differences, so it does detect them) |
+| Desktop `dist/renderer` against a build of 51d83a4 (file-name hashes normalised) | 37 of 39 files the same (`index.html` included). **`index-*.js` (main chunk): same size, 457,681 bytes**; the only change is two export letters swapped (`d` / `e`, the same two functions) because `ManagerPage` now imports them in another order. **`ManagerPage-*.js`: +497 characters** — the shared pager with its `look` and the desktop's look object in place of the old pager, plus the minifier's renamed locals. Stylesheet byte-identical |
+| Dashboard `dist` against a build of 51d83a4 (hashes normalised) | 124 of 126 files the same. `ReleaseBadge`: the build timestamp only. **`index-*.js`: +370 characters** — the pager is in the dashboard's main chunk; it is now the shared pager reading its `look` plus the web's look object, and the minifier's renamed locals. Stylesheet byte-identical |
+| Desktop POS main chunk (`lazy-load-a517`, `petrol-pos-a588`) | **446.4 kB, unchanged** (44/0, 49/0) |
+| Suites on the moved pieces | `paginate` 28/0, `paginate-everywhere` 148/0, `payment-colours` 8/0; desktop `menu-pages` 14/0, `pages-everywhere` 21/0 |
+| Other suites run (they scan the component folders or the POS screen) | `pos-cart-parity` 9/0, `web-feel` 47/0, `web-pos-theme` 22/0, `branding-web-contrast` 11/0, `scale-barcode-a577` 26/0, `format` 25/0, `till-scope-enforce-a545` 7/0, `desktop-writes-allowed` 3/0, `customer-details-a607` 29/0, `customer-screen-a606` 17/0, `petrol-pos-web-a588` 17/0 and 11 more; desktop `till-feel` 24/0, `order-notes` 34/0, `weighed-items-a577` 36/0, `a519-till-items` 69/0, `a490-permissions` 93/0, `customer-display-a606` 66/0, `customer-details-a607` 84/0, `shift-confirm` 50/0 and 5 more (`a554-log-fixes` 41/0, then the known libuv `async.c` exit 127) |
+| `check-shared-sync` | pass: 47 modules, no copies |
+| `check-doc-refs`, `check-no-till-wording` | pass |
+| **Full CI step set** (`cisteps.py`) | **not run in this batch** — left to the coordinator |
+| Screenshots before/after | **not taken** (overnight, no display); the rendered-markup comparison above stands in for the DOM, and both stylesheets are byte-identical |
+
+## 8f. Clean-code pass (2026-11-01, not committed)
+
+The owner's request, overnight: "clean out the code in shared component ensure their is human readability and functions
+do not intertwin. clean code is what we want". Done in the worktree on top of batch F, on `packages/core/src` and
+`packages/ui/src` only — no app file changed, no import path changed. **Zero behaviour change**: every exported name,
+its signature and its results are the same; receipts and labels are byte-identical.
+
+**Principles applied:**
+- A long function doing several jobs is split into small, named private helpers in the same module (one job each,
+  inputs passed in, results returned — no shared mutable state, no helper reaching into another's locals).
+- One rule, one place: logic repeated inside a module is factored into one helper only where it is the same rule.
+- Private helpers stay private: nothing new is exported, nothing is removed (every export is still there, with the same
+  arity).
+- Early returns instead of nesting; readable names instead of one-letter ones (outside tiny lambdas).
+- Every comment that records an owner decision, a date, a reason or an incident is kept. Comments that were **wrong**
+  are fixed: 39 `packages/core` headers and 3 in `packages/ui` still said the file was copied into each app and kept identical by
+  `scripts/check-shared-sync.mjs`, or listed `shared/…` / `apps/…/lib` copies — since batch E there are no copies;
+  each header now names the package (`@zaptill/core/<name>`, `@zaptill/ui`) and who uses it. Sibling references to the
+  old `shared/x.ts` folder now read `x.ts`.
+- Fewer, safe changes: a module that was already clear was left alone (apart from its header comment).
+
+**Per module (code changed):**
+- **`labels.ts`** (the label layout and the four printer paths) — `layoutLabel` was one 90-line function: it now reads
+  as the steps it always took — `labelPriceText` (the price line), `barsSizing` (module width in whole dots, with its
+  warning), `planRows` (the text rows at one name height), `chooseRows` (text shrinks, then the business name goes, then
+  the name keeps one line — the same order of tries and the same warnings) and `placeRows` (top to bottom, the bars
+  above the digits). `cleanLabelSettings` reads the stored value through `storedObject` and the sheet through
+  `cleanSheet`. The "EAN / UPC body without its check digit" rule, written three times (TSPL, ZPL, ESC/POS GS k), is one
+  helper `gs1Body`; ZPL's barcode field is `zplBarcode`. `escposLabel` is the slip loop only; the text block
+  (`escposItemText`), the printer-drawn bars (`escposPrinterBars`) and the raster bars (`escposRasterBars`) are its
+  helpers, and the ESC / GS / LF bytes are named once for the section.
+- **`offers.ts`** — `applyOffers` was one 100-line function with five closures over shared state. It is now the four
+  steps in order, each a function: `applyMeals` (with `pickMeal`, `spreadSaving`), `applyBuyGet`, `applyPerItem` (with
+  `itemOffEach`), `applySpend`; the cart becomes units in `cartUnits`, and what has been taken off is one explicit
+  `Tally` passed to each step (`give`). `cleanOffer`'s per-kind checks are `offerKindError`; its refusals use `refuse`.
+- **`barcode.ts`** — EAN-13 and EAN-8 share `withCheckDigit` (add the check digit, or refuse a wrong one — the same
+  message), `rightHalf` and `eanModules` (the guards). `nextInStoreCodes` and `nextNumberedCodes` had the same "codes
+  taken, and the highest number among them" loop: now `scanTaken`.
+- **`menuHours.ts`** — the cut-off clamp (0–360 minutes), written three times, is `clampCutoff`. `checkAvailability`
+  reads its days (`checkDays`) and its windows (`checkWindows`) in their own functions; the errors and their order are
+  the same.
+- **`customerScreen.ts`** — a slide's address (`"url"` or `{ url }`) was read two ways in two functions: `slideUrlOf`.
+  One sale line's whitelist is `sanitiseLine`.
+- **`themes.ts`** — the hue angle (`hue`, `oklch`) is `hueDegrees`; the 0–1 clamp written seven times is `clamp01`
+  (the same expression, so the same floating-point results).
+- **`permissions.ts`** — `expandMap`'s one-line "push into granted, denied or nowhere" is an `if / else if` with a
+  comment.
+
+**Comment-only** (the transpiled code is identical, checked below): `analyticsTerms`, `branchBranding`, `businessDay`,
+`businessTerms`, `cashierHistory`, `contrast`, `customerDetails`, `delivery`, `expenseMethod`, `forecourt`,
+`helpTopics`, `historyView`, `kitchenLines`, `logRedact`, `menuFilter`, `mpesaReceive`, `orderDetail`, `orderNotes`,
+`paginate`, `parkingTariff`, `paymentCatalogue`, `paymentColours`, `posFeatures`, `productDays`, `release`,
+`reversalRules`, `scaleBarcode`, `shiftConfirm`, `stockGate`, `support`, `syncTopics`, `tenantHost`, `tillChanges`;
+in `packages/ui`: `CustomerScreenView`, `CustomerAskForm`, `numberInputs`.
+
+**Left alone on purpose:** `posFeatures`, `customerDetails`, `businessTerms`, `scaleBarcode` and the other modules —
+mostly data tables and short, single-purpose functions; splitting them further would add names without making them
+clearer. `permissions.ts` is 700 lines, mostly catalogue and role data with small functions — only `expandMap` changed.
+`themes.ts`'s colour maths (`deltaE`, `modeTokens`) is a published formula written densely on purpose; renaming its
+letters would make it harder to check against the formula. `Pager.tsx` and `MethodDot.tsx` (moved in batch F) as they
+are. `scaleBarcode.ts`'s `eanCheckDigit` repeats `barcode.ts`'s `gs1CheckDigit` but does not refuse non-digits (its
+callers test the digits first); merging them would change what it returns for such input and add an import into the
+desktop POS's main chunk, so both stay.
+
+**Import graph** (`packages/core/src`): three edges, no cycles — `analyticsTerms → businessTerms`,
+`branchBranding → themes`, `shiftConfirm → permissions`. Every other module imports nothing; `packages/ui` imports only
+`@zaptill/core/*` and React. No module has a side effect when loaded (the module-level values are constants computed
+from constants). This pass added no import.
+
+**Verification:**
+
+| Check | Result |
+|---|---|
+| Differential test, old against new (each module bundled from the snapshot and from the worktree, every export called with generated inputs — normal, edge, empty, null / undefined, wrong types, boundary numbers, real-looking data from the existing tests — results compared deeply, key order and `Map` / `Set` order included, errors by message; exports and arities compared) | **385,742 cases, 0 differ**: `labels` 49,253 (every renderer: SVG, HTML roll and sheet, TSPL, ZPL, ESC/POS GS k and raster, byte arrays compared byte for byte), `barcode` 86,144, `offers` 22,418, `menuHours` 90,070, `customerScreen` 33,319, `permissions` 51,130, `themes` 53,408. Every exported function of the seven is called |
+| The harness detects changes | mutation runs (one changed constant or condition each, then restored): 35–2,100 differences each — e.g. two label warnings in the other order 43, a meal's rounding left to its first item 40, an EAN right half one digit short 2,100, the cut-off clamp at 300 instead of 360 minutes 35 |
+| Comment-only modules | transpiled (esbuild, comments and whitespace dropped) **identical** for all 33 core modules and the 3 `packages/ui` files |
+| `tsc` — `packages/core` (its own build), server, dashboard, admin, desktop `tsconfig.json` and `tsconfig.main.json` | pass |
+| Builds — server, desktop main (`tsc -b tsconfig.main.json --force`) and renderer (`vite build`), dashboard, admin | pass |
+| Desktop POS main chunk (`index-*.js`), against a build of the snapshot | **457,681 → 457,654 bytes (−27)**. The first version of this pass was +101 (mostly the `offers.ts` split, whose helpers are in the main chunk); `cartUnits`' two copies of the unit literal became one, `cleanOffer`'s refusals one `refuse`, and `hasPermission` kept its inner function, which brought it under. Lazy chunks: `ManagerPage` +660 (the labels helpers), `CustomerDisplayPage` +13 |
+| `lazy-load-a517`, `petrol-pos-a588` | 44/0, 49/0 (main chunk 446.3 kB; batch F 446.4 kB) |
+| Suites on the changed modules (`tests/`) | **34 suites, 745 passed, 0 failed**: `barcode-labels-a571` 46, `offers` 26, `offers-cloud` 16, `promotions-scope-a518` 12, `menu-hours-a578` 36, `owner-decisions-a580` 23, `customer-screen-a606` 17, `customer-details-a607` 29, `permissions-split-a595` 92, `permissions-web-a490` 15, `built-in-roles-a514` 13, `cashier-not-back-office` 6, `partner-roles-a550` 12, `themes-registry` 27, `brand-palette-a605` 32, `brand-polish-a609` 22, `brand-colours-a597` 30, `branch-branding-a544` 24, `branding-theme-picker` 16, `branding-web-contrast` 11, `shift-confirm` 28, `scale-barcode-a577` 26, `manager-receiving` 2, `owner-permissions-wildcard` 3, `staff-role-ceiling` 13, `light-colours` 13, `back-office-teal` 18, `web-pos-theme` 22, `paginate` 28, `menus-a537` 15, `menus-top-a566` 10, `business-terms-a573` 22, `stock-zero-a563` 23, `petrol-pos-web-a588` 17 |
+| Desktop suites (`apps/desktop/test`, run from `apps/desktop`) | **18 suites, 716 passed, 0 failed**: `lazy-load-a517` 44, `petrol-pos-a588` 49, `labels-a571` 67, `menu-hours-a578` 30, `customer-display-a606` 66, `customer-details-a607` 84, `a490-permissions` 93, `shift-confirm` 50, `brand-colours-a597` 19, `branch-branding-a544` 22, `theme-vars` 20, `owner-decisions-a580` 17, `weighed-items-a577` 36, `menus-a537` 26, `menus-top-a566` 26, `stock-zero-a563` 32, `menu-pages` 14, `pages-everywhere` 21. (`theme-vars` fails two Tailwind checks when run from the repository root — it builds the CSS with paths relative to `apps/desktop`; CI runs it there, and there it passes.) |
+| `check-shared-sync`, `check-doc-refs`, `check-no-till-wording` | pass (47 modules, no copies) |
+| **Full CI step set** (`cisteps.py`) | **not run in this pass** — left to the coordinator |
+
+**Possible bugs found, not changed** (for the owner; each is today's behaviour, kept exactly):
+- `offers.ts` `applyOffers` with `ignoreTiming` (the cloud re-checking a sale) and **no `branchId`** accepts an offer
+  limited to chosen branches (`!opts.branchId` lets it through). If the cloud ever re-checks without the sale's branch,
+  a branch-only offer would count for any branch. Worth confirming the cloud always passes the branch.
+- `offers.ts` `offerWhenLabel`: Saturday and Sunday read "Sun, Sat" (the week starts on Sunday there), while
+  `menuHours.ts` `daysLabel` says "Sat, Sun" (Monday first). A wording difference between two screens, not a fault.
+- `customerScreen.ts` `cleanDisplayChoice` reads a stored `displayId: true` as screen id 1 and `"  "` as id 0
+  (`Number()`), where an unreadable value would be expected to mean "none". Harmless while the Tech page stores numbers.
+- `scaleBarcode.ts` `eanCheckDigit` and `barcode.ts` `gs1CheckDigit` are two copies of the GS1 mod-10 rule (see "Left
+  alone"). They agree on every digit string; only `gs1CheckDigit` refuses other input.
+
+## 8g. Batch G — step 3: the category panel (2026-11-02, not committed)
+
+In plain words: the category panel on the sale screen — the ☰ button by the search, the "Burgers ✕" chip, the menus
+across the top of the grid ("All", "Food", "Drinks" …), the "Later" button for closed menus and the slide-out list of
+categories — is now **one piece of code used by both the web POS and the desktop POS**. Each POS still looks exactly
+as it did (checked on about 52,000 drawn screens, no difference) and works exactly as it did, for every business type
+(the words "Menus" / "Departments" / "Groups" come from the business's terms, as before). A fix to the panel is now made
+once. The pumps screen, the fuel keypad and the product tiles were looked at and **left as they are**: the two POS draw
+them differently (reasons below). One cost: the desktop POS's start-up code is **611 bytes bigger** (0.13 %); see
+"Main chunk" — the owner decides whether that is acceptable or the move is undone.
+
+Done overnight on the coordinator's instruction, on top of batch F and the clean-code pass (both uncommitted), only in
+files `dev` has not changed since the branch's merge base (9c6efc6). `dev`'s A619 rewrote both PaymentModals,
+`CashierScreen.tsx`, `POSPage.tsx`, `cashier/types.ts`, `usePOSData.ts`, the desktop's `lib/payment.ts` and
+`posApi.ts`; **none of them was touched** in this batch (not even an import line).
+
+**Moved: the category panel and its pieces** (`packages/ui/src/CategoryPanel.tsx`, `@zaptill/ui/CategoryPanel`):
+`useCategoryPanel` (open, the session-only pin, the remembered menu — A537 / A554), `PanelToggle` (☰), `CategoryChip`,
+`MenuBar` (A566; hints and the trailing "Show all" A578; greyed closed menus A580), `LaterButton` (A580) and the panel
+itself. The two copies had the same JavaScript, the same elements in the same order with the same attributes and the
+same words; they differed only in how each element is painted — the desktop with Tailwind class names, the web with
+inline styles on its theme tokens (`--act-strong`, `--pos-*`).
+- The shared file holds the structure and the behaviour, and **no class names and no colours**. It takes a **look**
+  (`CategoryPanelLook`): one entry per element, a `Paint` — a class-name string (the desktop), or `{ className?, style? }`
+  (the web's styles; the desktop's colour dot, whose colour is the category's own). An entry that depends on the state
+  is a function of it (`barTab(on, later)`, `pin(pinned)`, `row(on)`, `dot(colour)` …).
+- Each app's `CategoryPanel.tsx` keeps its file name and is now its look plus five one-line exports, e.g.
+  `export const MenuBar = withLook<MenuBarProps>(SharedMenuBar, LOOK);` (`withLook` calls the piece with the look, so
+  the app's export is the piece itself — the same React tree as before). `useCategoryPanel` and `CategoryPanelState` are
+  re-exported. So **`CashierScreen`, `MinimartPOS` and `POSPage` did not change**.
+- The desktop's `useNarrowWindow` / `NARROW_WINDOW_PX` (the panel lies over the grid in a window under 1,100 px) moved,
+  unchanged, to `apps/desktop/src/renderer/lib/useNarrowWindow.ts` and is re-exported from `components/CategoryPanel.tsx`
+  (a look file may hold no React import of its own — `check-shared-sync`).
+- The class names stay in each app's own file, where its Tailwind build finds them (as `Pager`, 8e): both stylesheets
+  are **byte-identical**. A few repeated desktop strings became named constants in the look (`LABEL`, `HEAD_BUTTON`,
+  `GREY_ON`, `ARROW`); the class strings they build are the same, letter for letter.
+- **One unused prop dropped:** the web's `PanelToggle` accepted a `style` to merge over its own; nothing ever passed one
+  (both callers are `<PanelToggle panel={catPanel} />`). Dropped to keep the main chunk smaller; nothing shown changes.
+
+**Left as they are, and why:**
+- **Forecourt / pumps** — not the same pieces. The desktop's `PumpsView.tsx` draws a semicircle SVG gauge per grade
+  (`GradeGauge`: the tank level, or today's litres against yesterday's), each pump as a dispenser card (`Dispenser`:
+  colour band, last sale on a display, price, "Today x L", state badge) and its own keypad; it reads the forecourt from
+  the desktop's own store (`posApi.pos.forecourt()`, every 60 s). The web's `cashier/Forecourt.tsx` draws a strip of
+  fuel-grade buttons above the shop grid (`FuelStrip`) and a pump card's grade name with a thin tank bar (`PumpGrade`).
+  The only common part is the logic, which is already shared (`@zaptill/core/forecourt`: `gradeColour`, `gradeGauge`,
+  `LOW_PCT`). Sharing the views would mean the owner first picks one forecourt design for both.
+- **Fuel keypad** — the web has **no keypad**: its fuel entry is two number fields (amount, litres) with quick amounts
+  and "Full tank", inline in `CashierScreen.tsx` (A619-changed — not touched tonight); the old `PetrolPOS.tsx` has its
+  own preset buttons. The desktop's is an on-screen keypad (1–9, ".", 0, ⌫, the keyboard too) inside `PumpsView.tsx`,
+  with amount / litres tabs and the conversion shown live. Different behaviour and wording ("Add to sale · KES 1,000.00"
+  against "Add to sale"). Section 3's note that the desktop keypad is inline in `POSPage.tsx` was out of date — it is in
+  `PumpsView.tsx` since A588 (corrected).
+- **Product tile** — lives inside `POSPage.tsx` (`ProductTile`) and inline in `CashierScreen.tsx`, both A619-changed, so
+  it could not be extracted tonight. It would also not render the same: "Later" / "Sold out" badges (desktop) against
+  "LATER" / "SOLD OUT" (web), ⚙ against "options", the web's ⛽ badge and "/L" for fuel, the desktop's long press "Check
+  other branches" (A566), `effectivePrice` against `base_price`, a lazy image against a plain one. The owner would first
+  choose one tile.
+
+**Main chunk** (`index-*.js`, the desktop POS's start-up code): **457,654 → 458,265 bytes (+611)**; `lazy-load-a517`
+reports 446.3 → 446.9 kB (its budget: under 450 kB; `petrol-pos-a588`'s: 452 kB). Batch F's pager sat in a lazy chunk;
+the category panel is part of the sale screen, so it is in the main chunk, and the look costs bytes: each element's
+look-up (`...q(M.row(on))`) and each entry's name in the look object, which the minifier cannot shorten. The first
+version was +999; strings for class-only paints (instead of `{ className }`), `withLook` instead of five wrapper
+components and the dropped `style` prop brought it to +611. Going lower would mean short cryptic look names or cutting
+code that has nothing to do with this batch. **This does not meet step 3's "must not grow" rule.** Options for the
+owner: accept +0.6 kB (the panel then has one copy), or undo the move (restore the two app files and the eight tests
+from `git`, delete `packages/ui/src/CategoryPanel.tsx` and `lib/useNarrowWindow.ts`, and remove the `exports` line and
+the two `LOOK_WRAPPERS` entries). No manager screen came into the main chunk (`lazy-load-a517` checks it).
+
+**`check-shared-sync.mjs`:** `LOOK_WRAPPERS` lists the two `CategoryPanel.tsx` files (each must import the piece from
+`'@zaptill/ui/CategoryPanel'`, have no React import and draw no element of its own). Mutations checked: the old desktop
+panel pasted over its look fails ("delete apps/desktop/src/renderer/components/CategoryPanel.tsx"); a copy of the
+shared file under `apps/dashboard/src/pages/pos/x/` fails. Output: "48 modules live in packages/core and packages/ui
+with no copies". **Note:** `check-shared-sync` is not a step of `ci.yml` on this branch — it runs only by hand; adding
+it to CI before the merge is recommended.
+
+**Tests repointed:**
+- The eight suites that bundle the panel with esbuild (`business-terms-a573`, `menu-hours-a578`, `menus-top-a566`,
+  `owner-decisions-a580`, web and desktop each) bundle with `preserveSymlinks: true`, so `@zaptill/ui` finds
+  `@zaptill/core` through the app's `node_modules`, as Vite does.
+- `menus-a537` (web and desktop) and the desktop's `menus-top-a566` read the shared file together with the app's look;
+  the class / size pins (48 px rows, 40 px pin / close / tabs, `bg-action-500`, `minHeight: 44`) read the look, and a
+  new pin checks that the look imports the shared panel and exports it with `withLook`. The desktop's `a554-log-fixes`
+  reads the hook in the shared file and checks both apps re-export it. `web-pos-theme` (the web's `ACT` constant) and
+  `web-mobile` needed no change.
+
+**Verification:**
+
+| Check | Result |
+|---|---|
+| Rendered markup, old against new (`react-dom/server`, each app's old file against its look + the shared piece, each app with its own React): ☰ open / closed; the chip (none, empty, short, long); Later on / off × 4 words; the menu bar × 3 menu sets × 3 category sets × 3 tab lists × 5 chosen menus × 2 words × 3 hint sets × 4 greyed sets × with / without "Show all", twice — the second pass with the ‹ › arrows forced on (in a real window an effect shows them); the panel open / closed × pinned × 6 menus × 5 categories × over / beside the grid × `menuBar` absent / false / true × 2 word sets | **web 25,948 and desktop 25,948 renders, 0 differ** (3,720 each with the arrows) |
+| The harness detects differences | each app's old file against the other app's look: 13,948 / 13,944 differ (the rest render nothing — a closed panel, no chip); one desktop hint class changed: 80 differ; the web row's `minHeight` 44 → 45: 6,480 differ (both restored) |
+| Light / dark | nothing in the markup depends on the theme: the web paints with CSS variables (`--pos-*`, `--act-strong`), the desktop with the same Tailwind classes as before; both stylesheets byte-identical |
+| Desktop `dist/renderer` against a build of the worktree before this batch (hashes normalised) | 38 of 39 files the same, **stylesheet byte-identical**; `index-*.js` (main chunk) +611 bytes (above) |
+| Dashboard `dist` against the same (hashes normalised) | 123 of 126 the same, **stylesheet byte-identical**; `index` and `ReleaseBadge`: the build timestamp only; `POSEntryPage-*.js` (lazy, the web POS) +840 characters |
+| `lazy-load-a517`, `petrol-pos-a588` | 44/0, 49/0 (main chunk 446.9 kB) |
+| `tsc` — desktop renderer (`tsconfig.json`), desktop main (`tsc -b tsconfig.main.json --force`), `typecheck-ratchet server dashboard admin` | pass (0 errors, baselines held) |
+| Suites on the moved piece (`tests/`) | `menus-a537` 15/0, `menus-top-a566` 10/0, `menu-hours-a578` 36/0, `business-terms-a573` 22/0, `owner-decisions-a580` 23/0, `web-pos-theme` 22/0, `web-mobile` 41/0 |
+| Desktop suites on the moved piece | `menus-a537` 26/0, `menus-top-a566` 26/0, `menu-hours-a578` 30/0, `business-terms-a573` 9/0, `owner-decisions-a580` 17/0, `a554-log-fixes` 41/0 (then the known libuv `async.c` exit) |
+| Other suites run | `petrol-pos-web-a588` 17/0, `web-feel` 47/0, `pos-cart-parity` 9/0, `branding-web-contrast` 11/0, `stock-zero-a563` 23/0, `scale-barcode-a577` 26/0, `paginate` 28/0, `format` 25/0, `till-scope-enforce-a545` 7/0, `desktop-writes-allowed` 3/0, `customer-details-a607` 29/0, `customer-screen-a606` 17/0; desktop `low-impact-start-a513` 55/0, `menu-pages` 14/0, `pages-everywhere` 21/0, `till-feel` 24/0, `weighed-items-a577` 36/0, `stock-zero-a563` 32/0, `theme-vars` 20/0, `a519-till-items` 69/0, `customer-details-a607` 84/0, `customer-display-a606` 66/0, `shift-confirm` 50/0 |
+| `check-shared-sync` | pass: 48 modules, no copies |
+| Every `scripts/check-*.mjs` step of `ci.yml` (39 runs, `--self-test` included) | all exit 0 |
+| **Full CI step set** (`cisteps.py`) | **not run in this batch** — left to the coordinator |
+| Screenshots before/after | **not taken** (overnight, no display); the rendered-markup comparison stands in for the DOM, and both stylesheets are byte-identical |
+
+**Step 3 — what is left:**
+- **Money field / tender keypad** and **cart lines**: wait until `dev`'s A611–A620 (A619 rewrote both PaymentModals,
+  `CashierScreen.tsx`, `POSPage.tsx` and the cart's types) are merged into the branch; then extract on both sides and
+  compare, as here.
+- **Product tile** and **fuel keypad**: after that merge too (both sit in A619-changed files), and only once the owner
+  picks one tile / one fuel entry (the differences above are visible).
+- **Forecourt pieces**: the owner picks one forecourt design first.
+- **WeightModal**, **NoteModal**, **KitchenVoidModal**: as 8e says (wording and behaviour differ).
 
 ## 9. Rollback
 

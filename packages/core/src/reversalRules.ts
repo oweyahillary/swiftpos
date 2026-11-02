@@ -14,16 +14,16 @@
  *   offline_reverse_web_sales  offline, a till reverses its OWN sales only; with this on, also the web sales it holds.
  *   delivery_free_allowed      0.6.33 — with the client's 'delivery_fee' switch, the cashier may mark a delivery FREE:
  *                              the fee is still entered and the rider is still paid it from the drawer, but the customer
- *                              pays none of it (shared/delivery.ts). Off by default. Owner, 2026-10-02: "free delivery …
+ *                              pays none of it (delivery.ts). Off by default. Owner, 2026-10-02: "free delivery …
  *                              turned on and of by the hotel owner" · "the rider is still paid by the shop so delivery fee
  *                              is a must but the customer does not pay it".
  *   delivery_free_over         0.6.33 — a delivery whose BILL reaches this amount is free automatically (the shop pays
- *                              the rider; shared/delivery.ts autoFreeDelivery). Empty / 0 = off (the default).
+ *                              the rider; delivery.ts autoFreeDelivery). Empty / 0 = off (the default).
  *
  * Set by the owner — on the web (Settings) and on the till (Manager → Settings, signed in as the owner). Stored in
  * business_settings; pos/init carries them to the till.
  *
- * ONE file: shared/reversalRules.ts, copied to the till, the web and the cloud (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/reversalRules), used by the desktop POS, the web and the cloud.
  */
 
 export const DEFAULT_VOID_WINDOW_MINUTES = 30;

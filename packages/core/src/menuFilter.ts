@@ -23,8 +23,8 @@
  * chosen menu's categories, for drilling further, and drops its own tabs; a search looks through every menu
  * (gridMenuScope). With no menus nothing changes: the panel alone, as A537 built it.
  *
- * Pure (no React, no storage), so the tests run it. Copied verbatim: shared/, apps/desktop/src/shared/ (the till's sale
- * screen), apps/dashboard/src/lib/ (the web POS) — scripts/check-shared-sync.mjs.
+ * Pure (no React, no storage), so the tests run it. One module in packages/core (@zaptill/core/menuFilter), used by the
+ * desktop POS's sale screen and the web POS.
  */
 
 export const ALL_MENUS = 'all';

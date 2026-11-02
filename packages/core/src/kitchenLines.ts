@@ -13,7 +13,7 @@
  * yes/no `kotSent`, cleared by any change, so a line of 2 that became 3 went out as 3 more (the kitchen cooked 5), and
  * one reduced from 3 to 2 went out as 2 more.
  *
- * ONE file: shared/kitchenLines.ts, copied to the till, the web and the cloud (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/kitchenLines), used by the desktop POS, the web and the cloud.
  */
 
 export interface KitchenLineLike {

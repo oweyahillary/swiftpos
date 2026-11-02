@@ -5,8 +5,8 @@
  * must never be among them") — but a log is written by a hundred call sites over a year, an error message can quote a
  * request, and a log sent to support is read by people outside the business. So everything that looks like a secret is
  * removed before the file is sent or saved, on the till, AND again by the cloud before it is stored (a till on an older
- * build, or a pattern added later). Copies: shared/logRedact.ts (canonical), apps/desktop/src/main/logRedact.ts,
- * apps/server/src/lib/logRedact.ts — scripts/check-shared-sync.mjs keeps them identical.
+ * build, or a pattern added later). One module in packages/core (@zaptill/core/logRedact), used by the desktop POS's
+ * main process and the cloud.
  *
  * Removed: bearer / Authorization values; JWTs (eyJ…); technician tokens (st2.…); bcrypt hashes; long hex and base64url
  * runs (keys, hashes, device secrets); the values of named secret fields in JSON, query strings and "key=value" /

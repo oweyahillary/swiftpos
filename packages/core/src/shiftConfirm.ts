@@ -7,8 +7,8 @@
  * than the amount … on all payment method not just mpesa"; a manager's own shift is "allowed, flagged".
  *
  * Pure — the till's screens (ShiftPanel, ConfirmShiftModal, DayCloseTab, ZReportView) and the web POS's ShiftModal
- * use it; the tests run it. ONE file: shared/shiftConfirm.ts, copied byte-for-byte to the till and the web
- * (scripts/check-shared-sync.mjs).
+ * use it; the tests run it. One module in packages/core (@zaptill/core/shiftConfirm), used by the desktop POS and the
+ * web.
  */
 import { expandMap, hasPermission } from './permissions';   // A490
 

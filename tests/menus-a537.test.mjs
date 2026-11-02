@@ -258,7 +258,10 @@ try {
   const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
   const cashier = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   const mini = read('apps/dashboard/src/pages/pos/MinimartPOS.tsx');
-  const panel = read('apps/dashboard/src/pages/pos/cashier/CategoryPanel.tsx');
+  // Shared components batch G: the panel is @zaptill/ui/CategoryPanel (packages/ui/src/CategoryPanel.tsx); the web's look —
+  // its inline styles — stays in cashier/CategoryPanel.tsx. The pins read both.
+  const look = read('apps/dashboard/src/pages/pos/cashier/CategoryPanel.tsx');
+  const panel = read('packages/ui/src/CategoryPanel.tsx') + '\n' + look;
   await ok('the web POS uses the shared helper (packages/core/src/menuFilter.ts) in CashierScreen and MinimartPOS', async () => {
     assert.ok(!fs.existsSync(path.join(ROOT, 'apps/dashboard/src/lib/menuFilter.ts')), 'no copy in lib/');
     for (const [n, s] of [['CashierScreen', cashier], ['MinimartPOS', mini]]) {
@@ -279,7 +282,9 @@ try {
     assert.match(panel, /try \{ return parsePanelPrefs\(window\.localStorage\.getItem\(PANEL_PREFS_KEY\)\); \} catch/);
     assert.match(panel, /try \{ window\.localStorage\.setItem\(PANEL_PREFS_KEY, panelPrefsText\(p\)\); \} catch/);
     assert.match(panel, /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/);
-    assert.match(panel, /minHeight: 44/);   // touch-sized rows
+    assert.match(look, /minHeight: 44/);   // touch-sized rows
+    assert.match(look, /^import SharedCategoryPanel, \{[^}]*\} from '@zaptill\/ui\/CategoryPanel';$/m);   // the shared panel, with the web's look
+    assert.match(look, /^export default withLook<CategoryPanelProps>\(SharedCategoryPanel, LOOK\);$/m);
     const M = await import(new URL('../packages/core/src/menuFilter.ts', import.meta.url).href);
     assert.equal(M.panelStartsOpen(), false);
     assert.equal(M.parsePanelPrefs(M.panelPrefsText({ pinned: true, menu: 'tea' })).pinned, false);   // A554: never the pin

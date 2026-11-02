@@ -20,8 +20,8 @@
  *     "The customer screen is a touch screen" (secondScreenAsk); the M-Pesa prompt needs the business's own M-Pesa
  *     integration and a connection (stkOffered).
  *
- * Pure, no imports. Copies kept identical by scripts/check-shared-sync.mjs: shared/, apps/server/src/lib/,
- * apps/desktop/src/main/, apps/desktop/src/shared/, apps/dashboard/src/lib/.
+ * Pure, no imports. One module in packages/core (@zaptill/core/customerDetails), used by the cloud, the desktop POS
+ * (main and renderer) and the web dashboard; the form itself is packages/ui's CustomerAskForm.
  */
 
 // ── The words on every customer-facing form ─────────────────────────────────────────────────────────────────────────

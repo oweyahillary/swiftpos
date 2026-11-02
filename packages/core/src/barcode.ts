@@ -4,8 +4,8 @@
  * Owner, 2026-10-22: "we do not have barcode generation mechanism, what does it entail can we add it?"
  *
  * Pure (no DOM, no Node): the cloud assigns in-store codes with it, the web and the till draw and print labels with it.
- * Copies (scripts/check-shared-sync.mjs keeps them identical): apps/server/src/lib, apps/dashboard/src/lib,
- * apps/desktop/src/shared (the till's screens), apps/desktop/src/main (the till's raw label printing).
+ * One module in packages/core (@zaptill/core/barcode), used by the cloud, the web dashboard and the desktop POS (its
+ * screens, and main for raw label printing).
  *
  * ── SYMBOLOGIES ──────────────────────────────────────────────────────────────────────────────────────────────────────
  *   EAN-13   13 digits, the last a GS1 mod-10 check digit (12 given: the check digit is added).
@@ -86,14 +86,11 @@ const EAN_PARITY = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 
 export function encodeEan13(code: string): EncodedBarcode {
   const c = String(code ?? '').trim();
   if (!/^\d{12,13}$/.test(c)) throw new Error('EAN-13 needs 12 or 13 digits');
-  const full = c.length === 12 ? c + gs1CheckDigit(c) : c;
-  if (c.length === 13 && !isValidGtin(full)) throw new Error(`${c} has a wrong check digit (should end in ${gs1CheckDigit(c.slice(0, 12))})`);
+  const full = withCheckDigit(c, 12);
   const parity = EAN_PARITY[Number(full[0])];
-  let m = '101';
-  for (let i = 1; i <= 6; i++) m += (parity[i - 1] === 'L' ? EAN_L : EAN_G)[Number(full[i])];
-  m += '01010';
-  for (let i = 7; i <= 12; i++) m += EAN_R[Number(full[i])];
-  m += '101';
+  let left = '';
+  for (let i = 1; i <= 6; i++) left += (parity[i - 1] === 'L' ? EAN_L : EAN_G)[Number(full[i])];
+  const m = eanModules(left, rightHalf(full, 7, 12));
   return { symbology: 'EAN13', data: full, text: full, modules: m, quietLeft: 11, quietRight: 7 };
 }
 
@@ -101,15 +98,30 @@ export function encodeEan13(code: string): EncodedBarcode {
 export function encodeEan8(code: string): EncodedBarcode {
   const c = String(code ?? '').trim();
   if (!/^\d{7,8}$/.test(c)) throw new Error('EAN-8 needs 7 or 8 digits');
-  const full = c.length === 7 ? c + gs1CheckDigit(c) : c;
-  if (c.length === 8 && !isValidGtin(full)) throw new Error(`${c} has a wrong check digit (should end in ${gs1CheckDigit(c.slice(0, 7))})`);
-  let m = '101';
-  for (let i = 0; i < 4; i++) m += EAN_L[Number(full[i])];
-  m += '01010';
-  for (let i = 4; i < 8; i++) m += EAN_R[Number(full[i])];
-  m += '101';
+  const full = withCheckDigit(c, 7);
+  let left = '';
+  for (let i = 0; i < 4; i++) left += EAN_L[Number(full[i])];
+  const m = eanModules(left, rightHalf(full, 4, 7));
   return { symbology: 'EAN8', data: full, text: full, modules: m, quietLeft: 7, quietRight: 7 };
 }
+
+/** The whole code: the body with its check digit added (`code` is `bodyLength` digits), or the code as given — refused
+ *  when its last digit is not the right check digit. */
+function withCheckDigit(code: string, bodyLength: number): string {
+  if (code.length === bodyLength) return code + gs1CheckDigit(code);
+  if (!isValidGtin(code)) throw new Error(`${code} has a wrong check digit (should end in ${gs1CheckDigit(code.slice(0, bodyLength))})`);
+  return code;
+}
+
+/** Digits `from`…`to` (inclusive) of the code in the right-hand R-codes. */
+function rightHalf(full: string, from: number, to: number): string {
+  let m = '';
+  for (let i = from; i <= to; i++) m += EAN_R[Number(full[i])];
+  return m;
+}
+
+/** An EAN symbol: the start guard, the left half, the centre guard, the right half, the end guard. */
+const eanModules = (left: string, right: string): string => '101' + left + '01010' + right + '101';
 
 /** UPC-A from 11 digits (the check digit is added) or 12: the bars of the EAN-13 "0" + the code, shown as 12 digits. */
 export function encodeUpcA(code: string): EncodedBarcode {
@@ -253,15 +265,7 @@ export function isInStoreCode(code: string | null | undefined): boolean {
 
 /** The next `count` in-store codes after the highest one already used (`taken`: every barcode the business has). */
 export function nextInStoreCodes(taken: Iterable<string | null | undefined>, count: number, after = 0): string[] {
-  const used = new Set<string>();
-  let top = Math.max(0, Math.floor(after));
-  for (const t of taken) {
-    const c = String(t ?? '').trim();
-    if (!c) continue;
-    used.add(c);
-    const n = inStoreNumber(c);
-    if (n !== null && n > top) top = n;
-  }
+  const { used, top } = scanTaken(taken, Math.max(0, Math.floor(after)), inStoreNumber);
   const out: string[] = [];
   let n = top;
   while (out.length < count) {
@@ -270,6 +274,22 @@ export function nextInStoreCodes(taken: Iterable<string | null | undefined>, cou
     if (!used.has(code)) out.push(code);
   }
   return out;
+}
+
+/** Every code already taken (trimmed, blanks left out), and the highest of their numbers by `numberOf` — at least
+ *  `floor`. What the next free codes count up from. */
+function scanTaken(taken: Iterable<string | null | undefined>, floor: number,
+  numberOf: (code: string) => number | null): { used: Set<string>; top: number } {
+  const used = new Set<string>();
+  let top = floor;
+  for (const t of taken) {
+    const c = String(t ?? '').trim();
+    if (!c) continue;
+    used.add(c);
+    const n = numberOf(c);
+    if (n !== null && n > top) top = n;
+  }
+  return { used, top };
 }
 
 /** A product "has no barcode" when the field is empty or only spaces. */
@@ -368,16 +388,8 @@ export interface NumberedCodes {
 /** The next `count` codes: after max(start − 1, the highest sequence already used with this prefix and length) — so the
  *  first code is the start number; a code in `taken` (any barcode the business has) is skipped. Never past the top. */
 export function nextNumberedCodes(s: BarcodeNumbering, taken: Iterable<string | null | undefined>, count: number): NumberedCodes {
-  const used = new Set<string>();
   const max = maxSequence(s);
-  let top = Math.max(0, s.start - 1);
-  for (const t of taken) {
-    const c = String(t ?? '').trim();
-    if (!c) continue;
-    used.add(c);
-    const n = sequenceOf(s, c);
-    if (n !== null && n > top) top = n;
-  }
+  const { used, top } = scanTaken(taken, Math.max(0, s.start - 1), (c) => sequenceOf(s, c));
   const codes: string[] = [];
   let n = top;
   while (codes.length < count && n < max) {
@@ -395,7 +407,7 @@ export function rangeFullMessage(remaining: number, wanted: number): string {
     : `Only ${remaining} new code${remaining === 1 ? ' is' : 's are'} left in the barcode numbering range, and ${wanted} item${wanted === 1 ? ' needs' : 's need'} one. Change the prefix or the number of digits in Barcode numbering.`;
 }
 
-/** The warning when generated codes would fall among weighing-scale codes (A577's shared/scaleBarcode.ts reads EAN-13s
+/** The warning when generated codes would fall among weighing-scale codes (A577's scaleBarcode.ts reads EAN-13s
  *  starting 21–29, and UPC-A number system 2, as a weighed item with its price or weight inside). */
 export const SCALE_CLASH_WARNING = 'This prefix collides with weighing-scale barcodes (EAN-13 21–29, UPC-A starting with 2): a scale label could be read as one of these items, or one of these codes as a weighed item. Keep 20 (EAN-13) or 4 (UPC-A).';
 

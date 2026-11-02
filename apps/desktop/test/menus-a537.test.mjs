@@ -186,15 +186,19 @@ try {
     && M.parsePanelPrefs(JSON.stringify({ pinned: 1, menu: 'x'.repeat(200) })).menu === 'all');
 
   // ── 7 ──
-  const panel = src('renderer/components/CategoryPanel.tsx');
+  // Shared components batch G: the panel is @zaptill/ui/CategoryPanel (packages/ui/src/CategoryPanel.tsx); the desktop's
+  // look — its class names — stays in components/CategoryPanel.tsx. The pins read both.
+  const look = src('renderer/components/CategoryPanel.tsx');
+  const panel = fs.readFileSync(path.join(here, '..', '..', '..', 'packages', 'ui', 'src', 'CategoryPanel.tsx'), 'utf8') + '\n' + look;
   const pos = src('renderer/pages/POSPage.tsx');
   ok('the panel starts collapsed (A554: at every start, pinned or not) and remembers the menu on this till — every storage access in try/catch',
     /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/.test(panel)
     && /try \{ return parsePanelPrefs\(window\.localStorage\.getItem\(PANEL_PREFS_KEY\)\); \} catch/.test(panel)
     && /try \{ window\.localStorage\.setItem\(PANEL_PREFS_KEY, panelPrefsText\(p\)\); \} catch/.test(panel)
-    && /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/.test(panel));
+    && /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/.test(panel)
+    && /^import SharedCategoryPanel, \{[^}]*\} from '@zaptill\/ui\/CategoryPanel';$/m.test(look) && /^export default withLook<CategoryPanelProps>\(SharedCategoryPanel, LOOK\);$/m.test(look));
   ok('touch first: 48 px rows, 40+ px pin / close / tabs, nothing on hover only (the panel uses the action colours)',
-    /min-h-\[48px\]/.test(panel) && (panel.match(/min-h-\[40px\]/g) || []).length >= 3 && /bg-action-500/.test(panel) && !/onMouseEnter|onMouseOver/.test(panel));
+    /min-h-\[48px\]/.test(look) && (look.match(/min-h-\[40px\]/g) || []).length >= 3 && /bg-action-500/.test(look) && !/onMouseEnter|onMouseOver/.test(panel));
   ok('the sale screen: ☰ before the search, the chip after it; the old category row is gone',
     /<PanelToggle panel=\{catPanel\} \/>\s*<input\s+type="text"\s+placeholder="Search products…"/.test(pos)
     && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} \/>/.test(pos)

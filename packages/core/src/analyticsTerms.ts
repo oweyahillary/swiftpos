@@ -3,8 +3,8 @@
  * together ("What sells together") in the business's own way of selling. Built on businessTerms.ts (A573), beside it.
  *
  * Kept apart from businessTerms.ts so the till (which has no Analytics) does not carry these words in its first screen.
- * Imports businessTerms.ts only. Copied verbatim to the web dashboard (the Analytics page) and the cloud (the cards)
- * (scripts/check-shared-sync.mjs).
+ * Imports businessTerms.ts only. One module in packages/core (@zaptill/core/analyticsTerms), used by the web dashboard
+ * (the Analytics page) and the cloud (the cards).
  */
 import { businessTypeOf, isFoodService } from './businessTerms';
 

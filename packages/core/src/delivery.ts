@@ -12,7 +12,7 @@
  * the fee lower while the method the customer paid with (M-Pesa) carries it. Rider + fee are required only when the
  * client has the 'delivery_fee' switch on (admin portal); without it a delivery works as before.
  *
- * ONE file: shared/delivery.ts, copied to the till, the web and the cloud (scripts/check-shared-sync.mjs).
+ * One module in packages/core (@zaptill/core/delivery), used by the desktop POS, the web and the cloud.
  */
 
 export const RIDER_MAX = 60;
@@ -48,7 +48,7 @@ export function deliveryProblem(featureOn: boolean, orderType: string | null | u
  * 0.6.33 — FREE DELIVERY. Owner, 2026-10-02: "free delivery … the rider is still paid by the shop so delivery fee is a
  * must but the customer does not pay it". A free delivery keeps its fee (`delivery_fee` = what the rider is paid, in cash
  * from the drawer, as on every delivery) and is marked `delivery_free`; the customer's bill and payments leave the fee
- * out. Offered to the cashier only when the owner allows it (the 'delivery_free_allowed' rule, shared/reversalRules.ts).
+ * out. Offered to the cashier only when the owner allows it (the 'delivery_free_allowed' rule, reversalRules.ts).
  */
 
 /** What the CUSTOMER pays for delivery: the fee, or 0 on a free delivery (the shop pays the rider). */
