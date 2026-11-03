@@ -667,7 +667,7 @@ const s: Record<string, React.CSSProperties> = {
   root: {
     display: 'flex', flexDirection: 'column', height: '100%',
     overflow: 'hidden', background: '#0f172a',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif", color: '#f1f5f9',
+    color: '#f1f5f9',
   },
 
   // Stats strip
@@ -700,7 +700,6 @@ const s: Record<string, React.CSSProperties> = {
   searchInput: {
     flex: 1, background: 'transparent', border: 'none', outline: 'none',
     color: '#f1f5f9', fontSize: 13, padding: '8px 0',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   clearSearch: {
     background: 'transparent', border: 'none', color: '#475569',
@@ -710,14 +709,12 @@ const s: Record<string, React.CSSProperties> = {
   pill: {
     padding: '5px 12px', background: '#1e293b', border: '1px solid #334155',
     borderRadius: 20, color: '#64748b', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   pillActive: { background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', borderColor: 'rgb(var(--act-fill, 59 130 246) / 0.4)', color: 'rgb(var(--act-text, 96 165 250))' },
   viewToggle: { display: 'flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' },
   viewBtn: {
     padding: '7px 10px', background: 'transparent', border: 'none',
     color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   viewBtnActive: { background: '#1e293b', color: '#f1f5f9' },
 
@@ -736,7 +733,6 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
     border: '1.5px solid transparent', transition: 'all 0.15s ease',
     textAlign: 'center', minHeight: 120,
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   bayFree:     { background: 'rgba(34,197,94,0.06)',  borderColor: 'rgba(34,197,94,0.2)' },
   bayOccupied: { background: 'rgba(245,158,11,0.07)', borderColor: 'rgba(245,158,11,0.25)' },
@@ -773,7 +769,6 @@ const s: Record<string, React.CSSProperties> = {
     padding: '5px 14px', background: 'rgb(var(--act-fill, 34 197 94) / 0.1)',
     border: '1px solid rgb(var(--act-fill, 34 197 94) / 0.3)', borderRadius: 6,
     color: 'rgb(var(--act-text, 34 197 94))', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   listCheckoutBtn: {
     background: 'rgba(245,158,11,0.1)', borderColor: 'rgba(245,158,11,0.3)', color: '#f59e0b',
@@ -800,7 +795,6 @@ const s: Record<string, React.CSSProperties> = {
     background: '#334155', border: 'none', borderRadius: 8, color: '#94a3b8',
     width: 30, height: 30, cursor: 'pointer', fontSize: 14,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   fieldGroup: { marginBottom: 16 },
@@ -809,7 +803,6 @@ const s: Record<string, React.CSSProperties> = {
     width: '100%', background: '#0f172a', border: '1px solid #334155',
     borderRadius: 8, padding: '10px 14px', color: '#f1f5f9', fontSize: 15,
     outline: 'none', boxSizing: 'border-box',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   fieldHint: { fontSize: 11, color: '#475569', marginTop: 4 },
 
@@ -818,7 +811,7 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
     padding: '10px 12px', background: '#0f172a', border: '1.5px solid #334155',
     borderRadius: 10, cursor: 'pointer', minWidth: 60,
-    color: '#94a3b8', fontSize: 11, fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    color: '#94a3b8', fontSize: 11,
     transition: 'all 0.12s',
   },
   vehicleTypeBtnActive: {
@@ -829,7 +822,6 @@ const s: Record<string, React.CSSProperties> = {
   ratePreset: {
     padding: '8px 12px', background: '#0f172a', border: '1px solid #334155',
     borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   ratePresetActive: {
     background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', borderColor: 'rgb(var(--act-fill, 59 130 246))', color: 'rgb(var(--act-text, 96 165 250))',
@@ -872,19 +864,17 @@ const s: Record<string, React.CSSProperties> = {
   btnSecondary: {
     flex: 1, padding: '12px', background: 'transparent',
     border: '1px solid #334155', borderRadius: 10, color: '#94a3b8',
-    fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    fontSize: 14, cursor: 'pointer',
   },
   btnPrimary: {
     flex: 2, padding: '12px', background: 'rgb(var(--act-strong, 29 78 216))',
     border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))',
     fontSize: 14, fontWeight: 700, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   btnCheckout: {
     flex: 2, padding: '12px',
     background: 'linear-gradient(135deg,#d97706,#f59e0b)',
     border: 'none', borderRadius: 10, color: '#0f172a',
     fontSize: 14, fontWeight: 700, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 };

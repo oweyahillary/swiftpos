@@ -315,7 +315,7 @@ export default function SplitPaymentPanel({
 const s: Record<string, React.CSSProperties> = {
   root: {
     display: 'flex', flexDirection: 'column', gap: 16,
-    fontFamily: "'DM Sans','Segoe UI',sans-serif", color: '#f1f5f9',
+    color: '#f1f5f9',
   },
 
   totalRow: {
@@ -342,7 +342,6 @@ const s: Record<string, React.CSSProperties> = {
     background: '#0f172a', border: '1px solid #334155', borderRadius: 6,
     color: '#64748b', cursor: 'pointer', padding: '5px',
     display: 'flex', alignItems: 'center',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   amountRow: {
@@ -357,14 +356,13 @@ const s: Record<string, React.CSSProperties> = {
   amountInput: {
     flex: 1, background: 'transparent', border: 'none', outline: 'none',
     padding: '10px 14px', color: '#f1f5f9', fontSize: 18, fontWeight: 700,
-    fontVariantNumeric: 'tabular-nums', fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    fontVariantNumeric: 'tabular-nums',
   },
 
   quickFill: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 },
   qfChip: {
     padding: '4px 10px', background: '#0f172a', border: '1px solid #334155',
     borderRadius: 20, color: '#64748b', fontSize: 11, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   referenceWrap: { marginTop: 10 },
@@ -373,7 +371,6 @@ const s: Record<string, React.CSSProperties> = {
     width: '100%', background: '#0f172a', border: '1px solid #334155',
     borderRadius: 8, padding: '9px 12px', color: '#f1f5f9', fontSize: 14,
     outline: 'none', boxSizing: 'border-box', letterSpacing: '0.08em',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   addMethodRow: {
@@ -385,20 +382,19 @@ const s: Record<string, React.CSSProperties> = {
   addMethodBtn: {
     padding: '7px 14px', background: '#1e293b', border: '1px solid #334155',
     borderRadius: 8, color: '#94a3b8', fontSize: 13, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   actions: { display: 'flex', gap: 10 },
   btnCancel: {
     flex: 1, padding: '13px', background: 'transparent',
     border: '1px solid #334155', borderRadius: 10, color: '#94a3b8',
-    fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    fontSize: 14, cursor: 'pointer',
   },
   btnCharge: {
     flex: 2, padding: '13px',
     background: 'linear-gradient(135deg,rgb(var(--act-strong, 29 78 216)),rgb(var(--act-strong, 37 99 235)))',
     border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))',
-    fontSize: 14, fontWeight: 700, fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    fontSize: 14, fontWeight: 700,
     transition: 'opacity 0.2s',
   },
 };

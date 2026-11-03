@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The body font, set ONCE (owner, 2026-11-03: Source Sans 3 — "a global variable rather than having it everywhere").
+   Tailwind's font-sans reads it, so every screen, button and input follows; a screen never names a font of its own
+   (tests/font-global.test.mjs). Bundled (@fontsource-variable/source-sans-3, imported in main.tsx), so it shows offline
+   too. The ZapTill name and logo keep their own brand font; receipts and codes stay monospace. */
+:root { --font-body: 'Source Sans 3 Variable', 'Segoe UI', system-ui, sans-serif; }
+
 /* A326 / A329: themeable colour channels (r g b). DEFAULTS = SwiftPOS teal (A329, owner 2026-09-25; the registry's Teal family,
    shade per job): 300/400 #2dd4bf (text on dark) · 500 #14b8a6 (dark-label fills) · 600 #0f766e and 700/900 #115e59 (white-label
    fills — A331: white on 600 fails) · the lock curtain: dots #2dd4bf, Enter #0f766e with white text (5.47:1). Themes ON:

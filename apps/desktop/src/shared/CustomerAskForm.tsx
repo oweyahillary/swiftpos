@@ -33,7 +33,7 @@ export interface CustomerAskFormProps {
 
 const CSS = `
 .ca{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:#f6f7f9;color:#15202b;
-  font-family:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,sans-serif;cursor:auto;user-select:none;overflow:auto}
+  font-family:var(--font-body,"Segoe UI",system-ui,sans-serif);cursor:auto;user-select:none;overflow:auto}
 .ca-card{width:min(92vw,1100px);display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:3vw;padding:3.4vh 3vw}
 .ca-h{font-size:4.2vh;font-weight:700;margin:0 0 .6vh}
 .ca-sub{font-size:2.2vh;color:#5e6b78;margin:0 0 2.4vh}
@@ -56,7 +56,7 @@ const CSS = `
 .ca-key:active{background:#e5e9ee}
 .ca-wide{min-width:24vh}
 .ca-stk{position:fixed;inset:0;z-index:61;display:flex;align-items:center;justify-content:center;background:rgba(246,247,249,.94);
-  font-family:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,sans-serif;color:#15202b}
+  font-family:var(--font-body,"Segoe UI",system-ui,sans-serif);color:#15202b}
 .ca-stk-box{text-align:center;padding:5vh 5vw;border-radius:2vh;background:#fff;border:1px solid #e2e6ea;max-width:80vw}
 .ca-stk-t{font-size:5vh;font-weight:700;margin:0}
 .ca-stk-s{font-size:2.6vh;color:#5e6b78;margin:1.6vh 0 0}

@@ -819,6 +819,12 @@ jobs:
       - name: Business settings menu (A620)
         run: node --no-warnings tests/business-settings-menu-a620.test.mjs
 
+      # One body font, set once (owner, 2026-11-03: Source Sans 3): each app's --font-body, Tailwind's font-sans reading it,
+      # the font bundled (offline too), and no screen naming a font of its own (monospace, Courier and the brand's Space
+      # Grotesk allowed). In the loop too.
+      - name: One body font (Source Sans 3)
+        run: node --no-warnings tests/font-global.test.mjs
+
       # A621 — M-Pesa payment notifications (Safaricom C2B; owner, 2026-11-02: "they prefer paying to the till or paybill
       # directly; what the cashier gets is a notification of the payments done, then they match it to the bill"): the
       # confirmation read (Kenyan time, never a full phone number); the callback addresses (https, no word Safaricom

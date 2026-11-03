@@ -647,7 +647,7 @@ const s: Record<string, React.CSSProperties> = {
   root: {
     display: 'flex', flexDirection: 'column', height: '100%',
     overflow: 'hidden', background: '#0f172a',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif", color: '#f1f5f9',
+    color: '#f1f5f9',
   },
 
   // Stats strip
@@ -673,7 +673,7 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'center', gap: 6, position: 'relative',
     padding: '6px 14px', background: '#0f172a', border: '1px solid #334155',
     borderRadius: 8, color: '#64748b', fontSize: 12, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif", flexShrink: 0,
+    flexShrink: 0,
   },
   tankBtnAlert: { borderColor: 'rgba(239,68,68,0.4)', color: '#fca5a5' },
   alertDot: {
@@ -782,7 +782,6 @@ const s: Record<string, React.CSSProperties> = {
     flex: 1, padding: '10px', background: 'rgb(var(--act-strong, 29 78 216))',
     border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))',
     fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   pumpActionSecondary: {
     background: 'transparent', border: '1px solid #334155', color: '#94a3b8',
@@ -820,7 +819,6 @@ const s: Record<string, React.CSSProperties> = {
     background: '#334155', border: 'none', borderRadius: 8, color: '#94a3b8',
     width: 30, height: 30, cursor: 'pointer', fontSize: 14,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   section: { marginBottom: 20 },
@@ -834,7 +832,7 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'center', gap: 10,
     padding: '12px', background: '#0f172a', border: '1.5px solid',
     borderRadius: 10, cursor: 'pointer', transition: 'all 0.12s', position: 'relative',
-    textAlign: 'left', fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    textAlign: 'left',
   },
   gradeColorBar: { width: 4, height: 32, borderRadius: 2, flexShrink: 0 },
   gradeInfo: { flex: 1 },
@@ -847,7 +845,6 @@ const s: Record<string, React.CSSProperties> = {
   modeBtn: {
     flex: 1, padding: '8px', background: 'transparent', border: 'none',
     borderRadius: 6, color: '#64748b', fontSize: 13, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   modeBtnActive: { background: '#1e293b', color: '#f1f5f9', fontWeight: 600 },
 
@@ -855,7 +852,7 @@ const s: Record<string, React.CSSProperties> = {
   presetBtn: {
     padding: '8px 14px', background: '#0f172a', border: '1px solid #334155',
     borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600,
-    cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    cursor: 'pointer',
   },
   presetBtnActive: {
     background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', borderColor: 'rgb(var(--act-fill, 59 130 246))', color: 'rgb(var(--act-text, 96 165 250))',
@@ -864,7 +861,6 @@ const s: Record<string, React.CSSProperties> = {
     width: '100%', background: '#0f172a', border: '1px solid #334155',
     borderRadius: 8, padding: '10px 14px', color: '#f1f5f9', fontSize: 16,
     outline: 'none', boxSizing: 'border-box',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   summaryCard: {
@@ -877,13 +873,12 @@ const s: Record<string, React.CSSProperties> = {
   btnSecondary: {
     flex: 1, padding: '12px', background: 'transparent',
     border: '1px solid #334155', borderRadius: 10, color: '#94a3b8',
-    fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    fontSize: 14, cursor: 'pointer',
   },
   btnActivate: {
     flex: 2, padding: '12px',
     background: 'linear-gradient(135deg,#d97706,#f59e0b)',
     border: 'none', borderRadius: 10, color: '#0f172a',
     fontSize: 14, fontWeight: 700, cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 };
