@@ -225,6 +225,25 @@ export function ringLogRequest(businessId: string, deviceId: string): number {
   return n;
 }
 
+/**
+ * A621: an M-Pesa payment reached a branch's Paybill / Buy Goods number (routes/c2b.ts). The sockets of THAT branch hear
+ * { type: 'mpesa_payment', trans_id, amount, first_name } — the POS shows "KES 1,080 received — JOHN — QJK7XT3L5P" and an
+ * open payment screen refreshes its list at once. A socket naming no branch hears nothing (another branch's money). A POS
+ * without a socket (behind a branch server, or the web POS) sees the payment in its payment screen's list instead.
+ */
+export function ringMpesaPayment(businessId: string, branchId: string, p: { trans_id: string; amount: number; first_name: string | null }): number {
+  const set = byBusiness.get(businessId);
+  if (!set) return 0;
+  let n = 0;
+  for (const c of set) {
+    if (c.branchId !== branchId) continue;
+    send(c, { type: 'mpesa_payment', trans_id: p.trans_id, amount: p.amount, first_name: p.first_name });
+    n++;
+  }
+  traffic.count('live.mpesa_payment', n);
+  return n;
+}
+
 /** A533 test seam: a socket stand-in (only what send() and the doorbells use). */
 export function _addTestConn(businessId: string, deviceId: string | null, sink: (msg: unknown) => void, branchId: string | null = null): () => void {
   const ws = { readyState: WebSocket.OPEN, send: (s: string) => sink(JSON.parse(s)),

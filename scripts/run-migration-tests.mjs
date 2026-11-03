@@ -35,6 +35,11 @@
  *
  * Config: MIGRATION_TEST_TIMEOUT_MS (default 120000), MIGRATION_TEST_CONCURRENCY (default
  * min(cpus, 4)). `--self-test` proves the runner catches a failing AND a hanging test.
+ *
+ * SHARDS
+ * ------
+ * `--shard 1/2` runs every second file starting with the first (2/2: starting with the second), so CI can run the
+ * tests in parallel jobs (2026-11-02, owner: "11 min is a lot of time"). Together the shards run every file once.
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -119,7 +124,13 @@ async function selfTest() {
   // A548 (A186): the Windows teardown allowance — pure checks, so both platforms are proved on either.
   const green = '29 passed, 0 failed\nAssertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c, line 94';
   const td = (o) => isWindowsTeardownPass(o, 'win32');
+  const files = ['a', 'b', 'c', 'd', 'e'];
+  const halves = [pickShard(files, '1/2'), pickShard(files, '2/2')];
+  const refuses = (spec) => { try { pickShard(files, spec); return false; } catch { return true; } };
   const checks = [
+    ['shards: 1/2 and 2/2 together are every file, once', halves.flat().sort().join() === files.join() && halves[0].length === 3],
+    ['shards: no --shard runs every file',          pickShard(files, null).length === files.length],
+    ['shards: a bad spec (3/2, 0/2, x) is refused', refuses('3/2') && refuses('0/2') && refuses('x')],
     ['a passing test is reported ok',            pass.status === 0 && !pass.timedOut],
     ['a failing (exit 1) test is reported FAIL',  fail.status === 1 && !fail.timedOut],
     ['a hanging test is KILLED and reported FAIL', hang.status === 1 && hang.timedOut === true],
@@ -138,17 +149,34 @@ async function selfTest() {
   process.exit(ok ? 0 : 1);
 }
 
+/**
+ * The files of one shard: `spec` is "i/n" (1-based). Round-robin over the sorted list, so slow and quick tests spread
+ * evenly across the shards. No spec: every file.
+ */
+function pickShard(files, spec) {
+  if (!spec) return files;
+  const match = /^(\d+)\/(\d+)$/.exec(spec);
+  const index = match ? Number(match[1]) : 0;
+  const count = match ? Number(match[2]) : 0;
+  if (count < 1 || index < 1 || index > count) throw new Error(`--shard wants i/n with 1 <= i <= n, got "${spec}"`);
+  return files.filter((_, k) => k % count === index - 1);
+}
+
+const shardFlag = process.argv.indexOf('--shard');
+const shardSpec = shardFlag >= 0 ? process.argv[shardFlag + 1] : null;
+
 if (process.argv.includes('--self-test')) {
   await selfTest();
 } else {
-  const tests = fs.readdirSync(HERE)
+  const allTests = fs.readdirSync(HERE)
     .filter(f => /^test-migrations?[-\d].*\.mjs$/.test(f))
     .sort();
+  const tests = pickShard(allTests, shardSpec);
   if (tests.length === 0) {
     console.error('No migration tests found in scripts/ — has the naming changed?');
     process.exit(1);
   }
-  console.log(`\nMigration tests against real PostgreSQL (PGlite) — ${tests.length} file(s), `
+  console.log(`\nMigration tests against real PostgreSQL (PGlite) — ${tests.length} file(s)${shardSpec ? ` (shard ${shardSpec} of ${allTests.length})` : ''}, `
     + `${CONCURRENCY}-way, ${Math.round(TIMEOUT_MS / 1000)}s/test timeout\n`);
 
   const failed = await runPool(HERE, tests);

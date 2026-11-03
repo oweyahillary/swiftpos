@@ -350,6 +350,10 @@ async function catchUpOnce(why: string, now: number): Promise<boolean> {
 let logRequestBell: ((deviceId: string) => void) | null = null;
 export function setLogRequestBell(fn: ((deviceId: string) => void) | null): void { logRequestBell = fn; }
 
+/** A621: who hears an 'mpesa_payment' ring — a payment reached the branch's M-Pesa number (ipc/mpesaC2b.ts hands it in). */
+let mpesaPaymentBell: ((ring: unknown) => void) | null = null;
+export function setMpesaPaymentBell(fn: ((ring: unknown) => void) | null): void { mpesaPaymentBell = fn; }
+
 /** A535: who hears a 'drawers' ring on a branch server (branchDrawers.ts hands it in). */
 let drawersBell: ((why: string) => void) | null = null;
 export function setDrawersBell(fn: ((why: string) => void) | null): void { drawersBell = fn; }
@@ -468,6 +472,9 @@ function openSocket(now: number): void {
       // A535: on a branch server, a request for one of ITS tills is passed on — that till hears it on its next /node/live
       // (20 s, the shop network) and asks for the request itself through the gateway, as before.
       if (isServer() && dev && dev !== (getDeviceConfig()?.device_id ?? '')) notePeerLogRequest(dev);
+    } else if (m?.type === 'mpesa_payment') {
+      // A621: a doorbell too — the notice on this POS, and an open payment screen asks for its list at once.
+      try { mpesaPaymentBell?.(m); } catch { /* the payment screen asks every few seconds anyway */ }
     }
   };
   s.onclose = (ev: any) => {

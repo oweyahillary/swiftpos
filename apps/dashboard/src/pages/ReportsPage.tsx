@@ -14,6 +14,7 @@ import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
 import { methodColour } from '../lib/paymentColours';   // A439
 import MonthlyPackTab from './reports/MonthlyPackTab';   // A455
+import MpesaUnmatchedTab from './reports/MpesaUnmatchedTab';   // A621
 import DownloadExcelButton from '../components/DownloadExcelButton';   // A467
 import { localStamp, type ReportColumn, type ReportSheet } from '../lib/reportDownload';   // A467
 import { reportPresets, activePreset } from '../lib/reportPeriods';   // A467; activePreset: one preset lit
@@ -165,6 +166,7 @@ const TAB_LIST = [
   { id: 'food_cost',  label: 'Food Cost' },
   { id: 'voids',      label: 'Voids & Exceptions' },
   { id: 'refunds',    label: 'Refunds' },
+  { id: 'mpesa_unmatched', label: 'M-Pesa unmatched' },   // A621: payments to the Till number / Paybill no sale used
   { id: 'inventory',  label: 'Inventory' },
   { id: 'exports',    label: 'Exports' },
   { id: 'tax',        label: 'Tax Report' },
@@ -2612,6 +2614,7 @@ export default function ReportsPage() {
       {activeTab === 'food_cost'  && <FoodCostTab    {...tabProps} />}
       {activeTab === 'voids'  && <VoidsTab   {...tabProps} />}
       {activeTab === 'refunds'   && <RefundsTab   {...tabProps} />}
+      {activeTab === 'mpesa_unmatched' && <MpesaUnmatchedTab range={tabProps.range} branchId={tabProps.branchId} currency={tabProps.currency} canRelease={isOwner} />}
       {activeTab === 'inventory' && <InventoryTab {...tabProps} />}
       {activeTab === 'exports'   && <ExportsTab   {...tabProps} />}
       {activeTab === 'tax'    && <TaxTab     {...tabProps} />}

@@ -56,6 +56,7 @@ import { backfillQuiet } from '../lib/backfill';   // A602
 import { saleBuyerPin } from '../lib/customerDetails';   // A607
 import { platformUnitPrice, platformModifierPrice, platformRecord, salePlatform, cleanRule, cleanRounding, type PlatformPricing, type PlatformRecord } from '../lib/platformPrices';   // A619
 import { loadPlatformPricing, ownPlatformPrices } from '../lib/platformPricing';   // A619
+import { markOrderPayments } from '../lib/c2bOrders';   // A621
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -1491,6 +1492,9 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
     //     are not sent to KRA as new invoices by an upload the owner did not mean as fiscalisation.
     if (!quiet) fiscaliseInvoice(order.id).catch((e) => console.error('[etims] fiscaliseInvoice:', e?.message));
 
+    // A621: the M-Pesa payments this sale used (its legs' codes) leave every POS's list. Never fails the sale.
+    await markOrderPayments(req.businessId, order.id, paymentsPayload);
+
     res.status(201).json({ orderId: order.id, orderNumber: order.order_number });
   } catch (err) {
     sendError(res, err, { message: 'Failed to create order' });
@@ -2811,6 +2815,7 @@ router.post('/:id/pay', sells, async (req, res) => {
     }
 
     checkPaymentIntegrity(order.order_number, order.id, payTotal, paymentRows);
+    await markOrderPayments(req.businessId, order.id, paymentRows);   // A621: its M-Pesa payments are used
 
     // 3b. Credit sale — record the debt (audit C5). Same RPC and same
     // log-and-continue pattern as POST /orders' equivalent block: the order
