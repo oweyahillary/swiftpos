@@ -107,15 +107,15 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.SHIFT_JOIN_TS) {
     assert.ok(h.indexOf('if (till.open_shift) { await handleJoin(till); return; }') > -1 &&
       h.indexOf('if (till.open_shift) { await handleJoin(till); return; }') < h.indexOf('parseFloat(openFloat)'));
     assert.match(m, /\{!joining && \(<>\s*<label style=\{s\.label\}>Opening Float/);
-    assert.match(m, /const handleJoin = async \(till: CoveredTerminal\) => \{[\s\S]{0,200}setCoveredTerminal\(till\);[\s\S]{0,120}\/api\/shifts\/current/);
+    assert.match(m, /const handleJoin = async \(till: CoveredTerminal\) => \{[\s\S]{0,200}setCoveredTerminal\(till\);[\s\S]{0,120}currentShiftPath\(branchId\)/);
     // A343 (0.6.14): the web till loads alongside, so the window is wider; the merge is unchanged.
     assert.match(m, /loadOpenDrawers\(\(path\) => posApi\.get\(path\), branchId\)[\s\S]{0,320}withOpenShifts\(tills \?\? \[\], open\)/);
   });
   await ok('sign-in joins the cashier\'s own open drawer: loadTills + loadWebTill → ownOpenDrawer(staffId) → adopt (a till, or none for the web till) → /current', () => {
     // A343 (0.6.14): the cashier's own drawer may also be on the branch's web till — tests/web-till.test.mjs runs the rule.
     const c = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-    const mount = c.slice(c.indexOf("posApi.get<Shift | null>('/api/shifts/current')"), c.indexOf("posApi.get<Shift | null>('/api/shifts/current')") + 2400);
-    assert.match(mount, /const mine = ownOpenDrawer\(tills, webTill, session\.staffId\);[\s\S]{0,60}if \(mine\) \{\s*setCoveredTerminal\(mine\.kind === 'till' \? mine\.till : null\);[\s\S]{0,80}const joined = await posApi\.get<Shift \| null>\('\/api\/shifts\/current'\);/);
+    const mount = c.slice(c.indexOf("posApi.get<Shift | null>(currentShiftPath(session.branchId))"), c.indexOf("posApi.get<Shift | null>(currentShiftPath(session.branchId))") + 2400);
+    assert.match(mount, /const mine = ownOpenDrawer\(tills, webTill, session\.staffId\);[\s\S]{0,60}if \(mine\) \{\s*setCoveredTerminal\(mine\.kind === 'till' \? mine\.till : null\);[\s\S]{0,80}const joined = await posApi\.get<Shift \| null>\(currentShiftPath\(branchId\)\);/);
     assert.match(mount, /setShiftModal\('open'\);/);   // anything else → the picker
   });
 

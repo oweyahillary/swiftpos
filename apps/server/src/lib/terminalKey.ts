@@ -53,7 +53,10 @@ export function terminalKeyFromRequest(req: Request): string {
   // A415: the till's own session names the till — that is which terminal it is, whatever a header says.
   const deviceId = (req as { deviceId?: string | null }).deviceId || deviceIdFromRequest(req);
   const terminalCode = (req.body?.terminal_code as string | undefined)?.trim() || '';
-  const branchId = (req as any).branchId || (req.body?.branch_id as string | undefined) || '';
+  // An owner's web POS session carries no branch (A608: the owner names it per request), so a read such as
+  // GET /api/shifts/current names it in the query — without it the web till's drawer keyed to "web:" and was never found.
+  const queried = typeof req.query?.branch_id === 'string' ? req.query.branch_id.trim() : '';
+  const branchId = (req as any).branchId || (req.body?.branch_id as string | undefined) || queried || '';
   return terminalKey(deviceId, terminalCode, branchId);
 }
 

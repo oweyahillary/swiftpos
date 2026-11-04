@@ -48,6 +48,15 @@ export function setCoveredTerminal(t: CoveredTerminal | null): void {
 }
 
 /**
+ * GET /api/shifts/current for this web POS. The branch goes along because an owner's web POS session names no branch
+ * of its own (A608): without it the cloud keyed the web till's drawer to "web:" and a running shift was never found
+ * ("That drawer has just been closed"). A session with a branch, or a covered till (x-device-id), resolve as before.
+ */
+export function currentShiftPath(branchId: string | null | undefined): string {
+  return branchId ? `/api/shifts/current?branch_id=${encodeURIComponent(branchId)}` : '/api/shifts/current';
+}
+
+/**
  * The labels the cloud invents for a till that reported no name — keep in step with
  * GENERIC_TERMINAL_LABELS in apps/server/src/lib/terminalLabel.ts (tests/till-name.test.mjs
  * compares the two). Never shown as a till's name: they are the same for every till.

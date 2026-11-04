@@ -20,7 +20,7 @@
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '@zaptill/core/shiftConfirm';
-import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
+import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, currentShiftPath, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
 import { reasonsNeeded, missingReasons, REASON_MAX } from '@zaptill/core/confirmReasons';
 import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, cashInAddsText, cashMovementNeedsApprover } from '@zaptill/core/posFeatures';   // A594
 
@@ -194,7 +194,7 @@ export default function ShiftModal({
     setError('');
     setCoveredTerminal(till);
     try {
-      const existing = await posApi.get<Shift | null>('/api/shifts/current');
+      const existing = await posApi.get<Shift | null>(currentShiftPath(branchId));
       if (existing) { onShiftOpened?.(existing); return; }
       setCoveredTerminal(null);
       setError('That drawer has just been closed. Pick the POS again to open a new shift.');
@@ -230,7 +230,7 @@ export default function ShiftModal({
       // rather than erroring — the web sells into the till's existing session.
       // With the identity now adopted, /current resolves to that till's shift.
       try {
-        const existing = await posApi.get<Shift | null>('/api/shifts/current');
+        const existing = await posApi.get<Shift | null>(currentShiftPath(branchId));
         if (existing) { onShiftOpened?.(existing); return; }
       } catch { /* fall through to the error */ }
       setCoveredTerminal(null); // open failed and no existing shift — don't keep a stale identity
