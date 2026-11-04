@@ -16,7 +16,11 @@ Status: **steps 1 and 2 done and committed on the branch (37ffe35, d639d40; `dev
 `WeightModal`, `NoteModal` and `KitchenVoidModal` left as they are, with the reasons. Batch G (section 8g) done, not
 committed: the category panel, menu bar, ☰, chip and Later button moved (6 pieces); the forecourt, the fuel keypad and
 the product tile left, with the reasons; the desktop main chunk +611 bytes, for the owner to accept or undo. No copy
-paths left (`SHARED` is empty). Not merged. Merging needs the one Render change in section 4 first.**
+paths left (`SHARED` is empty). Batches F and G committed (db04710). `dev` c2ab634 (v1.0.23, A611–A620) merged in
+(section 8h): `platformPrices` is the 43rd core module; the money field / tender keypad and the cart lines were looked
+at and left (the two POS differ in behaviour); `check-shared-sync` is a CI step. After the merge the desktop POS main
+chunk is 450.4 kB against the 450 kB budget — an owner decision (section 8h). Not merged into `dev`. Merging needs the
+one Render change in section 4 first.**
 
 ---
 
@@ -147,8 +151,8 @@ POS CSS variables (`--pos-*`, `--act-strong`) work in both apps without Tailwind
 | Forecourt: pumps / grades / gauges (A588) | `components/PumpsView.tsx` (`GradeGauge`, `Dispenser`), `POSPage.tsx` `ForecourtTabs` | `pages/pos/cashier/Forecourt.tsx` (`FuelStrip`, `PumpGrade`), `CashierScreen.tsx` | 306 / 79 | 361 | desktop has dispensers + gauges; web has strips + tank gauges. **Left (8g): different pieces** |
 | Fuel keypad (KES / litres, quick amounts) | in `components/PumpsView.tsx` (since A588) | inline in `pages/pos/CashierScreen.tsx` (two number fields, no keypad) / `PetrolPOS.tsx` presets | — | — | **Left (8g): the web has no keypad; different behaviour** |
 | Product tile | `POSPage.tsx` `ProductTile` (memo) | inline in `CashierScreen.tsx` | — | — | extract web side first. **Left (8g): both in A619-changed files; the badges' wording differs** |
-| Cart lines | inline in `POSPage.tsx` | inline in `CashierScreen.tsx` (`cashier/useCart.ts` logic) | — | — | extract both sides first |
-| Payment modal | `components/PaymentModal.tsx` | `pages/pos/PaymentModal.tsx` (+ split/discount/loyalty/M-Pesa panels) | 446 / 1038 | 1368 | large; only shared pieces (method buttons, tender keypad), late |
+| Cart lines | inline in `POSPage.tsx` | inline in `CashierScreen.tsx` (`cashier/useCart.ts` logic) | — | — | **Left (8h): different lines (kitchen mark, add-ons, courses, note button)** |
+| Payment modal | `components/PaymentModal.tsx` | `pages/pos/PaymentModal.tsx` (+ split/discount/loyalty/M-Pesa panels) | 540 / 1116 | 1524 | large; only shared pieces (method buttons, tender keypad), late. **Money field / tender keypad left (8h): no keypad on either side, different fields** |
 | M-Pesa panel | `components/MpesaPanel.tsx` | `pages/pos/MpesaStkPanel.tsx` | 111 / 331 | 418 | different flows (till vs STK push) |
 | Shift confirm | `components/ConfirmShiftModal.tsx` | `components/ShiftConfirmations.tsx`, `pages/pos/ShiftModal.tsx` | 213 / 257 | 352 | both use `confirmReasons` (now core) |
 | Z report | `components/ZReportView.tsx` | `pages/pos/ZReportModal.tsx` | 219 / 527 | 714 | printing stays; only the view could share |
@@ -896,6 +900,91 @@ it to CI before the merge is recommended.
   picks one tile / one fuel entry (the differences above are visible).
 - **Forecourt pieces**: the owner picks one forecourt design first.
 - **WeightModal**, **NoteModal**, **KitchenVoidModal**: as 8e says (wording and behaviour differ).
+
+## 8h. `dev` merged (v1.0.23, A611–A620) and the rest of step 3 (2026-11-03, not committed)
+
+In plain words: the branch now has everything `dev` has up to v1.0.23 — per-branch billing and prices, M-Pesa per
+branch, delivery platform prices (A619), attendance shifts, the Settings › Business menu and the day's desktop fixes —
+with `dev`'s behaviour and the branch's structure: the new shared rule (`platformPrices`) lives once in
+`packages/core`, like every other. The two step-3 pieces that waited for A619 — the money field with the tender keypad,
+and the cart lines — were looked at and **left**: the two POS do different things there, so sharing them would change
+what a cashier sees. `check-shared-sync` now runs in CI. **One open point:** after the merge the desktop POS's start-up
+code is 0.4 kB over its 450 kB budget (below).
+
+The merge and step 3 are kept apart: the merge resolution is staged (the owner commits it as the merge commit), and the
+CI step and this section are left unstaged on top, for a second commit.
+
+### The merge (`git merge --no-commit --no-ff origin/dev`, `dev` at c2ab634, merge base 9c6efc6)
+
+`dev` brought 15 commits (179 files). Its shared-rule changes since the merge base: `customerScreen` (A617
+`themesPremium`), `offers` (the branch rule and the days' words, owner 2026-11-01), `release` (1.0.23), `syncTopics`
+(`platformPrices` in the money topic), `themes` (A617 `FREE_THEME_IDS`, `isFreeThemeId`) and the new `platformPrices`
+(A619), each changed in `shared/` and in every app copy alike (every copy was byte-identical to its `shared/` file on
+`dev`).
+
+| Conflict | Files | Resolution |
+|---|---|---|
+| modify/delete — `dev` edited a file the branch had moved | `shared/{customerScreen,offers,release,syncTopics,themes}.ts` and 12 app copies (dashboard `lib/` ×3, desktop `main/` ×2 and `shared/` ×2, server `lib/` ×5) | deleted; `dev`'s change is in the `packages/core` file (git's rename detection carried four; `offers` below). Checked: for each module the lines `dev` changed (`git diff 9c6efc6 origin/dev -- shared/X.ts`) are exactly the lines the merge changed in `packages/core/src/X.ts` |
+| content — `packages/core/src/offers.ts` | 1 | the clean-code pass (8f) had split `applyOffers` into steps; `dev` changed its first line (`live`: an offer for some branches needs the sale's branch even when the cloud re-checks a sale). `dev`'s line in the branch's structure |
+| new module — `platformPrices` (A619) | `shared/` + 4 app copies | one file, `packages/core/src/platformPrices.ts` (pure, no imports); the 5 paths removed; its header names the package instead of "copied verbatim" |
+| content — import blocks only | 21 app files: both `PaymentModal.tsx`, `CashierScreen.tsx`, `POSPage.tsx`, `cashier/usePOSData.ts`, `ReportsPage.tsx`, `themeVars.ts`, `BrandingTab.tsx`, `BranchReceiptOverrides.tsx`, `RestaurantSettingsPage.tsx`; desktop `deviceConfig.ts`, `syncEngine.ts`, `ipc/branchSettings.ts`; server `lib/themeRules.ts`, `routes/{admin,branches,business,orders,pos,products,reports}.ts` | `dev`'s block, each moved module's specifier changed to `@zaptill/core/<name>` (`@zaptill/ui/MethodDot` for the method dot). Nothing else on the lines changed |
+| relative imports in lines that merged cleanly | 10 files `dev` added or changed: server `lib/branchMpesa.ts`, `lib/platformPricing.ts`, `routes/mpesaSettings.ts`; dashboard `products/PlatformPriceFields.tsx`, `settings/{KitchenTicketSettings,PlatformPrices,PrintersPage}.tsx`; desktop `main/platformSale.ts`, `main/ipc/sale.ts`, and `POSPage.tsx`'s on-demand `import('@zaptill/core/platformPrices')` | specifier switched to `@zaptill/core/<name>` (found by a scan of every relative import in `apps/*/src` that names a packaged module and no app file) |
+| `scripts/check-shared-sync.mjs` | 1 | `dev` re-listed every copy, with a `platformPrices` entry; the branch's empty `SHARED` kept (the module is in `packages/core`) |
+| tests | `tests/offers.test.mjs` (conflict); `tests/platform-prices-a619`, `apps/desktop/test/platform-prices-a619`, `tests/a617-themes-basic-and-own-prices`, `tests/platform-prices-cloud-a619` (new on `dev`) | read `packages/core/src/<name>.ts` / `require('@zaptill/core/<name>')`; A619's "five identical copies" case now asserts one file and no copy left; its desktop pins expect `import('@zaptill/core/platformPrices')` |
+
+`packages/core` holds **43 modules**; `check-shared-sync`: "49 modules live in packages/core and packages/ui with no
+copies". The 8f "possible bugs" on `offers` (a branch-only offer with no branch; "Sun, Sat") were fixed on `dev` by the
+owner's 2026-11-01 decision and now hold in core.
+
+**Proof that the merge keeps `dev`'s behaviour:**
+
+| Check | Result |
+|---|---|
+| The changed modules, `dev`'s `shared/X.ts` against the merged `packages/core/src/X.ts` (8f's differential harness, generated inputs) | `offers` 22,418, `customerScreen` 33,319, `themes` 53,408 cases — **0 differ**; `release`, `syncTopics`: constants, the changed lines identical |
+| Desktop `dist/main` against a build of `origin/dev` | every file the two builds share is identical apart from `require` lines; the 29 modules `dev` compiles into `dist/main` come from `@zaptill/core` instead |
+| Desktop stylesheet against `origin/dev` | identical apart from the dead `.lowercase` rule batch D dropped (8c) |
+| `tsc` — server, dashboard, admin, desktop `tsconfig.json` and `build:main` (`tsc -b --force`) | pass |
+| Builds — server (`npm run build`, clean `dist`), desktop `build:all`, dashboard and admin `vite build` | pass; `platformPrices` is its own on-demand chunk on the desktop, as on `dev` |
+| `check-shared-sync`, `check-test-registration` (488 files), `check-no-till-wording`, `check-register-consistency`, `check-doc-refs` | pass |
+| Root suites (`TZ=UTC`) | `quiet-refusals-a611` 7, `branch-cloud-a612` 32, `branch-billing-a612` 22, `a617-themes-basic-and-own-prices` 25, `a618-branch-mpesa` 20, `platform-prices-a619` 26, `platform-prices-cloud-a619` 22, `business-settings-menu-a620` 7, `offers` 27, `customer-details-a607` 29, `customer-screen-a606` 17, `no-global-buffer` 3, `brand-colours-a597` 30, `branch-branding-a544` 24, `branding-theme-picker` 18, `theme-access` 21, `web-pos-theme` 22, `order-notes` 16, `attendance-a599` 52, `partner-my-branches-a582` 29, `partner-my-branches-picker-a582` 23, `billing-a584` 27, `polling-cost-a528` 27, `supabase-calls-a593` 29, `supabase-calls-a598` 8, `format` 25, `pos-cart-parity` 9, `petrol-pos-web-a588` 17, `till-scope-enforce-a545` 7, `desktop-writes-allowed` 3, `release-version` 8, `kitchen-font-a543` 5, `permissions-web-a490` 15, `prospect-features` 19, `themes-registry` 27, `brand-palette-a605` 32, `brand-polish-a609` 22, `menus-a537` 15, `menus-top-a566` 10, `menu-hours-a578` 36, `business-terms-a573` 22, `owner-decisions-a580` 23, `web-feel` 47, `web-mobile` 41, `paginate` 28, `offers-cloud` 16, `promotions-scope-a518` 12 — **all pass, 0 failed** (`petrol-pos-web-a588` then the known libuv `async.c` exit) |
+| Desktop suites | `live-sync-a531` 29, `platform-prices-a619` 26, `catalogue-refresh-signal` 18, `credit-approval-a585` 25, `petrol-pos-a588` 49, `menus-a537` 26, `menus-top-a566` 26, `a554-log-fixes` 41, `brand-colours-a597` 19, `branch-branding-a544` 22, `theme-vars` 20 — pass. **`lazy-load-a517` 43/1, `customer-details-a607` 86/1, `customer-display-a606` 65/1: the one main-chunk budget case, below** |
+
+**The main chunk budget.** `lazy-load-a517` (and the same case in `customer-details-a607` and `customer-display-a606`)
+requires the desktop POS's main chunk under 450 kB (characters). `dev` itself is at **449.8 kB** (460,592 characters;
+461,194 bytes) — A619 kept it there by loading `platformPrices` on demand. The merged branch is **450.4 kB** (461,185;
+461,787 bytes): +593 characters, which is batch G's category panel (+611, 8g) less the clean-code pass (−27) and
+minifier noise. Nothing in the merge itself added to it. Making the shared panel smaller would take cryptic look names
+(each look entry's name stays in the minified code), against the owner's clean-code rule. **For the owner:**
+1. accept the panel's cost and set the budget to 451 kB in the three suites (the forecourt suite `petrol-pos-a588`
+   already allows 452 kB); or
+2. undo batch G's move (8g's steps): the main chunk goes back to `dev`'s 449.8 kB, the panel to two copies.
+
+### Step 3 — the two pieces that waited for A619
+
+Compared on the merged files (both payment screens and both cart lists as A619 left them). Neither moved: each differs
+in behaviour, not only in look.
+
+- **Money field / tender keypad** — neither payment screen has a keypad. The web's cash payment is one "Amount tendered
+  (KES)" field with quick-tender buttons above it (Exact, the next notes up — 50, 100, 200, 500, 1,000 — and the next
+  100 / 1,000), and the change below. The desktop's is a split payment: every leg has an "Amount" field and, for cash,
+  a "Tendered" field (or a "Reference" field), with no quick tenders. A shared field would put quick tenders on the
+  desktop or take them from the web. To share it the owner first picks one cash entry for both.
+- **Cart lines** — the desktop's line shows the kitchen mark (🍳 "2 sent") for a restaurant, the variants and the
+  add-ons as small chips, "KES 350 each" / "/L" / "/kg", the money with the device's locale, a note button hidden once
+  the line went to the kitchen, and the line total under the line. The web's shows the variants as one text line, no
+  add-ons, the price through its own `fmt`, a course picker and Held / Fires now for a restaurant, the note button
+  always (fuel aside), minus through `changeQty` (a line already sent to the kitchen asks for a kitchen void first) and
+  the total beside the controls. Sharing them would
+  change one POS or the other.
+
+Nothing was extracted, so no file in either app changed for step 3, both bundles are as after the merge and no size
+changed.
+
+**`check-shared-sync` in CI:** `ci.yml` has the step "Shared code lives once (packages/core, packages/ui)" next to
+"Cited documents exist". It had only been run by hand (8g).
+
+**Step 3 — what is left** (all wait on an owner decision): the product tile and the fuel entry (8g), the forecourt
+pieces (8g), the cash entry and the cart line (above), `WeightModal`, `NoteModal`, `KitchenVoidModal` (8e).
 
 ## 9. Rollback
 

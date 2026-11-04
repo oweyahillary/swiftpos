@@ -1033,6 +1033,13 @@ jobs:
       - name: Cited documents exist
         run: node scripts/check-doc-refs.mjs
 
+      # Shared components (docs/SHARED-COMPONENTS-PLAN.md): the rules live once in packages/core and the POS screen
+      # pieces once in packages/ui. Fails when a copy of a packaged module grows back in an app, an app imports a package
+      # by a relative path, a look wrapper starts drawing its own elements, or @zaptill/ui reaches the cloud or the
+      # desktop's main process.
+      - name: Shared code lives once (packages/core, packages/ui)
+        run: node scripts/check-shared-sync.mjs
+
       # A45: the Receipt tab was shown on isManagerRole while the cloud demanded
       # settings.manage. Ratcheted, not pass/fail — the ground is not green yet
       # (6 unregistered, 6 ungated, 2 phantom) and a gate nobody can make green
