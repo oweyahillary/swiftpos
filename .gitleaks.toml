@@ -21,6 +21,9 @@
 #   • kilimani-consumer-key-0042               — a made-up Daraja consumer key for the stand-in Daraja in
 #                                               tests/a618-branch-mpesa.test.mjs (A618, commit 7d80c7c): never a
 #                                               Safaricom credential; allowlisted so scans over that commit pass.
+#   • abcdef0123456789abcdef0123456789         — a made-up token in an updater.log line in
+#                                               apps/desktop/test/a622-install-first.test.mjs (A622, commit 6fa0819),
+#                                               fed in to prove the extra support-log sections are redacted.
 # Matched on the exact benign strings (regexTarget = match), so real secrets are
 # untouched and the suppression survives line/commit changes.
 
@@ -40,4 +43,5 @@ regexes = [
   '''c2lnbmF0dXJlLXg''',
   '''c2lnbmF0dXJlLXNlY3JldA''',
   '''kilimani-consumer-key-0042''',
+  '''abcdef0123456789abcdef0123456789''',
 ]

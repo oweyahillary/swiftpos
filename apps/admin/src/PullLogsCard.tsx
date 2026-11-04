@@ -9,6 +9,8 @@
  * 90 s beat) and sends the log the same way as "Send logs to support" on its Tech page (secrets removed). The list shows
  * each request: waiting (with when the till was last seen; Cancel), delivered (View / Download the log, as below),
  * expired (7 days unanswered), cancelled. A till older than 1.0.20 cannot answer — it says so.
+ * A622: the sign-in history is ticked by default, and a till from 1.0.24 adds the PC's other logs to every pull: the
+ * updater's own log (an install's exit code) and Windows' events naming ZapTill (a crash, the installer).
  * A554 (the owner's screenshot, 2026-10-21): the version warning showed twice (orange under the device, then green as
  * the request's notice) — now once, in the warning colour; the cloud warns only when nothing says the device answers
  * (it reports log_pull, or answered a pull before — not its version alone), "may wait"; and the device list shows each
@@ -53,7 +55,8 @@ export default function PullLogs({ clientId, req, onView, onDownload, onDelivere
   const [rows, setRows] = useState<PullRow[] | null>(null);
   const [deviceId, setDeviceId] = useState("");
   const [range, setRange] = useState(24);
-  const [auth, setAuth] = useState(false);
+  // A622 (owner, 2026-11-04: "how can we get all logs the app generates"): everything by default; untick to leave it out.
+  const [auth, setAuth] = useState(true);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<{ text: string; warn: boolean } | null>(null);   // A554: a warning is shown as one

@@ -350,7 +350,7 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
-  root: { display: 'flex', flexDirection: 'column', gap: 16, padding: '4px 0', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
+  root: { display: 'flex', flexDirection: 'column', gap: 16, padding: '4px 0' },
   center: { display: 'flex', justifyContent: 'center', padding: 32 },
   spinner: { width: 28, height: 28, border: '3px solid #334155', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.7s linear infinite' },
   header: { textAlign: 'center', paddingBottom: 8 },
@@ -362,18 +362,18 @@ const s: Record<string, React.CSSProperties> = {
   fieldHint: { fontSize: 11, color: '#475569', marginTop: 2 },
   phoneWrap: { display: 'flex', background: '#0f172a', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' },
   phonePrefix: { padding: '11px 12px', fontSize: 14, color: '#64748b', background: '#1e293b', borderRight: '1px solid #334155', flexShrink: 0 },
-  phoneInput: { flex: 1, background: 'transparent', border: 'none', outline: 'none', padding: '11px 14px', color: '#f1f5f9', fontSize: 16, fontWeight: 700, fontFamily: "'DM Sans','Segoe UI',sans-serif", letterSpacing: '0.05em' },
-  input: { background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '11px 14px', color: '#f1f5f9', fontSize: 16, outline: 'none', fontFamily: "'DM Sans','Segoe UI',sans-serif", letterSpacing: '0.08em', textTransform: 'uppercase' },
+  phoneInput: { flex: 1, background: 'transparent', border: 'none', outline: 'none', padding: '11px 14px', color: '#f1f5f9', fontSize: 16, fontWeight: 700, letterSpacing: '0.05em' },
+  input: { background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '11px 14px', color: '#f1f5f9', fontSize: 16, outline: 'none', letterSpacing: '0.08em', textTransform: 'uppercase' },
   errorBox: { background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#fca5a5' },
   actions: { display: 'flex', gap: 10 },
-  btnCancel: { flex: 1, padding: '12px', background: 'transparent', border: '1px solid #334155', borderRadius: 10, color: '#94a3b8', fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
-  btnConfirm: { flex: 2, padding: '12px', background: 'linear-gradient(135deg,#16a34a,#22c55e)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
-  manualLink: { background: 'transparent', border: 'none', color: '#475569', fontSize: 12, cursor: 'pointer', textAlign: 'center', textDecoration: 'underline', padding: '4px', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
+  btnCancel: { flex: 1, padding: '12px', background: 'transparent', border: '1px solid #334155', borderRadius: 10, color: '#94a3b8', fontSize: 14, cursor: 'pointer' },
+  btnConfirm: { flex: 2, padding: '12px', background: 'linear-gradient(135deg,#16a34a,#22c55e)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' },
+  manualLink: { background: 'transparent', border: 'none', color: '#475569', fontSize: 12, cursor: 'pointer', textAlign: 'center', textDecoration: 'underline', padding: '4px' },
 
   // Manual
   manualHeader: { textAlign: 'center' },
   hint: { fontSize: 13, color: '#64748b', lineHeight: 1.6, textAlign: 'center' },
-  linkBtn: { background: 'transparent', border: 'none', color: '#60a5fa', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
+  linkBtn: { background: 'transparent', border: 'none', color: '#60a5fa', fontSize: 12, cursor: 'pointer' },
 
   // Waiting
   waitingCenter: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: 10 },

@@ -112,6 +112,22 @@ export async function requestTaskInstall(d: TaskDeps, o: { version: string; inst
   return { ok: false, reason: `the updater task did not answer in ${Math.round((o.timeoutMs ?? TASK_READY_TIMEOUT_MS) / 1000)} s (blocked by policy or antivirus?)` };
 }
 
+/**
+ * A622: the updater's last answer (updater-status.json, written by the script as SYSTEM, readable by the app): what it
+ * did with which version and why — "failed: installer exit 2" is how a till learns its install did not take. Never throws.
+ */
+export interface UpdaterOutcome { state: string; version: string | null; reason: string; at: string | null }
+export function readUpdaterOutcome(d: Pick<TaskDeps, 'readFile' | 'dir'>): UpdaterOutcome | null {
+  const s = parseStatus(d.readFile(statusFile(d.dir))) as { state?: unknown; version?: unknown; reason?: unknown; at?: unknown } | null;
+  if (!s || typeof s.state !== 'string') return null;
+  return {
+    state: s.state,
+    version: typeof s.version === 'string' && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(s.version) ? s.version : null,
+    reason: typeof s.reason === 'string' ? s.reason.slice(0, 160) : '',
+    at: typeof s.at === 'string' ? s.at : null,
+  };
+}
+
 /** The last lines of the updater's own log (the Tech page). Never throws. */
 export function updaterLogTail(d: Pick<TaskDeps, 'readFile' | 'dir'>, lines = 20): string[] {
   const t = d.readFile(logFile(d.dir));

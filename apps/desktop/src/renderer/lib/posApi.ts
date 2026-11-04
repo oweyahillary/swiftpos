@@ -3,6 +3,7 @@ import type { StockCountFreeze } from '../../shared/stockCountFreeze';
 import type { StockView, OutOfStockMode } from '../../shared/stockGate';   // A563
 import type { LabelSettings } from '../../shared/labels';   // A571
 import type { BarcodeNumbering } from '../../shared/barcode';   // A574
+import type { ReceivedPayment } from '../../shared/mpesaPayments';   // A621
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
@@ -935,6 +936,11 @@ declare global {
         stkReset: () => Promise<any>;
         stkState: () => Promise<any>;
         onStk: (cb: (s: any) => void) => () => void;
+        /** A621: M-Pesa payments received at this branch (main/mpesaC2b.ts). */
+        receivedList: (p: { amount?: number; ref?: string }) => Promise<{ offered: boolean; payments: ReceivedPayment[] }>;
+        receivedClaim: (p: { trans_id: string; sale_ref: string }) => Promise<{ ok: true; payment: ReceivedPayment } | { ok: false; code?: string; error: string }>;
+        receivedRelease: (p: { trans_id: string; sale_ref: string }) => Promise<{ released: boolean }>;
+        onReceivedArrived: (cb: (p: Pick<ReceivedPayment, 'trans_id' | 'amount' | 'first_name'>) => void) => () => void;
       };
       /** 0.6.28: what went to the kitchen, and kitchen voids. */
       kitchen: {

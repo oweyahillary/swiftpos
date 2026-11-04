@@ -2958,7 +2958,7 @@ export default function AdminPortal() {
   })();
 
   return (
-    <div style={{ display: "flex", fontFamily: "'DM Sans', system-ui, sans-serif", background: C.bg, minHeight: "100vh", width: "100vw", overflow: "hidden" }}>
+    <div style={{ display: "flex", background: C.bg, minHeight: "100vh", width: "100vw", overflow: "hidden" }}>
       <style>{`
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         html, body, #root { width: 100%; height: 100%; }

@@ -97,6 +97,15 @@ const SHARED = [
     ],
   },
   {
+    // A621: M-Pesa payment notifications on the POS — what a tapped payment does to the M-Pesa leg, the notice's words.
+    name: 'mpesaPayments.ts',
+    copies: [
+      'shared/mpesaPayments.ts',
+      'apps/desktop/src/shared/mpesaPayments.ts',   // the desktop payment screen's "Payments received" and the notice
+      'apps/dashboard/src/lib/mpesaPayments.ts',    // the web POS's
+    ],
+  },
+  {
     // A606: the customer screen's view — one drawing for the desktop's second window and the web POS's. Each copy sits
     // beside a customerScreen.ts and a themes.ts copy (it imports ./customerScreen and ./themes).
     name: 'CustomerScreenView.tsx',

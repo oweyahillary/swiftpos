@@ -275,7 +275,7 @@ export default function POSLoginScreen() {
                     border: `1px solid ${b.licensed ? 'rgb(var(--act-fill, 59 130 246) / 0.4)' : '#334155'}`,
                     borderRadius: 12, cursor: b.licensed ? 'pointer' : 'not-allowed',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    opacity: loading ? 0.6 : 1, fontFamily: "'DM Sans','Segoe UI',sans-serif",
+                    opacity: loading ? 0.6 : 1,
                   }}>
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: b.licensed ? '#f1f5f9' : '#64748b' }}>{b.name}</div>
@@ -286,7 +286,7 @@ export default function POSLoginScreen() {
               ))}
             </div>
             {error && <p style={{ ...st.errorText, opacity: 1, marginTop: 14 }}>{error}</p>}
-            <button style={{ marginTop: 20, background: 'transparent', border: 'none', color: '#475569', fontSize: 13, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" }}
+            <button style={{ marginTop: 20, background: 'transparent', border: 'none', color: '#475569', fontSize: 13, cursor: 'pointer' }}
               onClick={() => { setStep('login'); setSuccessName(''); setPin(''); setError(''); }}>
               ← Back to login
             </button>
@@ -452,7 +452,7 @@ export default function POSLoginScreen() {
 // Owner, 2026-10-17: the sign-in fits every screen — on a laptop the keypad was cut off below the fold. Spacing, the
 // client's logo and the keys shrink with the screen's height (clamp on vh) down to sizes still easy to tap; 16 px gutter.
 const st: Record<string, React.CSSProperties> = {
-  root: { minHeight: '100dvh', background: 'linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f172a 100%)', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans','Segoe UI',sans-serif", color: '#f1f5f9' },
+  root: { minHeight: '100dvh', background: 'linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f172a 100%)', display: 'flex', flexDirection: 'column', color: '#f1f5f9' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(8px, 2.5vh, 24px) 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' },
   logo: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 18 },
   logoText: { fontWeight: 700, letterSpacing: '-0.5px' },
@@ -462,13 +462,13 @@ const st: Record<string, React.CSSProperties> = {
   title: { fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px', margin: '0 0 6px', color: '#f1f5f9', textAlign: 'center' },
   subtitle: { fontSize: 13, color: '#64748b', margin: '0 0 clamp(10px, 2.5vh, 22px)', textAlign: 'center' },
   emailWrap: { width: '100%', marginBottom: 'clamp(10px, 2vh, 20px)' },
-  emailInput: { width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '11px 14px', color: '#f1f5f9', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: "'DM Sans','Segoe UI',sans-serif" } as React.CSSProperties,
+  emailInput: { width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '11px 14px', color: '#f1f5f9', fontSize: 14, outline: 'none', boxSizing: 'border-box' } as React.CSSProperties,
   dotsRow: { display: 'flex', gap: 12, marginBottom: 10, transition: 'opacity 0.2s' },
   shake: { animation: 'shake 0.5s ease' },
   dot: { width: 14, height: 14, borderRadius: '50%', border: '2px solid #334155', background: 'transparent', transition: 'all 0.15s ease' },
   dotFilled: { background: 'rgb(var(--act-fill, 59 130 246))', borderColor: 'rgb(var(--act-fill, 59 130 246))', boxShadow: '0 0 8px rgb(var(--act-fill, 59 130 246) / 0.5)' },
   dotSuccess: { background: '#22c55e', borderColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.5)' },
-  confirmBtn: { marginBottom: 8, padding: '8px 24px', background: 'rgb(var(--act-strong, 29 78 216))', border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
+  confirmBtn: { marginBottom: 8, padding: '8px 24px', background: 'rgb(var(--act-strong, 29 78 216))', border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontSize: 13, fontWeight: 700, cursor: 'pointer' },
   errorText: { fontSize: 12, color: '#f87171', marginBottom: 4, height: 16, transition: 'opacity 0.2s', textAlign: 'center' },
   successText: { fontSize: 14, color: '#4ade80', marginBottom: 8, fontWeight: 600, textAlign: 'center' },
   keypad: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'clamp(6px, 1vh, 8px)', marginTop: 'clamp(6px, 1.2vh, 12px)', width: '100%', transition: 'opacity 0.2s' },

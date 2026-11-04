@@ -14,7 +14,7 @@
 //   - runStartupInstall passing relaunch true at a quiet sign-in             → "quiet sign-in: the task, relaunch false" fails
 //   - runStartupInstall without the quiet no-task check (falls to prompt)    → "quiet sign-in without the task: no install, no prompt" fails
 //   - startupInstallPlan without the openedByHand allowance                  → "a till opened by hand: install first" fails
-//   - startupInstallPlan letting a server opened by hand install             → "a branch server opened by hand: unchanged" fails
+//   - startupInstallPlan refusing a server opened by hand (A541's rule)       → "A622: a branch server opened by hand installs first" fails
 //   - runStartupInstall without the sync wait                                → "a sync push in flight: waited for" fails
 //   - index.ts without the app.exit after a quiet sign-in with nothing done  → "index.ts: the sign-in launch ends" fails
 import fs from 'node:fs';
@@ -106,15 +106,17 @@ console.log('\n1. The gate (a POS\'s sign-in launch)\n');
 console.log('\n2. The install: quietly at sign-in, or first when opened by hand\n');
 const staged = (o = {}) => ({ version: '1.0.20', installerPath: 'C:\\x\\ZapTill-1.0.20.exe', approved: true, at: '2026-10-18T01:00:00Z', ...o });
 const quietIn = (o = {}) => ({ signInStart: true, updatedLaunch: false, running: '1.0.19', staged: staged(), installerExists: true,
-  triedVersion: null, server: false, shareReady: true, quiet: true, ...o });
+  server: false, shareReady: true, quiet: true, ...o });
 const openIn = (o = {}) => ({ signInStart: false, updatedLaunch: false, running: '1.0.19', staged: staged(), installerExists: true,
-  triedVersion: null, server: false, shareReady: true, openedByHand: true, ...o });
+  server: false, shareReady: true, openedByHand: true, ...o });
 {
   const P = (i) => U.startupInstallPlan(i);
   ok('a till opened by hand: install first', P(openIn()).install === true && /before the POS opens/.test(P(openIn()).reason), P(openIn()).reason);
-  ok('a branch server opened by hand: unchanged (A541 — no install)', P(openIn({ server: true })).install === false);
-  ok('a start by hand that is not "opened by hand" (e.g. the restart task): no install', P(openIn({ openedByHand: false })).install === false);
-  ok('opened by hand: once per version, approved, newer, not after an update', P(openIn({ triedVersion: '1.0.20' })).install === false
+  // A622 (owner, 2026-11-04): every start installs first — a branch server opened by hand too, no "once per version".
+  ok('A622: a branch server opened by hand installs first', P(openIn({ server: true })).install === true
+    && /before this server serves the branch/.test(P(openIn({ server: true })).reason));
+  ok('A622: an automatic start (the restart task) plans the install too (task only — see below)', P(openIn({ openedByHand: false })).install === true);
+  ok('opened by hand: approved, newer, not after an update; a version tried before is tried again', P(openIn({ triedVersion: '1.0.20' })).install === true
     && P(openIn({ staged: staged({ approved: false }) })).install === false && P(openIn({ staged: staged({ version: '1.0.19' }) })).install === false
     && P(openIn({ updatedLaunch: true })).install === false && P(openIn({ cloudApproved: null })).withdrawn === true);
   ok('a quiet sign-in on a till: install (quietly)', P(quietIn()).install === true && /quietly/.test(P(quietIn()).reason));
@@ -162,8 +164,7 @@ const run = async (input, f = {}) => {
   ok('quiet sign-in, an older download: nothing', x.r.installing === false && x.seq.length === 0);
   x = await run(quietIn(), { cloud: null });
   ok('quiet sign-in, the business now on hold: withdrawn, nothing installed', x.r.installing === false && x.seq.join(',') === 'withdraw');
-  x = await run(quietIn({ triedVersion: '1.0.20' }));
-  ok('quiet sign-in: once per version', x.r.installing === false && x.seq.length === 0);
+  // A622: a quiet sign-in launch is still once per version — the gate's signinTried (tillSignInInstallDue) decides that.
 
   x = await run(openIn());
   ok('opened by hand: "Updating ZapTill" screen, then the task with relaunch', x.r.installing === true
@@ -175,7 +176,7 @@ const run = async (input, f = {}) => {
   ok('opened by hand, the installer could not be checked: the screen closes, the till opens normally', x.r.installing === false
     && x.seq.join(',') === 'show:1.0.20,tried:1.0.20,prepare:1.0.20,hide', x.seq.join(','));
   x = await run(openIn({ triedVersion: '1.0.20' }));
-  ok('opened by hand: once per version (no screen)', x.r.installing === false && x.seq.length === 0);
+  ok('A622: opened by hand after a failed try: tries again (screen, task)', x.r.installing === true && x.seq[0] === 'show:1.0.20', x.seq.join(','));
   x = await run(openIn({ updatedLaunch: true }));
   ok('the --updated relaunch: no install', x.r.installing === false && x.seq.length === 0);
   x = await run(openIn(), { syncUntil: 5_000 });

@@ -2297,7 +2297,6 @@ export default function CashierScreen() {
                     flex: 1, padding: '11px', background: 'var(--pos-panel)',
                     border: '1px solid var(--pos-border)', borderRadius: 10,
                     color: 'var(--pos-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                    fontFamily: "'DM Sans','Segoe UI',sans-serif",
                   }}
                   onClick={() => {
                     setShowClearTableModal(false);
@@ -2316,7 +2315,6 @@ export default function CashierScreen() {
                     flex: 1, padding: '11px', background: '#ef4444',
                     border: 'none', borderRadius: 10,
                     color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    fontFamily: "'DM Sans','Segoe UI',sans-serif",
                   }}
                   onClick={() => clearTable(tableToClear)}
                 >
@@ -3032,7 +3030,7 @@ const spinCss = `@keyframes spin { to { transform: rotate(360deg); } }`;
 const s: Record<string, React.CSSProperties> = {
   root: {
     height: '100dvh', display: 'flex', flexDirection: 'column',   // A463: dvh — the phone's address bar no longer hides the bottom
-    background: 'var(--pos-bg)', fontFamily: "'DM Sans','Segoe UI',sans-serif",
+    background: 'var(--pos-bg)',
     color: 'var(--pos-text)', overflow: 'hidden',
   },
   loadingRoot: {

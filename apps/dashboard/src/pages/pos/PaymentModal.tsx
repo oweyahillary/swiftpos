@@ -15,6 +15,9 @@ import type { DiscountState } from './DiscountPanel';
 import ReceiptView from './ReceiptView';
 import MpesaStkPanel from './MpesaStkPanel';
 import SplitPaymentPanel, { type PaymentLeg } from './SplitPaymentPanel';
+import MpesaReceivedList from './MpesaReceivedList';   // A621: payments to the Till number / Paybill, tapped
+import { useMpesaClaims } from './useMpesaClaims';     // A621
+import type { ReceivedPayment } from '../../lib/mpesaPayments';   // A621
 import EvenSplitPanel from './EvenSplitPanel';
 import ByItemSplitPanel from './ByItemSplitPanel';
 import { printReceipt } from '../../lib/printReceipt';
@@ -180,6 +183,9 @@ export default function PaymentModal({
     orderId: string;
     orderNumber: string;
   } | null>(null);
+
+  // A621: M-Pesa payments received to the Till number / Paybill, taken on this screen; given back when it closes unsold.
+  const claims = useMpesaClaims();
 
   // Shared UI state
   const [placing, setPlacing]       = useState(false);
@@ -515,11 +521,20 @@ export default function PaymentModal({
     setError('M-Pesa payment cancelled. The open order can be voided from Order History.');
   }
 
+  // ── A621: a payment received, tapped by the cashier ──────────────────────
+  // Only payments of the whole bill are listed (MpesaReceivedList), so a tap completes and prints the sale (the success screen).
+  function takeReceived(p: ReceivedPayment) {
+    void handleSplitCharge([{ id: 'c2b', method: 'mpesa', amount: grandTotal, reference: p.trans_id }]);
+  }
+  function closeModal() { claims.giveBackAll(); onClose(); }
+
   // ── Split charge ──────────────────────────────────────────────────────────
   async function handleSplitCharge(legs: PaymentLeg[]) {
     if (chargingRef.current) return;   // synchronous double-tap guard
     chargingRef.current = true;
     setPlacing(true); setError('');
+    // A621: a taken payment no longer on the bill goes back; one still on it is money already received (completed).
+    claims.keepOnly(legs.filter(l => l.method === 'mpesa').map(l => l.reference));
     try {
       const payments = legs.map(l => ({
         method:          l.method,
@@ -527,6 +542,7 @@ export default function PaymentModal({
         amount_tendered: l.amount,
         change_given:    0,
         reference:       l.reference ?? null,
+        ...(l.method === 'mpesa' && claims.isTaken(l.reference) ? { status: 'completed' } : {}),
       }));
       const endpoint = existingOrderId
         ? `/api/orders/${existingOrderId}/pay`
@@ -755,7 +771,7 @@ export default function PaymentModal({
         {/* Fixed header */}
         <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-white font-semibold text-lg">Payment</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-xl">✕</button>
+          <button onClick={closeModal} className="text-gray-500 hover:text-white transition-colors text-xl">✕</button>
         </div>
 
         {/* Scrollable body */}
@@ -984,6 +1000,10 @@ export default function PaymentModal({
                     or enter a reference code manually after they pay.
                   </p>
                 </div>
+              )}
+              {method === 'mpesa' && (
+                <MpesaReceivedList toPay={grandTotal} currency={currency} billRef={tableNumber ?? null}
+                  take={claims.take} onTaken={takeReceived} disabled={placing} />
               )}
 
               {/* Card */}

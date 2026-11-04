@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The body font, set ONCE (owner, 2026-11-03: Source Sans 3 — "a global variable rather than having it everywhere").
+   Tailwind's font-sans reads it, so every screen, button and input follows; a screen never names a font of its own
+   (tests/font-global.test.mjs). Bundled (@fontsource-variable/source-sans-3, imported in main.tsx), so it shows offline
+   too. The ZapTill name and logo keep their own brand font; receipts and codes stay monospace. */
+:root { --font-body: 'Source Sans 3 Variable', 'Segoe UI', system-ui, sans-serif; }
+
 /* A328: themeable action channels (r g b). Defaults = Tailwind green 400/500/600 in BOTH modes (themes OFF unchanged).
    With themes ON, src/lib/themeVars.ts sets --action-t-* (same in both modes) and --action-d-400 / --action-l-400 (links
    switch shade with the mode). Chosen so every EXISTING label stays >= 4.5:1: 500 fills carry dark text (theme 500 reads

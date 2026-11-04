@@ -440,4 +440,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'mpesa:stkStart':             { phone: { t: 'string', min: 1 }, amount: { t: 'number' }, ref: { t: 'string', min: 1 } },
   'mpesa:stkReset':             NO_PAYLOAD,
   'mpesa:stkState':             NO_PAYLOAD,
+  'mpesa:receivedList':         { amount: { t: 'number', optional: true }, ref: { t: 'string', optional: true } },
+  'mpesa:receivedClaim':        { trans_id: { t: 'string', min: 1 }, sale_ref: { t: 'string', min: 1 } },
+  'mpesa:receivedRelease':      { trans_id: { t: 'string', min: 1 }, sale_ref: { t: 'string', min: 1 } },
 };

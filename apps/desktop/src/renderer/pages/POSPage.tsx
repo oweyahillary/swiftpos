@@ -26,7 +26,9 @@ import HeldOrdersModal from '../components/HeldOrdersModal';
 // A595: a void / refund is opened rarely — kept out of the main chunk (lazy-load-a517: ≤ 450 kB) to make room for the split
 // rights' catalogue the POS reads (shared/permissions.ts).
 const VoidModal = lazy(() => import('../components/VoidModal'));
-import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
+// A444: one order from History. A621: loaded when opened — keeps the POS's main chunk under its budget (450 kB) with the
+// M-Pesa payment notifications added to the payment screen and the POS page.
+const OrderDetailPanel = lazy(() => import('../components/OrderDetailPanel'));
 import { reverseActionFor, isRefunded, ageMinutes, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
 import { can, SELL_REFUSAL } from '../lib/access';   // A490: the one rule
 import { windowLabel } from '../../shared/reversalRules';
@@ -65,6 +67,7 @@ import { useMenuHours } from '../lib/useMenuHours';   // A578
 const WeightModal = lazy(() => import('../components/WeightModal'));
 // A595 (owner decision D1): add a customer with their KRA PIN — loaded when opened (the main chunk budget).
 const SaleCustomer = lazy(() => import('../components/SaleCustomer'));   // A607: the customer for this sale (A595's + Customer inside)
+const MpesaArrivedNotice = lazy(() => import('../components/MpesaArrivedNotice'));   // A621: "KES 1,080 received — JOHN — …"
 import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, weightUnitOf, formatWeight, type ScaleSettings, type WeighedLine } from '../../shared/scaleBarcode';   // A577
 
 interface Props {
@@ -1603,6 +1606,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         </div>
       )}
 
+      {/* A621: a customer paid the branch's Till number / Paybill — the cashier taps it on the payment screen. */}
+      <Suspense fallback={null}><MpesaArrivedNotice currency={currency} /></Suspense>
+
       {/* A363: the manager's notice — only when something waits; red when the cloud refused a record or sales failed. */}
       {shownNotice && (
         <div
@@ -2611,14 +2617,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
       {/* A444: one order's items, payments, Reprint and Void / Refund. */}
       {detailId && (
-        <OrderDetailPanel
-          orderId={detailId}
-          currency={currency}
-          rights={reverseRights}
-          windowMin={voidWindowMin}
-          onClose={() => setDetailId(null)}
-          onChanged={() => { loadHistory().catch(() => {}); }}
-        />
+        <Suspense fallback={null}>
+          <OrderDetailPanel
+            orderId={detailId}
+            currency={currency}
+            rights={reverseRights}
+            windowMin={voidWindowMin}
+            onClose={() => setDetailId(null)}
+            onChanged={() => { loadHistory().catch(() => {}); }}
+          />
+        </Suspense>
       )}
 
       {/* ── Void confirmation modal ────────────────────────────────── */}

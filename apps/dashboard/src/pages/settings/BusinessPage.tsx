@@ -4,6 +4,7 @@ import { Navigate } from 'react-router-dom';
 import SettingsSection, { type SettingsGroup } from './SettingsSection';
 import WebhooksTab from './WebhooksTab';
 import MpesaStkSettings from './MpesaStkSettings';   // A618, moved to Integrations (A620)
+import MpesaNotificationsSettings from './MpesaNotificationsSettings';   // A621: payments to the Till number / Paybill
 import RestaurantSettingsPage from './RestaurantSettingsPage';
 import MinimartSettingsPage from './MinimartSettingsPage';
 import ParkingSettingsPage from './ParkingSettingsPage';
@@ -96,9 +97,15 @@ export function WebhooksRoute() {
   return <div className="p-4 sm:p-6"><WebhooksTab /></div>;
 }
 
-// A620: Integrations › M-Pesa (STK push) — the Daraja details (A618), the owner's alone.
+// A620: Integrations › M-Pesa (STK push) — the Daraja details (A618), the owner's alone. A621: and below them, the
+// payment notifications per branch (payments made to the Till number / Paybill, listed on the POS).
 export function MpesaRoute() {
   const { isOwner } = usePermissions();
   if (!isOwner) return <p className="p-6 text-sm text-gray-500">Only the owner manages the M-Pesa details.</p>;
-  return <div className="max-w-3xl p-4 sm:p-6"><MpesaStkSettings /></div>;
+  return (
+    <div className="max-w-3xl p-4 sm:p-6 space-y-8">
+      <MpesaStkSettings />
+      <MpesaNotificationsSettings />
+    </div>
+  );
 }

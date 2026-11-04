@@ -1,9 +1,16 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+/* Space Grotesk: the ZapTill name and big figures only (the brand). The body font is --font-body below. */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
+
+/* The body font, set ONCE (owner, 2026-11-03: Source Sans 3 — "a global variable rather than having it everywhere").
+   Tailwind's font-sans reads it, so every screen, button and input follows; a screen never names a font of its own
+   (tests/font-global.test.mjs). Bundled (@fontsource-variable/source-sans-3, imported in main.tsx), so it shows offline
+   too. The ZapTill name and logo keep their own brand font; receipts and codes stay monospace. */
+:root { --font-body: 'Source Sans 3 Variable', 'Segoe UI', system-ui, sans-serif; }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body);
   /* Phase 3: aurora backdrop that the glass surfaces frost over */
   background:
     radial-gradient(40% 45% at 12% 8%,  rgba(56,225,255,0.16), transparent 60%),
