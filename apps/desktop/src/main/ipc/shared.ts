@@ -15,7 +15,7 @@ import { cacheStaffCredential, verifyPinOffline } from '../pinCache';
 import { assertPinAllowed, recordPinFailure } from '../pinAttempts';
 import path from 'path';   // A516
 import { configureStaffSession, syncAll, syncPush, refreshAccessToken, refreshStaffToken, pullWebSales } from '../syncEngine';
-import { receiptClassicFrom, kitchenFontBFrom } from '../posFeatures';
+import { receiptClassicFrom, kitchenFontBFrom } from '@zaptill/core/posFeatures';
 import { signedIn as sessionPerson, signedInCan, personCan, roleCeilingRefusal, mayActOn, type PersonLike } from '../tillAccess';
 import { getCloudUrl, getDeviceConfig, getPosFeatures } from '../deviceConfig';
 import { localShiftIds, type ForeignCash } from '../shiftService';
@@ -23,7 +23,7 @@ import { type RangePreset } from '../managerReports';
 import { createOpenBills } from '../sellGate';
 import { normaliseCode } from '../terminalCodes';
 import { localOrderDetail } from '../managerReports';   // A444
-import { detailFromCloud, type OrderDetail } from '../orderDetail';
+import { detailFromCloud, type OrderDetail } from '@zaptill/core/orderDetail';
 import { verifyPinAtNodeClient } from '../nodeClient';
 import { isUnreachableStatus, ForeignPageError } from '../authTransport';   // A529: ForeignPageError
 import { heldOfflinePin, upgradeOfflineSession, OFFLINE_SESSION_MESSAGE, NO_CONNECTION_MESSAGE, type ManageOfflineReason } from '../offlineSession';
@@ -237,6 +237,8 @@ export function createIpcShared(handle: IpcHandle) {
     payload: any,
     kinds: Array<'kitchen' | 'dispatch' | 'receipt'>,
     reprint?: { at: Date; count: number },
+    /** Owner, 2026-11-04: Print bill — the receipt station prints the bill before payment (no number, no payments). */
+    proforma = false,
     // 0.5.27 — returns the stations that produced NOTHING. printSale has always
     // computed this and every caller threw it away, so a station with no printer
     // bound on this terminal was skipped in silence. That is register D8, and
@@ -322,6 +324,7 @@ export function createIpcShared(handle: IpcHandle) {
           kotCount:       effective.filter(
             st => st.kind !== 'receipt' && assignedIds.has(st.id)).length,
           reprint,
+          ...(proforma ? { proforma: true } : {}),
         },
         {
           name:            sess?.business_name ?? '',

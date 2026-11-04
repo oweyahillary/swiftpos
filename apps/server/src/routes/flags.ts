@@ -4,7 +4,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { POS_FEATURE_KEYS } from '../lib/posFeatures';
+import { POS_FEATURE_KEYS } from '@zaptill/core/posFeatures';
 
 /**
  * Audit 2026-10-14: the feature switches a client may flip themselves. EVERY other key is set by ZapTill in the admin portal

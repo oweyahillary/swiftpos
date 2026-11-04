@@ -58,7 +58,7 @@ const put = async (table, row) => {
 };
 
 console.log('\nMigration 175 (cash in / cash out / expenses as three rights) — PGlite, every migration\n');
-const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const A = id(0xa), B = id(0xb);   // A never touched the switch; B's admin set it (stored row, off = cashiers allowed)
 await put('businesses', { id: A, name: 'Sample Shop', type: 'retail' });

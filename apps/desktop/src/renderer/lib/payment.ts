@@ -40,6 +40,8 @@ export interface DraftLeg {
   amount: string;     // raw input; '' means "the remaining balance"
   tendered: string;   // cash only
   reference: string;  // mpesa/card/glovo/custom — the aggregator's order reference
+  /** 2026-11-04: whose part of the bill this is, when the bill was split between people ("Person 1", "Guest 2"). */
+  who?: string;
 }
 
 // VAT-inclusive pricing: VAT is extracted from the post-discount goods total.

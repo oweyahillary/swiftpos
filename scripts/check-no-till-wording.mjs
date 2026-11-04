@@ -35,6 +35,7 @@ export const ROOTS = [
   'apps/desktop/src/shared',
   'apps/server/src',
   'shared',
+  'packages', // shared-components: code that moved out of the apps' copies
 ];
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-electron', 'test-dist', 'release', 'build', 'coverage', '.vite', 'test', 'tests', '__tests__']);
 const EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.html']);

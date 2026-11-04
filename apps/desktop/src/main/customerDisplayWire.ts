@@ -11,7 +11,7 @@ import { getReceiptPay } from './receiptPay';
 import { logLine } from './logFile';
 import { createCustomerDisplay, CHOICE_KEY, type CustomerDisplay, type DisplayWindow } from './customerDisplay';
 import { createSlideCache, SLIDES_KEY, type SlideCache } from './customerSlides';
-import { gateDisplayContent, mpesaFromReceiptLine, type DisplayContent, type NumberedScreen } from './customerScreen';
+import { gateDisplayContent, mpesaFromReceiptLine, type DisplayContent, type NumberedScreen } from '@zaptill/core/customerScreen';
 
 const isDev = (): boolean => { try { return !app.isPackaged; } catch { return false; } };
 

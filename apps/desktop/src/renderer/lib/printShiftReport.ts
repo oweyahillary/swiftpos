@@ -17,8 +17,8 @@
  */
 import type { ZReport } from './posApi';
 import { zBackupNote } from './syncNotice';
-import { confirmationPrintLines } from '../../shared/shiftConfirm';
-import { kitchenVoidText } from '../../shared/kitchenLines';
+import { confirmationPrintLines } from '@zaptill/core/shiftConfirm';
+import { kitchenVoidText } from '@zaptill/core/kitchenLines';
 import { readPrinterSettings } from '../hooks/usePrinterSettings';   // A454
 
 /** Money crosses into shared/printing as integer cents, never as a float. */

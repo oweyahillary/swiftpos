@@ -1,7 +1,7 @@
 /**
  * test-migration-142.mjs — A514: every business gets the built-in roles it does not have (Supervisor, Waiter, Kitchen,
  * Storekeeper, Accountant; Fuel attendant at a fuel business; Manager / Cashier where missing), with exactly the default
- * keys of shared/permissions.ts BUILT_IN_ROLES, nobody assigned, and never a change to a role of that name the business
+ * keys of packages/core/src/permissions.ts BUILT_IN_ROLES, nobody assigned, and never a change to a role of that name the business
  * already has — run for real against the WHOLE schema (every migration replayed into PGlite).
  *
  * MUTATIONS TO CONFIRM BITE: the NOT EXISTS name check dropped → the run fails on the unique name or "an existing
@@ -58,7 +58,7 @@ const put = async (table, row) => {
 
 
 const { pathToFileURL } = await import('node:url');
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 
 console.log('\nMigration 142 (built-in roles) — PGlite, every migration\n');
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;

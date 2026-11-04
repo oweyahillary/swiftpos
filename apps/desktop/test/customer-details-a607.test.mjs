@@ -25,7 +25,7 @@
 //   5  premium: the second-screen form needs the online licence and the PC's touch-screen setting.
 //   6  the local schema 78 (orders.buyer_kra_pin), REQUIRED with it; a sale saves the PIN (normalised; a bad one dropped) and
 //      sends it to the cloud; the receipt prints "Buyer PIN: …"; the eTIMS flag pulled (older cloud → kept) and relayed.
-//   7  the bundle: every new panel lazy — the POS's main chunk < 450 kB (lazy-load-a517) and ≤ 452 kB (petrol-pos-a588).
+//   7  the bundle: every new panel lazy — the POS's main chunk < 460 kB (lazy-load-a517, petrol-pos-a588; owner 2026-11-04).
 //
 // MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted and checked byte for byte — listed in the A607 entry).
 import fs from 'node:fs';
@@ -50,14 +50,14 @@ Module._resolveFilename = function (req, parent, ...rest) { return req === 'elec
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 
-const CDT = require(path.join(dist, 'customerDetails.js'));
+const CDT = require('@zaptill/core/customerDetails');   // shared-components batch E: packages/core
 const CD = require(path.join(dist, 'customerDisplay.js'));
 const STK = require(path.join(dist, 'mpesaStk.js'));
 
 // The REAL views, bundled for Node and rendered to HTML (no browser).
 const entry = path.join(userData, 'entry.tsx');
 const fwd = (p) => JSON.stringify(path.join(desktop, p).split(path.sep).join('/'));
-fs.writeFileSync(entry, `export { default as Form, StkBanner } from ${fwd('src/shared/CustomerAskForm.tsx')};
+fs.writeFileSync(entry, `export { default as Form, StkBanner } from ${fwd('../../packages/ui/src/CustomerAskForm.tsx')};
 export { default as TypesIt } from ${fwd('src/renderer/components/CustomerTypesIt.tsx')};
 export { createElement } from 'react';
 export { renderToStaticMarkup } from 'react-dom/server';`);
@@ -210,7 +210,7 @@ try {
       /onAnswered\(\(a\) => \{[\s\S]*?if \(a\.answer\) fill\(a\.answer/.test(sc) && !/onAnswered\([\s\S]{0,300}onDone\(/.test(sc));
     ok('…the sale carries the details only after "Use for this sale" (onDone → the POS\'s buyer → the order)',
       /onClick=\{use\}/.test(sc) && /onDone=\{\(b\) => \{ setBuyer\(b\);/.test(pos) && /\.\.\.buyer\?\.sale,/.test(pos));
-    ok('…and a new sale starts with none (resetOrder)', /setOrderNote\(''\); setBuyer\(null\); \};/.test(pos));
+    ok('…and a new sale starts with none (resetOrder)', /const resetOrder = \(\) => \{[^\n]*setOrderNote\(''\); setBuyer\(null\);[^\n]*\};/.test(pos));
     ok('saving a customer is the consent plan\'s (only with "save"), with the person\'s own sign-in (customer:create)',
       /if \(plan\.saveCustomer\) \{[\s\S]*?posApi\.order\.createCustomer\(plan\.saveCustomer\)/.test(sc));
     ok('a number the customer typed is masked for someone without customers.contacts', /setMasked\(!!a\.phone && !seesRef\.current\)/.test(sc)
@@ -414,8 +414,9 @@ try {
       const inMain = (rel) => Object.keys(main.modules).some((m) => m.split(path.sep).join('/').endsWith(`/src/${rel}`));
       console.log(`  (built: main chunk ${(main.code.length / 1024).toFixed(1)} kB)`);
       ok('the details panel, "Customer types it", the form, its keyboard and the M-Pesa prompt are NOT in the POS\'s main chunk',
-        !['renderer/components/SaleCustomer.tsx', 'renderer/components/CustomerTypesIt.tsx', 'renderer/components/MpesaStkPanel.tsx', 'shared/CustomerAskForm.tsx', 'shared/customerDetails.ts'].some(inMain));
-      ok('the POS\'s main chunk < 450 kB (lazy-load-a517) and ≤ 452 kB (petrol-pos-a588)', main.code.length < 450 * 1024 && main.code.length <= 452 * 1024, `${(main.code.length / 1024).toFixed(1)} kB`);
+        !['renderer/components/SaleCustomer.tsx', 'renderer/components/CustomerTypesIt.tsx', 'renderer/components/MpesaStkPanel.tsx', 'CustomerAskForm.tsx', 'customerDetails.ts'].some(inMain));
+      // Owner, 2026-11-04: one budget, 460 kB (was 450 here and in lazy-load-a517, 452 in petrol-pos-a588).
+      ok('the POS\'s main chunk < 460 kB (lazy-load-a517, petrol-pos-a588)', main.code.length < 460 * 1024, `${(main.code.length / 1024).toFixed(1)} kB`);
     }
   }
 } finally {

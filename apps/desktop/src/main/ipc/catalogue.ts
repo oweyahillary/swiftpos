@@ -2,15 +2,15 @@
 // Registered from ipcHandlers.ts (D10).
 import { getLocalDb, effectiveReceiptFooter } from '../localDb';
 import { getDeviceConfig, getPosFeatures, getStockCountFreeze, getScaleSettings } from '../deviceConfig';
-import { parseNotePicks } from '../orderNotes';
-import { cleanShowDays } from '../productDays';
+import { parseNotePicks } from '@zaptill/core/orderNotes';
+import { cleanShowDays } from '@zaptill/core/productDays';
 import { tillStockView } from '../stockGateLocal';   // A563
 import { forecourtSales, forecourtTanks } from '../forecourt';   // A588
 import { type IpcShared } from './shared';
 
 /** The sale screen's data: products, categories, variants, modifiers, tables, pumps, payment methods. */
 export function registerCatalogueHandlers(ctx: IpcShared) {
-  const { handle, tillFetch, withinMs } = ctx;
+  const { handle, tillFetch, withinMs, manageFetch } = ctx;
 
   // ── POS data ────────────────────────────────────────────
 
@@ -53,6 +53,19 @@ export function registerCatalogueHandlers(ctx: IpcShared) {
       return res.json();
     });
     return { ...forecourtSales(), ...tanks };
+  });
+
+  // Owner, 2026-11-04: a fuel line put on the sale marks its pump dispensing on the cloud, as the web POS does — with the
+  // online licence, online, as the person signed in (the cloud checks they may sell at the pump's branch). Never in the
+  // sale's way: offline, unlicensed or refused, it answers { ok: false } and the sale goes on as before.
+  handle('pos:activatePump', async (_e, pumpId: string) => {
+    if (getDeviceConfig()?.web_pos_enabled !== true) return { ok: false };
+    try {
+      await manageFetch(`/api/pumps/${encodeURIComponent(pumpId)}/activate`, 'PATCH', {});
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
   });
 
   handle('pos:init', async () => {

@@ -4,7 +4,7 @@ import BranchReceiptOverrides from "./settings/BranchReceiptOverrides";
 import { api } from "../lib/api";
 import { DESK, useRowMore, ViewMore, MoreRow } from "../components/RowMore";
 import Pager, { usePageSize } from "../components/Pager";   // A475
-import { paginate } from "../lib/paginate";
+import { paginate } from "@zaptill/core/paginate";
 
 interface Branch {
   id: string;

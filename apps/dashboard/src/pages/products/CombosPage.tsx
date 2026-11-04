@@ -12,7 +12,7 @@ import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { money } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { useBusiness } from '../../context/BusinessContext';
 
 interface ComboProduct {

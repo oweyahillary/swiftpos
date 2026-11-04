@@ -27,7 +27,9 @@ const APPS = [
   { name: 'desktop',   css: 'apps/desktop/src/renderer/index.css', main: 'apps/desktop/src/renderer/main.tsx', tailwind: 'apps/desktop/tailwind.config.js' },
   { name: 'admin',     css: 'apps/admin/src/index.css', main: 'apps/admin/src/main.tsx', tailwind: null },
 ];
-const SCREEN_DIRS = ['apps/dashboard/src', 'apps/desktop/src/renderer', 'apps/desktop/src/shared', 'apps/admin/src'];
+// packages/ui/src: the screens both POS share (the customer screen, the category panel …) live there once — the
+// desktop's src/shared copies are gone (docs/SHARED-COMPONENTS-PLAN.md).
+const SCREEN_DIRS = ['apps/dashboard/src', 'apps/desktop/src/renderer', 'apps/admin/src', 'packages/ui/src'];
 
 /** Printouts open in their own window, where the app's variable does not exist — they keep the system font. */
 const OWN_WINDOW = new Set([

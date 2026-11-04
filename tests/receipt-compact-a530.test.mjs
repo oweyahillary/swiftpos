@@ -4,7 +4,7 @@
  *
  * Owner, 2026-10-19: "I feel the receipt is too long wasting paper" … "the switch settings … should be in the admin per
  * client". The layout, spacing, logo and feed themselves are pinned in shared/printing (test/receipt-compact.test.ts,
- * with the 1.0.19 golden). This pins the wiring: the four switches in shared/posFeatures.ts, the admin portal switching
+ * with the 1.0.19 golden). This pins the wiring: the four switches in packages/core/src/posFeatures.ts, the admin portal switching
  * them, the client unable to, and every receipt path (the till's queue and test print, the web POS's receipt, Print Bill
  * and reprint) handing them to the renderer — running the real web mapper and the committed web bundle.
  *
@@ -36,7 +36,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const F = await import(pathToFileURL(path.join(ROOT, 'shared/posFeatures.ts')).href);
+const F = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/posFeatures.ts')).href);
 const B = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/buildReceiptOrder.ts')).href);
 const E = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/escposRenderer.js')).href);
 // A538: the admin portal's order — the compact opt-in first, then the three that bring 1.0.19's spacing, logo and feed.

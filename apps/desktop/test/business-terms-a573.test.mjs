@@ -5,7 +5,7 @@
 // navigation bar, strangley enough in retail businness their is a menu item … please read all business menu and name items
 // correctly ensure hotel references hav been removed everywere".
 //
-// RUNS the shared helper (src/shared/businessTerms.ts — the web runs the same file), lib/managerNav.ts (the Manager
+// RUNS the shared helper (packages/core/src/businessTerms.ts — the web runs the same file), lib/managerNav.ts (the Manager
 // sidebar) and lib/posMode.ts, and the till's MenuBar / CategoryPanel (bundled with esbuild, rendered with
 // react-dom/server); pins the wiring in ManagerPage and POSPage (big components — read from the source).
 //
@@ -30,12 +30,13 @@ const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } el
 
 const bundleDir = fs.mkdtempSync(path.join(desktop, 'node_modules', '.a573-'));
 const bundle = (entry, out) => {
+  // preserveSymlinks: @zaptill/ui/CategoryPanel (shared components batch G) finds @zaptill/core through this app's node_modules, as Vite does.
   require('esbuild').buildSync({ entryPoints: [path.join(desktop, entry)], bundle: true, format: 'esm', platform: 'node',
-    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', external: ['react', 'react-dom'] });
+    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', preserveSymlinks: true, external: ['react', 'react-dom'] });
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };
 
-const T = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'businessTerms.ts')).href);
+const T = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'businessTerms.ts')).href);
 const N = await import(pathToFileURL(path.join(desktop, 'src', 'renderer', 'lib', 'managerNav.ts')).href);
 const PM = await import(pathToFileURL(path.join(desktop, 'src', 'renderer', 'lib', 'posMode.ts')).href);
 const React = require('react');
@@ -50,8 +51,7 @@ const TYPES = ['restaurant', 'cafe', 'retail', 'minimart', 'parking', 'petrol_st
 console.log('A573 — the till speaks the business\'s words\n');
 try {
   ok('the till and the web read one word per type (the same file; the till\'s mode is the same type)', (() => {
-    const shared = fs.readFileSync(path.join(desktop, '..', '..', 'shared', 'businessTerms.ts'), 'utf8');
-    if (src('shared/businessTerms.ts') !== shared) return false;
+    if (fs.existsSync(path.join(desktop, 'src', 'shared', 'businessTerms.ts'))) return false;   // no copy: @zaptill/core/businessTerms
     const words = TYPES.map((t) => T.businessTerms(PM.modeFlags(t).mode).menus);
     return JSON.stringify(words) === JSON.stringify(['Menus', 'Menus', 'Departments', 'Departments', 'Groups', 'Departments', 'Groups'])
       && TYPES.every((t) => T.isFoodService(PM.modeFlags(t).mode) === PM.modeFlags(t).isRestaurant);

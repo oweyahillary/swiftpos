@@ -8,7 +8,7 @@
  */
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import { parseNotePicks, PICKS_MAX } from '../../lib/orderNotes';
+import { parseNotePicks, PICKS_MAX } from '@zaptill/core/orderNotes';
 
 interface BizSetting { key: string; value: string }
 

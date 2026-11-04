@@ -10,18 +10,18 @@
 
 import { overlayLocalChanges } from './localChanges';   // A448
 import { nodeChangeVersion } from './nodeClient';   // A448
-import { cleanOffer, type Offer } from './offers';   // A445
-import type { ChangeEntry } from './syncTopics';   // A531
+import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
+import type { ChangeEntry } from '@zaptill/core/syncTopics';   // A531
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme, applyPulledBranchBranding } from './localDb';
 import { logLine, describeResponse, getLogPath, authLog } from './logFile';
 import { getMacAddressCached, identityHeaders } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, readDeviceSecret, writeDeviceSecret } from './tokenStore';
 import { deviceGrantBody } from './sessionRecovery';   // A407
-import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
+import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
+import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from '@zaptill/core/delivery';
 import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setThemesPremium, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled, setPlatformPricing } from './deviceConfig';
-import { cleanOwnPrices } from './platformPrices';   // A619
+import { cleanOwnPrices } from '@zaptill/core/platformPrices';   // A619
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
 import { notePushOk } from './distributionLag';   // A534 (A23): the branch server's distribution lag
@@ -40,7 +40,7 @@ import { readPending as readPendingRouting, overlayPending as overlayPendingRout
 import { executeCloseDay } from './branchClose';
 import { unpackNodeBundle, numOrNull, type AcquiredReference, identityFromWire } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
-import { saleBuyerPin } from './customerDetails';   // A607
+import { saleBuyerPin } from '@zaptill/core/customerDetails';   // A607
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
 import { closesToAdopt, keepOwnExpected, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401, A521
@@ -56,7 +56,7 @@ import {
 } from './nodeIngest';
 import { pruneNodeInstructions } from './branchClose';   // P3
 import { v4 as uuid } from 'uuid';
-import { cleanShowDays } from './productDays';
+import { cleanShowDays } from '@zaptill/core/productDays';
 import { pruneChoices, VARIANT_TABLES, MODIFIER_TABLES } from './choicePrune';   // A425
 import { storeSessionPermissions } from './tillAccess';   // A490
 import { claimOrderNumberForOwnSale } from './billNumber';   // A500

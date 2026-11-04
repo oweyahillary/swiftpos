@@ -11,10 +11,10 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import CustomerScreenView from '../../shared/CustomerScreenView';
-import { idleState, sanitiseDisplayState, gateDisplayContent, type DisplayState, type DisplayContent } from '../../shared/customerScreen';
-import CustomerAskForm, { StkBanner } from '../../shared/CustomerAskForm';   // A607
-import { sanitiseAsk, sanitiseStk, type AskRequest, type StkView } from '../../shared/customerDetails';
+import CustomerScreenView from '@zaptill/ui/CustomerScreenView';
+import { idleState, sanitiseDisplayState, gateDisplayContent, type DisplayState, type DisplayContent } from '@zaptill/core/customerScreen';
+import CustomerAskForm, { StkBanner } from '@zaptill/ui/CustomerAskForm';   // A607
+import { sanitiseAsk, sanitiseStk, type AskRequest, type StkView } from '@zaptill/core/customerDetails';
 
 type Content = DisplayContent & { slideKeys?: string[] };
 const EMPTY: Content = gateDisplayContent({ businessName: null, themeId: null, logo: null, primaryHex: null, secondaryHex: null,

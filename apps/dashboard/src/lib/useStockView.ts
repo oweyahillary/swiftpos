@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NO_STOCK_VIEW, type OutOfStockMode, type StockView } from './stockGate';
+import { NO_STOCK_VIEW, type OutOfStockMode, type StockView } from '@zaptill/core/stockGate';
 
 /**
  * useStockView — A563: the owner's "When an item's stock reaches zero" choice and this branch's known levels of tracked

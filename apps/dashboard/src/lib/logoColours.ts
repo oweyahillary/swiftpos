@@ -10,7 +10,7 @@
  *  count the rest in coarse colour boxes (16 levels a channel) and take each box's average (a flat logo colour comes out
  *  exactly); rank by how many pixels and how colourful; drop any colour too close to one already taken (OKLab 0.09).
  */
-import { oklab, oklch, type Hex } from './themes';
+import { oklab, oklch, type Hex } from '@zaptill/core/themes';
 
 export interface LogoColours {
   /** 0–5 dominant colours, most important first (#rrggbb). */

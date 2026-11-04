@@ -162,6 +162,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:paymentMethods': NO_PAYLOAD,
   'pos:getPumps':       NO_PAYLOAD,
   'pos:forecourt':      NO_PAYLOAD,   // A588
+  'pos:activatePump':   { kind: 'string', min: 1 },   // owner 2026-11-04: the pump's id
   'pos:init':           NO_PAYLOAD,
   'pos:getVariants':    { kind: 'string' },
   'pos:getModifiers':   { kind: 'string' },
@@ -179,6 +180,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'escpos:setKitchenExclusions':   { kind: 'stringArray' },
   'escpos:clearKitchenExclusions': NO_PAYLOAD,
   'escpos:printProduction':        { kind: 'object' },   // production bag
+  'escpos:printBill':              { kind: 'object' },   // owner 2026-11-04: the open order's bill (online licence)
   'escpos:reprintReceipt':         NO_PAYLOAD,
   'escpos:reprintReceiptForOrder': { kind: 'string' },
   'escpos:printShiftReport':       { kind: 'object' },   // shift payload
@@ -431,6 +433,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // A607: customer details at the counter (main/ipc/customerDetails.ts) — the request and the answer are cleaned in main
   // (customerDetails.ts sanitiseAsk / cleanAnswer); the answer is accepted only from the customer screen's own page.
   'customer:saleInfo':          NO_PAYLOAD,
+  'customer:loyaltyPoints':     { kind: 'string', min: 1 },   // owner 2026-11-04: the customer's id
   'customerDisplay:askable':    NO_PAYLOAD,
   'customerDisplay:ask':        { id: { t: 'string', min: 4 }, purpose: { t: 'string' } },
   'customerDisplay:cancelAsk':  { id: { t: 'string', optional: true } },

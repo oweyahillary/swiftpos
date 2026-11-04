@@ -37,7 +37,7 @@ process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const jwt = require('jsonwebtoken');
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
-const P = require(path.join(DIST, 'lib/permissions.js'));
+const P = require('@zaptill/core/permissions');
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
 
 const id = () => randomUUID();

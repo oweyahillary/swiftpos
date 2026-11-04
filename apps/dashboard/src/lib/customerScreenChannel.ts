@@ -13,8 +13,8 @@
  * customer screen is a touch screen" (TOUCH_KEY, this browser only).
  */
 import { useEffect, useRef } from 'react';
-import { sanitiseDisplayState, type DisplayContent, type DisplayState } from './customerScreen';
-import { sanitiseAsk, cleanAnswer, sanitiseStk, type AskRequest, type CustomerAnswer, type StkView } from './customerDetails';
+import { sanitiseDisplayState, type DisplayContent, type DisplayState } from '@zaptill/core/customerScreen';
+import { sanitiseAsk, cleanAnswer, sanitiseStk, type AskRequest, type CustomerAnswer, type StkView } from '@zaptill/core/customerDetails';
 
 export const CUSTOMER_SCREEN_CHANNEL = 'zaptill-customer-screen';
 export type ChannelMessage =

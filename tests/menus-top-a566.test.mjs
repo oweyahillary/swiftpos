@@ -7,7 +7,7 @@
 // used to appear so that cashiers can easily pick the menu".
 //
 // RUNS the web POS's MenuBar and CategoryPanel (apps/dashboard/src/pages/pos/cashier/CategoryPanel.tsx, bundled with
-// esbuild, rendered with react-dom/server) and the shared helper (lib/menuFilter.ts = shared/menuFilter.ts); pins the two
+// esbuild, rendered with react-dom/server) and the shared helper (packages/core/src/menuFilter.ts); pins the two
 // screens' wiring.
 //
 //   T  menus → a row of top tabs ("All", "Food", "Drinks" …, 46 px, the theme's --act-strong on the chosen one, the POS's
@@ -33,13 +33,14 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const bundleDir = fs.mkdtempSync(path.join(DASH, 'node_modules', '.a566-'));
 const bundle = (entry, out) => {
+  // preserveSymlinks: @zaptill/ui/CategoryPanel (shared components batch G) finds @zaptill/core through this app's node_modules, as Vite does.
   require('esbuild').buildSync({ entryPoints: [path.join(DASH, entry)], bundle: true, format: 'esm', platform: 'node',
-    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', external: ['react', 'react-dom'] });
+    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', preserveSymlinks: true, external: ['react', 'react-dom'] });
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };
 
 try {
-  const M = await import(pathToFileURL(path.join(DASH, 'src/lib/menuFilter.ts')).href);
+  const M = await import(pathToFileURL(path.join(DASH, '..', '..', 'packages/core/src/menuFilter.ts')).href);
   const CP = await bundle('src/pages/pos/cashier/CategoryPanel.tsx', 'panel.mjs');
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');

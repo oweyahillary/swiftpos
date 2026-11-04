@@ -20,7 +20,7 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
-import { cleanChange, ENTITY_SPECS, describeChange, type TillChange, type ChangeEntity } from './tillChanges';
+import { cleanChange, ENTITY_SPECS, describeChange, type TillChange, type ChangeEntity } from '@zaptill/core/tillChanges';
 import { roleMap } from './personAccess';   // A490
 
 // A496: relayed = applied on a branch server for a till. A521 (#6): and forwarded to the cloud from the server too (the

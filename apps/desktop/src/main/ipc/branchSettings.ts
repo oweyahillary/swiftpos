@@ -1,19 +1,19 @@
 // IPC: branch settings set from the till — receipt text, continuous operation, reversal rules, offers, payment
 // methods, M-Pesa, cashier history. Registered from ipcHandlers.ts (D10).
 import { offeredVersion, shareDir, shareProgress, tillVersions } from '../updateShare';   // A443, A496
-import { cleanOffer, type Offer } from '../offers';   // A445
+import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
 import { app } from 'electron';
 import { assertPayload } from '../ipcValidate';
-import { historyMethodsSettingValue, CASHIER_HISTORY_METHODS_KEY } from '../cashierHistory';
+import { historyMethodsSettingValue, CASHIER_HISTORY_METHODS_KEY } from '@zaptill/core/cashierHistory';
 import { getLocalDb } from '../localDb';
 import { setReceiptPay } from '../receiptPay';
 import { syncAll } from '../syncEngine';
 import { tillBranchId } from '../deviceConfig';   // A446
 import { signedIn as sessionPerson, personKeys, hasMarker, isOwnerRole } from '../tillAccess';
-import { maySetMpesa } from '../permissions';   // A492
-import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from '../mpesaReceive';   // A492
+import { maySetMpesa } from '@zaptill/core/permissions';   // A492
+import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
 import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getCashierHistoryMethods, setCashierHistoryMethods, getPaymentMethodsEnabled, setPaymentMethodsEnabled, getPlatformPricing } from '../deviceConfig';
-import { isReversalSettingKey, reversalSettingValue } from '../reversalRules';
+import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
 import { type IpcShared } from './shared';
 
 /** Branch settings from the till: receipt text, continuous operation, reversal rules, offers, payment methods, M-Pesa, cashier history. */

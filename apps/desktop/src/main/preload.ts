@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
     forecourt:    ()                  => ipcRenderer.invoke('pos:forecourt'),   // A588: litres today, last sales, tank levels
+    activatePump: (pumpId: string)    => ipcRenderer.invoke('pos:activatePump', pumpId),   // online licence: the pump dispensing
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
     paymentMethodsEnabled: ()         => ipcRenderer.invoke('pos:paymentMethodsEnabled'),   // A429
     offers: ()                        => ipcRenderer.invoke('pos:offers'),   // A445
@@ -288,6 +289,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   // A607: customer details at the counter, and the M-Pesa prompt (main/mpesaStk.ts) — its progress on both screens.
   customerDetails: {
     saleInfo: () => ipcRenderer.invoke('customer:saleInfo'),
+    loyaltyPoints: (customerId: string) => ipcRenderer.invoke('customer:loyaltyPoints', customerId),   // owner 2026-11-04
   },
   mpesa: {
     stkOffered: ()                                                   => ipcRenderer.invoke('mpesa:stkOffered'),
@@ -505,6 +507,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     // it is paid. See main/escposBridge.ts.
     printProduction: (payload: unknown) =>
                    ipcRenderer.invoke('escpos:printProduction', payload),
+    // Owner, 2026-11-04 (online licence): the open order's bill before payment — "BILL - NOT A RECEIPT".
+    printBill: (payload: unknown) => ipcRenderer.invoke('escpos:printBill', payload),
     // The effective list + where it came from (override vs synced cloud base).
     kitchenExclusions: () => ipcRenderer.invoke('escpos:kitchenExclusions'),
     // Set this terminal's local override — wins over cloud, survives every sync.

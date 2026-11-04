@@ -10,7 +10,7 @@
  * RUNS the COMPILED server — routes/index.js behind the REAL requireAuth — over HTTP on the in-memory database
  * (tests/lib-memdb.mjs; create_order_atomic as the A602 test models it), with a stand-in KRA eTIMS (ETIMS_PROVIDER=vscu,
  * ETIMS_BASE_URL → a local server that records what it is sent) and a stand-in Daraja (Safaricom's addresses answered in
- * the process); and the REAL web POS channel (lib/customerScreenChannel.ts) and form (lib/CustomerAskForm.tsx), bundled.
+ * the process); and the REAL web POS channel (lib/customerScreenChannel.ts) and form (packages/ui CustomerAskForm.tsx), bundled.
  *
  *   1 the sale's buyer PIN: stored (upper case) by POST /api/orders and by /pay; a malformed one refused 400 BAD_BUYER_PIN and
  *     nothing written; the history backfill drops one instead (an old sale is never refused) and still never fiscalises.
@@ -42,7 +42,7 @@ const DIST = process.env.SERVER_DIST || path.join(ROOT, 'apps/server/dist');
 let pass = 0, fail = 0;
 const out = console.log.bind(console);
 const ok = async (n, f) => { try { await f(); pass++; out(`PASS  ${n}`); } catch (e) { fail++; out(`FAIL  ${n}\n      ${String(e.stack ?? e.message).split('\n').slice(0, 4).join('\n      ')}`); } };
-if (!fs.existsSync(path.join(DIST, 'lib/customerDetails.js'))) { console.log('\nBuild the server first:\n  cd apps/server && npm run build\n'); process.exit(1); }
+if (!fs.existsSync(path.join(DIST, 'routes/orders.js'))) { console.log('\nBuild the server first:\n  cd apps/server && npm run build\n'); process.exit(1); }
 
 // ── The stand-in KRA (before the server is loaded: it reads ETIMS_BASE_URL once) ──────────────────────────────────────
 const kra = { got: [] };
@@ -84,7 +84,7 @@ const mem = installMemDb(supabase);
 supabase.auth.admin.getUserById = async () => ({ data: null, error: { message: 'no user' } });
 const BF = require(path.join(DIST, 'lib/backfill.js'));
 const ET = require(path.join(DIST, 'lib/etims/index.js'));
-const CDT = require(path.join(DIST, 'lib/customerDetails.js'));
+const CDT = require('@zaptill/core/customerDetails');   // shared-components batch E: packages/core
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
 const AC = require(path.join(DIST, 'lib/authCache.js'));
 const PI = require(path.join(DIST, 'lib/posInit.js'));
@@ -382,7 +382,7 @@ try {
     const fwd = (p) => JSON.stringify(path.join(ROOT, p).split(path.sep).join('/'));
     const entry = path.join(tmp, 'entry.tsx');
     fs.writeFileSync(entry, `export * as CH from ${fwd('apps/dashboard/src/lib/customerScreenChannel.ts')};
-export { default as Form, StkBanner } from ${fwd('apps/dashboard/src/lib/CustomerAskForm.tsx')};
+export { default as Form, StkBanner } from ${fwd('packages/ui/src/CustomerAskForm.tsx')};
 export { createElement } from 'react';
 export { renderToStaticMarkup } from 'react-dom/server';`);
     await esbuild.build({ entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: path.join(tmp, 'web.cjs'), logLevel: 'silent',

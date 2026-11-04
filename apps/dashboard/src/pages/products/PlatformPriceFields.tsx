@@ -6,8 +6,8 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { PAYMENT_CATALOGUE, enabledFromSetting } from '../../lib/paymentCatalogue';
-import { PLATFORM_METHODS, cleanOwnPrices, ownPricesValue } from '../../lib/platformPrices';
+import { PAYMENT_CATALOGUE, enabledFromSetting } from '@zaptill/core/paymentCatalogue';
+import { PLATFORM_METHODS, cleanOwnPrices, ownPricesValue } from '@zaptill/core/platformPrices';
 
 export type PlatformPriceDraft = Record<string, string>;
 

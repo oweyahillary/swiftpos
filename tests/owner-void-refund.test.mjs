@@ -65,7 +65,7 @@ ok('void: cashier/till path still requires the override PIN', () => {
 
 ok('void: owner voids at any age; staff stay window-limited', () => {
   // owners bypass the window; non-owners still hit VOID_WINDOW_EXPIRED. 0.6.30: the window is the owner's setting
-  // (shared/reversalRules.ts voidWindowOpen exempts the owner; a till's offline replay was checked on the till).
+  // (packages/core/src/reversalRules.ts voidWindowOpen exempts the owner; a till's offline replay was checked on the till).
   assert.match(voidBody, /if \(!replay && !voidWindowOpen\(orderAge, rules, !!req\.isOwner\)\)/,
     'window check must exempt owners (voidWindowOpen(age, rules, req.isOwner))');
   assert.match(voidBody, /VOID_WINDOW_EXPIRED/, 'the window rejection must still exist for non-owners');

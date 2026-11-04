@@ -9,7 +9,7 @@
 //
 // Drives the REAL compiled dist/main (localDb, deviceConfig, syncEngine — the catalogue pull from a stand-in cloud,
 // createLocalOrder, the sync queue —, referenceBundle, kitchenService, escposBridge.measureOf) on a REAL SQLite file, the
-// till's own copy of the shared parser (src/shared/scaleBarcode.ts), and @swiftpos/printing for the paper.
+// the shared parser (packages/core/src/scaleBarcode.ts), and @swiftpos/printing for the paper.
 //
 //   cd apps/desktop && npx tsc -b tsconfig.main.json && node test/weighed-items-a577.test.mjs
 //
@@ -56,7 +56,7 @@ Module._resolveFilename = function (req, parent, ...rest) { return req === 'elec
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 
-const SB = await import(pathToFileURL(path.join(here, '..', 'src', 'shared', 'scaleBarcode.ts')).href);
+const SB = await import(pathToFileURL(path.join(here, '..', '..', '..', 'packages', 'core', 'src', 'scaleBarcode.ts')).href);
 const MODE = await import(pathToFileURL(path.join(here, '..', 'src', 'renderer', 'lib', 'posMode.ts')).href);
 /** An EAN-13 with its check digit — the published GS1 rule, written out here. */
 const ean = (b) => { let s = 0; for (let i = 0; i < 12; i++) s += Number(b[i]) * (i % 2 ? 3 : 1); return b + ((10 - (s % 10)) % 10); };

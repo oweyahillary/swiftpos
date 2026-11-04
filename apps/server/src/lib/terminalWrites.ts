@@ -83,6 +83,9 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/products\/labels\/settings$/,                    // A571: Manager › Stock › Labels — the business's label (menu.edit)
   /^\/api\/products\/barcodes\/(generate|settings)$/,       // A574: Labels — generate missing codes before printing, the numbering (menu.edit)
   /^\/api\/loyalty\/customer$/,                              // A595 D1: + Customer on the POS — a person adds a customer (customers.edit / .view)
+  // Owner, 2026-11-04: a cashier starting a fuel sale marks the pump dispensing — the person signed in, never the till's
+  // own token (the route: orders.create or fuel.manage, the pump's branch, the online licence). Only this one pump write.
+  /^\/api\/pumps\/[^/]+\/activate$/,
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';

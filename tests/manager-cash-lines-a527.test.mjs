@@ -4,7 +4,7 @@
  *
  *   node tests/manager-cash-lines-a527.test.mjs          (build apps/server first — this runs its dist/)
  *
- * RUNS the shared lines (shared/shiftConfirm.ts `cashLines`, its types stripped by Node) and the cloud's compiled
+ * RUNS the shared lines (packages/core/src/shiftConfirm.ts `cashLines`, its types stripped by Node) and the cloud's compiled
  * `cashBreakdown`; pins the cloud's confirm-view (the cash only with the expected figures) and the three manager screens
  * (the till's confirm, the branch server's Close Branch confirm, the web's Shift confirmations).
  * The till's own confirm view is run for real in apps/desktop/test/shift-confirm.test.mjs.
@@ -36,7 +36,7 @@ const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const C = require(path.join(DIST, 'lib/shiftConfirm.js'));
 
 // The A527 block of the shared file is self-contained (no imports): strip its types and run it.
-const shared = read('shared/shiftConfirm.ts');
+const shared = read('packages/core/src/shiftConfirm.ts');
 const at = shared.indexOf('export interface CashBreakdown');
 const block = stripTypeScriptTypes(shared.slice(at));
 const S = await import(`data:text/javascript,${encodeURIComponent(block)}`);

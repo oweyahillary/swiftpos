@@ -44,6 +44,7 @@ import { fileURLToPath } from 'node:url';
 import { installMemDb } from './lib-memdb.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const coreRequire = createRequire(path.join(ROOT, 'apps/server/package.json'));   // @zaptill/core, as the cloud loads it
 const DIST = path.join(ROOT, 'apps/server/dist');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 let pass = 0, fail = 0;
@@ -64,8 +65,8 @@ const AC = require(path.join(DIST, 'lib/authCache.js'));
 const PI = require(path.join(DIST, 'lib/posInit.js'));
 const SC = require(path.join(DIST, 'lib/syncChanges.js'));
 // The shared rules as the cloud compiled them (byte-identical to shared/, the POS's and the web's copies).
-const T = require(path.join(DIST, 'lib/themes.js'));
-const S = require(path.join(DIST, 'lib/branchBranding.js'));
+const T = coreRequire('@zaptill/core/themes');
+const S = coreRequire('@zaptill/core/branchBranding');
 const R = require(path.join(DIST, 'lib/themeRules.js'));
 const warn = console.warn; console.warn = () => {};
 const err = console.error; console.error = () => {};

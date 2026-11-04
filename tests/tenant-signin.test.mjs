@@ -22,7 +22,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const T = await import(pathToFileURL(path.join(ROOT, 'shared/tenantHost.ts')).href);
+const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/tenantHost.ts')).href);
 const R = 'zaptill.co.ke';
 
 // ── The shared rule ───────────────────────────────────────────────────────────

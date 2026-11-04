@@ -18,7 +18,7 @@
  * Pure (no database): the rows and the two PIN checks are passed in, so the test runs this exact rule.
  */
 
-import { hasPermission, hasAnyPermission } from './permissions';
+import { hasPermission, hasAnyPermission } from '@zaptill/core/permissions';
 import { isOwnerRoleName } from './ownerRole';
 import { keysForRow } from './effectiveKeys';
 import { worksAtBranch } from './branchAccess';

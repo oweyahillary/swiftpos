@@ -2,8 +2,8 @@
  * themeRules.ts — A325: the two theme rules the cloud enforces, as PURE functions (no database, no client), so
  * tests can run them directly. The one query (is the flag on?) is in themeAccess.ts.
  */
-import { isThemeId, isFreeThemeId, DEFAULT_THEME_ID, cleanBrandHex, type ThemeId } from './themes';
-export { FREE_THEME_IDS, isFreeThemeId } from './themes';
+import { isThemeId, isFreeThemeId, DEFAULT_THEME_ID, cleanBrandHex, type ThemeId } from '@zaptill/core/themes';
+export { FREE_THEME_IDS, isFreeThemeId } from '@zaptill/core/themes';
 
 /** feature_flags key that turns themes on for a business (premium; OFF by default — A323). */
 export const THEMES_FLAG = 'themes';

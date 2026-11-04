@@ -1,21 +1,17 @@
 #!/usr/bin/env node
 /**
- * check-shared-sync.mjs — fail CI when a shared file diverges between apps.
+ * check-shared-sync.mjs — fail CI when shared code is copied again, or diverges.
  *
- * There is no shared package in this monorepo and adding one means build
- * tooling across three apps with different bundlers. The pragmatic alternative
- * is a copied file plus a check that the copies are identical — which is the
- * same trick scripts/schema-parity.mjs already plays for Postgres and SQLite.
+ * It began as the guard over files copied between the apps and kept identical (audit H2: VAT was overstated on every
+ * discounted sale for months because /open and /pay each computed the same money their own way; the parking tariff is
+ * priced at the barrier and again on sync, and two answers would leave a drawer that does not balance). Two copies of
+ * one file was acceptable; two implementations is not.
  *
- * This exists because of audit H2. VAT was overstated on every discounted sale
- * for months because /open and /pay each computed the same money their own way.
- * Parking has the same shape with worse odds: the till prices a session offline
- * at the barrier, the server prices it again on sync, and if those two ever
- * disagree the drawer will not balance and nobody will know which figure was
- * right. Two copies of one file is acceptable. Two implementations is not.
- *
- * To change a shared file: edit one copy, copy it to the others verbatim, run
- * its test vectors, commit all copies together.
+ * Shared components (docs/SHARED-COMPONENTS-PLAN.md) replaced the copies with packages: the rules in packages/core
+ * (@zaptill/core, every app) and the POS screen pieces in packages/ui (@zaptill/ui, the web POS and the desktop
+ * renderer). Batch E (2026-10-30) moved the last copies, so SHARED is empty. What this checks now: no copy of a packaged
+ * module grows back in an app, a package is imported by its name (never a relative path), and @zaptill/ui never reaches
+ * the cloud or the desktop's main process.
  */
 
 import fs from 'node:fs';
@@ -25,501 +21,10 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Each entry: the canonical copy first, then every copy that must match it. */
-const SHARED = [
-  {
-    name: 'parkingTariff.ts',
-    copies: [
-      'shared/parkingTariff.ts',
-      'apps/server/src/shared/parkingTariff.ts',
-      'apps/desktop/src/shared/parkingTariff.ts',
-    ],
-  },
-  {
-    // A344: one fixed colour per payment method — the till's and the web's payment buttons and method labels.
-    name: 'paymentColours.ts',
-    copies: [
-      'shared/paymentColours.ts',
-      'apps/desktop/src/shared/paymentColours.ts',
-      'apps/dashboard/src/lib/paymentColours.ts',
-    ],
-  },
-  {
-    // A448: a manager's change made on a till — which fields, how cleaned, apply / identical / owner's approval.
-    name: 'tillChanges.ts',
-    copies: [
-      'shared/tillChanges.ts',
-      'apps/server/src/lib/tillChanges.ts',     // the cloud applies a till's change, or holds it for the owner
-      'apps/desktop/src/main/tillChanges.ts',   // the till records and applies its own change at once
-      'apps/desktop/src/shared/tillChanges.ts', // the till's screens show what waits
-    ],
-  },
-  {
-    // A531: what a change is about (menu / staff / money / look / setup), which topics a till applies at once, and the
-    // settings' classification (migration 151's sync_setting_topic is its SQL mirror).
-    name: 'syncTopics.ts',
-    copies: [
-      'shared/syncTopics.ts',
-      'apps/server/src/lib/syncTopics.ts',      // GET /api/pos/changes builds each logical table's row
-      'apps/desktop/src/main/syncTopics.ts',    // the till applies critical topics at once, the rest when idle
-    ],
-  },
-  {
-    // A519: what a till's log may not carry when it is sent to support — the till redacts, and the cloud again.
-    name: 'logRedact.ts',
-    copies: [
-      'shared/logRedact.ts',
-      'apps/desktop/src/main/logRedact.ts',
-      'apps/server/src/lib/logRedact.ts',
-    ],
-  },
-  {
-    // A606: the customer screen — the slideshow rules, the cleaned state the customer sees, the premium gate, the screen.
-    name: 'customerScreen.ts',
-    copies: [
-      'shared/customerScreen.ts',
-      'apps/server/src/lib/customerScreen.ts',       // the owner's slideshow save, served with pos/init
-      'apps/desktop/src/main/customerScreen.ts',     // main cleans what the POS sends, gates the content, picks the screen
-      'apps/desktop/src/shared/customerScreen.ts',   // the customer screen page
-      'apps/dashboard/src/lib/customerScreen.ts',    // the Branding page's slideshow and the web customer screen
-    ],
-  },
-  {
-    // A607: the customer's details at the counter — phone / KRA PIN rules, the request to and the answer from a
-    // customer-facing form, the consent plan, the M-Pesa prompt as both screens show it, who gets what.
-    name: 'customerDetails.ts',
-    copies: [
-      'shared/customerDetails.ts',
-      'apps/server/src/lib/customerDetails.ts',       // the sale's buyer PIN (orders), the POS's M-Pesa prompt
-      'apps/desktop/src/main/customerDetails.ts',     // main checks what the customer screen sends back, the STK prompt
-      'apps/desktop/src/shared/customerDetails.ts',   // the POS's forms and the customer screen page
-      'apps/dashboard/src/lib/customerDetails.ts',    // the web POS's forms and its customer screen
-    ],
-  },
-  {
-    // A621: M-Pesa payment notifications on the POS — what a tapped payment does to the M-Pesa leg, the notice's words.
-    name: 'mpesaPayments.ts',
-    copies: [
-      'shared/mpesaPayments.ts',
-      'apps/desktop/src/shared/mpesaPayments.ts',   // the desktop payment screen's "Payments received" and the notice
-      'apps/dashboard/src/lib/mpesaPayments.ts',    // the web POS's
-    ],
-  },
-  {
-    // A606: the customer screen's view — one drawing for the desktop's second window and the web POS's. Each copy sits
-    // beside a customerScreen.ts and a themes.ts copy (it imports ./customerScreen and ./themes).
-    name: 'CustomerScreenView.tsx',
-    copies: [
-      'apps/desktop/src/shared/CustomerScreenView.tsx',
-      'apps/dashboard/src/lib/CustomerScreenView.tsx',
-    ],
-  },
-  {
-    // A607: the form the customer fills in (the customer screen, and "Customer types it" on the cashier's screen) and the
-    // M-Pesa prompt's banner. Each copy sits beside a customerDetails.ts copy.
-    name: 'CustomerAskForm.tsx',
-    copies: [
-      'apps/desktop/src/shared/CustomerAskForm.tsx',
-      'apps/dashboard/src/lib/CustomerAskForm.tsx',
-    ],
-  },
-  {
-    // A537: the POS's category side panel — menus as tabs, which categories and products a menu shows, the pin.
-    name: 'menuFilter.ts',
-    copies: [
-      'shared/menuFilter.ts',
-      'apps/desktop/src/shared/menuFilter.ts',  // the till's sale screen
-      'apps/dashboard/src/lib/menuFilter.ts',   // the web POS (CashierScreen, MinimartPOS)
-    ],
-  },
-  {
-    // A578: menus by time of day — which menus are open now, the next change, the refusal words, the schedule's check.
-    name: 'menuHours.ts',
-    copies: [
-      'shared/menuHours.ts',
-      'apps/desktop/src/shared/menuHours.ts',   // the till's sale screen (the bar, the grid, a scan refused)
-      'apps/dashboard/src/lib/menuHours.ts',    // the web POS (CashierScreen, MinimartPOS) and the Menus page's editor
-      'apps/server/src/lib/menuHours.ts',       // the cloud checks a menu's hours before storing them
-    ],
-  },
-  {
-    // A573: what each business type calls things (Menus / Departments / Groups …) and which food-service areas it sees.
-    name: 'businessTerms.ts',
-    copies: [
-      'shared/businessTerms.ts',
-      'apps/dashboard/src/lib/businessTerms.ts',   // the sidebar, Menus page, web POS, manager portal, roles screen
-      'apps/desktop/src/shared/businessTerms.ts',  // the till's Manager screen and sale screen
-      'apps/server/src/lib/businessTerms.ts',      // A575: analyticsTerms.ts builds on it in the cloud
-    ],
-  },
-  {
-    // A588: the petrol POS's forecourt — grade colours, the fuel keypad (amount / litres), the gauges (tank or today's
-    // litres), a pump's state. Pure, no imports.
-    name: 'forecourt.ts',
-    copies: [
-      'shared/forecourt.ts',
-      'apps/desktop/src/shared/forecourt.ts',   // the till's pumps screen (PumpsView, lazy)
-      'apps/dashboard/src/lib/forecourt.ts',    // the web POS's pumps and fuel keypad
-    ],
-  },
-  {
-    // A575: Analytics in each business type's words, and what to do about two products bought together. Imports
-    // businessTerms.ts (beside each copy); not on the till (it has no Analytics).
-    name: 'analyticsTerms.ts',
-    copies: [
-      'shared/analyticsTerms.ts',
-      'apps/dashboard/src/lib/analyticsTerms.ts',   // the Analytics page
-      'apps/server/src/lib/analyticsTerms.ts',      // the cards (/api/analytics/together, /recommendations)
-    ],
-  },
-  {
-    // A571: barcodes — EAN-13 / UPC-A / Code 128 bars and the in-store codes the cloud assigns (prefix 20).
-    name: 'barcode.ts',
-    copies: [
-      'shared/barcode.ts',
-      'apps/server/src/lib/barcode.ts',         // POST /api/products/barcodes/generate
-      'apps/dashboard/src/lib/barcode.ts',      // Products (Generate) and Print labels
-      'apps/desktop/src/shared/barcode.ts',     // the till's Labels screen (preview)
-      'apps/desktop/src/main/barcode.ts',       // the till's label printing
-    ],
-  },
-  {
-    // A577: items sold by weight — scale label barcodes (21–29, price or weight inside), the weighed line, its amount.
-    name: 'scaleBarcode.ts',
-    copies: [
-      'shared/scaleBarcode.ts',
-      'apps/server/src/lib/scaleBarcode.ts',        // the scale settings cleaned; a weighed line's amount checked
-      'apps/dashboard/src/lib/scaleBarcode.ts',     // the web POS (CashierScreen, MinimartPOS) and the settings' test box
-      'apps/desktop/src/shared/scaleBarcode.ts',    // the till's sale screen
-      'apps/desktop/src/main/scaleBarcode.ts',      // the till's main process (the receipt's weighed lines)
-    ],
-  },
-  {
-    // A571: labels of any size for any printer — the layout, the HTML / SVG page, sheets, TSPL, ZPL, ESC/POS.
-    name: 'labels.ts',
-    copies: [
-      'shared/labels.ts',
-      'apps/server/src/lib/labels.ts',          // the label settings, cleaned before they are stored
-      'apps/dashboard/src/lib/labels.ts',       // Print labels (browser driver, sticker sheets)
-      'apps/desktop/src/shared/labels.ts',      // the till's Labels screen (preview)
-      'apps/desktop/src/main/labels.ts',        // the till's label printing (driver, TSPL, ZPL, receipt printer)
-    ],
-  },
-  {
-    // A445: offers — the rules the till's cart, the web POS's cart and the cloud's check of a sale all run.
-    name: 'offers.ts',
-    copies: [
-      'shared/offers.ts',
-      'apps/server/src/lib/offers.ts',          // the cloud checks what a sale claims, and validates an offer on save
-      'apps/desktop/src/shared/offers.ts',      // the till's cart and Manager › Offers
-      'apps/desktop/src/main/offers.ts',        // the main process cleans what the pull stores
-      'apps/dashboard/src/lib/offers.ts',       // the web POS's cart and the Offers page
-    ],
-  },
-  {
-    // A444: an order's items, payments and money in one shape (till records or the cloud), and the reprint payload.
-    name: 'orderDetail.ts',
-    copies: [
-      'shared/orderDetail.ts',
-      'apps/desktop/src/shared/orderDetail.ts',    // the order panel on the till's History and Manager › Orders
-      'apps/desktop/src/main/orderDetail.ts',      // the main process reads the till's rows and rebuilds a reprint
-      'apps/dashboard/src/lib/orderDetail.ts',     // the web Orders page and the web POS order history
-    ],
-  },
-  {
-    // A429: Kenya's payment methods and delivery apps, each a switch per branch — the till, the web POS, the cloud.
-    name: 'paymentCatalogue.ts',
-    copies: [
-      'shared/paymentCatalogue.ts',
-      'apps/server/src/lib/paymentCatalogue.ts',      // the cloud checks the setting and sends it to the tills
-      'apps/desktop/src/shared/paymentCatalogue.ts',  // the till's payment screen and Manager › Settings
-      'apps/dashboard/src/lib/paymentCatalogue.ts',   // the web POS and the branch settings
-    ],
-  },
-  {
-    // A619: delivery platform prices — a platform's uplift (% or an amount per item), the business's rounding, an item's
-    // own platform price; the price both payment screens charge and the cloud and the till's main process check.
-    name: 'platformPrices.ts',
-    copies: [
-      'shared/platformPrices.ts',
-      'apps/server/src/lib/platformPrices.ts',        // the cloud re-derives a platform sale's prices; the settings
-      'apps/desktop/src/shared/platformPrices.ts',    // the till's payment screen
-      'apps/desktop/src/main/platformPrices.ts',      // the till's sale (main) checks the screen's platform prices
-      'apps/dashboard/src/lib/platformPrices.ts',     // the web POS, the branch settings and the product form
-    ],
-  },
-  {
-    // 0.6.23: the mouse wheel never changes a number field (the till and the web).
-    name: 'numberInputs.ts',
-    copies: [
-      'shared/numberInputs.ts',
-      'apps/desktop/src/shared/numberInputs.ts',
-      'apps/dashboard/src/lib/numberInputs.ts',
-    ],
-  },
-  {
-    // A367 (0.6.24): notes on an item and on the order — cleaning, the owner's quick picks, the ticket lines.
-    name: 'orderNotes.ts',
-    copies: [
-      'shared/orderNotes.ts',
-      'apps/desktop/src/shared/orderNotes.ts',
-      'apps/desktop/src/main/orderNotes.ts',   // the main process cleans what it stores (rootDir is src/main)
-      'apps/dashboard/src/lib/orderNotes.ts',
-      'apps/server/src/lib/orderNotes.ts',     // the cloud cleans what it stores
-    ],
-  },
-  {
-    // 0.6.27: the manager's reason where their count differs from the cashier's ('confirm_shows_cashier_figures').
-    name: 'confirmReasons.ts',
-    copies: [
-      'shared/confirmReasons.ts',
-      'apps/desktop/src/shared/confirmReasons.ts',
-      'apps/desktop/src/main/confirmReasons.ts',
-      'apps/dashboard/src/lib/confirmReasons.ts',
-      'apps/server/src/lib/confirmReasons.ts',
-    ],
-  },
-  {
-    // 0.6.28: the release number every surface shows ("v0.6.28 · <commit>") — moves with apps/desktop's version.
-    name: 'release.ts',
-    copies: [
-      'shared/release.ts',
-      'apps/dashboard/src/lib/release.ts',
-      'apps/server/src/lib/release.ts',
-      'apps/admin/src/lib/release.ts',
-    ],
-  },
-  {
-    // 0.6.28: what is on a kitchen ticket (sentQty), kitchen void reasons and their Z-report sums.
-    name: 'kitchenLines.ts',
-    copies: [
-      'shared/kitchenLines.ts',
-      'apps/desktop/src/shared/kitchenLines.ts',
-      'apps/desktop/src/main/kitchenLines.ts',
-      'apps/dashboard/src/lib/kitchenLines.ts',
-      'apps/server/src/lib/kitchenLines.ts',
-    ],
-  },
-  {
-    // 0.6.34: when the business day ends (the owner's cut-off, 00:00–06:00) — the till's day gate, the cloud's reports.
-    name: 'businessDay.ts',
-    copies: [
-      'shared/businessDay.ts',
-      'apps/server/src/lib/businessDay.ts',      // the cloud validates the setting and dates its reports and daily email
-      'apps/desktop/src/main/businessDay.ts',    // the till's day gate and its business date (rootDir is src/main)
-      'apps/dashboard/src/lib/businessDay.ts',   // the settings screen checks the time before saving
-    ],
-  },
-  {
-    // 0.6.37 (A387): which payment methods a cashier's History shows (the manager's choice); cashiers never reprint.
-    name: 'cashierHistory.ts',
-    copies: [
-      'shared/cashierHistory.ts',
-      'apps/server/src/lib/cashierHistory.ts',   // the cloud narrows GET /api/orders (the web POS) and checks the setting
-      'apps/desktop/src/main/cashierHistory.ts', // the till narrows its History (rootDir is src/main)
-      'apps/desktop/src/shared/cashierHistory.ts', // the till's manager screen
-      'apps/dashboard/src/lib/cashierHistory.ts', // the settings screen
-    ],
-  },
-  {
-    // A394: the items a stock count freezes — the till caches the cloud's list and its sale screen refuses them.
-    name: 'stockCountFreeze.ts',
-    copies: [
-      'shared/stockCountFreeze.ts',
-      'apps/desktop/src/main/stockCountFreeze.ts',   // the till caches it (rootDir is src/main)
-      'apps/desktop/src/shared/stockCountFreeze.ts', // the till's sale screen
-    ],
-  },
-  {
-    // A563: when an item's stock reaches zero — sell as normal, show as sold out, or hide (the owner's choice).
-    name: 'stockGate.ts',
-    copies: [
-      'shared/stockGate.ts',
-      'apps/server/src/lib/stockGate.ts',         // the cloud refuses a web sale of a sold-out item
-      'apps/desktop/src/main/stockGate.ts',       // the till's order:create refuses it (rootDir is src/main)
-      'apps/desktop/src/shared/stockGate.ts',     // the till's sale screen greys or hides it
-      'apps/dashboard/src/lib/stockGate.ts',      // the web POS and the products list
-    ],
-  },
-  {
-    // 0.6.35 (A384): who a shop calls — its own tech (allocated in the admin portal) or SwiftPOS support's numbers.
-    name: 'support.ts',
-    copies: [
-      'shared/support.ts',
-      'apps/server/src/lib/support.ts',          // the cloud checks a tech's number and sends the shop's tech
-      'apps/desktop/src/main/support.ts',        // the till stores the pulled tech (rootDir is src/main)
-      'apps/desktop/src/shared/support.ts',      // the till's Help screen
-      'apps/dashboard/src/lib/support.ts',       // the web's Help page and sign-in page
-      'apps/admin/src/lib/support.ts',           // the admin portal checks the number before saving
-    ],
-  },
-  {
-    // 0.6.35 (A384): "What to do when" — the owner-approved help text, the same on the till, the A4 card and the web.
-    name: 'helpTopics.ts',
-    copies: [
-      'shared/helpTopics.ts',
-      'apps/desktop/src/shared/helpTopics.ts',
-      'apps/dashboard/src/lib/helpTopics.ts',
-    ],
-  },
-  {
-    // A378: a client's own sign-in address (africanfries.<root>) — the subdomain rule, the host reader, the CORS check.
-    name: 'tenantHost.ts',
-    copies: [
-      'shared/tenantHost.ts',
-      'apps/server/src/lib/tenantHost.ts',       // the cloud validates what the admin sets, locks sign-in, allows the origin
-      'apps/dashboard/src/lib/tenantHost.ts',    // the sign-in pages read the address they are on
-      'apps/admin/src/lib/tenantHost.ts',        // the admin portal checks a subdomain before saving
-    ],
-  },
-  {
-    // 0.6.31: a product shown on the POS grid / QR menu only on chosen days (still found by search and sold any day).
-    name: 'productDays.ts',
-    copies: [
-      'shared/productDays.ts',
-      'apps/desktop/src/shared/productDays.ts',
-      'apps/desktop/src/main/productDays.ts',    // the main process cleans what the pull stores (rootDir is src/main)
-      'apps/dashboard/src/lib/productDays.ts',
-      'apps/server/src/lib/productDays.ts',      // the cloud validates show_days on write and filters the QR menu
-    ],
-  },
-  {
-    // 0.6.30 (A336 stage 3): the owner's void window and the offline void/refund rules (methods, web sales).
-    name: 'reversalRules.ts',
-    copies: [
-      'shared/reversalRules.ts',
-      'apps/desktop/src/shared/reversalRules.ts',
-      'apps/desktop/src/main/reversalRules.ts',  // the main process applies them offline (rootDir is src/main)
-      'apps/dashboard/src/lib/reversalRules.ts',
-      'apps/server/src/lib/reversalRules.ts',    // the cloud's void window and the till's replay
-    ],
-  },
-  {
-    // 0.6.27: how an expense was paid (only cash leaves the drawer) and its Z-report line (the type first).
-    name: 'expenseMethod.ts',
-    copies: [
-      'shared/expenseMethod.ts',
-      'apps/desktop/src/shared/expenseMethod.ts',
-      'apps/desktop/src/main/expenseMethod.ts',  // the Z-report and expected per method (rootDir is src/main)
-      'apps/dashboard/src/lib/expenseMethod.ts',
-      'apps/server/src/lib/expenseMethod.ts',    // the cloud's expected cash / per method
-    ],
-  },
-  {
-    // 0.6.27: History filtered and ordered by payment method or order type.
-    name: 'historyView.ts',
-    copies: [
-      'shared/historyView.ts',
-      'apps/desktop/src/shared/historyView.ts',
-      'apps/dashboard/src/lib/historyView.ts',
-    ],
-  },
-  {
-    // 0.6.27: the rider and the delivery fee (pass-through, paid to the rider in cash), and "Delivery — Eugene".
-    name: 'delivery.ts',
-    copies: [
-      'shared/delivery.ts',
-      'apps/desktop/src/shared/delivery.ts',
-      'apps/desktop/src/main/delivery.ts',      // the main process records the rider's pay-out
-      'apps/dashboard/src/lib/delivery.ts',
-      'apps/server/src/lib/delivery.ts',        // the cloud stores the fee and pays the rider for a web sale
-    ],
-  },
-  {
-    // 0.6.27: per-client POS switches, set in the admin portal, carried to the till and the web with pos/init.
-    name: 'posFeatures.ts',
-    copies: [
-      'shared/posFeatures.ts',
-      'apps/desktop/src/shared/posFeatures.ts',
-      'apps/desktop/src/main/posFeatures.ts',   // the main process reads the stored switches (rootDir is src/main)
-      'apps/dashboard/src/lib/posFeatures.ts',
-      'apps/server/src/lib/posFeatures.ts',     // the cloud sends them with pos/init
-      'apps/admin/src/lib/posFeatures.ts',      // the admin portal lists and switches them
-    ],
-  },
-  {
-    // A492: a branch's M-Pesa number (Buy Goods till number, or Paybill + account) — set on the till, validated on the
-    // cloud, printed on every receipt, shown on the web.
-    name: 'mpesaReceive.ts',
-    copies: [
-      'shared/mpesaReceive.ts',
-      'apps/server/src/lib/mpesaReceive.ts',
-      'apps/dashboard/src/lib/mpesaReceive.ts',
-      'apps/desktop/src/main/mpesaReceive.ts',
-      'apps/desktop/src/shared/mpesaReceive.ts',
-    ],
-  },
-  {
-    // A490: the ONE permission catalogue — every fine key, the broad keys it replaces, expansion and the ceiling.
-    name: 'permissions.ts',
-    copies: [
-      'shared/permissions.ts',
-      'apps/server/src/lib/permissions.ts',     // the cloud checks fine keys, expands old grants, builds tokens
-      'apps/dashboard/src/lib/permissions.ts',  // the web POS, manager portal and the Roles and permissions screen
-      'apps/admin/src/lib/permissions.ts',      // the admin portal shows a client's roles read-only
-      'apps/desktop/src/shared/permissions.ts', // the till's screens
-      'apps/desktop/src/main/permissions.ts',   // the till's main process (rootDir is src/main)
-    ],
-  },
-  {
-    // A365: the shift-confirmation rules the till and the web POS share (methods to declare, amounts, labels, paper).
-    name: 'shiftConfirm.ts',
-    copies: [
-      'shared/shiftConfirm.ts',
-      'apps/desktop/src/shared/shiftConfirm.ts',
-      'apps/dashboard/src/lib/shiftConfirm.ts',
-    ],
-  },
-  {
-    // A324 (client branding Phase 2, slice 1): the curated action themes + the brand-colour rule. One registry
-    // for the till, the web and the cloud (which validates theme ids on write — A325).
-    name: 'themes.ts',
-    copies: [
-      'shared/themes.ts',
-      'apps/desktop/src/shared/themes.ts',
-      'apps/dashboard/src/lib/themes.ts',
-      'apps/server/src/lib/themes.ts',     // A325: the cloud validates theme ids on write
-      'apps/desktop/src/main/themes.ts',   // A544: the till's main process resolves its branch's look (branchBranding.ts)
-    ],
-  },
-  {
-    // A544: a branch's override of the business branding — the write rules (theme, brand colour, footer width) and the
-    // resolution branch → business → ZapTill default. Each copy sits beside a themes.ts copy (it imports ./themes).
-    name: 'branchBranding.ts',
-    copies: [
-      'shared/branchBranding.ts',
-      'apps/server/src/lib/branchBranding.ts',      // the cloud validates a write; /pos/init and /pos/changes
-      'apps/desktop/src/main/branchBranding.ts',    // the till's own branch: getBranding's effective look, the receipt footer
-      'apps/desktop/src/shared/branchBranding.ts',  // the till's screens
-      'apps/dashboard/src/lib/branchBranding.ts',   // Settings › Branding › Per branch; the web POS's branch
-    ],
-  },
-  {
-    // A295 accent guard. shared/ is the source of truth; the renderer imports the
-    // desktop/src/shared copy; the desktop/src/main copy exists ONLY so tsconfig.main
-    // emits dist/main/contrast.js for contrast.test.mjs (the renderer is noEmit).
-    // A319: the web Branding page judges a custom accent with THIS rule (it had its own copy, which
-    // required WHITE button text and measured a different surface — it rejected #F5B800, which the
-    // till accepts with black text). Vendored, not imported: Vercel builds apps/dashboard alone.
-    name: 'contrast.ts',
-    copies: [
-      'shared/contrast.ts',
-      'apps/desktop/src/shared/contrast.ts',
-      'apps/desktop/src/main/contrast.ts',
-      'apps/dashboard/src/lib/contrast.ts',
-    ],
-  },
-  {
-    // A472: the menu in pages (web Products, the till's Menu) and the POS grids a screenful at a time.
-    name: 'paginate.ts',
-    copies: [
-      'shared/paginate.ts',
-      'apps/dashboard/src/lib/paginate.ts',      // the web Products page and the web POS grid
-      'apps/desktop/src/shared/paginate.ts',     // the till's Menu screen and its POS grid
-      'apps/admin/src/lib/paginate.ts',          // A475: the admin portal's long lists (Billing, Audit, a client's devices)
-    ],
-  },
-];
+/** Each entry: the canonical copy first, then every copy that must match it. Shared-components batch E (2026-10-30)
+ *  moved the last five (customerScreen, customerDetails → packages/core; CustomerScreenView, CustomerAskForm,
+ *  numberInputs → packages/ui): no copies are left. A file shared again goes into a package, not here. */
+const SHARED = [];
 
 const sha = (p) =>
   crypto.createHash('sha256')
@@ -564,9 +69,144 @@ for (const { name, copies } of SHARED) {
   }
 }
 
-// The check's own failure mode is finding nothing and declaring success.
-if (checked === 0) {
-  console.error('\nrefusing to pass: no shared files were found at all. Check the paths in SHARED.');
+// Shared-components (docs/SHARED-COMPONENTS-PLAN.md): a rule that moved to packages/core/src is imported from
+// '@zaptill/core/<name>' and has NO copies. A copy growing back (an old branch merged, a file pasted for speed) would be
+// a second implementation that nothing keeps in step — so a file of the same name in shared/ or an app's lib/, shared/
+// or main/ folder fails, and so does a module that is still listed above.
+const CORE_DIR = path.join(ROOT, 'packages', 'core', 'src');
+// Step 3 (batch E): the screen pieces in packages/ui (@zaptill/ui, React, the web POS's and the desktop POS's) — the same
+// rule: one file, imported by its package name, no copies.
+const UI_DIR = path.join(ROOT, 'packages', 'ui', 'src');
+const COPY_DIRS = [
+  'shared',
+  'apps/server/src/lib', 'apps/server/src/shared',
+  'apps/dashboard/src/lib',
+  'apps/admin/src/lib',
+  'apps/desktop/src/main', 'apps/desktop/src/shared',
+];
+// Documented exceptions: a DIFFERENT module that only shares a core module's name (decided 2026-10-28, shared-components
+// batch C: an exception rather than a rename). Each holds only while that file stays a different module: it must not
+// equal the core file, must not define any name of the listed kinds that the core module exports, and must still carry
+// its own marks — the code that makes it a different module. A real copy pasted there fails as any other.
+const DIFFERENT_MODULE = {
+  // The till's own A588 pump counters — litres today per pump and per grade, the last sale, the tanks' levels — read
+  // from this till's SQLite; packages/core/src/forecourt.ts is the pumps screens' rules (grade colours, the fuel keypad,
+  // the gauges). No name in common at all.
+  'apps/desktop/src/main/forecourt.ts': {
+    kinds: 'const|function|type|interface',
+    marks: [/^import \{[^}]*\bgetLocalDb\b[^}]*\} from '\.\/localDb';$/m, /\bgetLocalDb\(\)/],
+  },
+  // Batch D (2026-10-30): the cloud's own shift-confirmation rules (who may confirm, from the approver row and the
+  // effective keys; the confirm view's lines); packages/core/src/shiftConfirm.ts is the till's and the web's screens'
+  // rules. They share one TYPE name (CashBreakdown, the same four cash lines), so only values count here.
+  'apps/server/src/lib/shiftConfirm.ts': {
+    kinds: 'const|function',
+    marks: [/^import \{[^}]*\} from '\.\/approver';$/m, /^import \{[^}]*\bkeysForRow\b[^}]*\} from '\.\/effectiveKeys';$/m],
+  },
+};
+const isDifferentModule = (rel, src, core) => {
+  const d = DIFFERENT_MODULE[rel];
+  if (!d) return false;
+  const exported = [...core.matchAll(new RegExp(`^export\\s+(?:async\\s+)?(?:${d.kinds})\\s+(\\w+)`, 'gm'))].map((m) => m[1]);
+  const defines = (n) => new RegExp(`^export\\s+(?:async\\s+)?(?:${d.kinds})\\s+${n}\\b`, 'm').test(src);
+  return src !== core && exported.length > 0 && !exported.some(defines) && d.marks.every((re) => re.test(src));
+};
+const text = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+const packaged = [
+  ...(fs.existsSync(CORE_DIR) ? fs.readdirSync(CORE_DIR).filter((f) => f.endsWith('.ts')).map((mod) => ({ mod, pkg: 'core' })) : []),
+  ...(fs.existsSync(UI_DIR) ? fs.readdirSync(UI_DIR).filter((f) => /\.tsx?$/.test(f)).map((mod) => ({ mod, pkg: 'ui' })) : []),
+];
+// Batch F (2026-11-01): a screen piece lived in an app's components/ or pages/ folders, not only lib/ — so for
+// packages/ui the whole of each React app's source is searched by file name (MethodDot.tsx anywhere under the web's or
+// the desktop renderer's src is a copy).
+const UI_COPY_ROOTS = ['apps/dashboard/src', 'apps/desktop/src/renderer', 'apps/admin/src'];
+const findByName = (dir, name, out = []) => {
+  const abs = path.join(ROOT, dir);
+  if (!fs.existsSync(abs)) return out;
+  for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name === 'dist') continue;
+    const rel = `${dir}/${e.name}`;
+    if (e.isDirectory()) findByName(rel, name, out); else if (e.name === name) out.push(rel);
+  }
+  return out;
+};
+// Batch F: an app's LOOK for a shared piece keeps the piece's file name (its importers are unchanged): the class names
+// only, which that app's Tailwind build must find in its own src. It holds only while it stays a look: it imports the
+// piece from '@zaptill/ui/<name>', draws nothing of its own (no lowercase JSX tag, no React import) and is listed here.
+// A copy of the piece pasted over it draws <nav>/<button> and fails.
+const LOOK_WRAPPERS = {
+  'apps/dashboard/src/components/Pager.tsx': 'Pager.tsx',
+  'apps/desktop/src/renderer/components/Pager.tsx': 'Pager.tsx',
+  // Batch G: the category panel, the menu bar, the ☰, the chip and Later — each app's paint, bound with withLook.
+  'apps/dashboard/src/pages/pos/cashier/CategoryPanel.tsx': 'CategoryPanel.tsx',
+  'apps/desktop/src/renderer/components/CategoryPanel.tsx': 'CategoryPanel.tsx',
+};
+const isLookWrapper = (rel, src, mod) => {
+  if (LOOK_WRAPPERS[rel] !== mod) return false;
+  const name = mod.replace(/\.tsx?$/, '');
+  return new RegExp(`^import \\w+, \\{[^}]*\\} from '@zaptill/ui/${name}';$`, 'm').test(src)
+    && !/<[a-z]/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')) && !/from 'react'/.test(src);
+};
+let guarded = 0;
+for (const { mod, pkg } of packaged) {
+  const inDirs = COPY_DIRS.map((d) => `${d}/${mod}`).filter((c) => fs.existsSync(path.join(ROOT, c)));
+  const present = pkg === 'ui'
+    ? [...new Set([...inDirs, ...UI_COPY_ROOTS.flatMap((d) => findByName(d, mod))])]
+    : inDirs;
+  const different = present.filter((c) => isDifferentModule(c, text(c), text(`packages/${pkg}/src/${mod}`))
+    || (pkg === 'ui' && isLookWrapper(c, text(c), mod)));
+  const regrown = present.filter((c) => !different.includes(c));
+  const listed = SHARED.some((e) => e.name === mod);
+  guarded++;
+  if (regrown.length || listed) {
+    console.error(`\nFAIL ${mod} lives in packages/${pkg}/src — import it as '@zaptill/${pkg}/${mod.replace(/\.tsx?$/, '')}', do not copy it:`);
+    for (const c of regrown) console.error(`  delete ${c}`);
+    if (listed) console.error(`  remove its entry from SHARED in scripts/check-shared-sync.mjs`);
+    problems++;
+  } else {
+    console.log(`  ok   ${mod.padEnd(24)} packages/${pkg} only (no copies)${different.length ? ` — ${different.join(', ')} is ${pkg === 'ui' ? 'an app look (LOOK_WRAPPERS)' : 'a different module (DIFFERENT_MODULE)'}` : ''}`);
+  }
+}
+
+// …and only by its package name. A relative import ('../../../packages/core/src/x') type-checks and even builds, but the
+// cloud's and the desktop main process's compiled code would then require a path outside the app: not shipped in the
+// installer's app.asar, not present on Render. The bundlers would inline it, so the rule is the same everywhere.
+const APP_SRC = ['apps/server/src', 'apps/dashboard/src', 'apps/admin/src', 'apps/desktop/src'];
+const RELATIVE_CORE = /(?:from\s+|import\(\s*|require\(\s*)['"](?:\.\.?\/)+(?:[^'"]*\/)?packages\/(?:core|ui)\b/;
+// @zaptill/ui is React screens consumed as source by Vite: the cloud and the desktop's main process (compiled by tsc, no
+// React, no bundler) must never import it.
+const NO_UI = ['apps/server/src', 'apps/desktop/src/main'];
+const IMPORTS_UI = /(?:from\s+|import\(\s*|require\(\s*)['"]@zaptill\/ui\b/;
+const walkSrc = (d, out = []) => {
+  if (!fs.existsSync(d)) return out;
+  for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name === 'dist') continue;
+    const p = path.join(d, e.name);
+    if (e.isDirectory()) walkSrc(p, out); else if (/\.(tsx?|mjs|cjs|js)$/.test(e.name)) out.push(p);
+  }
+  return out;
+};
+for (const dir of APP_SRC) {
+  for (const f of walkSrc(path.join(ROOT, dir))) {
+    if (RELATIVE_CORE.test(fs.readFileSync(f, 'utf8'))) {
+      console.error(`\nFAIL ${path.relative(ROOT, f)} imports packages/core or packages/ui by a relative path — use '@zaptill/core/<name>' or '@zaptill/ui/<name>'.`);
+      problems++;
+    }
+  }
+}
+for (const dir of NO_UI) {
+  for (const f of walkSrc(path.join(ROOT, dir))) {
+    if (IMPORTS_UI.test(fs.readFileSync(f, 'utf8'))) {
+      console.error(`\nFAIL ${path.relative(ROOT, f)} imports @zaptill/ui — React screens are for the web POS and the desktop renderer only.`);
+      problems++;
+    }
+  }
+}
+
+// The check's own failure mode is finding nothing and declaring success. With no copies left (batch E), what it checks is
+// the packages' modules: none found at all is a broken path, not a pass.
+if (checked === 0 && guarded === 0) {
+  console.error('\nrefusing to pass: no shared files and no packaged modules were found at all. Check the paths.');
   process.exit(2);
 }
 
@@ -575,4 +215,4 @@ if (problems) {
   process.exit(1);
 }
 
-console.log(`\nOK — ${checked} shared file copies all agree.`);
+console.log(`\nOK — ${guarded} modules live in packages/core and packages/ui with no copies${checked ? `; ${checked} shared file copies all agree` : ''}.`);

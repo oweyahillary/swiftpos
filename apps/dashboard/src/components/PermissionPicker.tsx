@@ -16,8 +16,8 @@
  * stays); each part can then be ticked or unticked alone. Keys that show personal data carry a "Personal data" badge.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PERMISSIONS, PERMISSION_GROUPS, PERSONAL_KEYS, parentOf, partsOf, permissionKind, type PermissionKind } from '../lib/permissions';
-import { permissionWords, permissionGroupWords } from '../lib/businessTerms';   // A573
+import { PERMISSIONS, PERMISSION_GROUPS, PERSONAL_KEYS, parentOf, partsOf, permissionKind, type PermissionKind } from '@zaptill/core/permissions';
+import { permissionWords, permissionGroupWords } from '@zaptill/core/businessTerms';   // A573
 
 export interface CatalogueKey {
   key: string; label: string; description: string; group: string; surface: 'web' | 'till' | 'both';

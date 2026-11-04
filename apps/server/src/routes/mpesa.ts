@@ -53,7 +53,7 @@ import { requirePermission, oneBranchOnly } from '../middleware/rbac';
 import { getMpesaConfig, stkParties, type MpesaConfig } from '../lib/branchMpesa';   // A618: per branch, the business's as default
 import { sendError }   from '../lib/sendError';
 import { maskCustomerContacts } from '../lib/personalData';   // A595
-import { normaliseKenyanPhone, stkAmount } from '../lib/customerDetails';   // A607
+import { normaliseKenyanPhone, stkAmount } from '@zaptill/core/customerDetails';   // A607
 
 const router = safeRouter();
 

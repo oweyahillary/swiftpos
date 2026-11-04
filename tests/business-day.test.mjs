@@ -19,7 +19,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const B = await import(pathToFileURL(path.join(ROOT, 'shared/businessDay.ts')).href);
+const B = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/businessDay.ts')).href);
 
 await ok('the setting: 00:00–06:00 as "HH:MM"; empty = midnight; anything else refused', () => {
   assert.strictEqual(B.cleanCutoff('04:00'), 240);

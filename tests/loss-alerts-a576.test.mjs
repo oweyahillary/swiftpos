@@ -333,7 +333,7 @@ const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const mem = installMemDb(supabase);
 const AC = require(path.join(DIST, 'lib/authCache.js'));
 const J = require(path.join(DIST, 'jobs/lossAlerts.js'));
-const { businessDateEAT } = require(path.join(DIST, 'lib/businessDay.js'));
+const { businessDateEAT } = require('@zaptill/core/businessDay');
 const warn = console.warn; console.warn = () => {};
 const logErr = console.error; console.error = () => {};
 const log = console.log;

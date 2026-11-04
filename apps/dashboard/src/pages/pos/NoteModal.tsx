@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cleanNote, hasPick, togglePick, ITEM_NOTE_MAX, ORDER_NOTE_MAX } from '../../lib/orderNotes';
+import { cleanNote, hasPick, togglePick, ITEM_NOTE_MAX, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
 
 /**
  * NoteModal (web POS) — A367 (0.6.24): a note on one cart line, or on the whole order. The same rules as the till's

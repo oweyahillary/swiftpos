@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import { prepareRasterLogo, logoPixelsForReceipt, monoStringToCanvas, type LogoPixels } from '../lib/prepareRasterLogo';
-import { resolveBranding } from '../../shared/contrast';
+import { resolveBranding } from '@zaptill/core/contrast';
 
 /**
  * BrandingEditor — A302. The tech-gated FEED for A301's branding write path: an accent

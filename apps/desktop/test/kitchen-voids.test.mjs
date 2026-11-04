@@ -41,14 +41,14 @@ const C = require(path.join(dist, 'deviceConfig.js'));
 const E = require(path.join(dist, 'syncEngine.js'));
 const S = require(path.join(dist, 'shiftService.js'));
 const K = require(path.join(dist, 'kitchenService.js'));
-const KL = require(path.join(dist, 'kitchenLines.js'));
+const KL = require('@zaptill/core/kitchenLines');
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 const threw = (f) => { try { f(); return null; } catch (e) { return e; } };
 
 console.log('0.6.28 — kitchen voids\n');
 
-// ── The rules (shared/kitchenLines.ts) ───────────────────────────────────────
+// ── The rules (packages/core/src/kitchenLines.ts) ───────────────────────────────────────
 ok('a line saved before 0.6.28 (kotSent, no sentQty) counts as all sent', KL.sentQtyOf({ quantity: 3, kotSent: true }) === 3);
 ok('a line of 2 that became 3 sends 1 — not 3 (the kitchen cooked 5)',
   KL.unsentQtyOf({ quantity: 3, sentQty: 2, kotSent: false }) === 1);
@@ -162,7 +162,8 @@ ok('Clear with sent items asks for a kitchen void — even with no order number 
 ok('removing or reducing a sent line asks for a kitchen void',
   /const back = voidQtyFor\(item, newQty\);\s*if \(back > 0\) \{\s*setKitchenVoid\(/.test(pos) && /const sent = sentQtyOf\(item\);\s*if \(sent > 0\) \{\s*setKitchenVoid\(/.test(pos));
 ok('Send prints only what the kitchen has not had (quantity − sentQty)',
-  /const unsent = withIds\.filter\(i => unsentQtyOf\(i\) > 0\)\.map\(i => \(\{ item: i, qty: unsentQtyOf\(i\) \}\)\);/.test(pos) && /quantity: qty,\n/.test(pos));
+  // 2026-11-04: a held course waits (courses, the online licence's) — the charge sends it.
+  /const unsent = withIds\.filter\(i => unsentQtyOf\(i\) > 0 && \(atPayment \|\| !isHeld\(i, coursesOn\)\)\)\s+\.map\(i => \(\{ item: i, qty: unsentQtyOf\(i\) \}\)\);/.test(pos) && /quantity: qty,\n/.test(pos));
 ok('pay before kitchen hides Send (not dine-in); the charge sends what is left of a partly sent order',
   /const maySend = maySendBeforePay\(posFeatures\.pay_before_kitchen, flags\.isRestaurant \? orderType : 'retail'\);/.test(pos)
   && /\{maySend && <button/.test(pos) && /if \(someSent && cart\.some\(i => unsentQtyOf\(i\) > 0\)\) await handleSendToKitchen\(true\);/.test(pos)

@@ -1,6 +1,6 @@
 /**
  * platform-prices-cloud-a619.test.mjs — A619 (owner, 2026-11-01): the cloud accepts a delivery platform's prices as
- * legitimate — not a price change, not a hand discount, not refused — and re-derives them itself (shared/platformPrices.ts)
+ * legitimate — not a price change, not a hand discount, not refused — and re-derives them itself (packages/core/src/platformPrices.ts)
  * so a POS cannot claim an arbitrary "platform price". "assume 3 piece chicken is 1000 normal price ordering with glovo it
  * is 1150 a 15% bump so the receipt shows 1150".
  *

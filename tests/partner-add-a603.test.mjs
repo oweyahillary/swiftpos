@@ -53,7 +53,7 @@ mailer.sendEmailChecked = async (o) => { mails.push(o); return mailOk ? { ok: tr
 mailer.sendEmail = async (o) => { mails.push(o); return true; };
 const authCache = require(path.join(DIST, 'lib/authCache.js'));
 const attempts = require(path.join(DIST, 'lib/pinAttempts.js'));
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const jwt = require('jsonwebtoken');
 const express = require('express');
 

@@ -16,7 +16,7 @@
  * Pure: the route and the monthly email gather the rows (routes/reports-monthly.ts); this only adds up and lays out.
  */
 import type ExcelJS from 'exceljs';
-import { methodLabel } from './paymentCatalogue';
+import { methodLabel } from '@zaptill/core/paymentCatalogue';
 
 export type MethodMap = Record<string, number>;
 export type MovementKind = 'opening' | 'other_income' | 'drawing' | 'bank_deposit' | 'charges';

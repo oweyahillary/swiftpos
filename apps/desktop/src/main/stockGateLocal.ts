@@ -23,7 +23,7 @@ import { getPosFeatures, tillBranchId } from './deviceConfig';
 import {
   outOfStockMode, stockRefusals, refusalText,
   type OutOfStockMode, type StockView, type GateLine, type StockRefusal,
-} from './stockGate';
+} from '@zaptill/core/stockGate';
 
 export interface TillStockView extends StockView { mode: OutOfStockMode; branchId: string | null }
 

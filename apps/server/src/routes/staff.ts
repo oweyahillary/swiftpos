@@ -11,10 +11,10 @@ import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
 import { callerHeld, canAssignRole, roleEditRefusal, overridesBeyondCaller } from '../lib/roleCeiling';
 import { isOwnerRoleName } from '../lib/ownerRole';
-import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf } from '../lib/permissions';
+import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf } from '@zaptill/core/permissions';
 import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf, withNewParentParts, overridePartsOf } from '../lib/roleKeys';
 import { useEmailCodes } from '../lib/loginOtp';   // A391
-import { keysBeyond } from '../lib/permissions';   // A494
+import { keysBeyond } from '@zaptill/core/permissions';   // A494
 import { webAccessGiverKind, webAccessTargetRefusal, isPartnerRoleName, PARTNER_OWNER_ONLY, makesPartnerRefusal } from '../lib/webAccessGivers';   // A608
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { revokePersonSessions } from '../lib/tillSessions';   // A494
@@ -25,7 +25,7 @@ import { forgetUser } from '../lib/authCache';   // A550
 import { sendEmailChecked } from '../lib/mailer';   // A550
 import { signInAddress } from '../lib/tenant';   // A550
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A562
-import { approvalPinOn } from '../lib/posFeatures';   // A562
+import { approvalPinOn } from '@zaptill/core/posFeatures';   // A562
 import { splitsPending } from '../lib/permissionsState';   // A595
 import { attendanceEnabled, attendanceStaffChanged } from '../lib/attendanceStore';   // A599
 import { CLOCK_BY_DEVICE_MESSAGE } from '../lib/attendanceRules';   // A599

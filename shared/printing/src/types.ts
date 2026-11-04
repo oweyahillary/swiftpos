@@ -87,6 +87,12 @@ export interface OrderLine {
    * (a line from before A577, fuel) is still printed as a measure, without a unit.
    */
   measureUnit?: string;
+  /**
+   * Owner, 2026-11-04: a restaurant's course ("Starters", "Mains" …). The kitchen and dispatch tickets print a heading
+   * ("-- MAINS --") above a course's first dish; the receipt ignores it. Omitted (every order without courses): the
+   * tickets print exactly as before.
+   */
+  course?: string;
 }
 
 export type OrderType = 'takeaway' | 'dine_in' | 'delivery' | 'counter';

@@ -35,7 +35,7 @@ const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const mem = installMemDb(supabase);
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
-const M = await import(pathToFileURL(path.join(ROOT, 'shared/mpesaReceive.ts')).href);
+const M = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/mpesaReceive.ts')).href);
 
 const B = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222', BR2 = '33333333-3333-4333-8333-333333333333';
 const OWNER = 'aaaaaaaa-0000-4000-8000-000000000001', MGR = 'aaaaaaaa-0000-4000-8000-000000000002',
@@ -79,7 +79,7 @@ const own = () => Object.fromEntries(mem.db.branch_settings.filter((r) => r.bran
 try {
   state._setPermissionsMigrated(true);
 
-  console.log('\nThe rules (shared/mpesaReceive.ts)\n');
+  console.log('\nThe rules (packages/core/src/mpesaReceive.ts)\n');
   await ok('Buy Goods: a till number, no account; Paybill: a business number AND an account number', async () => {
     assert.deepEqual(M.cleanMpesaReceive({ kind: 'buy_goods', number: ' 123 456 ', account: 'x' }), { ok: true, value: { kind: 'buy_goods', number: '123456', account: null } });
     assert.equal(M.cleanMpesaReceive({ kind: 'paybill', number: '4098201' }).ok, false);

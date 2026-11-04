@@ -8,16 +8,16 @@
  * The hook returns stable references — only re-fetches when `session` changes.
  */
 
-import { gateDisplayContent, slidesFromWire, type DisplayContent } from '../../../lib/customerScreen';   // A606
-import { cleanOffer, type Offer } from '../../../lib/offers';   // A445
-import { cleanPricing, type PlatformPricing } from '../../../lib/platformPrices';   // A619
-import { parseNotePicks } from '../../../lib/orderNotes';
-import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
-import { scaleSettingsOrDefault, type ScaleSettings } from '../../../lib/scaleBarcode';   // A577
-import { rulesFromWire } from '../../../lib/reversalRules';
+import { gateDisplayContent, slidesFromWire, type DisplayContent } from '@zaptill/core/customerScreen';   // A606
+import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
+import { cleanPricing, type PlatformPricing } from '@zaptill/core/platformPrices';   // A619
+import { parseNotePicks } from '@zaptill/core/orderNotes';
+import { parsePosFeatures, noPosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';
+import { scaleSettingsOrDefault, type ScaleSettings } from '@zaptill/core/scaleBarcode';   // A577
+import { rulesFromWire } from '@zaptill/core/reversalRules';
 import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
-import { resolveBranchBranding, branchBrandingFromWire } from '../../../lib/branchBranding';   // A544
+import { resolveBranchBranding, branchBrandingFromWire } from '@zaptill/core/branchBranding';   // A544
 import { setPosBranchTheme, applyDashboardThemeVars, computeDashboardThemeVars, posBrandStrip, posBrandStripColours, BRANDING_SAVED_EVENT } from '../../../lib/themeVars';   // A544, A547, A597
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';

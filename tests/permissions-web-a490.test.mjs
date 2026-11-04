@@ -45,7 +45,7 @@ const bundle = async (entry, name) => {
   return import(pathToFileURL(outfile).href);
 };
 const Routing = await bundle('lib/posRouting.ts', 'routing');
-const Perms = await bundle('lib/permissions.ts', 'permissions');
+const Perms = await bundle('../../../packages/core/src/permissions.ts', 'permissions');
 const Refund = await bundle('pages/orderRefund.ts', 'refund');
 const Picker = await bundle('components/PermissionPicker.tsx', 'picker');
 const KEYS = new Set(Perms.PERMISSION_KEYS);
@@ -69,8 +69,8 @@ await ok('routing: a pre-A490 cashier (no marker — the open keys are added) st
 
 // ── No role-name checks anywhere on the web ─────────────────────────────────────────────────────────────────────────
 const ALLOW = [
-  // the one place a role NAME decides (the owner's role is the owner) — a shared file (shared/shiftConfirm.ts)
-  { file: 'lib/shiftConfirm.ts', has: "['owner', 'admin'].includes(" },
+  // (the one place a role NAME decides — the owner's role is the owner — is packages/core/src/shiftConfirm.ts since
+  // shared-components batch D, outside this scan; its lib/shiftConfirm.ts copy is gone, so its entry left this list.)
 ];
 await ok('no role-name checks remain in apps/dashboard/src (display of the role\'s name is fine)', () => {
   const hits = [];
@@ -137,9 +137,11 @@ await ok('discount: sales.discount or its set-up part — no discount reaches th
   assert.match(pm, /const mayDiscount = hasPermission\('sales\.discount'\) \|\| hasPermission\('sales\.discount_preset'\);/);
   assert.match(pm, /const rawPromoDiscount\s+= mayDiscount \? \(discountState\?\.discount_amount \?\? 0\) : 0;/);
   assert.equal((pm.match(/discount_id:\s+mayDiscount \? \(discountState\?\.discount\.id \?\? null\) : null,/g) ?? []).length, 2);
-  const dp = read('pages/pos/DiscountPanel.tsx');
-  assert.match(dp, /const mayDiscount = hasPermission\('sales\.discount'\) \|\| hasPermission\('sales\.discount_preset'\);/);
-  assert.match(dp, /if \(!mayDiscount\) return null;/);
+  // 2026-11-04: the DiscountPanel no screen showed is gone; the payment screen's own Discount box (as the desktop POS's)
+  // is offered only with sales.discount, and its amount reaches the sale only with it.
+  assert.match(pm, /const mayTypeDiscount = hasPermission\('sales\.discount'\);/);
+  assert.match(pm, /const manualNum\s+= mayTypeDiscount \? /);
+  assert.match(pm, /\{mayTypeDiscount && \(/);
 });
 await ok('void and refund: sales.void and sales.refund, each on its own', () => {
   assert.equal(Refund.canVoidOrder({ status: 'completed', payments: [] }, true), true);
@@ -171,7 +173,7 @@ await ok('Float / Expense: shifts.cash_movements (the old switch still applies o
 await ok('POS Menu: built from the catalogue — four real screens, no private key lists, no "not built yet" pages', () => {
   const d = read('pages/pos/POSDrawer.tsx');
   assert.doesNotMatch(d, /KEY_LABELS|ALL_KNOWN_KEYS|GenericPermissionView|hasn't been built yet/);
-  assert.match(d, /import \{ PERMISSIONS, PERMISSION_GROUPS, hasAnyPermission \} from '\.\.\/\.\.\/lib\/permissions';/);
+  assert.match(d, /import \{ PERMISSIONS, PERMISSION_GROUPS, hasAnyPermission \} from '@zaptill\/core\/permissions';/);
   for (const k of ["'reports'", "'orders.view_all'", "'inventory.view'", "'customers.view'"]) assert.ok(d.includes(`${k}:`), k);
   assert.match(d, /\{ id: 'reports',\s+icon: '[^']+', rail: 'Reports',\s+keys: POS_REPORT_KEYS \}/);
   assert.match(read('pages/pos/POSReportsTab.tsx'), /export const POS_REPORT_KEYS: readonly string\[\] = \['reports\.sales'\];/);
@@ -221,7 +223,7 @@ await ok('Business: POS options and the business-wide payment methods, on /api/c
   assert.match(c, /api\.put\('\/api\/controls\/loyalty', patch\)/);
   assert.doesNotMatch(c, /\/api\/controls\/updates/);
   assert.match(c, /api\.post\('\/api\/business\/settings', \{ key: PAYMENT_METHODS_ENABLED_KEY, value: v \}\)/);
-  assert.match(c, /export const POS_OPTION_KEYS = \['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin'\] as const;/);   // A594
+  assert.match(c, /export const POS_OPTION_KEYS = \['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'\] as const;/);   // A594
   const bp = read('pages/settings/BusinessPage.tsx');
   assert.match(bp, /\{ to: 'pos-options',\s+label: 'POS options' \}/);
   assert.doesNotMatch(bp, /till-updates/);

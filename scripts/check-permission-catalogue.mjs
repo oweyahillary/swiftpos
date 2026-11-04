@@ -2,7 +2,7 @@
 /**
  * check-permission-catalogue — A213 durable guard, rebuilt for A490 (one catalogue, fine keys).
  *
- * The catalogue is shared/permissions.ts: every FINE key, plus LEGACY — the broad keys it replaced (reports.view,
+ * The catalogue is packages/core/src/permissions.ts: every FINE key, plus LEGACY — the broad keys it replaced (reports.view,
  * settings.manage, products.manage, …), which nothing may check any more (requireAuth and the clients expand them).
  *
  * Fails CI when the code of any app (cloud, web dashboard, till, admin portal) names, as a quoted literal of a
@@ -21,13 +21,14 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const FINE = new Set(CAT.PERMISSION_KEYS);
 const LEGACY = new Set(Object.keys(CAT.LEGACY));
 // The modules a permission key can start with — a quoted 'module.thing' with one of these is read as a key.
 const MODULES = new Set([...FINE, ...LEGACY].map((k) => k.split('.')[0]));
 
-const ROOTS = ['apps/server/src', 'apps/dashboard/src', 'apps/desktop/src', 'apps/admin/src'];
+// packages/core/src: the rules that moved there (shared-components) were scanned as their app copies before.
+const ROOTS = ['apps/server/src', 'apps/dashboard/src', 'apps/desktop/src', 'apps/admin/src', 'packages/core/src'];
 /** Files that may name broad keys: the catalogue's copies, the cloud's registration rows, the till-change specs (their
  *  keys go through expandKeys before any comparison — lib/changeApply, main/changeQueue). */
 const LEGACY_OK = [
@@ -110,7 +111,7 @@ const legacy = findings.filter((f) => f.kind === 'legacy');
 if (unknown.length || legacy.length) {
   console.error('check-permission-catalogue: FAIL');
   if (unknown.length) {
-    console.error('\n  Keys that are not in the catalogue (shared/permissions.ts) — add them there, or use the right key:');
+    console.error('\n  Keys that are not in the catalogue (packages/core/src/permissions.ts) — add them there, or use the right key:');
     for (const f of unknown) console.error(`    ${f.rel}:${f.line}  ${f.key}`);
   }
   if (legacy.length) {

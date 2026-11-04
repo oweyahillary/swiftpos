@@ -17,7 +17,7 @@
  */
 import {
   expandMap, hasPermission, hasAnyPermission, isBackOffice, maySetMpesa, MAP_MARKER, OPEN_BEFORE_A490,
-} from '../../shared/permissions';
+} from '@zaptill/core/permissions';
 
 export interface SessionLike {
   role?: string | null;

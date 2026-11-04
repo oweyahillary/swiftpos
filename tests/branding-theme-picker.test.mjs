@@ -81,7 +81,7 @@ ok('Reset clears the theme too (A617: null is always allowed)',   // A597: + the
   /receipt_logo_enabled: false, theme_id: null,/.test(tab) && /setThemeId\(null\);/.test(tab));
 
 // ── The rule the page relies on, run from the dashboard's own copy ──
-const T = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/themes.ts')).href);
+const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/themes.ts')).href);
 ok('the dashboard\'s themes.ts offers the seven approved themes', T.THEMES.map((t) => t.id).join() === 'ocean,violet,lagoon,orchid,sky,teal,blossom');
 ok('a yellow brand is suggested Sky; red → Lagoon; no brand → no suggestion',
   T.suggestThemeFor('#F5B800') === 'sky' && T.suggestThemeFor('#DC2626') === 'lagoon' && T.suggestThemeFor(null) === null);

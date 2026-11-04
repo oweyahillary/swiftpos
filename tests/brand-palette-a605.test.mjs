@@ -38,9 +38,7 @@ const load = async (entry, name) => {
     outfile: path.join(tmp, `${name}.cjs`), logLevel: 'silent' });
   return createRequire(import.meta.url)(path.join(tmp, `${name}.cjs`));
 };
-const T = await load('shared/themes.ts', 'themes');
-const TD = await load('apps/dashboard/src/lib/themes.ts', 'themes-dash');
-const TP = await load('apps/desktop/src/shared/themes.ts', 'themes-pos');
+const T = await load('packages/core/src/themes.ts', 'themes');   // shared-components: the one themes.ts, no app copies
 const LC = await load('apps/dashboard/src/lib/logoColours.ts', 'logo');
 const TV = await load('apps/dashboard/src/lib/themeVars.ts', 'tv-dash');
 const DV = await load('apps/desktop/src/renderer/lib/themeVars.ts', 'tv-pos');
@@ -201,13 +199,10 @@ ok('a colour that just works says nothing (#3B82F6, #0D9488)', () => {
 ok('no "till" in the notes', () => { for (const h of ALL.slice(0, 100)) for (const n of T.brandNotes(h)) assert.ok(!/\btill/i.test(n), n); });
 
 console.log('\nC. one engine, the same in every app\n');
-ok('the dashboard\'s and the POS\'s copies give the same palette as shared/ (byte-identical files too)', () => {
-  for (const h of ALL.slice(0, 150)) {
-    const a = JSON.stringify(T.brandPalette(h));
-    assert.equal(JSON.stringify(TD.brandPalette(h)), a, `dashboard ${h}`);
-    assert.equal(JSON.stringify(TP.brandPalette(h)), a, `desktop ${h}`);
-  }
-  for (const f of ['apps/dashboard/src/lib/themes.ts', 'apps/desktop/src/shared/themes.ts', 'apps/desktop/src/main/themes.ts', 'apps/server/src/lib/themes.ts']) assert.equal(read(f), read('shared/themes.ts'), f);
+ok('one themes.ts for every app (packages/core): the old copies are gone, the apps import @zaptill/core/themes', () => {
+  for (const f of ['shared/themes.ts', 'apps/dashboard/src/lib/themes.ts', 'apps/desktop/src/shared/themes.ts', 'apps/desktop/src/main/themes.ts', 'apps/server/src/lib/themes.ts']) assert.ok(!fs.existsSync(path.join(ROOT, f)), f);
+  assert.match(read('apps/dashboard/src/lib/themeVars.ts'), /from '@zaptill\/core\/themes'/);
+  assert.match(read('apps/desktop/src/renderer/lib/themeVars.ts'), /from '@zaptill\/core\/themes'/);
 });
 
 console.log('\nL. colours from the logo\n');

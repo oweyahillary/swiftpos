@@ -34,7 +34,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   let pass = 0, fail = 0;
   const ok = (l, c, d = '') => { if (c) { pass++; console.log(`PASS  ${l}`); } else { fail++; console.log(`FAIL  ${l}  ${d}`); } };
 
-  const T = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/themes.ts')).href);
+  const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/themes.ts')).href);
   const vars = D('src/lib/themeVars.ts');
 
   // ── The shade per job, as the dashboard maps it (read from themeVars.ts, then proven for every theme) ──
@@ -97,7 +97,12 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   // A537: − 4 — the category row is gone (CashierScreen's active tab, MinimartPOS's catBtnActive fill, border and text);
   // the category panel that replaced it (cashier/CategoryPanel.tsx) takes the theme through --act-strong.
   // A588: + 1 — the fuel entry's "Full tank" chip, chosen (its border).
-  ok(`90 inline uses take the theme (found ${themedUses})`, themedUses === 90);
+  // 2026-11-04: − 5 — PetrolPOS.tsx, which no screen imported (the petrol station sells in CashierScreen since A588), removed.
+  // 2026-11-04 (owner, "6 yes"): − 1 — the fuel entry's "Full tank" chip moved with the keypad to @zaptill/ui FuelKeypad;
+  // its look (cashier/Forecourt.tsx KEYPAD_LOOK) takes the theme through --act-strong (counted below).
+  ok(`84 inline uses take the theme (found ${themedUses})`, themedUses === 84);
+  ok('the fuel keypad, the dispensers and the gauges take the theme (cashier/Forecourt.tsx: --act-strong, --pos-*)',
+    /const ACCENT = 'rgb\(var\(--act-strong, 34 197 94\)\)';/.test(fs.readFileSync(path.join(posDir, 'cashier/Forecourt.tsx'), 'utf8')));
   ok('A537: the category panel takes the theme (--act-strong)',
     /const ACT = 'rgb\(var\(--act-strong, 15 118 110\)\)';/.test(fs.readFileSync(path.join(posDir, 'cashier/CategoryPanel.tsx'), 'utf8')));
   const cs = fs.readFileSync(path.join(posDir, 'CashierScreen.tsx'), 'utf8');

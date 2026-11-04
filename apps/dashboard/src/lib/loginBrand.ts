@@ -8,7 +8,7 @@
  *   · `text`    — black or white on the accent, whichever reads better (contrast.ts pickButtonText);
  *   · `raw`     — the client's colour as given, for the brand panel's wash (behind it, never under text).
  */
-import { DEFAULT_ACCENT, normalizeHex, contrastRatio, pickButtonText } from './contrast';
+import { DEFAULT_ACCENT, normalizeHex, contrastRatio, pickButtonText } from '@zaptill/core/contrast';
 
 export const LOGIN_BG = '#080c14';
 

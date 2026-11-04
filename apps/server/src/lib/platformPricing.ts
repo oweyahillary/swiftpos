@@ -15,7 +15,7 @@ import { chunkIn } from './pgQuery';
 import {
   PLATFORM_PRICES_KEY, PLATFORM_ROUNDING_KEY, NO_PLATFORM_PRICING, cleanRounding, cleanRules, cleanOwnPrices,
   type PlatformPricing,
-} from './platformPrices';
+} from '@zaptill/core/platformPrices';
 
 const settingValue = (rows: Array<{ key: string; value: unknown }> | null | undefined, key: string): unknown =>
   (rows ?? []).find((r) => r.key === key)?.value;

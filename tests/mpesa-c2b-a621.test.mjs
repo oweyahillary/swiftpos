@@ -508,7 +508,8 @@ try {
   await ok('the web POS: the list under M-Pesa; a taken payment goes to the cloud as received money; closing gives it back', async () => {
     const pm = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/pos/PaymentModal.tsx'), 'utf8');
     assert.match(pm, /<MpesaReceivedList toPay=\{grandTotal\}/);
-    assert.match(pm, /l\.method === 'mpesa' && claims\.isTaken\(l\.reference\) \? \{ status: 'completed' \} : \{\}/);
+    // 2026-11-04: or a part whose M-Pesa prompt the customer paid (the prompt inside a split payment, as the desktop POS).
+    assert.match(pm, /l\.method === 'mpesa' && \(claims\.isTaken\(l\.reference\) \|\| l\.prompted\) \? \{ status: 'completed' \} : \{\}/);
     assert.match(pm, /function closeModal\(\) \{ claims\.giveBackAll\(\); onClose\(\); \}/);
     // Owner, 2026-11-03: "show payments that match the bill only" — a tap always pays the whole bill.
     assert.match(pm, /function takeReceived\(p: ReceivedPayment\) \{\n\s*void handleSplitCharge\(\[\{ id: 'c2b', method: 'mpesa', amount: grandTotal, reference: p\.trans_id \}\]\);/);

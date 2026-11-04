@@ -12,7 +12,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { slidesFromWire, SLIDE_TYPES, MAX_SLIDE_BYTES, type CustomerScreenSlides } from './customerScreen';
+import { slidesFromWire, SLIDE_TYPES, MAX_SLIDE_BYTES, type CustomerScreenSlides } from '@zaptill/core/customerScreen';
 
 export const SLIDES_KEY = 'customer_screen';
 export const RETRY_MS = 60 * 60_000;

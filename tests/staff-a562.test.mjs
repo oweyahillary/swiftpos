@@ -54,7 +54,7 @@ const pinAttempts = require(path.join(DIST, 'lib/pinAttempts.js'));
 const ceiling = require(path.join(DIST, 'lib/roleCeiling.js'));
 const { applyChange } = require(path.join(DIST, 'lib/changeApply.js'));
 const { moveOwnerRowEmail } = require(path.join(DIST, 'routes/admin.js'));
-const F = require(path.join(DIST, 'lib/posFeatures.js'));
+const F = require('@zaptill/core/posFeatures');
 const bcrypt = require('bcrypt');
 
 const B = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222';
@@ -331,7 +331,7 @@ try {
     const ap = read('apps/admin/src/AdminPortal.tsx');
     assert.doesNotMatch(ap, /STAFF_OPTION_KEYS\.map/);
     assert.doesNotMatch(ap, /if \(\(STAFF_OPTION_KEYS as readonly string\[\]\)\.includes\(pf\.key\)\) return null;/);
-    assert.match(read('apps/admin/src/ownerSettings.ts'), /'approval_pin'\] as const;/);
+    assert.match(read('apps/admin/src/ownerSettings.ts'), /'approval_pin', 'rooms'\] as const;/);
   });
   await ok('the web form: the approval PIN only while the switch is on; switched off, a PIN set before may be removed; a new one is never sent then', () => {
     assert.match(tab, /api\.get<Record<string, boolean>>\('\/api\/flags'\)/);

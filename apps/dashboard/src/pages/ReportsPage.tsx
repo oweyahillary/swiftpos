@@ -12,7 +12,7 @@ import { api, downloadFile } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
 import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
-import { methodColour } from '../lib/paymentColours';   // A439
+import { methodColour } from '@zaptill/core/paymentColours';   // A439
 import MonthlyPackTab from './reports/MonthlyPackTab';   // A455
 import MpesaUnmatchedTab from './reports/MpesaUnmatchedTab';   // A621
 import DownloadExcelButton from '../components/DownloadExcelButton';   // A467
@@ -20,7 +20,7 @@ import { localStamp, type ReportColumn, type ReportSheet } from '../lib/reportDo
 import { reportPresets, activePreset } from '../lib/reportPeriods';   // A467; activePreset: one preset lit
 import * as fmt from '../lib/format';   // A471: one money/number/date format ('money' here is the Excel column shorthand)
 import Pager, { usePageSize } from '../components/Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { usePermissions } from '../context/PermissionsContext';   // A620: who may set the report e-mails
 import ReportSchedulerTab from './settings/ReportSchedulerTab';   // A620: moved here from Settings › Integrations
 

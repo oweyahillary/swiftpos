@@ -7,7 +7,7 @@
 import { supabase } from './supabase';
 import { chunkIn } from './pgQuery';
 import { getDayCutoff } from './dayCutoff';
-import { businessDateEAT, businessRangeEAT } from './businessDay';
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { buildPack, monthDays, MOVEMENT_KINDS, type Pack, type PackInput, type MovementKind } from './monthlyPack';
 
 const PAGE = 500;

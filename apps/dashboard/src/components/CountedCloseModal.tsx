@@ -15,7 +15,7 @@
  * a second tick closes anyway (they stay open on that till).
  */
 import { useEffect, useState } from 'react';
-import { methodName, methodsToDeclare, readAmounts } from '../lib/shiftConfirm';
+import { methodName, methodsToDeclare, readAmounts } from '@zaptill/core/shiftConfirm';
 import { money } from '../lib/format';
 import { tillBehindLine } from '../lib/tillSync';
 

@@ -15,7 +15,7 @@ import { useBusiness } from '../../context/BusinessContext';
 import {
   SCALE_PRESETS, SCALE_SETTINGS_KEY, cleanScaleSettings, scaleSettingsOrDefault, presetSettings, explainScaleBarcode,
   findScaleProduct, scaleLine, formatWeight, layoutLength, type ScaleSettings,
-} from '../../lib/scaleBarcode';
+} from '@zaptill/core/scaleBarcode';
 
 interface ProductRow { id: string; name: string; base_price: number; plu_code?: string | null; sold_by?: string | null; unit_label?: string | null; status?: string }
 

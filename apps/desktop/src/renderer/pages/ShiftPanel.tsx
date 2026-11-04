@@ -1,4 +1,4 @@
-import MethodDot from '../components/MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { useEffect, useRef, useState } from 'react';
 import { printShiftReport } from '../lib/printShiftReport';
 import { posApi } from '../lib/posApi';
@@ -6,10 +6,10 @@ import { checkTypeName } from '../lib/expenseTypes';
 import type { ZReport, OpenKitchenOrder } from '../lib/posApi';
 import ZReportView from '../components/ZReportView';
 import ConfirmShiftModal from '../components/ConfirmShiftModal';
-import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
-import { expenseLabel } from '../../shared/expenseMethod';
-import { methodLabel } from '../../shared/paymentCatalogue';   // A442
-import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, cashInAddsText, cashMovementNeedsApprover } from '../../shared/posFeatures';   // A594
+import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '@zaptill/core/shiftConfirm';
+import { expenseLabel } from '@zaptill/core/expenseMethod';
+import { methodLabel } from '@zaptill/core/paymentCatalogue';   // A442
+import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, cashInAddsText, cashMovementNeedsApprover } from '@zaptill/core/posFeatures';   // A594
 import { can, mayMoveMoney, type SessionLike } from '../lib/access';   // A490 / A594: the main process's rules
 
 /** 0.6.27: what an expense can be paid with — cash, M-Pesa, card and the business's own methods. */

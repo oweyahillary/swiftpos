@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { uploadImage } from '../../lib/upload';
-import { MAX_SLIDES, SLIDE_SECONDS_MIN, SLIDE_SECONDS_MAX, SLIDE_SECONDS_DEFAULT, slideFileError, type Slide } from '../../lib/customerScreen';
+import { MAX_SLIDES, SLIDE_SECONDS_MIN, SLIDE_SECONDS_MAX, SLIDE_SECONDS_DEFAULT, slideFileError, type Slide } from '@zaptill/core/customerScreen';
 
 interface Answer { slides: Slide[]; seconds: number; editable: boolean; licensed: boolean }
 

@@ -5,17 +5,17 @@
  * Permission required: orders.view_all
  */
 
-import MethodDot from '../../components/MethodDot';
+import MethodDot from '@zaptill/ui/MethodDot';
 import { useState, useEffect, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';
 import { canRefundOrder, canVoidOrder, isRefunded, REFUND_REASONS } from '../orderRefund';
-import { historyView, orderMethod, type HistorySort } from '../../lib/historyView';
-import { orderTypeLabel, customerDeliveryFee } from '../../lib/delivery';
-import { businessDateLocal } from '../../lib/businessDay';   // 0.6.34
+import { historyView, orderMethod, type HistorySort } from '@zaptill/core/historyView';
+import { orderTypeLabel, customerDeliveryFee } from '@zaptill/core/delivery';
+import { businessDateLocal } from '@zaptill/core/businessDay';   // 0.6.34
 import { getWebDayCutoff } from '../../lib/webDayCutoff';   // 0.6.33: + free delivery
 import OrderItems from '../../components/OrderItems';   // A444
-import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../../lib/reversalRules';   // A444
+import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '@zaptill/core/reversalRules';   // A444
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

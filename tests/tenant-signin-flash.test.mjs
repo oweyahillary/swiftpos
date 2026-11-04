@@ -26,10 +26,10 @@ const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tenant-'));
 fs.writeFileSync(path.join(dir, 'tenant.ts'), read('apps/dashboard/src/lib/tenant.ts')
   .replace("from 'react'", "from './react-stub.ts'").replace("from './config'", "from './config-stub.ts'")
-  .replace("from './tenantHost'", "from './tenantHost.ts'"));
+  .replace("from '@zaptill/core/tenantHost'", "from './tenantHost.ts'"));
 fs.writeFileSync(path.join(dir, 'react-stub.ts'), 'export const useState = () => []; export const useEffect = () => {};\n');
 fs.writeFileSync(path.join(dir, 'config-stub.ts'), "export const API_URL = 'http://x';\n");
-fs.copyFileSync(path.join(ROOT, 'apps/dashboard/src/lib/tenantHost.ts'), path.join(dir, 'tenantHost.ts'));
+fs.copyFileSync(path.join(ROOT, 'packages/core/src/tenantHost.ts'), path.join(dir, 'tenantHost.ts'));
 const store = new Map();
 globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
 const T = await import(pathToFileURL(path.join(dir, 'tenant.ts')).href);

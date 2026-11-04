@@ -13,7 +13,7 @@
  */
 import {
   isPlatformMethod, salePlatform, priceLineForPlatform, lineAmount, platformRecord, type PlatformPricing,
-} from './platformPrices';
+} from '@zaptill/core/platformPrices';
 
 export type PlatformCheck = { ok: true; platform: string | null } | { ok: false; error: string };
 

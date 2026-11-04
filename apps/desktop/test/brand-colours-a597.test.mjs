@@ -90,7 +90,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'swiftpos-a597-tv-'));
 esbuild.buildSync({ entryPoints: [path.join(desktop, 'src/renderer/lib/themeVars.ts')], bundle: true, format: 'esm',
   outfile: path.join(tmp, 'themeVars.mjs'), logLevel: 'silent' });
 const TV = await import(pathToFileURL(path.join(tmp, 'themeVars.mjs')).href);
-esbuild.buildSync({ entryPoints: [path.join(desktop, 'src/shared/themes.ts')], bundle: true, format: 'esm',
+esbuild.buildSync({ entryPoints: [path.join(desktop, '../../packages/core/src/themes.ts')], bundle: true, format: 'esm',
   outfile: path.join(tmp, 'themes.mjs'), logLevel: 'silent' });
 const T = await import(pathToFileURL(path.join(tmp, 'themes.mjs')).href);
 

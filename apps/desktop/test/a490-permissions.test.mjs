@@ -2,7 +2,7 @@
 //
 // Owner, 2026-10-14/15: "turn most of this features into permissions which can be set in one place" — "dont just focus
 // on reports break even other views and how to limit what users see". The till had nine "is a manager" rules, most of
-// them deciding on the role's NAME; every gate now names a fine key of the catalogue (shared/permissions.ts) and asks
+// them deciding on the role's NAME; every gate now names a fine key of the catalogue (packages/core/src/permissions.ts) and asks
 // main/tillAccess.ts (the owner's role → '*'; anyone else expandMap(their map)).
 //
 // RUNS the real compiled dist/main (electron shimmed, REAL SQLite, no network) and the real renderer/lib/access.ts
@@ -212,8 +212,9 @@ for (const [ch, payload, keys, refusedRe] of GATES) {
 // ── 3. no role-name check left ──────────────────────────────────────────────────────────────────────────────────────
 console.log('\nNo role-name checks in apps/desktop/src\n');
 {
-  // The owner's role is the ONE role-name rule (the cloud's own); the copies of shared files carry it too.
-  const ALLOW = new Set(['main/personAccess.ts', 'renderer/lib/access.ts', 'shared/shiftConfirm.ts', 'main/permissions.ts', 'shared/permissions.ts']);
+  // The owner's role is the ONE role-name rule (the cloud's own); packages/core/src (shiftConfirm, permissions — no
+  // copies in src since shared-components batch D) carries it too, outside this scan.
+  const ALLOW = new Set(['main/personAccess.ts', 'renderer/lib/access.ts']);
   const files = [];
   const walk = (d) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) {
     const p = path.join(d, f.name);

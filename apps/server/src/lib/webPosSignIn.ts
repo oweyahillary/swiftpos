@@ -10,7 +10,7 @@
  * here — it signs in with /api/auth/verify-pin and the branch server with its own roster — so a manager's PIN keeps
  * working there exactly as before. Pure: the route and its test read it.
  */
-import { isBackOffice } from './permissions';
+import { isBackOffice } from '@zaptill/core/permissions';
 
 export const USE_WEB_DASHBOARD = 'USE_WEB_DASHBOARD';
 

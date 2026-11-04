@@ -6,7 +6,7 @@
  * be the same font like the others").
  *
  * The ticket itself (ESC M 1 / ESC M 0, 64 / 42 columns, ESC 3 24 with the switch; Font A without) is pinned in
- * shared/printing (test/kitchen-font.test.ts). This pins the wiring: the switch in shared/posFeatures.ts, the admin portal
+ * shared/printing (test/kitchen-font.test.ts). This pins the wiring: the switch in packages/core/src/posFeatures.ts, the admin portal
  * switching it, the owner and the client unable to, and every kitchen print path (the till's queue and test print, the
  * web POS's Send to kitchen, pay-first and the kitchen VOID) handing it to the renderer — running the real web mapper and
  * the committed web bundle.
@@ -34,7 +34,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const F = await import(pathToFileURL(path.join(ROOT, 'shared/posFeatures.ts')).href);
+const F = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/posFeatures.ts')).href);
 const B = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/buildReceiptOrder.ts')).href);
 const E = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/escposRenderer.js')).href);
 const FONT_B = Buffer.from([0x1b, 0x4d, 1]), FONT_A = Buffer.from([0x1b, 0x4d, 0]), ESC_M = Buffer.from([0x1b, 0x4d]);
@@ -102,7 +102,7 @@ await ok('the web bundle: kitchen, bar and master KOT tickets in Font A (A551), 
 await ok('paths: every kitchen print path hands the switch to the renderer (till and web)', () => {
   const ipc = ipcHandlersSource();
   assert.match(ipc, /kitchenFontB:\s+kitchenFontBFrom\(getPosFeatures\(\)\),/);
-  assert.match(ipc, /import \{[^}]*\bkitchenFontBFrom\b[^}]*\} from '\.\.?\/posFeatures';/);   // D10: ipc/*.ts import '../posFeatures'
+  assert.match(ipc, /import \{[^}]*\bkitchenFontBFrom\b[^}]*\} from '@zaptill\/core\/posFeatures';/);   // D10: ipc/*.ts import '@zaptill/core/posFeatures' (shared-components batch D)
   assert.ok(!/kitchenFontA/.test(ipc), 'the till no longer reads kitchen_font_a');
   const pw = read('apps/desktop/src/main/print/printWorker.ts');
   assert.match(pw, /kitchenFontB = kitchenFontBFrom\(getPosFeatures\(\)\);/);

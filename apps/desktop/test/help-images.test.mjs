@@ -29,7 +29,7 @@ const read = (p) => fs.readFileSync(path.join(DESKTOP, p), 'utf8').replace(/\r\n
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n       ${e.message}`); } };
 
-const H = await import(pathToFileURL(path.join(DESKTOP, 'src/shared/helpTopics.ts')).href);
+const H = await import(pathToFileURL(path.join(DESKTOP, '..', '..', 'packages/core/src/helpTopics.ts')).href);
 const named = H.HOW_TO.flatMap((t) => (t.images ?? []).filter(Boolean));
 
 console.log('\nThe pictures');

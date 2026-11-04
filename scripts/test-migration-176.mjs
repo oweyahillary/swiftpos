@@ -63,7 +63,7 @@ const put = async (table, row) => {
 };
 
 console.log('\nMigration 176 (the permission splits: parts of the broad rights, carried over) — PGlite, every migration\n');
-const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const PARTS = [...new Set(Object.values(CAT.SPLITS).flat())];
 const NEW = [...PARTS, 'customers.credit_limit'];
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;

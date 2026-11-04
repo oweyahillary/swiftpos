@@ -11,7 +11,7 @@
  *   <AdminPager paged={paged} onPage={setPage} onSize={n => { setSize(n); setPage(1); }} />
  */
 import { useCallback, useState } from "react";
-import { PAGE_SIZES, DEFAULT_PAGE_SIZE, cleanPageSize, pageWindow, rangeLabel, type Paged } from "./lib/paginate";
+import { PAGE_SIZES, DEFAULT_PAGE_SIZE, cleanPageSize, pageWindow, rangeLabel, type Paged } from "@zaptill/core/paginate";
 import { C, S } from "./theme";
 
 /** The page size for one list, remembered in this browser. Storage may be blocked: then 50. */

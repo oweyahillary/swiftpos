@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { receivedNotice } from '../../shared/mpesaPayments';
+import { receivedNotice } from '@zaptill/core/mpesaPayments';
 
 const SHOW_MS = 10_000;
 const MAX_SHOWN = 3;

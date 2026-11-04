@@ -5,7 +5,7 @@
  *   node tests/back-office-teal.test.mjs
  *
  * RUNS, not pins, wherever it can: the contrast proofs read the token values from the dashboard's own index.css and
- * the light-mode surfaces it paints, and use the dashboard's contrast() (lib/themes.ts); the label check walks every
+ * the light-mode surfaces it paints, and use the dashboard's contrast() (@zaptill/core/themes); the label check walks every
  * back-office source file and pairs each teal fill with the label in the same class string. On the bench (not in CI —
  * no browser there) the same classes were checked in Chromium on the real compiled CSS, dark and light.
  *
@@ -35,7 +35,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A329_TS) {
   let pass = 0, fail = 0;
   const ok = (l, c, d = '') => { if (c) { pass++; console.log(`PASS  ${l}`); } else { fail++; console.log(`FAIL  ${l}  ${d}`); } };
 
-  const { contrast } = await import(pathToFileURL(path.join(DASH, 'src/lib/themes.ts')).href);
+  const { contrast } = await import(pathToFileURL(path.join(DASH, '..', '..', 'packages/core/src/themes.ts')).href);
   const css = read('src/index.css');
   const hex = (ch) => '#' + ch.trim().split(/\s+/).map((n) => (+n).toString(16).padStart(2, '0')).join('');
 

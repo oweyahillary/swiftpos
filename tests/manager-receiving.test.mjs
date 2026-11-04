@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // A490: a new business's manager defaults are the shared catalogue's (`manager: true` per key; defaultKeysFor('manager')),
 // seeded by apps/server/src/lib/defaultRolePermissions.ts — MANAGER_DENY is gone.
-const catalogue = fs.readFileSync(path.join(root, 'shared/permissions.ts'), 'utf8');
+const catalogue = fs.readFileSync(path.join(root, 'packages/core/src/permissions.ts'), 'utf8');
 const seeder = fs.readFileSync(path.join(root, 'apps/server/src/lib/defaultRolePermissions.ts'), 'utf8');
 const managerGets = (key) => new RegExp(`key: '${key.replace('.', '\.')}',[^\n]*manager: true`).test(catalogue);
 

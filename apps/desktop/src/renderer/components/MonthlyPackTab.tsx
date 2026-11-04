@@ -11,7 +11,7 @@
  */
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { posApi, type MonthlyPack, type MoneyMovement, type MovementKind } from '../lib/posApi';
-import { methodLabel } from '../../shared/paymentCatalogue';
+import { methodLabel } from '@zaptill/core/paymentCatalogue';
 
 const KINDS: { id: MovementKind; label: string }[] = [
   { id: 'opening', label: 'Opening balance' }, { id: 'other_income', label: 'Other income' },

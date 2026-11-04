@@ -100,7 +100,9 @@ if (!vite) {
     'pages/EnrolPage.tsx', 'components/HelpScreen.tsx'].some(inEntry));
   const dyn = (rel) => chunks.find((c) => c.isDynamicEntry && mods(c).some((m) => m.endsWith(`/src/renderer/${rel}`)));
   ok('each is its own chunk, loaded on demand', Object.values(LAZY).every((p) => dyn(`${p}.tsx`)));
-  ok('the main chunk is under 450 kB (757.5 kB before A517)', entry.code.length < 450 * 1024, `${kb(entry)} kB`);
+  // Owner, 2026-11-04: the POS's start-up budget is 460 kB (was 450) — one number in every suite that pins it, room for the
+  // one design for both POS (docs/SHARED-COMPONENTS-PLAN.md); new pieces beyond the payment screen still load on demand.
+  ok('the main chunk is under 460 kB (757.5 kB before A517)', entry.code.length < 460 * 1024, `${kb(entry)} kB`);
   ok('the lazy chunks are imported by a relative path (file:// in the packaged app)',
     /import\("\.\/ManagerPage-[\w-]+\.js"\)/.test(entry.code) && !/import\("\/assets\//.test(entry.code));
   const html = output.find((o) => o.fileName === 'index.html');

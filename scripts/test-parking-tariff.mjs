@@ -3,9 +3,9 @@
  *
  *     npx tsx scripts/test-parking-tariff.mjs
  *
- * These vectors are the contract. Both copies of parkingTariff.ts must produce
- * these numbers exactly; scripts/check-shared-sync.mjs asserts the copies are
- * identical, and this asserts the shared implementation is right.
+ * These vectors are the contract. parkingTariff.ts (packages/core/src, the one
+ * file since shared-components batch C; scripts/check-shared-sync.mjs keeps it
+ * free of copies) must produce these numbers exactly.
  *
  * Every case here is a real situation an attendant will meet at a barrier, and
  * the expected figure is one you could defend to a driver. If a change makes a
@@ -13,7 +13,7 @@
  * two numbers would you rather explain at 23:00 to someone who wants to leave".
  */
 
-import { priceSession, centsToAmount } from '../shared/parkingTariff.ts';
+import { priceSession, centsToAmount } from '../packages/core/src/parkingTariff.ts';
 
 // A typical Nairobi mall tariff: 15 min grace, 100 for the first hour, 50 an
 // hour after, capped at 500 a day.

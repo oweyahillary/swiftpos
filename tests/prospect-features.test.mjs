@@ -35,11 +35,12 @@ const lib = (f) => import(pathToFileURL(path.join(ROOT, 'apps/server/src/lib', f
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n       ${e.message}`); } };
 
-const F = await lib('posFeatures.ts');
-const D = await lib('delivery.ts');
-const X = await lib('expenseMethod.ts');
-const Q = await lib('confirmReasons.ts');
-const H = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/historyView.ts')).href);
+const F = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/posFeatures.ts')).href);
+const D = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/delivery.ts')).href);
+const X = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/expenseMethod.ts')).href);   // shared-components step 2: in packages/core
+// shared-components step 1: confirmReasons lives in packages/core (imported as @zaptill/core/confirmReasons), not copied.
+const Q = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/confirmReasons.ts')).href);
+const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/historyView.ts')).href);
 
 console.log('0.6.27 — the prospect\'s requests (cloud + web)\n');
 
@@ -49,7 +50,7 @@ await ok('the switches, all off unless set; the standard ones always on (0.6.29;
   // A461: kitchen_void_approval became standard (always on); pay_later_tabs (eat now, pay later) is a new switch, off.
   assert.deepEqual(F.POS_FEATURE_KEYS, ['delivery_fee', 'cashier_own_history', 'cashier_no_reprint', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'cashier_no_money_out',
     'receipt_compact_layout', 'receipt_classic_spacing', 'receipt_full_logo', 'receipt_extra_feed', 'kitchen_font_b', 'approval_pin',
-    'stock_zero_sold_out', 'stock_zero_hide']);   // A543: kitchen_font_a; A551: kitchen_font_b (Font B opt-in); A562: approval_pin; A563: when stock reaches zero (the owner's choice)
+    'stock_zero_sold_out', 'stock_zero_hide', 'rooms']);   // 2026-11-04: rooms (the owner's Rooms switch); A543: kitchen_font_a; A551: kitchen_font_b (Font B opt-in); A562: approval_pin; A563: when stock reaches zero (the owner's choice)
   // A398: login_codes; A453: cashier_no_money_out; A530: the receipt switches; A538: receipt_compact_layout replaces receipt_classic_layout
   // A538: a stale receipt_classic_layout row (on for some clients in production) is an unknown key — dropped.
   assert.ok(!('receipt_classic_layout' in F.parsePosFeatures([{ key: 'receipt_classic_layout', enabled: true }])));

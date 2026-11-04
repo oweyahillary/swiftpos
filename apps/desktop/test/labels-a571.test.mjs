@@ -256,7 +256,7 @@ ok('ManagerPage shows the tab (menu.edit or inventory.view)', read('src/renderer
 
 // ── A574: every business type ────────────────────────────────────────────────
 console.log('\nA574 — the Labels tab at every business type\n');
-const T = await import(pathToFileURL(path.join(here, '..', 'src', 'shared', 'businessTerms.ts')).href);
+const T = await import(pathToFileURL(path.join(here, '..', '..', '..', 'packages', 'core', 'src', 'businessTerms.ts')).href);
 const W = await import(pathToFileURL(path.join(here, '..', 'src', 'renderer', 'lib', 'labelsWords.ts')).href);
 db.prepare(`INSERT INTO device_config (id, deploy_mode, server_url, business_type, configured, created_at, updated_at)
   VALUES (1, 'cloud', 'http://x', 'retail', 1, '2026-10-23', '2026-10-23')

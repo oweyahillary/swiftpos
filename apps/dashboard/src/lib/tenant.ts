@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { API_URL } from './config';
-import { subdomainFromHost } from './tenantHost';
+import { subdomainFromHost } from '@zaptill/core/tenantHost';
 
 export interface TenantInfo { name: string; logo: string | null; accent: string | null }
 

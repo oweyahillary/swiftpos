@@ -241,7 +241,7 @@ const TC = require(path.join(dist, 'terminalCodes.js'));
 
 // ── 3. Support logs ─────────────────────────────────────────────────────────────────────────────────────────────────
 console.log('\n3. Send logs to support\n');
-const RD = require(path.join(dist, 'logRedact.js'));
+const RD = require('@zaptill/core/logRedact');
 const SL = require(path.join(dist, 'supportLogs.js'));
 {
   const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJhYmMiLCJ0aWxsIjp0cnVlfQ.sOmEsIgNaTuRe_value-123';
@@ -269,8 +269,8 @@ const SL = require(path.join(dist, 'supportLogs.js'));
     bad.length === 0, bad.map(([s]) => `${s} → ${RD.redactLog(s)}`).join(' ; '));
   const keep = '2026-10-16T08:01:02.123Z [sale] created 7f3e2a10-1b2c-4d5e-8f90-123456789abc 1250 cash x3 T1--1042 at 08:01; pinned server; Tech page';
   ok('what support needs stays: times, amounts, bill numbers, ids, words like "pinned"', RD.redactLog(keep) === keep, RD.redactLog(keep));
-  ok('the three copies are identical (check-shared-sync)', ['shared/logRedact.ts', 'apps/desktop/src/main/logRedact.ts', 'apps/server/src/lib/logRedact.ts']
-    .map((p) => fs.readFileSync(path.join(repo, p), 'utf8')).every((s, _, a) => s === a[0]));
+  ok('one file: packages/core/src/logRedact.ts, no copies left (check-shared-sync)', fs.existsSync(path.join(repo, 'packages/core/src/logRedact.ts'))
+    && ['shared/logRedact.ts', 'apps/desktop/src/main/logRedact.ts', 'apps/server/src/lib/logRedact.ts'].every((p) => !fs.existsSync(path.join(repo, p))));
 
   const now = Date.parse('2026-10-16T12:00:00Z');
   const t = (h) => new Date(now - h * 3600_000).toISOString();

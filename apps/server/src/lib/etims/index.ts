@@ -11,7 +11,7 @@ import { encryptSecret, decryptSecret } from '../crypto';
 import { etimsEnabledGlobally, getProvider } from './provider';
 import { transmit } from './queue';
 import type { EtimsInvoiceDTO, EtimsInvoiceType, EtimsBranchConfig, EtimsLine } from './types';
-import { saleBuyerPin } from '../customerDetails';   // A607
+import { saleBuyerPin } from '@zaptill/core/customerDetails';   // A607
 
 // ── Eligibility ──────────────────────────────────────────────────────────────
 async function getBranchConfig(branchId: string): Promise<EtimsBranchConfig | null> {

@@ -1,9 +1,9 @@
-import type { PosFeatures } from '../../shared/posFeatures';
-import type { StockCountFreeze } from '../../shared/stockCountFreeze';
-import type { StockView, OutOfStockMode } from '../../shared/stockGate';   // A563
-import type { LabelSettings } from '../../shared/labels';   // A571
-import type { BarcodeNumbering } from '../../shared/barcode';   // A574
-import type { ReceivedPayment } from '../../shared/mpesaPayments';   // A621
+import type { PosFeatures } from '@zaptill/core/posFeatures';
+import type { StockCountFreeze } from '@zaptill/core/stockCountFreeze';
+import type { StockView, OutOfStockMode } from '@zaptill/core/stockGate';   // A563
+import type { LabelSettings } from '@zaptill/core/labels';   // A571
+import type { BarcodeNumbering } from '@zaptill/core/barcode';   // A574
+import type { ReceivedPayment } from '@zaptill/core/mpesaPayments';   // A621
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
@@ -46,6 +46,9 @@ export interface Pump {
   fuel_product_name: string | null;
   price_per_litre: number | null;
 }
+
+/** Owner 2026-11-04: a sale's customer's loyalty points before the sale, their tier and the business's earn rate. */
+export interface LoyaltyBefore { points: number; tier: string; multiplier: number; earnRate: number }
 
 /** A588: the pumps screen's gauges (main/forecourt.ts) — this POS's own fuel sales and, when known, the tanks. */
 export interface Forecourt {
@@ -527,6 +530,8 @@ declare global {
         // bound on this terminal. With the HTML fallback gone (0.5.27) this is
         // the only way the cashier learns a ticket did not go. Register D8.
         printProduction: (payload: unknown) => Promise<{ ok: boolean; skipped: string[] }>;
+        /** Owner 2026-11-04 (online licence): the open order's bill before payment. */
+        printBill: (payload: unknown) => Promise<{ ok: boolean; error?: string }>;
         // The EFFECTIVE list, where it came from, and the cloud baseline. The
         // setup screen previews with `terms`, so a preview never disagrees with
         // the printer; `source`/`cloudTerms` drive the "local override vs
@@ -642,12 +647,14 @@ declare global {
         getPumps: () => Promise<Pump[]>;
         /** A588: the pumps screen's gauges — this POS's litres today / yesterday, each pump's last sale, the tanks (null = not known). */
         forecourt: () => Promise<Forecourt>;
+        /** Owner 2026-11-04: mark the pump dispensing on the cloud (online licence; never blocks the sale). */
+        activatePump: (pumpId: string) => Promise<{ ok: boolean }>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
         /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
         /** A429; A619: + the delivery platforms' prices ({ rounding, rules }; absent from an older main = normal prices). */
         paymentMethodsEnabled: () => Promise<{ enabled: string[] | null; platformPrices?: unknown }>;
         /** A445: the branch's offers as the till holds them, and its branch (an offer may be for chosen branches). */
-        offers: () => Promise<{ offers: import('../../shared/offers').Offer[]; branchId: string | null }>;
+        offers: () => Promise<{ offers: import('@zaptill/core/offers').Offer[]; branchId: string | null }>;
         onCatalogueChanged: (cb: () => void) => () => void;   // A278
       };
       order: {
@@ -655,7 +662,7 @@ declare global {
         create: (payload: any) => Promise<{ orderId: string; orderNumber?: string | null; printFailed?: string[] }>;
         void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; offline?: boolean; approvedBy?: string | null }>;
         /** A444: an order's items, sizes, extras, notes and payments; `canReprint` = this person may reprint it. */
-        detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('../../shared/orderDetail').OrderDetail; canReprint?: boolean }>;
+        detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('@zaptill/core/orderDetail').OrderDetail; canReprint?: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
         /** A552: On account — offered on this till?, may the person signed in approve it themselves (no PIN)?, the customers. */
         creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; chosenApprovers?: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;
@@ -928,6 +935,8 @@ declare global {
       /** A607: customer details at the counter — is KRA eTIMS on, may this person see customers' numbers in full. */
       customerDetails: {
         saleInfo: () => Promise<{ etimsEnabled: boolean; seesContacts: boolean }>;
+        /** Owner 2026-11-04: the customer's points before the sale (online licence, online; null = show nothing). */
+        loyaltyPoints: (customerId: string) => Promise<LoyaltyBefore | null>;
       };
       /** A607: the M-Pesa prompt from this POS (main/mpesaStk.ts StkState). */
       mpesa: {
@@ -975,9 +984,9 @@ declare global {
         /** A365: a manager's blind recount of every payment method, approved with their own PIN. */
         confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')? */
-        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('../../shared/shiftConfirm').CashBreakdown | null }>;   // A527: cash = the manager's four cash lines
+        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('@zaptill/core/shiftConfirm').CashBreakdown | null }>;   // A527: cash = the manager's four cash lines
         /** A433: another till's shift — confirmed on the cloud by the signed-in manager (or a manager's PIN). */
-        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('../../shared/shiftConfirm').CashBreakdown | null }>;
+        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('@zaptill/core/shiftConfirm').CashBreakdown | null }>;
         remoteConfirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
         canConfirm: () => Promise<boolean>;
@@ -1060,7 +1069,7 @@ declare global {
         getMpesa: () => Promise<{ own: MpesaReceiveLite | null; inherited: MpesaReceiveLite | null; canEdit: boolean }>;
         setMpesa: (v: { kind?: 'buy_goods' | 'paybill'; number?: string; account?: string; clear?: boolean }) => Promise<any>;
         /** A445: Manager › Offers — the cloud's offers (each with `editable`), save (new or changed), delete. */
-        offers: () => Promise<Array<import('../../shared/offers').Offer & { editable?: boolean; created_by_name?: string | null }>>;
+        offers: () => Promise<Array<import('@zaptill/core/offers').Offer & { editable?: boolean; created_by_name?: string | null }>>;
         saveOffer: (offer: unknown) => Promise<any>;
         deleteOffer: (id: string) => Promise<any>;
         getCashierHistoryMethods: () => Promise<{ methods: string[] }>;

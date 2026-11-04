@@ -5,7 +5,7 @@
  * Owner, 2026-10-04: "We are missing a stock take module" — "Yes the count should be blind, I would recommend freeze but
  * we leave that as a feature which the owner will decide".
  *
- * The rules (lib/stockTakeRules.ts, pure) and the till's freeze parse (shared/stockCountFreeze.ts) run for real; source
+ * The rules (lib/stockTakeRules.ts, pure) and the till's freeze parse (packages/core/src/stockCountFreeze.ts) run for real; source
  * pins on the routes, the web POS, the till and the screens.
  *
  * MUTATIONS TO CONFIRM BITE: lateSales counting a sale made after the count → "a sale after the count is not late"
@@ -25,7 +25,7 @@ let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
 const R = await import(pathToFileURL(path.join(ROOT, 'apps/server/src/lib/stockTakeRules.ts')).href);
-const F = await import(pathToFileURL(path.join(ROOT, 'shared/stockCountFreeze.ts')).href);
+const F = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/stockCountFreeze.ts')).href);
 
 console.log('\nThe rules\n');
 await ok('steps: count and hand in while counting; recount and post under review; cancel while open', () => {
@@ -109,7 +109,7 @@ await ok('who: counting is inventory.count; recount and post are inventory.adjus
   assert.match(st, /router\.post\('\/:id\/count', requireAnyPermission\('inventory\.count', 'inventory\.adjust', 'inventory\.count_review'\)/);
   assert.match(st, /router\.post\('\/:id\/recount', requirePermission\('inventory\.count_review'\)/);
   assert.match(st, /router\.post\('\/:id\/post', requirePermission\('inventory\.count_review'\)/);
-  assert.match(read('shared/permissions.ts'), /key: 'inventory\.count'/  /* A490: the catalogue is shared/permissions.ts */);
+  assert.match(read('packages/core/src/permissions.ts'), /key: 'inventory\.count'/  /* A490: the catalogue is packages/core/src/permissions.ts */);
   assert.match(read('apps/server/src/routes/index.ts'), /router\.use\('\/stock-takes',\s+stockTakeRoutes\);/);
 });
 await ok('blind on the cloud: the items and totals reach only someone who may change stock', () => {

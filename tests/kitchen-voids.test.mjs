@@ -41,7 +41,7 @@ process.env.ADMIN_JWT_SECRET ??= randomBytes(24).toString('hex');
 process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
-const KL = require(path.join(DIST, 'lib/kitchenLines.js'));
+const KL = require('@zaptill/core/kitchenLines');
 const bcrypt = require('bcrypt');
 
 const BZ = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222';
@@ -136,7 +136,7 @@ const kv = (body, opts) => call(`/api/orders/${O1}/kitchen-void`, body, opts);
 const order = (id) => db.orders.find((o) => o.id === id);
 
 try {
-  await ok('the cloud admits exactly the shared reasons (migration 112 = shared/kitchenLines.ts)', () => {
+  await ok('the cloud admits exactly the shared reasons (migration 112 = packages/core/src/kitchenLines.ts)', () => {
     const sql = fs.readFileSync(path.join(ROOT, 'migrations/112_kitchen_voids.sql'), 'utf8');
     const list = /CHECK \(reason IN \(([^)]*)\)\)/.exec(sql)[1].split(',').map((s) => s.trim().replace(/'/g, ''));
     assert.deepEqual(list, KL.KITCHEN_VOID_REASONS.map((r) => r.code));

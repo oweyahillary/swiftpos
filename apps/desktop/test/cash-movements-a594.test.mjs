@@ -76,7 +76,7 @@ const sale = (() => { let n = 0; return (shiftId, amount) => {
 require(path.join(dist, 'ipcHandlers.js')).registerIpcHandlers();
 const H = global.__handlers;
 const S = require(path.join(dist, 'shiftService.js'));
-const F = require(path.join(dist, 'posFeatures.js'));
+const F = require('@zaptill/core/posFeatures');   // shared-components: one posFeatures, packages/core
 const call = (ch, p) => H[ch]({}, p);
 const floats = () => db.prepare(`SELECT type, amount, reason, approved_by, approved_by_name FROM float_transactions ORDER BY created_at, rowid`).all();
 const expected = (id) => S.computeZReport(id).totals.expectedCash;

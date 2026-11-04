@@ -6,7 +6,7 @@
  *
  *   node tests/order-notes.test.mjs
  *
- * RUNS the cloud's copy of the rules (apps/server/src/lib/orderNotes.ts, type-stripped) and the web's receipt builder
+ * RUNS the shared rules (packages/core/src/orderNotes.ts, type-stripped) and the web's receipt builder
  * (apps/dashboard/src/lib/buildReceiptOrder.ts, type-stripped); pins the routes and screens (the order route needs the
  * database; React is not run). The till's side is apps/desktop/test/order-notes.test.mjs.
  *
@@ -33,7 +33,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n       ${e.message}`); } };
 
-const N = await import(pathToFileURL(path.join(ROOT, 'apps/server/src/lib/orderNotes.ts')).href);
+const N = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/orderNotes.ts')).href);
 
 console.log('A367 — notes on an item and on the order (cloud + web)\n');
 

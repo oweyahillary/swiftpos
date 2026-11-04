@@ -3,7 +3,7 @@
 // Owner: "ensure we use the word POS or point of sale instead of till". The website already did; this proves the product:
 //   G. the gate (scripts/check-no-till-wording.mjs) passes on the repo, and catches a "till" put back into a real screen,
 //      a server message and a printed line — while M-Pesa's own "Till number", identifiers, comments and logs pass;
-//   P. the frozen permission catalogue and built-in roles (shared/permissions.ts — migrations 134 and 142 register them
+//   P. the frozen permission catalogue and built-in roles (packages/core/src/permissions.ts — migrations 134 and 142 register them
 //      word for word) read POS through posWording(), for every business type, and M-Pesa's "Buy Goods till number" stays;
 //   S. a few key screens and messages say POS (technician console, admin portal, sidebar, PIN page, the cloud's errors,
 //      the owner's email);
@@ -62,12 +62,12 @@ await ok('kept: M-Pesa\'s Till number, identifiers, comments, developer logs, SQ
     "db.prepare(`SELECT * FROM tills WHERE device_role = 'till'`);",
   ].join('\n')).length, 0);
   // the whole M-Pesa helper (every copy) is M-Pesa's own words
-  assert.equal(G.scanSource('apps/desktop/src/shared/mpesaReceive.ts', read('shared/mpesaReceive.ts')).length, 0);
+  assert.equal(G.scanSource('packages/core/src/mpesaReceive.ts', read('packages/core/src/mpesaReceive.ts')).length, 0);
 });
 
 console.log('\nP. the frozen catalogue, read through posWording\n');
-const T = await import(pathToFileURL(path.join(ROOT, 'shared/businessTerms.ts')).href);
-const PM = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const T = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/businessTerms.ts')).href);
+const PM = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const stripMpesa = (s) => s.replace(/buy[\s-]*goods(?:\s*till)?(?:\s*(?:no\.?|numbers?))?/gi, '');
 await ok('posWording: labels, sentences, plurals, the desktop POS beside the web POS, M-Pesa kept', () => {
   const cases = [

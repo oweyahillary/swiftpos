@@ -19,10 +19,10 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
-import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '../../lib/shiftConfirm';
+import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '@zaptill/core/shiftConfirm';
 import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
-import { reasonsNeeded, missingReasons, REASON_MAX } from '../../lib/confirmReasons';
-import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, cashInAddsText, cashMovementNeedsApprover } from '../../lib/posFeatures';   // A594
+import { reasonsNeeded, missingReasons, REASON_MAX } from '@zaptill/core/confirmReasons';
+import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, cashInAddsText, cashMovementNeedsApprover } from '@zaptill/core/posFeatures';   // A594
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

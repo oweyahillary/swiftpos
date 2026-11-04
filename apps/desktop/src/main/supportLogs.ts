@@ -24,7 +24,7 @@
  */
 import fs from 'fs';
 import zlib from 'zlib';
-import { redactLog } from './logRedact';
+import { redactLog } from '@zaptill/core/logRedact';
 import type { LogSection } from './machineLogs';
 
 export const WINDOW_MS = 24 * 60 * 60 * 1000;

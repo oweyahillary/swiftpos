@@ -59,14 +59,14 @@ import crypto        from 'crypto';
 import { worksAtBranch } from '../lib/branchAccess';   // A426
 import { effectiveKeysForRow, tokenKeys, clientPermissionMap } from '../lib/effectivePermissions';   // A490
 import { isOwnerRoleName } from '../lib/ownerRole';   // A490
-import { isBackOffice } from '../lib/permissions';   // A490
+import { isBackOffice } from '@zaptill/core/permissions';   // A490
 import { permissionsOpenBefore, splitsPending } from '../lib/permissionsState';   // A490, A595
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY, accountLocked, noteAccountFailure, noteAccountSuccess, ACCOUNT_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { notifyAccountLocked } from '../lib/accountLockNotice';   // A507
 import { resolvePartnerSignIn, checkPartner, writePartners, readPartners, partnerLive, type PartnerCheck, type PartnerPerson } from '../lib/webPartners';   // A550
 import { refusesWebPosPin, webPosPinRefusal, dashboardSessionKind, SELL_KEY } from '../lib/webPosSignIn';   // A608
-import { hasPermission } from '../lib/permissions';   // A608
+import { hasPermission } from '@zaptill/core/permissions';   // A608
 import { enrolRefusal } from '../lib/cloudPlan';   // A581: no till joins a lapsed business
 
 const router = safeRouter();

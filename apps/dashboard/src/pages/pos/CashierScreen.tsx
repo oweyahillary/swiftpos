@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useCustomerScreenPublisher, openCustomerScreenWindow } from '../../lib/customerScreenChannel';   // A606
-import { applyOffers, type AppliedOffer } from '../../lib/offers';   // A445
-import { platformQuote, platformRecord } from '../../lib/platformPrices';   // A619
+import { applyOffers, type AppliedOffer } from '@zaptill/core/offers';   // A445
+import { platformQuote, platformRecord } from '@zaptill/core/platformPrices';   // A619
 import { POSLoadingSkeleton } from './cashier/POSSkeletons';
 import { usePOSData }         from './cashier/usePOSData';
 import { useCart }            from './cashier/useCart';
@@ -17,10 +17,7 @@ import type { Product, Category, VariantGroup, VariantOption, SelectedVariant, O
 import PaymentModal, { type PlatformCart } from './PaymentModal';
 // A607: the customer's details for this sale — typed by the cashier, by the customer here or on the customer screen.
 const SaleCustomerPanel = lazy(() => import('./SaleCustomerPanel'));
-import DiscountPanel from './DiscountPanel';
-import type { DiscountState } from './DiscountPanel';
-import LoyaltyPanel from './LoyaltyPanel';
-import type { LoyaltyState } from './LoyaltyPanel';
+import type { DiscountState, LoyaltyState } from './cashier/types';
 import ZReportModal from './ZReportModal';
 import ShiftModal from './ShiftModal';
 import type { Shift, ShiftModalMode } from './ShiftModal';
@@ -31,31 +28,37 @@ import { type BranchPrinter } from '../../lib/printKOT';
 import { printRoutedStations } from '../../lib/printRouted';
 import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
-import { noteLines } from '../../lib/orderNotes';
+import { noteLines } from '@zaptill/core/orderNotes';
 import MinimartPOS from './MinimartPOS';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton } from './cashier/CategoryPanel';   // A537; A566; A580
-import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
-import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/delivery';
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
+import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '@zaptill/core/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
-import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
-import { maySignedInConfirm } from '../../lib/shiftConfirm';
-import { mayRecordMoneyMovement } from '../../lib/posFeatures';   // A453
-import { onGrid } from '../../lib/productDays';
-import { exactFirst } from '../../lib/paginate';   // A472
+import { maySendBeforePay, voidReasonLabel } from '@zaptill/core/kitchenLines';
+import { maySignedInConfirm } from '@zaptill/core/shiftConfirm';
+import { mayRecordMoneyMovement } from '@zaptill/core/posFeatures';   // A453
+import { onGrid } from '@zaptill/core/productDays';
+import { exactFirst } from '@zaptill/core/paginate';   // A472
 import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreeze';   // A394
 import { useStockView } from '../../lib/useStockView';   // A563
-import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '../../lib/stockGate';   // A563
+import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '@zaptill/core/stockGate';   // A563
 import { useToast } from '../../hooks/useToast';
-import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
-import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '../../lib/menuHours';   // A578: menus by time of day; A580: Later
+import { businessTerms, foodAreas } from '@zaptill/core/businessTerms';   // A573
+import { COURSES } from '@zaptill/core/courses';   // owner 2026-11-04: the courses, one list with the desktop POS
+import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '@zaptill/core/menuHours';   // A578: menus by time of day; A580: Later
 import { useMenuHours } from '../../lib/useMenuHours';   // A578
 import { getWebDayCutoff } from '../../lib/webDayCutoff';   // A578: hours past midnight belong to the night before
 import Toast from '../../components/Toast';
 import WeightModal from './WeightModal';   // A577: items sold by weight
-import { FuelStrip, PumpGrade, type PumpTank } from './cashier/Forecourt';   // A588: the grades as nozzles, a pump's grade and tank
-import { QUICK_AMOUNTS } from '../../lib/forecourt';   // A588: 500 / 1,000 / 2,000 (and Full tank)
-import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, formatWeight } from '../../lib/scaleBarcode';   // A577
+import { FuelStrip, tanksData, KEYPAD_LOOK, GAUGE_LOOK, DISPENSER_LOOK, type PumpTank } from './cashier/Forecourt';   // A588; 2026-11-04
+import { gradeColour, gradeGauge, pumpState } from '@zaptill/core/forecourt';
+// Owner, 2026-11-04 ("6 yes"): the desktop's dispensers, gauges and fuel keypad, built once in @zaptill/ui.
+import FuelKeypad from '@zaptill/ui/FuelKeypad';
+import { GradeGauge, Dispenser } from '@zaptill/ui/Pumps';
+import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, formatWeight } from '@zaptill/core/scaleBarcode';   // A577
+import LineChips, { type LineChipsLook } from '@zaptill/ui/LineChips';   // 2026-11-04: a line's sizes and add-ons
+import TileBadges, { type TileBadgesLook } from '@zaptill/ui/TileBadges';   // 2026-11-04: Later / Sold out / Options
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -297,9 +300,6 @@ export default function CashierScreen() {
     toggleVariantOption,
     confirmVariants:    _confirmVariants,
     fuelEntry, setFuelEntry,
-    fuelEdited, setFuelEdited,
-    fuelAmountStr, setFuelAmountStr,
-    fuelLitresStr, setFuelLitresStr,
   } = useCart();
 
   // A578 (owner, 2026-10-23: menus by time of day): a menu outside its hours leaves the top tabs, the panel, the grid,
@@ -767,9 +767,14 @@ export default function CashierScreen() {
 
   // ── Pump actions (petrol) ─────────────────────────────────────────────────
 
-  function pumpStatus(pump: Pump): 'idle' | 'dispensing' | 'inactive' {
-    const order = Object.values(openOrders).find(o => o.pumpId === pump.id);
-    return order ? 'dispensing' : pump.status;
+  // 2026-11-04: a pump's state by the desktop's rule (@zaptill/core/forecourt pumpState): Off, No price, Selected (the
+  // open sale's pump), In use (another open sale on it, or the cloud says it is dispensing), Idle.
+  function pumpCardState(pump: Pump) {
+    const price = Number(fuelById.get(pump.fuel_product_id ?? '')?.base_price) || 0;
+    const onSale = new Set(Object.values(openOrders).map(o => o.pumpId).filter((id): id is string => !!id));
+    const selected = activeKey ? openOrders[activeKey]?.pumpId ?? null : null;
+    return pumpState({ id: pump.id, name: pump.name, status: pump.status, fuel_product_id: pump.fuel_product_id ?? null,
+      fuel_product_name: null, price_per_litre: price }, selected, onSale);
   }
 
   function onPumpTap(pump: Pump) {
@@ -1661,56 +1666,50 @@ export default function CashierScreen() {
             </div>
           )}
 
-          {/* ════════ PUMP GRID (petrol station) ════════ */}
-          {isPetrol && view === 'pumps' && (
-            <div style={s.slotView}>
-              <div style={s.slotViewHeader}>
-                <span style={s.slotViewTitle}>Fuel Pumps</span>
-                <span style={s.slotLegend}>
-                  <span style={{ ...s.legendDot, background: '#22c55e' }} /> Idle
-                  <span style={{ ...s.legendDot, background: '#f59e0b' }} /> Dispensing
-                </span>
-              </div>
-              {pumps.length === 0 ? (
-                <div style={s.emptySlots}>No pumps configured. Add pumps in Settings → Pumps.</div>
-              ) : (
-                <div style={s.slotGrid}>
-                  {pumps.map((pump) => {
-                    const status = pumpStatus(pump);
-                    const order = Object.values(openOrders).find(o => o.pumpId === pump.id);
-                    return (
-                      <button
-                        key={pump.id}
-                        style={{
-                          ...s.slotCard, height: 'auto', minHeight: 130,   // A588: room for the grade and its tank
-                          ...(status === 'dispensing' ? s.slotOccupied : {}),
-                          ...(status === 'idle' ? s.slotFree : {}),
-                          ...(status === 'inactive' ? s.slotInactive : {}),
-                        }}
-                        onClick={() => status !== 'inactive' && onPumpTap(pump)}
-                        disabled={status === 'inactive'}
-                      >
-                        <div style={s.slotName}>{pump.name}</div>
-                        <PumpGrade name={fuelById.get(pump.fuel_product_id ?? '')?.name ?? null} productId={pump.fuel_product_id ?? null}
-                          categoryColour={gradeCategoryColour(fuelById.get(pump.fuel_product_id ?? ''))}
-                          index={fuelGrades.findIndex((g) => g.id === pump.fuel_product_id)} tanks={pump.fuel_tanks} />
-                        {order ? (
-                          <div style={s.slotOrderInfo}>
-                            <span style={s.slotItemCount}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
-                            <span style={s.slotTime}>{timeAgo(order.openedAt)}</span>
-                          </div>
-                        ) : (
-                          <div style={s.slotFreeLabel}>
-                            {status === 'inactive' ? 'Inactive' : 'Tap to open'}
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
+          {/* ════════ PUMP GRID (petrol station) — 2026-11-04: the desktop's gauges and dispensers (@zaptill/ui) ════════ */}
+          {isPetrol && view === 'pumps' && (() => {
+            const tanks = tanksData(pumps);
+            const colourOf = (id: string | null | undefined) => {
+              const g = fuelById.get(id ?? '');
+              return g ? gradeColour(g.name, gradeCategoryColour(g), fuelGrades.indexOf(g)) : '#6b7280';
+            };
+            return (
+              <div style={s.slotView}>
+                <div style={s.slotViewHeader}>
+                  <span style={s.slotViewTitle}>Fuel Pumps</span>
                 </div>
-              )}
-            </div>
-          )}
+                {/* The gauges: a grade whose tank the cloud holds (no tank linked → no gauge, nothing made up) */}
+                {tanks.grades.size > 0 && (
+                  <div data-testid="fuel-gauges" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8, marginBottom: 14 }}>
+                    {fuelGrades.filter((g) => tanks.grades.has(g.id)).map((g) => (
+                      <GradeGauge key={g.id} name={g.name} colour={colourOf(g.id)} gauge={gradeGauge(g.id, tanks.data)} look={GAUGE_LOOK} />
+                    ))}
+                  </div>
+                )}
+                {pumps.length === 0 ? (
+                  <div style={s.emptySlots}>No pumps configured. Add pumps in Settings → Pumps.</div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+                    {pumps.map((pump) => {
+                      const order = Object.values(openOrders).find(o => o.pumpId === pump.id);
+                      const grade = fuelById.get(pump.fuel_product_id ?? '');
+                      return (
+                        <Dispenser key={pump.id} look={DISPENSER_LOOK} currency={currency} colour={colourOf(pump.fuel_product_id)}
+                          pump={{ ...pump, fuel_product_name: grade?.name ?? null, price_per_litre: Number(grade?.base_price) || null }}
+                          state={pumpCardState(pump)} onTap={() => onPumpTap(pump)}
+                          extra={order && (
+                            <div style={s.slotOrderInfo}>
+                              <span style={s.slotItemCount}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
+                              <span style={s.slotTime}>{timeAgo(order.openedAt)}</span>
+                            </div>
+                          )} />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ════════ PRODUCT GRID (all modes when view = 'products') ════════ */}
           {view === 'products' && (
@@ -1803,10 +1802,9 @@ export default function CashierScreen() {
                         style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}), ...(soldOut || later ? { opacity: 0.5, filter: 'grayscale(1)' } : {}) }}
                         onClick={() => addToCart(product)}
                       >
-                        {later && <span data-testid="tile-later" style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700, border: '1px dashed #6b7280' }}>LATER</span>}
-                        {soldOut && !later && <span style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700 }}>SOLD OUT</span>}
+                        {/* "Later", "Sold out", "Options" — sentence case, the desktop's words too (@zaptill/ui TileBadges, 2026-11-04) */}
+                        <TileBadges later={later} soldOut={soldOut} options={hasVariants} look={TILE_BADGES_LOOK} />
                         {inCart && <span key={cartQty} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{cartQty}</span>}
-                        {hasVariants && <span style={s.variantBadge}>options</span>}
                         {(product as any).is_fuel && <span style={s.fuelBadge}>⛽</span>}
                         <div style={s.productImage}>
                           {product.image_url ? (
@@ -1973,11 +1971,8 @@ export default function CashierScreen() {
                 <div style={s.cartItem}>
                   <div style={s.cartItemInfo}>
                     <div style={s.cartItemName}>{item.product.name}</div>
-                    {item.selectedVariants.length > 0 && (
-                      <div style={s.cartItemVariants}>
-                        {item.selectedVariants.map((v) => `${v.groupName}: ${v.optionName}`).join(' · ')}
-                      </div>
-                    )}
+                    {/* Sizes and add-ons as chips, as the desktop POS (@zaptill/ui LineChips, owner decision 2026-11-04) */}
+                    <LineChips variants={item.selectedVariants} addOns={item.selectedModifiers} look={LINE_CHIPS_LOOK} />
                     <div style={s.cartItemPrice}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : item.measureUnit ? '/kg' : 'each'}</div>
                   </div>
                   <div style={s.cartItemControls}>
@@ -2019,10 +2014,7 @@ export default function CashierScreen() {
                       style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 6, color: '#cbd5e1', fontSize: 11, padding: '2px 6px' }}
                     >
                       <option value="">No course</option>
-                      <option value="Starters">Starters</option>
-                      <option value="Mains">Mains</option>
-                      <option value="Desserts">Desserts</option>
-                      <option value="Drinks">Drinks</option>
+                      {COURSES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                     {item.course && (
                       <button
@@ -2159,7 +2151,7 @@ export default function CashierScreen() {
                     Open a shift to start selling.
                   </p>
                 )}
-                {/* Web-only premium extras — below Charge */}
+                {/* Web-only premium extras — below Charge. Owner, 2026-11-04: Room only for a business with rooms. */}
                 {isRestaurant && cart.length > 0 && (
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
@@ -2174,10 +2166,12 @@ export default function CashierScreen() {
                       onClick={() => openPayment(true)}>
                       👥 Split Bill
                     </button>
-                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                      onClick={() => { setRoomNumber(''); setRoomGuestName(''); setRoomChargeError(''); setShowRoomCharge(true); }}>
-                      🏨 Room
-                    </button>
+                    {posFeatures.rooms && (
+                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                        onClick={() => { setRoomNumber(''); setRoomGuestName(''); setRoomChargeError(''); setShowRoomCharge(true); }}>
+                        🏨 Room
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2395,73 +2389,17 @@ export default function CashierScreen() {
         </div>
       )}
 
-      {/* ── Fuel entry modal (petrol — sell by litres/amount) ─────────────── */}
-      {fuelEntry && (() => {
-        const price = Number(fuelEntry.base_price) || 0;
-        const amount = fuelEdited === 'amount'
-          ? (parseFloat(fuelAmountStr) || 0)
-          : (parseFloat(fuelLitresStr) || 0) * price;
-        const litres = fuelEdited === 'litres'
-          ? (parseFloat(fuelLitresStr) || 0)
-          : (price > 0 ? (parseFloat(fuelAmountStr) || 0) / price : 0);
-        const unit = (fuelEntry as any).fuel_unit ?? 'L';
-        return (
-          <div style={s.overlay} className="animate-fade-in">
-            <div style={s.modal} className="animate-pop-in">
-              <h3 style={s.modalTitle}>{fuelEntry.name}</h3>
-              <p style={s.modalSubtitle}>{currency} {price.toLocaleString()}/{unit} · enter amount or {unit === 'L' ? 'litres' : unit}</p>
-
-              <label style={{ fontSize: 12, color: 'var(--pos-text3)', display: 'block', marginBottom: 4 }}>Amount ({currency})</label>
-              <input
-                style={s.modalInput}
-                type="number" inputMode="decimal" autoFocus
-                value={fuelEdited === 'amount' ? fuelAmountStr : (amount ? amount.toFixed(2) : '')}
-                onChange={e => { setFuelEdited('amount'); setFuelAmountStr(e.target.value); }}
-                placeholder="0.00"
-              />
-
-              <label style={{ fontSize: 12, color: 'var(--pos-text3)', display: 'block', margin: '10px 0 4px' }}>Litres</label>
-              <input
-                style={s.modalInput}
-                type="number" inputMode="decimal"
-                value={fuelEdited === 'litres' ? fuelLitresStr : (litres ? litres.toFixed(3) : '')}
-                onChange={e => { setFuelEdited('litres'); setFuelLitresStr(e.target.value); }}
-                placeholder="0.00"
-              />
-
-              <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
-                {QUICK_AMOUNTS.map(q => (
-                  <button key={q}
-                    style={{ ...s.modalCancel, flex: 1, padding: '8px 0' }}
-                    onClick={() => { setFuelEdited('amount'); setFuelAmountStr(String(q)); }}>
-                    {q.toLocaleString('en-KE')}
-                  </button>
-                ))}
-                {/* A588: Full tank — fill up, then type the litres the pump shows */}
-                <button data-testid="fuel-full-tank"
-                  style={{ ...s.modalCancel, flex: 1.3, padding: '8px 0', ...(fuelEdited === 'litres' ? { borderColor: 'rgb(var(--act-strong, 34 197 94))', color: 'var(--pos-text)' } : {}) }}
-                  onClick={() => { setFuelEdited('litres'); setFuelLitresStr(''); }}>
-                  Full tank
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 12 }}>
-                <span style={{ color: 'var(--pos-text3)' }}>{litres ? litres.toFixed(3) : '0.000'} {unit}</span>
-                <span style={{ color: 'var(--pos-text)', fontWeight: 700 }}>{currency} {amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-
-              <div style={s.modalActions}>
-                <button style={s.modalCancel} onClick={() => setFuelEntry(null)}>Cancel</button>
-                <button
-                  style={{ ...s.modalConfirm, opacity: (amount > 0 && litres > 0) ? 1 : 0.4 }}
-                  onClick={() => { if (amount > 0 && litres > 0) addFuelToCart(fuelEntry, litres, amount); }}>
-                  Add to sale
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* ── The fuel keypad (petrol) — 2026-11-04: the desktop's (@zaptill/ui FuelKeypad): amount or litres, quick amounts,
+           Full tank, a number pad. The fuel line as before (addFuelToCart: litres, the amount). ── */}
+      {fuelEntry && (
+        <div style={s.overlay} className="animate-fade-in">
+          <FuelKeypad look={KEYPAD_LOOK} currency={currency}
+            title={(activeKey && openOrders[activeKey]?.pumpName) || fuelEntry.name} grade={fuelEntry.name}
+            colour={gradeColour(fuelEntry.name, gradeCategoryColour(fuelEntry), Math.max(0, fuelGrades.findIndex((g) => g.id === fuelEntry.id)))}
+            price={Number(fuelEntry.base_price) || 0} unit={(fuelEntry as any).fuel_unit ?? 'L'}
+            onAdd={(litres, amount) => addFuelToCart(fuelEntry, litres, amount)} onClose={() => setFuelEntry(null)} />
+        </div>
+      )}
 
       {/* ── Variant modal ────────────────────────────────────────────────── */}
       {variantProduct && (
@@ -2801,7 +2739,7 @@ export default function CashierScreen() {
       {/* ── Split Bill by Items Modal ─────────────────────────────────────── */}
 
       {/* ── Room Charge Modal ─────────────────────────────────────────────── */}
-      {showRoomCharge && isRestaurant && foodAreas(businessMode).roomCharge && (
+      {showRoomCharge && isRestaurant && foodAreas(businessMode).roomCharge && posFeatures.rooms && (
         <div style={s.overlay} className="animate-fade-in">
           <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 380, textAlign: 'left' }}>
             <p style={{ ...s.modalTitle, textAlign: 'left', marginBottom: 4 }}>🏨 Post to Room</p>
@@ -3233,7 +3171,9 @@ const s: Record<string, React.CSSProperties> = {
   },
   cartItemInfo: { gridColumn: 1 },
   cartItemName: { fontSize: 13, fontWeight: 600, color: 'var(--pos-text)' },
-  cartItemVariants: { fontSize: 11, color: '#7c3aed', marginTop: 1 },
+  chipRow:        { display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 },
+  chipVariant:    { fontSize: 11, background: 'var(--pos-surface, #1f2937)', color: '#94a3b8', padding: '1px 6px', borderRadius: 4 },
+  chipAddOn:      { fontSize: 11, background: 'var(--pos-surface, #1f2937)', color: '#a78bfa', padding: '1px 6px', borderRadius: 4 },
   cartItemPrice: { fontSize: 11, color: 'var(--pos-text3)' },
   cartItemControls: {
     gridColumn: 2, gridRow: '1 / 3', display: 'flex', alignItems: 'center', gap: 4,
@@ -3339,4 +3279,14 @@ const s: Record<string, React.CSSProperties> = {
   },
   variantTotalLabel: { fontSize: 13, color: 'var(--pos-text3)' },
   variantTotalValue: { fontSize: 16, fontWeight: 700, color: 'var(--pos-text)' },
+};
+
+/** How the web POS paints a cart line's chips (@zaptill/ui LineChips): its inline styles above, on its theme tokens. */
+const LINE_CHIPS_LOOK: LineChipsLook = { row: { style: s.chipRow }, variant: { style: s.chipVariant }, addOn: { style: s.chipAddOn } };
+
+/** How the web POS paints a tile's badges (@zaptill/ui TileBadges): Later / Sold out top right, Options top left. */
+const TILE_BADGES_LOOK: TileBadgesLook = {
+  later: { style: { ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700, border: '1px dashed #6b7280' } },
+  soldOut: { style: { ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700 } },
+  options: { style: s.variantBadge },
 };

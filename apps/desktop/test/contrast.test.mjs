@@ -1,7 +1,7 @@
 /**
- * contrast.test.mjs — the A295 accent guard (shared/contrast.ts).
+ * contrast.test.mjs — the A295 accent guard (packages/core/src/contrast.ts).
  *
- * Drives the REAL compiled dist/main/contrast.js. The module is pure (no SQLite,
+ * Drives the REAL compiled @zaptill/core/contrast (packages/core/dist/contrast.js, what the main process loads). The module is pure (no SQLite,
  * no Electron, no DOM), so it runs on plain Node — the same route as
  * node-reference-bundle.test.mjs. This proves the MATHS and the accept/reject
  * decision; it does NOT prove the PinPage wiring or the branding read, which are
@@ -29,9 +29,9 @@ import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dist = path.join(here, '..', 'dist', 'main', 'contrast.js');
+const dist = path.join(here, '..', '..', '..', 'packages', 'core', 'dist', 'contrast.js');
 if (!fs.existsSync(dist)) {
-  console.error('dist/main/contrast.js not built. In apps/desktop run:  npx tsc -b tsconfig.main.json --force');
+  console.error('packages/core/dist/contrast.js not built. In apps/desktop run:  npx tsc -b tsconfig.main.json --force');
   process.exit(1);
 }
 const { contrastRatio, pickButtonText, resolveBranding, normalizeHex, DEFAULT_ACCENT, MIN_RATIO } =

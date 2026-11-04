@@ -23,7 +23,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const H = await import(pathToFileURL(path.join(ROOT, 'shared/cashierHistory.ts')).href);
+const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/cashierHistory.ts')).href);
 
 const sale = (id, payments, total) => ({ id, total, payments });
 const ORDERS = [

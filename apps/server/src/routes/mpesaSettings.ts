@@ -28,7 +28,7 @@ import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { encryptSecret } from '../lib/crypto';
 import { sendError } from '../lib/sendError';
-import { mpesaFromSettings, type MpesaReceive } from '../lib/mpesaReceive';
+import { mpesaFromSettings, type MpesaReceive } from '@zaptill/core/mpesaReceive';
 import {
   BUSINESS_MPESA_KEYS, branchConfigFrom, businessConfigFrom, cleanMpesaSettings, isMissingTable, keyLast4, payTarget,
   readBranchMpesaRow, readBusinessMpesaRows, receiptMismatch, resolveMpesaConfig, settingsMap, testDarajaConnection,

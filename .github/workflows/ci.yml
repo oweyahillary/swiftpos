@@ -825,6 +825,38 @@ jobs:
       - name: One body font (Source Sans 3)
         run: node --no-warnings tests/font-global.test.mjs
 
+      # One design for both POS (owner decision 2026-11-04), screen 1 — the payment screen: quick cash, the tip buttons,
+      # the Discount box and Split the bill (evenly / by item) built once (@zaptill/ui, @zaptill/core/tender) and used by
+      # both POS; the web's reference on a non-cash payment and the M-Pesa prompt inside a split payment. In the loop too.
+      - name: One payment screen for both POS
+        run: node --no-warnings tests/pos-payment-screen.test.mjs
+
+      # One design for both POS, screens 2 and 3: a cart line's sizes and add-ons as chips and the tile's words (Later,
+      # Sold out, Options) built once (@zaptill/ui LineChips, TileBadges); the desktop's Split bill for a restaurant.
+      - name: One cart line and product tile for both POS
+        run: node --no-warnings tests/pos-cart-and-tile.test.mjs
+
+      # Owner, 2026-11-04 ("1-5 yes only if the web licence is active"): PATCH /api/pumps/:id/activate for whoever may sell
+      # (orders.create or fuel.manage) at the pump's branch; from a desktop POS only as the person signed in (the
+      # terminal-write allowlist) and only with the online licence. Needs the server build. In the loop too.
+      - name: Activate a pump from either POS (online licence on the desktop)
+        run: TZ=UTC node --no-warnings tests/pump-activate.test.mjs
+
+      # Owner, 2026-11-04: the desktop POS shows the points a sale earns and the new balance (GET
+      # /api/loyalty/customer/:id/points — online licence, loyalty on; never in the sale's way). Needs the server build.
+      - name: Loyalty points on the desktop POS (online licence)
+        run: TZ=UTC node --no-warnings tests/loyalty-desktop.test.mjs
+
+      # Owner, 2026-11-04 ("3 yes"): the Rooms switch (Settings › Business › POS options) — Charge to room on the web and
+      # the Room charge payment on both POS only with it (the desktop: with the online licence too, refused in main).
+      - name: Rooms switch - charge to room only for a business with rooms
+        run: node --no-warnings tests/rooms-switch.test.mjs
+
+      # Owner, 2026-11-04 ("6 yes"): the desktop's dispensers, gauges and fuel keypad on the web POS — built once in
+      # @zaptill/ui (FuelKeypad, Pumps), each app's look in its own file, the web's phone layout kept.
+      - name: One forecourt for both POS
+        run: node --no-warnings tests/forecourt-shared.test.mjs
+
       # A622 — the cloud keeps a till's install_error (the updater's reason an install did not take) and the admin
       # portal's Desktop updates line shows it.
       - name: Why an install did not take, on the admin portal (A622)
@@ -1110,6 +1142,13 @@ jobs:
 
       - name: Cited documents exist
         run: node scripts/check-doc-refs.mjs
+
+      # Shared components (docs/SHARED-COMPONENTS-PLAN.md): the rules live once in packages/core and the POS screen
+      # pieces once in packages/ui. Fails when a copy of a packaged module grows back in an app, an app imports a package
+      # by a relative path, a look wrapper starts drawing its own elements, or @zaptill/ui reaches the cloud or the
+      # desktop's main process.
+      - name: Shared code lives once (packages/core, packages/ui)
+        run: node scripts/check-shared-sync.mjs
 
       # A45: the Receipt tab was shown on isManagerRole while the cloud demanded
       # settings.manage. Ratcheted, not pass/fail — the ground is not green yet
@@ -1935,6 +1974,19 @@ jobs:
       - name: Desktop petrol POS - shop items, pumps and gauges (A588)
         working-directory: apps/desktop
         run: node --no-warnings test/petrol-pos-a588.test.mjs
+
+      # Owner, 2026-11-04 (online licence, restaurants): courses on the desktop — a course per line, Held / Fires now, Fire
+      # <course>; a held line reaches the kitchen only when fired or paid; the course's heading on the kitchen ticket;
+      # tickets for an order without courses unchanged, the receipt unchanged either way (the real print path).
+      - name: Desktop courses (online licence)
+        working-directory: apps/desktop
+        run: node --no-warnings test/courses-desktop.test.mjs
+
+      # Owner, 2026-11-04 (online licence, restaurants): Print bill ("BILL - NOT A RECEIPT", no number, no payments, the
+      # receipt printer only; a sale's receipt byte-identical) and Transfer (the open dine-in order to a free table).
+      - name: Desktop Print bill and Transfer table (online licence)
+        working-directory: apps/desktop
+        run: node --no-warnings test/print-bill-transfer.test.mjs
 
       # A590 (P0) — every arch in the installer loads its SQLite driver: the 32-bit app of every combined installer up to
       # 1.0.20 had none (better-sqlite3 13 ships no win32-ia32 prebuild; its binding.gyp built nothing on the x64 host).

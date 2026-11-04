@@ -41,7 +41,7 @@ function requireFrom(pkgDirs, name) {
 const esbuild = requireFrom(['apps/server', 'apps/dashboard'], 'esbuild');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a472-'));
 const outFile = path.join(tmp, 'paginate.mjs');
-esbuild.buildSync({ entryPoints: [path.join(DASH, 'src/lib/paginate.ts')], bundle: true, format: 'esm', platform: 'neutral', outfile: outFile, logLevel: 'silent' });
+esbuild.buildSync({ entryPoints: [path.join(ROOT, 'packages/core/src/paginate.ts')], bundle: true, format: 'esm', platform: 'neutral', outfile: outFile, logLevel: 'silent' });
 const P = await import(pathToFileURL(outFile).href);
 
 const list = (n) => Array.from({ length: n }, (_, i) => i + 1);
@@ -165,19 +165,23 @@ await ok('Products: bulk actions still act on every selected id (not the page)',
 });
 
 // ── pins: the pager ──
-const pager = read('src/components/Pager.tsx');
+// Shared components batch F: the pager is @zaptill/ui/Pager (packages/ui/src/Pager.tsx); the web's look — its class
+// names — stays in src/components/Pager.tsx. The pins read both.
+const look = read('src/components/Pager.tsx');
+const pager = fs.readFileSync(path.join(ROOT, 'packages/ui/src/Pager.tsx'), 'utf8') + '\n' + look;
 await ok('Pager: First / Prev / numbered window / Next / Last; the current page teal (swift), marked aria-current', () => {
   for (const id of ['pager-first', 'pager-prev', 'pager-page', 'pager-next', 'pager-last', 'pager-size', 'pager-range']) assert(pager.includes(`data-testid="${id}"`), id);
   assert(/pageWindow\(page, pages\)\.map/.test(pager), 'window');
   assert(/aria-current=\{slot === page \? 'page' : undefined\}/.test(pager), 'aria-current');
-  assert(/slot === page \? 'bg-swift text-gray-950 font-semibold'/.test(pager), 'teal current page');
+  assert(/className=\{slot === page \? look\.pageOn : look\.page\}/.test(pager) && /pageOn: `\$\{BTN\} tabular-nums bg-swift text-gray-950 font-semibold`/.test(look), 'teal current page');
+  assert(/import SharedPager, \{ type PagerLook, type PagerProps \} from '@zaptill\/ui\/Pager';/.test(look) && /return <SharedPager \{\.\.\.props\} look=\{LOOK\} \/>;/.test(look), 'the shared pager, with the web look');
   assert(!/green-|emerald-|blue-\d/.test(pager), 'no green / blue');
 });
 await ok('Pager: a phone keeps Prev / Next and "51–100 of 1,234"; the numbers and First / Last only from sm', () => {
-  assert(/<span className="hidden sm:flex items-center gap-1">\s*\{pageWindow/.test(pager), 'numbers hidden below sm');
-  assert(/data-testid="pager-first" className=\{`hidden sm:inline-block/.test(pager) && /data-testid="pager-last" className=\{`hidden sm:inline-block/.test(pager), 'first / last from sm');
-  assert(/data-testid="pager-range-short" className="sm:hidden/.test(pager), 'short range on a phone');
-  assert(/className="flex flex-wrap items-center justify-between/.test(pager), 'wraps');
+  assert(/pages: 'hidden sm:flex items-center gap-1'/.test(look) && /look\.pages !== undefined \? <span className=\{look\.pages\}>\{numbered\}<\/span> : numbered/.test(pager), 'numbers hidden below sm');
+  assert(/edge: `hidden sm:inline-block \$\{BTN\} \$\{IDLE\}`/.test(look) && /data-testid="pager-first" className=\{look\.edge\}/.test(pager) && /data-testid="pager-last" className=\{look\.edge\}/.test(pager), 'first / last from sm');
+  assert(/rangeShort: \{ className: 'sm:hidden text-gray-400 tabular-nums', text: rangeShort \}/.test(look) && /data-testid="pager-range-short" className=\{look\.rangeShort\.className\}>\{look\.rangeShort\.text\(paged\)\}/.test(pager), 'short range on a phone');
+  assert(/nav: 'flex flex-wrap items-center justify-between/.test(look), 'wraps');
 });
 await ok('Pager: the size is remembered in try/catch (a private window does not break the page)', () => {
   assert(/try \{ return cleanPageSize\(localStorage\.getItem\(key\)\); \} catch \{ return DEFAULT_PAGE_SIZE; \}/.test(pager), 'read');
@@ -210,10 +214,10 @@ await ok('minimart POS: the same incremental grid', () => {
   assert(/\{grid\.more && <div ref=\{grid\.sentinelRef\} data-testid="grid-more"/.test(mini), 'sentinel');
 });
 
-// ── the shared copy ──
-await ok('lib/paginate.ts is the shared file, registered in check-shared-sync', () => {
-  eq(read('src/lib/paginate.ts'), fs.readFileSync(path.join(ROOT, 'shared/paginate.ts'), 'utf8'));
-  assert(/'apps\/dashboard\/src\/lib\/paginate\.ts'/.test(fs.readFileSync(path.join(ROOT, 'scripts/check-shared-sync.mjs'), 'utf8')), 'registered');
+// ── the one file ──
+await ok('paginate lives in packages/core (imported as @zaptill/core/paginate), no copies left', () => {
+  assert(fs.existsSync(path.join(ROOT, 'packages/core/src/paginate.ts')), 'packages/core/src/paginate.ts');
+  for (const p of ['shared/paginate.ts', 'apps/dashboard/src/lib/paginate.ts', 'apps/desktop/src/shared/paginate.ts', 'apps/admin/src/lib/paginate.ts']) assert(!fs.existsSync(path.join(ROOT, p)), p);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

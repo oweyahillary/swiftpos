@@ -12,7 +12,7 @@
  *     delete) — and sync_versions still moves exactly as 150 made it (catalogue / staff).
  *   - fries 100 → 150: ONE entry (products, fries); Eugene's PIN: ONE entry (staff, Eugene); a person merely active
  *     (last_active_at) writes nothing; an update that changes nothing writes nothing.
- *   - settings by key: public.sync_setting_topic agrees with shared/syncTopics.ts settingTopic on every key below;
+ *   - settings by key: public.sync_setting_topic agrees with packages/core/src/syncTopics.ts settingTopic on every key below;
  *     bookkeeping keys write nothing; a businesses update writes only the topics of the columns that moved.
  *   - one transaction: the same row written once.
  *   - sync_changes_since: after `since`, the branch's and every-branch entries only (not another branch's, not another
@@ -35,7 +35,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 let PGlite;
 try { ({ PGlite } = require('@electric-sql/pglite')); } catch { console.error('\n@electric-sql/pglite not installed — cannot run.\n'); process.exit(1); }
-const { settingTopic, CHANGE_TABLES } = await import(pathToFileURL(path.join(ROOT, 'shared/syncTopics.ts')).href);
+const { settingTopic, CHANGE_TABLES } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/syncTopics.ts')).href);
 const MIG = path.join(ROOT, 'migrations');
 const num = (f) => +f.split('_')[0];
 const files = fs.readdirSync(MIG).filter(f => f.endsWith('.sql') && Number.isFinite(num(f))).sort((a, b) => num(a) - num(b) || a.localeCompare(b));
@@ -237,7 +237,7 @@ const KEYS = ['receipt_header', 'receipt_footer', 'receipt_pay_label', 'receipt_
   'owner_alerts_state', 'weekly_summary_last_sent', 'monthly_pack_last_sent', 'report_schedule_last_sent',
   `branch_open_tills_last_sent:${BR}`, 'tax_mode', 'vat_inclusive', 'ctl_mode', 'business_phone', 'contact_email',
   'thank_you_message', 'aggregator_commission_glovo', 'parking_rate_car', 'require_device_registration', 'etims_enabled'];
-await ok('settings: public.sync_setting_topic agrees with shared/syncTopics.ts settingTopic on every key', async () => {
+await ok('settings: public.sync_setting_topic agrees with packages/core/src/syncTopics.ts settingTopic on every key', async () => {
   for (const k of KEYS) {
     const sqlTopic = (await one(`SELECT public.sync_setting_topic($1) AS t`, [k])).t;
     assert.equal(sqlTopic, settingTopic(k), k);
@@ -260,7 +260,7 @@ await ok('settings write config:<topic> (a branch setting at its branch); the fr
   }
   assert.deepEqual(await since(s), []);
 });
-await ok('CHANGE_TABLES (shared/syncTopics.ts) names every table the triggers sit on', async () => {
+await ok('CHANGE_TABLES (packages/core/src/syncTopics.ts) names every table the triggers sit on', async () => {
   // A535: a logical table with a trigger of its own (stock — migration 153) is checked by that migration's test.
   const want = new Set(Object.values(CHANGE_TABLES).filter((t) => !t.trigger).flatMap((t) => t.from));
   const have = new Set((await q(`SELECT DISTINCT event_object_table AS t FROM information_schema.triggers WHERE trigger_name = 'trg_log_sync_change'`)).map((r) => r.t));

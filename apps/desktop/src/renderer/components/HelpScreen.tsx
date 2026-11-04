@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { helpTopicsFor, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '../../shared/helpTopics';
-import { isFoodService } from '../../shared/businessTerms';
-import { displayPhone, DEFAULT_SUPPORT_NAME, DEFAULT_SUPPORT_PHONES } from '../../shared/support';
+import { helpTopicsFor, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '@zaptill/core/helpTopics';
+import { isFoodService } from '@zaptill/core/businessTerms';
+import { displayPhone, DEFAULT_SUPPORT_NAME, DEFAULT_SUPPORT_PHONES } from '@zaptill/core/support';
 
 /**
  * HelpScreen — 0.6.35 (A384): "What to do when", on the till, offline.

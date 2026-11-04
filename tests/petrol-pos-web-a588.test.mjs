@@ -10,13 +10,16 @@
  *
  *   G  the grid: CashierScreen's own rule run on a petrol station's catalogue — the shop's items in, fuel out (every
  *      business type); the grades reachable as nozzles (FuelStrip, a petrol station only) → the fuel entry as before.
- *   R  the REAL FuelStrip and PumpGrade rendered (react-dom/server): the grades with their colour and price per litre, the
- *      open pump's grade first; a pump's tank "x L left", red and "Low" under 20 %; no tank linked → no gauge.
- *   F  the fuel entry: 500 / 1,000 / 2,000 and Full tank (→ litres), litres to 3 decimals; the fuel line unchanged.
+ *   R  the REAL FuelStrip rendered (react-dom/server): the grades with their colour and price per litre, the open pump's
+ *      grade first. 2026-11-04 (owner, "6 yes" — the desktop's forecourt on the web, @zaptill/ui): the REAL shared
+ *      GradeGauge and Dispenser in the web's look — a grade's tank "x L left", red and "Low" under 20 %; no tank linked →
+ *      no gauge (tanksData); a pump drawn as a dispenser with its grade, price and state.
+ *   F  the fuel keypad (@zaptill/ui FuelKeypad, the desktop's): 500 / 1,000 / 2,000 and Full tank (→ litres), litres to 3
+ *      decimals; the fuel line unchanged.
  *
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted — listed in the A588 report):
  *   - CashierScreen's matchFuel back to `isPetrol ? (p as any).is_fuel === true : !(p as any).is_fuel` → G fails
- *   - PumpGrade drawing a gauge with no tank (capacity 0)                                         → R "no tank" fails
+ *   - tanksData keeping a tank with no capacity                                                    → R "no tank" fails
  *   - FuelStrip not putting the open pump's grade first                                            → R "first" fails
  */
 import fs from 'node:fs';
@@ -55,17 +58,20 @@ try {
       && cs.includes("firstId={pumps.find((p) => p.id === (activeKey ? openOrders[activeKey]?.pumpId : undefined))?.fuel_product_id ?? null}")
       && /if \(\(product as any\)\.is_fuel\) \{\s+setFuelEntry\(product\);/.test(read('apps/dashboard/src/pages/pos/cashier/useCart.ts')));
     ok('the grades: the active fuel products', cs.includes("const fuelGrades = useMemo(() => products.filter((p) => (p as any).is_fuel && p.status === 'active'), [products]);"));
-    ok('each pump card names its grade and its tank (the /api/pumps row: fuel_product_id, fuel_tanks)',
-      cs.includes('<PumpGrade name={fuelById.get(pump.fuel_product_id ?? \'\')?.name ?? null} productId={pump.fuel_product_id ?? null}')
+    ok('each pump a dispenser with its grade and price; the gauges from the pumps\' tanks (the /api/pumps row: fuel_product_id, fuel_tanks)',
+      cs.includes('pump={{ ...pump, fuel_product_name: grade?.name ?? null, price_per_litre: Number(grade?.base_price) || null }}')
+      && cs.includes('const tanks = tanksData(pumps);') && cs.includes('gauge={gradeGauge(g.id, tanks.data)} look={GAUGE_LOOK} />')
       && /fuel_tanks\?:/.test(read('apps/dashboard/src/pages/pos/cashier/types.ts'))
       && read('apps/server/src/routes/fueltanks.ts').includes(".select('*, fuel_tanks(id, name, current_level, capacity_litres)')"));
   }
 
-  console.log('\nR. FuelStrip and PumpGrade, rendered');
+  console.log('\nR. FuelStrip, and the shared gauge and dispenser in the web\'s look, rendered');
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-a588-web-'));
     const entry = path.join(tmp, 'entry.tsx');
-    fs.writeFileSync(entry, `export { FuelStrip, PumpGrade } from ${JSON.stringify(path.join(ROOT, 'apps/dashboard/src/pages/pos/cashier/Forecourt.tsx').replace(/\\/g, '/'))};
+    fs.writeFileSync(entry, `export { FuelStrip, tanksData, GAUGE_LOOK, DISPENSER_LOOK } from ${JSON.stringify(path.join(ROOT, 'apps/dashboard/src/pages/pos/cashier/Forecourt.tsx').replace(/\\/g, '/'))};
+export { GradeGauge, Dispenser } from ${JSON.stringify(path.join(ROOT, 'packages/ui/src/Pumps.tsx').replace(/\\/g, '/'))};
+export { gradeGauge } from ${JSON.stringify(path.join(ROOT, 'packages/core/src/forecourt.ts').replace(/\\/g, '/'))};
 export { createElement } from 'react';
 export { renderToStaticMarkup } from 'react-dom/server';`);
     const out = path.join(tmp, 'ui.cjs');
@@ -80,24 +86,39 @@ export { renderToStaticMarkup } from 'react-dom/server';`);
     ok('the open pump\'s grade (Diesel) first, outlined in its colour', strip.indexOf('Diesel') < strip.indexOf('Super Petrol') && strip.includes('border:2px solid #f59e0b'));
     ok('no shop item on the strip', !strip.includes('Engine Oil'));
     ok('no grades (not a petrol catalogue) → nothing drawn', html(h(UI.FuelStrip, { grades: [], currency: 'KES', onPick: () => {} })) === '');
-    const low = html(h(UI.PumpGrade, { name: 'Diesel', productId: 'f-diesel', index: 1, tanks: { id: 't1', current_level: '2400', capacity_litres: '15000' } }));
-    ok('a pump\'s tank at 16 %: "2,400 L left · Low", red', low.includes('2,400 L left · Low') && low.includes('data-low="1"') && low.includes('width:16%'), low);
-    const fine = html(h(UI.PumpGrade, { name: 'Super Petrol', productId: 'f-super', index: 0, tanks: [{ id: 't2', current_level: 6200, capacity_litres: 10000 }] }));
-    ok('a tank at 62 %: "6,200 L left", the grade\'s red, not low', fine.includes('6,200 L left') && !fine.includes('Low') && fine.includes('data-low="0"') && fine.includes('background:#dc2626'));
-    const none = html(h(UI.PumpGrade, { name: 'Super Petrol', productId: 'f-super', index: 0, tanks: null }));
-    const zero = html(h(UI.PumpGrade, { name: 'Super Petrol', productId: 'f-super', index: 0, tanks: { id: 't3', current_level: 10, capacity_litres: 0 } }));
-    ok('no tank linked (or one with no capacity) → the grade\'s name, no gauge — no level made up',
-      none.includes('Super Petrol') && !none.includes('pump-tank') && !zero.includes('pump-tank'));
+    const pumps = [
+      { id: 'p1', name: 'Pump 1', fuel_product_id: 'f-diesel', fuel_tanks: { id: 't1', current_level: '2400', capacity_litres: '15000' } },
+      { id: 'p2', name: 'Pump 2', fuel_product_id: 'f-super', fuel_tanks: [{ id: 't2', current_level: 6200, capacity_litres: 10000 }] },
+      { id: 'p3', name: 'Pump 3', fuel_product_id: 'f-diesel', fuel_tanks: { id: 't1', current_level: '2400', capacity_litres: '15000' } },
+      { id: 'p4', name: 'Pump 4', fuel_product_id: 'f-kero', fuel_tanks: { id: 't3', current_level: 10, capacity_litres: 0 } },
+      { id: 'p5', name: 'Pump 5', fuel_product_id: 'f-lpg', fuel_tanks: null }];
+    const T = UI.tanksData(pumps);
+    const gauge = (id, name, colour) => html(h(UI.GradeGauge, { name, colour, gauge: UI.gradeGauge(id, T.data), look: UI.GAUGE_LOOK }));
+    const low = gauge('f-diesel', 'Diesel', '#f59e0b');
+    ok('a grade\'s tank at 16 %: "2,400 L left", "Low", red (a tank two pumps share counted once)', low.includes('2,400 L left') && low.includes('Low')
+      && low.includes('data-low="1"') && low.includes('of 15,000 L') && !low.includes('2 tanks'), low);
+    const fine = gauge('f-super', 'Super Petrol', '#dc2626');
+    ok('a tank at 62 %: "6,200 L left", the grade\'s colour, not low', fine.includes('6,200 L left') && !fine.includes('>Low<') && fine.includes('data-low="0"') && fine.includes('stroke="#dc2626"'), fine);
+    ok('no tank linked (or one with no capacity) → no gauge for that grade — no level made up',
+      T.grades.has('f-diesel') && T.grades.has('f-super') && !T.grades.has('f-kero') && !T.grades.has('f-lpg'));
+    const card = html(h(UI.Dispenser, { pump: { id: 'p1', name: 'Pump 1', fuel_product_name: 'Diesel', price_per_litre: 171.6 }, currency: 'KES',
+      colour: '#f59e0b', state: 'in_use', onTap: () => {}, look: UI.DISPENSER_LOOK }));
+    ok('a pump drawn as a dispenser: its grade in its colour, its name, "In use", KES 171.60/L', card.includes('data-testid="pump-card"')
+      && card.includes('Diesel') && card.includes('background:#f59e0b') && card.includes('Pump 1') && card.includes('In use') && card.includes('KES 171.60'), card);
+    ok('…the web keeps no last sale or litres today of its own: the display says so ("— —"), no "Today"', card.includes('— —') && !card.includes('pump-today'));
   }
 
   console.log('\nF. The fuel entry');
   {
     const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-    const FC = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/forecourt.ts')).href);
-    ok('500 / 1,000 / 2,000 (the till\'s) and Full tank → litres', JSON.stringify(FC.QUICK_AMOUNTS) === '[500,1000,2000]' && cs.includes('{QUICK_AMOUNTS.map(q => (')
-      && cs.includes("onClick={() => { setFuelEdited('litres'); setFuelLitresStr(''); }}>") && cs.includes('Full tank'));
-    ok('litres shown to 3 decimals', cs.includes("{litres ? litres.toFixed(3) : '0.000'} {unit}") && cs.includes("(litres ? litres.toFixed(3) : '')"));
-    ok('the fuel line as before (addFuelToCart: litres, the amount, isFuel)', cs.includes('addFuelToCart(fuelEntry, litres, amount)')
+    const FC = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/forecourt.ts')).href);
+    const kp = read('packages/ui/src/FuelKeypad.tsx');
+    ok('the keypad is the desktop\'s (@zaptill/ui FuelKeypad): 500 / 1,000 / 2,000 and Full tank → litres', JSON.stringify(FC.QUICK_AMOUNTS) === '[500,1000,2000]'
+      && kp.includes('{QUICK_AMOUNTS.map((q) => (') && kp.includes("onClick={() => { setField('litres'); setEntry(''); setFullTank(true); }}") && kp.includes('Full tank')
+      && cs.includes("import FuelKeypad from '@zaptill/ui/FuelKeypad';") && cs.includes('<FuelKeypad look={KEYPAD_LOOK} currency={currency}'));
+    ok('litres shown to 3 decimals', FC.litresText(2000 / 184.5) === '10.840 L' && kp.includes('`= ${qtyText(sale.litres, unit)}`'));
+    ok('the grade\'s own unit where it is not litres (fuel_unit)', cs.includes("unit={(fuelEntry as any).fuel_unit ?? 'L'}"));
+    ok('the fuel line as before (addFuelToCart: litres, the amount, isFuel)', cs.includes('onAdd={(litres, amount) => addFuelToCart(fuelEntry, litres, amount)}')
       && /quantity: litres,[\s\S]{0,120}lineTotal: amount,\s+isFuel: true,/.test(read('apps/dashboard/src/pages/pos/cashier/useCart.ts')));
   }
 } catch (e) {

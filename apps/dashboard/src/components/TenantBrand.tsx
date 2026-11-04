@@ -3,7 +3,7 @@
  * on an address no business has. See lib/tenant.ts.
  */
 import type { TenantInfo } from '../lib/tenant';
-import { cleanRootDomain } from '../lib/tenantHost';
+import { cleanRootDomain } from '@zaptill/core/tenantHost';
 
 /** The client's logo (when they have one) and name, with a small "on SwiftPOS" under it. `fit` (the POS sign-in): the
  *  logo shrinks with the screen's height so the keypad below stays on screen. */

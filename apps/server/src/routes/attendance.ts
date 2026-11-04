@@ -40,7 +40,7 @@ import { requireAuth, requireWebSurface } from '../middleware/auth';
 import { can, branchFilter, byBranch, assertBranchAccess, rowInBranches, NO_BRANCH, type BranchFilter } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { getDayCutoff } from '../lib/dayCutoff';
-import { businessRangeEAT, businessDateEAT } from '../lib/businessDay';
+import { businessRangeEAT, businessDateEAT } from '@zaptill/core/businessDay';
 import { serverBranch } from '../lib/branchDrawers';
 import { traffic } from '../lib/trafficStats';
 import {

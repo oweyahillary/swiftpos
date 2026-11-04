@@ -16,15 +16,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { usePermissions } from '../../context/PermissionsContext';   // A550
-import { POS_FEATURES } from '../../lib/posFeatures';
-import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../../lib/paymentCatalogue';
-import { OUT_OF_STOCK_MODES, type OutOfStockMode } from '../../lib/stockGate';   // A563
+import { POS_FEATURES } from '@zaptill/core/posFeatures';
+import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';
+import { OUT_OF_STOCK_MODES, type OutOfStockMode } from '@zaptill/core/stockGate';   // A563
 import { dateShort } from '../../lib/format';
-import { foodAreas } from '../../lib/businessTerms';   // A573
+import { foodAreas } from '@zaptill/core/businessTerms';   // A573
 import BranchPaymentMethods from './BranchPaymentMethods';
 
 /** The switches the owner sets here (the admin portal shows them read-only). A594: + approval_pin (was the admin portal's). */
-export const POS_OPTION_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin'] as const;
+// Owner, 2026-11-04: + rooms (Charge to room only for a business with rooms; any business type — a lodge's shop too).
+export const POS_OPTION_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'] as const;
 /** A594: only the owner changes these (the cloud refuses anyone else, OWNER_ONLY). */
 export const OWNER_ONLY_POS_OPTION_KEYS: readonly PosOptionKey[] = ['login_codes', 'approval_pin'];
 export type PosOptionKey = (typeof POS_OPTION_KEYS)[number];

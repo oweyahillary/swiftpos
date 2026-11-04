@@ -4,7 +4,7 @@ import { assertPayload } from '../ipcValidate';
 import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import { getOpenShift } from '../syncEngine';
-import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_WARNING, cashMovementNeedsApprover, looksLikeDrawerCount } from '../posFeatures';   // A594
+import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_WARNING, cashMovementNeedsApprover, looksLikeDrawerCount } from '@zaptill/core/posFeatures';   // A594
 import { signedIn as sessionPerson, personCan, mayMoveMoney } from '../tillAccess';
 import { getDeviceConfig, getPosFeatures } from '../deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, forceCloseShift, listShifts, awaitingConfirmation, confirmShift, shiftCloseRights, blindClose, blindReport, confirmView } from '../shiftService';
