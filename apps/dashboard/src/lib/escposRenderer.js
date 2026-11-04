@@ -483,6 +483,11 @@ function lineEarnsPlace(line, visible, station) {
 function noteRows(note) {
   return (note ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 }
+function linesByCourse(lines) {
+  if (!lines.some((l) => l.course)) return lines;
+  const courses = [...new Set(lines.filter((l) => l.course).map((l) => l.course))];
+  return [...lines.filter((l) => !l.course), ...courses.flatMap((c) => lines.filter((l) => l.course === c))];
+}
 function renderProduction(ctx) {
   const { order, station } = ctx;
   const fontB = station.kind === "kitchen" && ctx.business.kitchenFontB === true;
@@ -511,11 +516,16 @@ function renderProduction(ctx) {
   d.line(rule(cols));
   let unitRows = 0;
   let printedLines = 0;
-  for (const line of order.lines) {
+  let courseShown;
+  for (const line of linesByCourse(order.lines)) {
     const units = visibleUnits(line, ctx);
     if (station.includeUnits !== "none" && !lineEarnsPlace(line, units, station)) continue;
     if (printedLines > 0) d.gap(ITEM_GAP_DOTS);
     printedLines++;
+    if (line.course && line.course !== courseShown) {
+      d.line(`-- ${sanitize(line.course).toUpperCase()} --`, { bold: true });
+      courseShown = line.course;
+    }
     const { name, folded } = lineHeading(line);
     const qtyPrefix = `${isMeasured(line) ? measureText(line) : line.quantity}   `;
     const headingWidth = cols;

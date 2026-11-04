@@ -24,7 +24,8 @@ import { foodAreas } from '@zaptill/core/businessTerms';   // A573
 import BranchPaymentMethods from './BranchPaymentMethods';
 
 /** The switches the owner sets here (the admin portal shows them read-only). A594: + approval_pin (was the admin portal's). */
-export const POS_OPTION_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin'] as const;
+// Owner, 2026-11-04: + rooms (Charge to room only for a business with rooms; any business type — a lodge's shop too).
+export const POS_OPTION_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'] as const;
 /** A594: only the owner changes these (the cloud refuses anyone else, OWNER_ONLY). */
 export const OWNER_ONLY_POS_OPTION_KEYS: readonly PosOptionKey[] = ['login_codes', 'approval_pin'];
 export type PosOptionKey = (typeof POS_OPTION_KEYS)[number];

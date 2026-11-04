@@ -296,7 +296,7 @@ try {
     assert.match(cs, /const words\s+= businessTerms\(businessMode\);/);
     assert.match(cs, /menusLabel=\{words\.menus\} allMenusLabel=\{words\.allMenus\}/);
     assert.match(cs, /← \{words\.backToGrid\}<\/button>/);
-    assert.match(cs, /\{showRoomCharge && isRestaurant && foodAreas\(businessMode\)\.roomCharge && \(/);
+    assert.match(cs, /\{showRoomCharge && isRestaurant && foodAreas\(businessMode\)\.roomCharge && posFeatures\.rooms && \(/);
     const mp = read('apps/dashboard/src/pages/pos/MinimartPOS.tsx');
     assert.match(mp, /const WORDS = businessTerms\('minimart'\);/);
     assert.match(mp, /menusLabel=\{WORDS\.menus\} allMenusLabel=\{WORDS\.allMenus\}/);

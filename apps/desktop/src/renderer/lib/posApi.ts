@@ -47,6 +47,9 @@ export interface Pump {
   price_per_litre: number | null;
 }
 
+/** Owner 2026-11-04: a sale's customer's loyalty points before the sale, their tier and the business's earn rate. */
+export interface LoyaltyBefore { points: number; tier: string; multiplier: number; earnRate: number }
+
 /** A588: the pumps screen's gauges (main/forecourt.ts) — this POS's own fuel sales and, when known, the tanks. */
 export interface Forecourt {
   pumps: { pump_id: string; litres_today: number; last_sale_at: string | null; last_sale_litres: number | null; last_sale_amount: number | null }[];
@@ -527,6 +530,8 @@ declare global {
         // bound on this terminal. With the HTML fallback gone (0.5.27) this is
         // the only way the cashier learns a ticket did not go. Register D8.
         printProduction: (payload: unknown) => Promise<{ ok: boolean; skipped: string[] }>;
+        /** Owner 2026-11-04 (online licence): the open order's bill before payment. */
+        printBill: (payload: unknown) => Promise<{ ok: boolean; error?: string }>;
         // The EFFECTIVE list, where it came from, and the cloud baseline. The
         // setup screen previews with `terms`, so a preview never disagrees with
         // the printer; `source`/`cloudTerms` drive the "local override vs
@@ -642,6 +647,8 @@ declare global {
         getPumps: () => Promise<Pump[]>;
         /** A588: the pumps screen's gauges — this POS's litres today / yesterday, each pump's last sale, the tanks (null = not known). */
         forecourt: () => Promise<Forecourt>;
+        /** Owner 2026-11-04: mark the pump dispensing on the cloud (online licence; never blocks the sale). */
+        activatePump: (pumpId: string) => Promise<{ ok: boolean }>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
         /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
         /** A429; A619: + the delivery platforms' prices ({ rounding, rules }; absent from an older main = normal prices). */
@@ -928,6 +935,8 @@ declare global {
       /** A607: customer details at the counter — is KRA eTIMS on, may this person see customers' numbers in full. */
       customerDetails: {
         saleInfo: () => Promise<{ etimsEnabled: boolean; seesContacts: boolean }>;
+        /** Owner 2026-11-04: the customer's points before the sale (online licence, online; null = show nothing). */
+        loyaltyPoints: (customerId: string) => Promise<LoyaltyBefore | null>;
       };
       /** A607: the M-Pesa prompt from this POS (main/mpesaStk.ts StkState). */
       mpesa: {

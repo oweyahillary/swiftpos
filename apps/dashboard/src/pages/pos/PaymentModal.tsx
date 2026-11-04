@@ -1,6 +1,6 @@
 import MethodDot from '@zaptill/ui/MethodDot';
 import type { AppliedOffer } from '@zaptill/core/offers';   // A445
-import { enabledFromSetting, paymentButtons } from '@zaptill/core/paymentCatalogue';   // A429
+import { enabledFromSetting, paymentButtons, withRoomCharge } from '@zaptill/core/paymentCatalogue';   // A429
 import { methodColour, methodSolid, methodTint } from '@zaptill/core/paymentColours';
 import { isPlatformMethod, needsPlatformConfirm, changesText, type PlatformQuote, type PlatformRecord } from '@zaptill/core/platformPrices';   // A619
 import type { MonoRaster } from '../../lib/escposRenderer';
@@ -151,7 +151,8 @@ export default function PaymentModal({
   // A429: the branch's methods — the four this screen knows by name (cash, M-Pesa, card, on account) where switched on,
   // then the catalogue's other switched-on methods (Glovo, Airtel Money …) and the business's own: those settle at once,
   // like a card.
-  const branchButtons = paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web');
+  // Owner, 2026-11-04: Room charge only for a business with rooms (Settings › Business › POS options).
+  const branchButtons = withRoomCharge(paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web'), posFeatures?.rooms === true);
   const builtInMethods = (['cash', 'mpesa', 'card', 'credit'] as SingleMethod[]).filter(m => branchButtons.some(b => b.code === m));
   const extraMethods = branchButtons.filter(b => !(['cash', 'mpesa', 'card', 'credit'] as string[]).includes(b.code));
   const [method, setMethodRaw]      = useState<string>(() => builtInMethods[0] ?? extraMethods[0]?.code ?? 'cash');

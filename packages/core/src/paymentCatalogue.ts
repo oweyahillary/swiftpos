@@ -98,6 +98,23 @@ export function paymentButtons(enabled: string[], own: Array<{ code: string; nam
   return out;
 }
 
+/** Owner, 2026-11-04: the room charge method — offered only with the 'rooms' switch (posFeatures.ts). */
+export const ROOM_CHARGE_METHOD = 'room_charge';
+
+/** The payment buttons without Room charge unless the business offers it here (`rooms`: the switch, and on the desktop POS
+ *  the online licence too). */
+export function withRoomCharge<T extends { code: string }>(buttons: T[], rooms: boolean): T[] {
+  return rooms ? buttons : buttons.filter((b) => b.code !== ROOM_CHARGE_METHOD);
+}
+
+/** Why a sale's payments may not be taken here: a leg charged to a room where rooms are not offered. null = fine. */
+export function roomChargeRefusal(payments: unknown, rooms: boolean): string | null {
+  if (rooms || !Array.isArray(payments)) return null;
+  return payments.some((p) => String((p as { method?: unknown } | null)?.method ?? '').toLowerCase() === ROOM_CHARGE_METHOD)
+    ? 'Charging to a room is not offered on this POS (Rooms is off, or the online licence is not active). Choose another payment.'
+    : null;
+}
+
 /** A method's name for a report or a list — the catalogue's, else the code tidied ("other_bank" → "Other bank"). */
 export function methodLabel(code: string | null | undefined): string {
   const m = catalogueMethod(code);

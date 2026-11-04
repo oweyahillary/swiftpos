@@ -1054,7 +1054,7 @@ raised too — one number in `lazy-load-a517`, `customer-details-a607`, `custome
 
 Not added (owner): receipt preview / Print again on the desktop, a customer name box on the desktop.
 
-**Loyalty on the desktop — not done.** The desktop POS holds no loyalty data (no points, tiers, earn rate or the
+**Loyalty on the desktop — not done (done in 8l, with the online licence).** The desktop POS holds no loyalty data (no points, tiers, earn rate or the
 `loyalty_enabled` switch; the cloud credits points when the sale arrives). "Points earned / new balance" there needs a
 new online look-up of the customer's points and tier (the tier rule is the server's `getTier`, not yet in core) —
 online only. The web keeps its lines; its estimate now comes from `@zaptill/core/tender` `pointsEarned` (same formula).
@@ -1073,7 +1073,8 @@ Done: a line's sizes and add-ons as chips on both POS (`@zaptill/ui/LineChips`; 
 no add-ons); the desktop's **Split bill** under Charge for a restaurant (the payment screen opens on "Split the bill" —
 offline, nothing new behind it). The desktop's kitchen mark, note rule, kitchen-void rules and Hold are unchanged.
 
-**Stopped — each needs the owner (it changes how a POS behaves beyond the decisions, or its backend):**
+**Stopped — each needs the owner (it changes how a POS behaves beyond the decisions, or its backend):** (the owner decided
+them the same day — done in 8l)
 - *Courses (a course per line, Held / Fires now, Fire course) on the desktop.* On the web a held course is a cloud
   order's `fire_status` (`POST /api/orders/:id/fire-course`; the cloud's KDS hides held lines). The desktop's kitchen is
   its own printed tickets and its open orders live in its SQLite: holding a course needs a new column on an open order's
@@ -1097,7 +1098,7 @@ as before (branch price with "from", long press, the sold-out rule, columns, pag
 Main chunk after screens 2 and 3: **449.7 kB**. Test: `tests/pos-cart-and-tile.test.mjs` (CI step "One cart line and
 product tile for both POS").
 
-### Screen 4 — the forecourt (blocked)
+### Screen 4 — the forecourt (blocked; done in 8l after the owner's decision)
 
 *Activate pump on the desktop:* `PATCH /api/pumps/:id/activate` needs `fuel.manage` (a cashier rarely holds it — on the
 web the call then fails quietly and the pump is marked only in that screen) and the cloud refuses every desktop write
@@ -1121,6 +1122,127 @@ The three copies were modify/delete conflicts: deleted; git carried the one chan
 `packages/core/src/release.ts`. Checked: `check-shared-sync` (58 modules, no copies), `check-register-consistency`, the
 server rebuilt (clean `dist`) and `tests/release-version` 8/0. The merge is staged on its own; the owner's 2026-11-04
 decisions (8l) are unstaged on top.
+
+## 8l. The owner's 2026-11-04 decisions — premium pieces on the desktop, one forecourt (not committed — unstaged, on top of 8k)
+
+The owner's words: "1-5 yes only if the web licence is active, desktop pos should sell basically but advanced features are
+bundled to the web just like stock management etc, 6 yes, 3 yes". So on the desktop POS each of items 1–5 is shown and
+works **only with the online licence** (`web_pos_enabled`, the renderer's `useOnlineLicence`, main's
+`requireOnlineLicence` / `licensed()`, the cloud's new `lib/onlineLicence.ts` `desktopWithoutLicence`); without it the
+desktop sells as before. 8j's pieces (quick cash, tips, the Discount box, split the bill, chips, tile words) stay basic
+selling, ungated. **No new cloud migration and no local schema change** (below, item 1 and item 3).
+
+### 1. Courses on the desktop (restaurants, online licence) — done
+
+- The rules once, `packages/core/src/courses.ts` (`@zaptill/core/courses`): `COURSES` (Starters, Mains, Desserts,
+  Drinks — the web's list), `withCourse` (a course starts **held**), `toggledHold` (Held ↔ Fires now), `isHeld`,
+  `heldCourses`, `firedCourse`. The web's `useCart` and its course list use them too (same behaviour).
+- Desktop `POSPage`: `coursesOn = flags.isRestaurant && onlineLicence`. Each line still to send shows a course picker and
+  Held / Fires now; Send to kitchen leaves held lines off (its count too); one "🔥 Fire <course>" per held course sends that
+  course's lines (`handleSendToKitchen(false, next)` — the cart with the course fired); **the charge sends everything still
+  unsent, held included** (what is paid for reaches the kitchen — the 0.6.28 rule). The kitchen ledger (`kitchen_lines`)
+  records only what was sent; a held line was never sent, so taking it off is no kitchen void — the desktop's stricter void
+  rules are unchanged (only a sent quantity asks for a void and a manager).
+- The ticket: a line's course travels in the production payload (`course`, only when the line has one) → `escposBridge`
+  (`cleanCourse`) → `shared/printing` `OrderLine.course`: the kitchen and dispatch tickets print the dishes without a
+  course first, then each course's together under one heading (`-- MAINS --`); the receipt ignores it.
+- **Byte-identical without courses (proved):** no ticket line carries a `course` key then (`apps/desktop/test/
+  courses-desktop`); `shared/printing` `npm test` (bytes.js --check, the SAMPLE-OUTPUT goldens) passes unchanged; and the
+  kitchen and dispatch tickets of an order without courses were compared byte for byte with a build of `shared/printing`
+  from HEAD (`OLD_PRINTING=… node test/courses-desktop.test.mjs`): equal. A receipt's bytes are the same with or without
+  courses. The web's printing bundle (`apps/dashboard/src/lib/escposRenderer.js`) was regenerated
+  (`scripts/build-escpos-renderer.mjs`; `--check` passes) — the web sends no course, so its tickets are unchanged.
+- **No local schema change (the brief expected one):** a held tab already saves its cart whole as JSON
+  (`held_orders.cart`), so a line's `course` and `fire_status` are kept with it; a held line is not on a ticket, so
+  `kitchen_lines` (sent lines) needs nothing; `kitchen_lines.item_json` keeps the whole line for the recovery. No column,
+  so `LOCAL_SCHEMA_VERSION` stays 79 (a bump would only move `REQUIRED_DESKTOP_SCHEMA` for nothing).
+
+### 2. Transfer table and Print bill on the desktop (restaurants, online licence) — done
+
+- **Print bill**: a button beside Split bill (one row, so a small screen keeps one line of extra buttons). Main's
+  `escpos:printBill` (`ipc/sale.ts`; `requireOnlineLicence`, printing must be on) prints the open order on this POS's
+  receipt printer only, through `queueThermal(…, ['receipt'], undefined, proforma = true)` → `printSale` → shared/printing's
+  existing proforma layout (A269, the web's Print bill): "BILL - NOT A RECEIPT", no bill number, no payments or change,
+  the lines, the offers and PAY. Nothing is saved. A sale's ticket carries no `proforma` key at all (byte-identical;
+  `print-bill-transfer` compares the ESC/POS bytes). The cart line the sale and the bill send is one helper now
+  (`saleLine`, the same fields as before in `order:create`).
+- **Transfer**: for a dine-in order with a table, a picker (`components/TransferTableModal.tsx`, loaded on demand) of the
+  tables with no open order (no held tab on them, not the order's own) moves the order there — its number, lines and what
+  the kitchen has stay. On this POS a table's open order is a held tab in its own SQLite (not shared between POSs), so this
+  is a screen change, no main-process change.
+- *For the owner (small):* the kitchen is not told of a move (its ticket keeps the old table), as on the web. A "moved to
+  Table 7" slip on the kitchen printer could be added.
+
+### 3. The Rooms switch — done (no migration)
+
+- A new **POS option `rooms`** ("Rooms", `packages/core/src/posFeatures.ts`), off unless set — on Settings › Business ›
+  POS options (the owner's options, `OWNER_POS_KEYS` / the web's `POS_OPTION_KEYS`; any business type — a lodge's shop
+  too); the admin portal shows it read-only (`OWNER_POS_OPTIONS`). Stored like every POS option, a `feature_flags` row
+  (`PUT /api/controls/pos/rooms`, settings.pos): **no migration**; the desktop receives it with `pos/init`'s posFeatures
+  (no local schema change).
+- The web: 🏨 Room and the Post to Room dialog only with the switch (it showed to every restaurant); the Room charge
+  payment (`room_charge`) only with it (`@zaptill/core/paymentCatalogue` `withRoomCharge`).
+- The desktop: Room charge only with the switch **and** the online licence (`rooms` prop of the payment screen); main's
+  `order:create` refuses a room leg without both (`roomChargeRefusal`), before anything is saved.
+- *For the owner:* a branch that had switched on the Room charge payment loses it until the owner turns Rooms on. The
+  cloud does not refuse a room charge itself (the web's Post to Room is an `other` leg; UI only there).
+
+### 4. Activate pump on the desktop (forecourt, online licence) — done
+
+- The cloud: `PATCH /api/pumps/:id/activate` needs `orders.create` (selling) or `fuel.manage` (it needed fuel.manage, so a
+  cashier's call from the web failed quietly) — for a pump of the caller's branch or the whole business (`ownRow`, as
+  before); from a desktop POS also the online licence (403 `ONLINE_LICENCE_REQUIRED`). An inactive pump is a 404 again
+  (`.maybeSingle()`; `.single()` answered 500).
+- The allowlist (A159, `lib/terminalWrites.ts`): exactly `/api/pumps/<id>/activate` in `MANAGER_WRITES` — a person's PIN
+  sign-in only, never the till's own token; `/idle` and pump edits stay refused.
+- The desktop: a fuel line put on the sale asks main (`pos:activatePump`, the person's token via `manageFetch`), only with
+  the licence, never awaited — offline or refused, the sale goes on. The web's call is unchanged (now allowed for a cashier).
+
+### 5. Loyalty on the desktop (online licence, online only) — done
+
+- The cloud: `GET /api/loyalty/customer/:id/points` (orders.create or customers.view; this business's customer; the
+  desktop needs the licence) → `{ enabled, points, tier, earn_rate }`, `{ enabled: false }` with loyalty off. Nothing
+  personal in it.
+- The desktop: when the payment screen opens with a saved customer on the sale (A607's `customer_id`) and the licence,
+  main (`customer:loyaltyPoints`) reads it — null on no licence, loyalty off, offline or refused. After the sale the
+  success screen shows "Points earned + N pts" and "New balance M pts" (`@zaptill/core/tender` `pointsAfterSale`: the
+  cloud's rule, floor(floor(bill / 10) × earn rate × tier), on the bill after discounts without the tip). The sale never
+  waits for it; no answer → nothing shown. `pointsEarned` gained the earn rate (default 1 — the web's call unchanged).
+
+### 6. Forecourt on the web in the desktop's layout — done
+
+- Built once in `packages/ui`: `@zaptill/ui/FuelKeypad` (amount KES / litres, the other live, 500 / 1,000 / 2,000, Full
+  tank, the number pad and the keyboard; a `unit` for a grade not sold in litres) and `@zaptill/ui/Pumps` (`GradeGauge`,
+  `Dispenser`); the rules stay in `@zaptill/core/forecourt`. No class names in packages/ui: the desktop's look is in
+  `PumpsView.tsx` (its `GradeGauge` / `Dispenser` exports wrap the shared ones with it), the web's in
+  `pages/pos/cashier/Forecourt.tsx` (styles on the POS theme tokens; `--act-strong` for the chosen).
+- The web: the pumps screen draws each pump as a dispenser (grade band, state by the desktop's rule, price per litre; the
+  web keeps no last sale or litres today, so its display says "— —") with the open sale's items and time under it, and a
+  gauge per grade whose tank the cloud holds (`tanksData`: a tank two pumps share counted once; no tank → no gauge,
+  nothing made up); a grade tapped (the nozzle strip) opens the shared keypad instead of the two-field entry. The web's
+  pump flow (Activate, one open sale per pump) and its product tile are as they were. Phone: two dispensers / gauges a row
+  on a 360 px screen; the keypad's card is 92 % of the width and scrolls when short.
+
+### Proof
+
+- Main chunk (desktop POS): **454.2 kB** (8j: 449.7; budget 460). Items 1–5 add about 4.5 kB; `TransferTableModal`
+  (1.2 kB) and the forecourt (`PumpsView` with the shared pieces, 14.7 kB) load on demand.
+- New tests (each in `ci.yml`, mutation-checked — the mutants are listed in each file's header): root `pump-activate` 16,
+  `rooms-switch` 10, `loyalty-desktop` 11, `forecourt-shared` 14; desktop `courses-desktop` 26, `print-bill-transfer` 21.
+  Updated: `petrol-pos-web-a588` 20 (the shared gauge, dispenser and keypad), desktop `petrol-pos-a588` 49 (the keypad in
+  packages/ui), `web-pos-theme` (84 themed uses: the Full tank chip moved with the keypad), `web-feel` (the keypad's
+  panel pops in through its look), `pos-cart-and-tile` (Split bill in the restaurant's row), `customer-details-a607`
+  (resetOrder clears the bill's message too), `permissions-web-a490`, `staff-a562`, `payment-catalogue`,
+  `business-terms-a573` (the Rooms pins).
+  Also updated for the Rooms option and the new code: `prospect-features` (root and desktop), `permissions-a490-api`,
+  `stock-zero-a563`, desktop `order-notes` (the bill carries the order's note), `kitchen-voids` (a held course waits).
+- `tsc` (server, dashboard, admin, desktop, `build:main --force`), the four builds (server with a clean `dist`, desktop
+  `build:all`, dashboard and admin `vite build`), every `scripts/check-*.mjs`, `check-doc-refs`, the migration tests (both
+  shards): pass. Full local CI (294 steps): only the known local noise — the schema audit (no `python3`), the
+  `${{ matrix.part }}` step (both shards run by hand: all pass, one libuv `async.c` exit after "all green"), the
+  `async.c` exits after all cases passed (`server-setup-a503`, `a554-log-fixes`, `report-collected`, `void-owner-row`),
+  `money-reports`' local-hour case under `TZ=UTC`, and the offline-suites loop failing on those. Every root suite one by
+  one: all pass apart from those exits.
 
 ## 9. Rollback
 

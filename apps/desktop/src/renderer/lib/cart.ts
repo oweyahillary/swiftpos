@@ -1,3 +1,5 @@
+import type { FireStatus } from '@zaptill/core/courses';
+
 export interface SelectedVariant {
   groupId: string;
   groupName: string;
@@ -43,6 +45,10 @@ export interface CartItem {
   // A577: a line sold by weight — its quantity is kilograms (0.452), its unitPrice the price per kg; 'g' = the item is
   // shown in grams. Not stepped with +/− (weighed again instead); printed "0.452 kg @ 650/kg".
   measureUnit?: 'kg' | 'g';
+  // Owner, 2026-11-04 (restaurants, online licence): the line's course and whether it waits to be fired
+  // (@zaptill/core/courses). Kept with a held tab's cart; printed as the course's heading on the kitchen ticket.
+  course?: string | null;
+  fire_status?: FireStatus | null;
 }
 
 // The price this till charges for a product: the per-branch override if one was

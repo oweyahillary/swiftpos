@@ -210,7 +210,7 @@ try {
       /onAnswered\(\(a\) => \{[\s\S]*?if \(a\.answer\) fill\(a\.answer/.test(sc) && !/onAnswered\([\s\S]{0,300}onDone\(/.test(sc));
     ok('…the sale carries the details only after "Use for this sale" (onDone → the POS\'s buyer → the order)',
       /onClick=\{use\}/.test(sc) && /onDone=\{\(b\) => \{ setBuyer\(b\);/.test(pos) && /\.\.\.buyer\?\.sale,/.test(pos));
-    ok('…and a new sale starts with none (resetOrder)', /setOrderNote\(''\); setBuyer\(null\); \};/.test(pos));
+    ok('…and a new sale starts with none (resetOrder)', /const resetOrder = \(\) => \{[^\n]*setOrderNote\(''\); setBuyer\(null\);[^\n]*\};/.test(pos));
     ok('saving a customer is the consent plan\'s (only with "save"), with the person\'s own sign-in (customer:create)',
       /if \(plan\.saveCustomer\) \{[\s\S]*?posApi\.order\.createCustomer\(plan\.saveCustomer\)/.test(sc));
     ok('a number the customer typed is masked for someone without customers.contacts', /setMasked\(!!a\.phone && !seesRef\.current\)/.test(sc)

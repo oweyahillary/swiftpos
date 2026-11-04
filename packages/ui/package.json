@@ -19,6 +19,8 @@
     "./BillSplit": "./src/BillSplit.tsx",
     "./LineChips": "./src/LineChips.tsx",
     "./TileBadges": "./src/TileBadges.tsx",
+    "./FuelKeypad": "./src/FuelKeypad.tsx",
+    "./Pumps": "./src/Pumps.tsx",
     "./package.json": "./package.json"
   },
   "peerDependencies": {

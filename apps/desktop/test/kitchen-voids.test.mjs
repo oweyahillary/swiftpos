@@ -162,7 +162,8 @@ ok('Clear with sent items asks for a kitchen void — even with no order number 
 ok('removing or reducing a sent line asks for a kitchen void',
   /const back = voidQtyFor\(item, newQty\);\s*if \(back > 0\) \{\s*setKitchenVoid\(/.test(pos) && /const sent = sentQtyOf\(item\);\s*if \(sent > 0\) \{\s*setKitchenVoid\(/.test(pos));
 ok('Send prints only what the kitchen has not had (quantity − sentQty)',
-  /const unsent = withIds\.filter\(i => unsentQtyOf\(i\) > 0\)\.map\(i => \(\{ item: i, qty: unsentQtyOf\(i\) \}\)\);/.test(pos) && /quantity: qty,\n/.test(pos));
+  // 2026-11-04: a held course waits (courses, the online licence's) — the charge sends it.
+  /const unsent = withIds\.filter\(i => unsentQtyOf\(i\) > 0 && \(atPayment \|\| !isHeld\(i, coursesOn\)\)\)\s+\.map\(i => \(\{ item: i, qty: unsentQtyOf\(i\) \}\)\);/.test(pos) && /quantity: qty,\n/.test(pos));
 ok('pay before kitchen hides Send (not dine-in); the charge sends what is left of a partly sent order',
   /const maySend = maySendBeforePay\(posFeatures\.pay_before_kitchen, flags\.isRestaurant \? orderType : 'retail'\);/.test(pos)
   && /\{maySend && <button/.test(pos) && /if \(someSent && cart\.some\(i => unsentQtyOf\(i\) > 0\)\) await handleSendToKitchen\(true\);/.test(pos)

@@ -6,7 +6,7 @@
  *
  *   GET  /api/controls            { pos?, loyalty?, payments? } — each section only with its key
  *   PUT  /api/controls/pos/:key   { enabled }            settings.pos — delivery_fee, pay_later_tabs, pay_before_kitchen, login_codes,
- *                                                        approval_pin (A594; login_codes and approval_pin: the owner only)
+ *                                                        approval_pin (A594; login_codes and approval_pin: the owner only), rooms
  *   PUT  /api/controls/loyalty    { enabled?, earn_rate? } settings.pos
  *   PUT  /api/controls/stock-zero { mode }               settings.pos — A563: when an item's stock reaches zero
  *                                                        ('sell' | 'sold_out' | 'hide'; two feature_flags, lib/stockGate.ts)
@@ -33,7 +33,8 @@ import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '@zaptill/core
 /** The POS options the owner sets (settings.pos). */
 // A594 (owner, 2026-10-26: "some items can be permissions … I like your proposal"): + approval_pin (A562 — was the admin
 // portal's), the owner's alone like login_codes.
-export const OWNER_POS_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin'] as const;
+// Owner, 2026-11-04: + rooms (Charge to room only for a business with rooms).
+export const OWNER_POS_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'] as const;
 /** The options only the real owner (signed in as themselves) changes — account security and who approves with what. */
 export const OWNER_ONLY_POS_KEYS = ['login_codes', 'approval_pin'] as const;
 /** The cashier switches A490 retired — now permissions per role (sales.history_all, sales.reprint; A594: cash in / cash out /

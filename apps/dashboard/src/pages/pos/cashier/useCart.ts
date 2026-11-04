@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { withCourse, toggledHold } from '@zaptill/core/courses';   // owner 2026-11-04: one rule with the desktop POS
 import type { CartItem, Product, VariantGroup, VariantOption } from './types';
 import { weightUnitOf, type WeighedLine } from '@zaptill/core/scaleBarcode';   // A577
 
@@ -39,15 +40,9 @@ export interface CartActions {
   toggleVariantOption: (group: VariantGroup, option: VariantOption) => void;
   confirmVariants:     (modifiers: { id: string; name: string; price: number }[]) => void;
 
-  // Fuel modal state
+  // The fuel keypad (@zaptill/ui FuelKeypad holds what is typed): the grade it is open for
   fuelEntry:       Product | null;
   setFuelEntry:    (p: Product | null) => void;
-  fuelEdited:      'amount' | 'litres';
-  setFuelEdited:   (v: 'amount' | 'litres') => void;
-  fuelAmountStr:   string;
-  setFuelAmountStr:(v: string) => void;
-  fuelLitresStr:   string;
-  setFuelLitresStr:(v: string) => void;
 }
 
 export function useCart(): CartActions {
@@ -57,11 +52,8 @@ export function useCart(): CartActions {
   const [variantProduct,   setVariantProduct]   = useState<Product | null>(null);
   const [selectedVariants, setSelectedVariants] = useState<Record<string, VariantOption & { groupId?: string; groupName?: string }>>({});
 
-  // Fuel modal
+  // The fuel keypad
   const [fuelEntry,        setFuelEntry]        = useState<Product | null>(null);
-  const [fuelEdited,       setFuelEdited]       = useState<'amount' | 'litres'>('amount');
-  const [fuelAmountStr,    setFuelAmountStr]    = useState('');
-  const [fuelLitresStr,    setFuelLitresStr]    = useState('');
 
   // ── Core add ─────────────────────────────────────────────────────────────
   const addToCart = useCallback((
@@ -70,9 +62,6 @@ export function useCart(): CartActions {
   ) => {
     if ((product as any).is_fuel) {
       setFuelEntry(product);
-      setFuelEdited('amount');
-      setFuelAmountStr('');
-      setFuelLitresStr('');
       return;
     }
     const groups = variantsByProduct[product.id] ?? [];
@@ -140,17 +129,11 @@ export function useCart(): CartActions {
   }, []);
 
   const setItemCourse = useCallback((index: number, course: string) => {
-    setCart(prev => prev.map((it, i) => i === index
-      ? { ...it, course: course || null, fire_status: course ? (it.fire_status ?? 'held') : 'fired' }
-      : it
-    ));
+    setCart(prev => prev.map((it, i) => (i === index ? withCourse(it, course) : it)));
   }, []);
 
   const toggleItemHold = useCallback((index: number) => {
-    setCart(prev => prev.map((it, i) => i === index
-      ? { ...it, fire_status: it.fire_status === 'held' ? 'fired' : 'held' }
-      : it
-    ));
+    setCart(prev => prev.map((it, i) => (i === index ? toggledHold(it) : it)));
   }, []);
 
   const clearCart = useCallback(() => setCart([]), []);
@@ -253,7 +236,6 @@ export function useCart(): CartActions {
     addWeighedToCart,   // A577
     variantProduct, selectedVariants,
     openVariantModal, closeVariantModal, toggleVariantOption, confirmVariants,
-    fuelEntry, setFuelEntry, fuelEdited, setFuelEdited,
-    fuelAmountStr, setFuelAmountStr, fuelLitresStr, setFuelLitresStr,
+    fuelEntry, setFuelEntry,
   };
 }

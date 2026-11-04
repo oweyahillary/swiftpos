@@ -11,6 +11,8 @@ import type { HeldOrder } from '../lib/heldOrders';
 import TablesView from '../components/TablesView';
 // A588: the forecourt (pumps, gauges, the fuel keypad) loads when a petrol station opens it — not in every POS's start.
 const PumpsView = lazy(() => import('../components/PumpsView'));
+// Owner, 2026-11-04 (online licence): move the open order to another table — loaded when opened.
+const TransferTableModal = lazy(() => import('../components/TransferTableModal'));
 import type { DiningTable, Pump } from '../lib/posApi';
 import { buildTicketLines, kitchenOnly, linesForStation, routingIsConfigured, ROUTING_UNCONFIGURED } from '../lib/ticketLines';
 import type { StationRouting } from '../lib/ticketLines';
@@ -45,7 +47,9 @@ import { noPosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';
 import { NO_FREEZE, isFrozen, frozenMessage, type StockCountFreeze } from '@zaptill/core/stockCountFreeze';   // A394
 import { NO_STOCK_VIEW, showsSoldOut, hiddenOutOfStock, stockRefusals, type OutOfStockMode, type StockView } from '@zaptill/core/stockGate';   // A563
 import type { ZReport } from '../lib/posApi';
-import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
+import type { KitchenLinePayload, OpenKitchenOrder, LoyaltyBefore } from '../lib/posApi';
+import { pointsAfterSale } from '@zaptill/core/tender';   // owner 2026-11-04: loyalty on the desktop (online licence)
+import { COURSES, withCourse, toggledHold, isHeld, heldCourses, firedCourse } from '@zaptill/core/courses';   // owner 2026-11-04
 // A607: the kitchen-void dialog loads when it opens (room in the main chunk for the customer's details — lazy-load-a517).
 const KitchenVoidModal = lazy(() => import('../components/KitchenVoidModal'));
 import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '@zaptill/core/kitchenLines';
@@ -436,6 +440,12 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const [showPrinters, setShowPrinters] = useState(false);
   const [showNewCustomer, setShowNewCustomer] = useState(false);   // A595 D1
   const [buyer, setBuyer] = useState<any>(null);   // A607: the customer's details for this sale (components/SaleCustomer.tsx)
+  // Owner, 2026-11-04: the sale's customer's loyalty points before the sale — read when the payment screen opens (online
+  // licence, online; null = show nothing). The sale never waits for it.
+  const [loyaltyBefore, setLoyaltyBefore] = useState<LoyaltyBefore | null>(null);
+  // Owner, 2026-11-04 (online licence, restaurants): Print bill's answer, and the Transfer table picker.
+  const [billMsg, setBillMsg] = useState('');
+  const [showTransfer, setShowTransfer] = useState(false);
   const [canAddCustomer, setCanAddCustomer] = useState(false);
 
   // Payment state
@@ -835,6 +845,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       pumpId: pump.id,   // survives to the order header — fuel reports key on it
       lineId: newLineId(),
     }]);
+    // Owner, 2026-11-04: with the online licence the cloud is told the pump is dispensing (main checks the licence; the
+    // answer is not waited for — offline or refused, the sale goes on).
+    if (onlineLicence) void posApi.pos.activatePump(pump.id).catch(() => {});
   };
 
   // A588: the pumps with a fuel line on this sale (their cards say "In use").
@@ -931,7 +944,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   };
 
   // The order surface back to empty. Internal: after a sale, a hold, or a kitchen void of everything sent.
-  const resetOrder = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setDeliveryFee(''); setDeliveryIsFree(false); setDeliveryMsg(''); setOrderNote(''); setBuyer(null); };
+  const resetOrder = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setDeliveryFee(''); setDeliveryIsFree(false); setDeliveryMsg(''); setOrderNote(''); setBuyer(null); setBillMsg(''); };
 
   // The Clear button. 0.6.28: an order with items on a kitchen ticket is cleared only by voiding them — Clear was the
   // quiet way to make a sent (and paid-in-cash) order disappear. Hold keeps it instead.
@@ -1029,18 +1042,22 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     return n;
   };
 
-  const unsentCount = cart.filter(i => unsentQtyOf(i) > 0).length;
+  // Owner, 2026-11-04: courses (a course per line, Held / Fires now, Fire <course>) — a restaurant with the online licence.
+  const coursesOn = flags.isRestaurant && onlineLicence;
+  const unsentCount = cart.filter(i => unsentQtyOf(i) > 0 && !isHeld(i, coursesOn)).length;
   // 0.6.28 ('pay_before_kitchen'): takeaway, delivery and counter orders reach the kitchen only when paid.
   const maySend = maySendBeforePay(posFeatures.pay_before_kitchen, flags.isRestaurant ? orderType : 'retail');
 
   // `atPayment`: the charge sends what is left of an order already partly sent — even where 'pay_before_kitchen' would
-  // not offer the button (it is being paid now).
-  const handleSendToKitchen = async (atPayment = false) => {
+  // not offer the button (it is being paid now), and a held course too (what is paid for reaches the kitchen).
+  // `from`: the cart to send from (Fire <course> passes the cart with that course just fired).
+  const handleSendToKitchen = async (atPayment = false, from: CartItem[] = cart) => {
     if (!maySend && !atPayment) { setKitchenMsg('This order goes to the kitchen when it is paid.'); return; }
     // 0.6.28: only what the kitchen has not had — quantity − sentQty — and every line gets an id for the ledger.
-    const withIds = cart.map(i => i.lineId ? i : { ...i, lineId: newLineId() });
-    if (withIds.some((i, k) => i !== cart[k])) setCart(withIds);
-    const unsent = withIds.filter(i => unsentQtyOf(i) > 0).map(i => ({ item: i, qty: unsentQtyOf(i) }));
+    const withIds = from.map(i => i.lineId ? i : { ...i, lineId: newLineId() });
+    if (withIds.some((i, k) => i !== from[k])) setCart(withIds);
+    const unsent = withIds.filter(i => unsentQtyOf(i) > 0 && (atPayment || !isHeld(i, coursesOn)))
+      .map(i => ({ item: i, qty: unsentQtyOf(i) }));
     if (unsent.length === 0) return;
     const num = await ensureOrderNumberAsync();
     setKitchenMsg('');
@@ -1094,6 +1111,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             selectedModifiers: item.selectedModifiers,
             comboComponents: comboItems[item.product.id] ?? undefined,
             notes: item.notes ?? null,   // A367
+            ...(item.course ? { course: item.course } : {}),   // owner 2026-11-04: the course's heading on the ticket
           })),
           notes: orderNote.trim() || null,   // A367: the order's note heads the ticket
         });
@@ -1133,6 +1151,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     }
 
   };
+
+  // Owner, 2026-11-04: Fire <course> — its held lines go to the kitchen now (under the course's heading).
+  const fireCourse = (course: string) => {
+    const next = firedCourse(cart, course);
+    setCart(next);
+    void handleSendToKitchen(false, next);
+  };
+  const setLineCourse = (index: number, course: string) =>
+    setCart(prev => prev.map((it, i) => (i === index ? withCourse(it, course) : it)));
+  const toggleLineHold = (index: number) => setCart(prev => prev.map((it, i) => (i === index ? toggledHold(it) : it)));
 
   const handleHold = async () => {
     if (cart.length === 0) return;
@@ -1292,6 +1320,14 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     posApi.pos.paymentMethodsEnabled().then((r) => setPlatformPrices(r?.platformPrices ?? null)).catch(() => {});
     if (!platformLib) import('@zaptill/core/platformPrices').then((m) => setPlatformLib(m)).catch(() => {});
   }, [showPayment]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const loyaltyCustomer: string | null = onlineLicence ? (buyer?.sale?.customer_id ?? null) : null;
+  useEffect(() => {
+    setLoyaltyBefore(null);
+    if (!showPayment || !loyaltyCustomer) return;
+    let live = true;
+    posApi.customerDetails.loyaltyPoints(loyaltyCustomer).then((r) => { if (live) setLoyaltyBefore(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [showPayment, loyaltyCustomer]);
   const offerOff = offerResult.total;
   const toPay = Math.round((subtotal - offerOff) * 100) / 100;
   const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(toPay, vatRate, ctlRate);
@@ -1317,6 +1353,55 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     if (problem) { setDeliveryMsg(problem); return; }
     setPayStartsSplit(split);
     setShowPayment(true);
+  };
+
+  /** A cart line as the sale (order:create) and Print bill send it to main — the receipt and the tickets print from it. */
+  const saleLine = (item: CartItem) => ({
+    product: {
+      id: item.product.id,
+      name: item.product.name,
+      // category_id is the field a desktop product actually carries;
+      // `categories` is the nested shape the WEB catalogue returns and is
+      // undefined here. Sending only the latter meant every line arrived
+      // at the ticket router with no category, so nothing could be routed
+      // to the kitchen and the kitchen ticket printed "0 items to cook".
+      category_id: item.product.category_id ?? item.product.categories?.id ?? null,
+      categories: item.product.categories ?? null,
+      // Last-resort composition for a menu that was typed as flat products
+      // with a line of prose — see escposBridge.describeFromText.
+      description: item.product.description ?? null,
+    },
+    unitPrice: item.unitPrice,
+    quantity: item.quantity,
+    lineTotal: item.lineTotal,
+    ...(item.measureUnit ? { measureUnit: item.measureUnit } : {}),   // A577: the receipt's "0.452 kg @ 650/kg"
+    selectedVariants: item.selectedVariants,
+    selectedModifiers: item.selectedModifiers,
+    // What a combo is actually made of. Without these a combo reaches the
+    // kitchen as one opaque line and the cooks cannot see the 3PC Chicken
+    // inside it.
+    comboComponents: comboItems[item.product.id] ?? undefined,
+    // A367: the line's note — kitchen ticket, receipt, the till's order_items.notes and the cloud's.
+    notes: item.notes ?? null,
+    ...(item.course ? { course: item.course } : {}),   // owner 2026-11-04: a course's heading on a ticket printed at payment
+  });
+
+  // Owner, 2026-11-04 (online licence, restaurants): Print bill — the open order's bill before payment on this POS's
+  // receipt printer (main prints it under "BILL - NOT A RECEIPT", no bill number, no payments). Nothing is saved.
+  const printBill = async () => {
+    setBillMsg('');
+    const r = await posApi.escpos.printBill({
+      order_type: orderType,
+      table_number: orderType === 'dine_in' ? tableNumber : undefined,
+      delivery_person: orderType === 'delivery' ? (deliveryPerson.trim() || null) : null,
+      ...(riderFee > 0 ? { delivery_fee: riderFee, ...(freeNow ? { delivery_free: true } : {}) } : {}),
+      items: cart.map(saleLine),
+      total: toPay,
+      discount_amount: offerOff,
+      offers: offerResult.applied.map((o) => ({ name: o.name, amount: o.amount })),
+      notes: orderNote.trim() || null,
+    }).catch((e: any) => ({ ok: false, error: e?.message ?? 'The bill could not be printed.' }));
+    setBillMsg(r.ok ? 'The bill is printing.' : (r.error ?? 'The bill could not be printed.'));
   };
 
   const handleCharge = async (payment: PaymentResult) => {
@@ -1381,32 +1466,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         // this rebuild as planned).
         pump_id: cart.find(i => i.isFuel && i.pumpId)?.pumpId ?? null,
         items: (payment.platform?.lines ?? cart).map((item, idx) => ({
-          product: {
-            id: item.product.id,
-            name: item.product.name,
-            // category_id is the field a desktop product actually carries;
-            // `categories` is the nested shape the WEB catalogue returns and is
-            // undefined here. Sending only the latter meant every line arrived
-            // at the ticket router with no category, so nothing could be routed
-            // to the kitchen and the kitchen ticket printed "0 items to cook".
-            category_id: item.product.category_id ?? item.product.categories?.id ?? null,
-            categories: item.product.categories ?? null,
-            // Last-resort composition for a menu that was typed as flat products
-            // with a line of prose — see escposBridge.describeFromText.
-            description: item.product.description ?? null,
-          },
-          unitPrice: item.unitPrice,
-          quantity: item.quantity,
-          lineTotal: item.lineTotal,
-          ...(item.measureUnit ? { measureUnit: item.measureUnit } : {}),   // A577: the receipt's "0.452 kg @ 650/kg"
-          selectedVariants: item.selectedVariants,
-          selectedModifiers: item.selectedModifiers,
-          // What a combo is actually made of. Without these a combo reaches the
-          // kitchen as one opaque line and the cooks cannot see the 3PC Chicken
-          // inside it.
-          comboComponents: comboItems[item.product.id] ?? undefined,
-          // A367: the line's note — kitchen ticket, receipt, the till's order_items.notes and the cloud's.
-          notes: item.notes ?? null,
+          ...saleLine(item),
           // A619: the line as it was rung (normal prices) — main re-derives the platform's price from it; never leaves main.
           ...(payment.platform && item.product?.id ? { normal: { unitPrice: cart[idx].unitPrice, modifiers: cart[idx].selectedModifiers.map((m) => m.price) } } : {}),
         })),
@@ -1419,7 +1479,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       });
 
       setCompletedOrder({ orderNumber: created?.orderNumber || num, payment,   // A503 (E1): the final number (A500 may renumber)
-        tableNumber, orderType, deliveryPerson: deliveryPerson.trim(), deliveryFree: freeNow });
+        tableNumber, orderType, deliveryPerson: deliveryPerson.trim(), deliveryFree: freeNow,
+        loyalty: loyaltyBefore ? pointsAfterSale(loyaltyBefore, payment.total) : null });   // owner 2026-11-04
       setShowPayment(false);
       loadStockView();   // A563: this sale took its tracked items off this till's levels
       // A349: the sale is saved either way; a ticket that could not be produced is said, never left to the log.
@@ -1565,6 +1626,13 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             <Row l="Paid" v={fmtMoney(p.amountDue)} strong />
             {p.legs.map((l, i) => <Row key={i} l={`  ${methodLabel(l.method)}`} v={fmtMoney(Number(l.amount) || 0)} />)}
             {change > 0 && <Row l="Change" v={fmtMoney(change)} strong />}
+            {completedOrder.loyalty && (
+              <div data-testid="loyalty-after-sale">
+                <div className="border-t border-gray-800 my-1" />
+                <Row l="Points earned" v={`+ ${completedOrder.loyalty.earned.toLocaleString()} pts`} />
+                <Row l="New balance" v={`${completedOrder.loyalty.balance.toLocaleString()} pts`} />
+              </div>
+            )}
           </div>
           {/* Only when the receipt or a ticket did not print — the cashier must know there is no paper. */}
           {printMsg && (
@@ -2116,6 +2184,17 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                   ⏸ Hold order
                 </button>
               </div>
+              {/* Owner, 2026-11-04: a held course goes to the kitchen when fired. */}
+              {maySend && heldCourses(cart, coursesOn).length > 0 && (
+                <div className="flex flex-wrap gap-2" data-testid="fire-courses">
+                  {heldCourses(cart, coursesOn).map((c) => (
+                    <button key={c} type="button" onClick={() => fireCourse(c)} disabled={!printerSettings.kitchenEnabled}
+                      className="flex-1 bg-amber-500/10 border border-amber-500/40 hover:border-amber-400 disabled:opacity-40 text-amber-400 text-xs font-medium rounded-lg py-2 transition-colors">
+                      🔥 Fire {c}
+                    </button>
+                  ))}
+                </div>
+              )}
               {kitchenMsg && <p className="text-xs text-gray-300 animate-fade-in">{kitchenMsg}</p>}
             </div>
           )}
@@ -2189,6 +2268,23 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                     </button>
                   )}
                 </div>
+                {/* Owner, 2026-11-04 (restaurants, online licence): the line's course while some of it is still to send. */}
+                {coursesOn && maySend && !item.isFuel && unsentQtyOf(item) > 0 && (
+                  <div className="flex items-center gap-2" data-testid="line-course">
+                    <select value={item.course ?? ''} onChange={(e) => setLineCourse(index, e.target.value)} aria-label="Course"
+                      className="bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-200 px-1.5 py-0.5">
+                      <option value="">No course</option>
+                      {COURSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {item.course && (
+                      <button type="button" onClick={() => toggleLineHold(index)} data-testid="line-hold"
+                        className={`text-xs rounded-md border px-2 py-0.5 ${item.fire_status === 'held'
+                          ? 'border-amber-500/40 text-amber-400' : 'border-action-500/40 text-action-400'}`}>
+                        {item.fire_status === 'held' ? 'Held' : 'Fires now'}
+                      </button>
+                    )}
+                  </div>
+                )}
                 <p className="text-right text-sm text-gray-200 font-medium">{currency} {item.lineTotal.toLocaleString()}</p>
               </div>
             ))}
@@ -2238,15 +2334,38 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             </button>
             {/* 2026-11-04 (one design for both POS, as the web POS): a restaurant's bill split between the guests — the
                 payment screen opens on "Split the bill" (evenly or by item). */}
+            {/* Owner, 2026-11-04 (online licence): Print bill (before payment) and Transfer (a dine-in order to another
+                table) beside it, as the web POS — one row, so a small screen keeps one line of extra buttons. */}
             {flags.isRestaurant && cart.length > 0 && (
-              <button type="button" onClick={() => openPayment(true)} disabled={blocked} data-testid="cart-split-bill"
-                className="w-full border border-gray-700 hover:border-gray-600 disabled:opacity-40 text-gray-300 text-sm font-medium rounded-xl py-2 transition-colors">
-                Split bill
-              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => openPayment(true)} disabled={blocked} data-testid="cart-split-bill"
+                  className="flex-1 border border-gray-700 hover:border-gray-600 disabled:opacity-40 text-gray-300 text-sm font-medium rounded-xl py-2 transition-colors">
+                  Split bill
+                </button>
+                {onlineLicence && (
+                  <button type="button" onClick={() => void printBill()} data-testid="cart-print-bill"
+                    className="flex-1 border border-gray-700 hover:border-gray-600 text-gray-300 text-sm font-medium rounded-xl py-2 transition-colors">
+                    Print bill
+                  </button>
+                )}
+                {onlineLicence && orderType === 'dine_in' && tableNumber && (
+                  <button type="button" onClick={() => setShowTransfer(true)} data-testid="cart-transfer"
+                    className="flex-1 border border-gray-700 hover:border-gray-600 text-gray-300 text-sm font-medium rounded-xl py-2 transition-colors">
+                    Transfer
+                  </button>
+                )}
+              </div>
             )}
+            {billMsg && <p className="text-xs text-gray-300" data-testid="bill-msg">{billMsg}</p>}
           </div>
         </div>
       </div>
+
+      {showTransfer && (
+        <Suspense fallback={null}><TransferTableModal tables={tables} heldOrders={heldOrders} current={tableNumber}
+          onClose={() => setShowTransfer(false)}
+          onPick={(t) => { setShowTransfer(false); setTableNumber(t.name); setBillMsg(`Moved to Table ${t.name}.`); }} /></Suspense>
+      )}
 
       {/* 0.6.28: sent items come back only as a recorded kitchen void. */}
       {kitchenVoid && orderNumber && (
@@ -2327,6 +2446,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           stkPhone={buyer?.stkPhone} stkMasked={buyer?.masked}
           lines={cart.map((i) => ({ name: i.product.name, qty: i.quantity, amount: i.lineTotal }))}   // 2026-11-04: split by item
           startSplit={payStartsSplit}
+          rooms={posFeatures.rooms && onlineLicence}   // owner 2026-11-04: Room charge with the Rooms switch and the online licence
         />
       )}
 

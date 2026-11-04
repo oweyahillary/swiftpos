@@ -135,7 +135,7 @@ ok('kept on the till (schema 69, the cloud requires it), pulled, relayed to the 
 });
 ok('the payment screen shows the branch\'s methods (not a fixed list), starting on cash where taken', () => {
   const pm = read('apps/desktop/src/renderer/components/PaymentModal.tsx');
-  assert.ok(pm.includes("const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);"));
+  assert.ok(pm.includes("const buttons = useMemo(() => withRoomCharge(paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), rooms),"));
   assert.ok(pm.includes('{methods.map(b => ({ code: b.code, label: b.name, icon: b.icon })).map(m => ('));   // A552: less On account unless offered
   assert.ok(!pm.includes('METHOD_META'));
   assert.ok(pm.includes("{ method: firstMethod, amount: '', tendered: '', reference: '' },"));
@@ -154,7 +154,7 @@ ok('Manager › Settings › Payment methods — a switch per method, saved for 
 console.log('\nThe web');
 ok('the web POS: the branch\'s methods, the rest settling like a card; split payment only what the branch takes', () => {
   const wp = read('apps/dashboard/src/pages/pos/PaymentModal.tsx');
-  assert.ok(wp.includes("const branchButtons = paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web');"));
+  assert.ok(wp.includes("const branchButtons = withRoomCharge(paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web'), posFeatures?.rooms === true);"));
   assert.ok(wp.includes('{builtInMethods.map(m => (') && wp.includes('{extraMethods.map(cm => ('));
   assert.ok(wp.includes('enabledMethods={builtInMethods}'));
   assert.ok(read('apps/dashboard/src/pages/pos/SplitPaymentPanel.tsx').includes('if (enabledMethods && !enabledMethods.includes(m)) return false;'));

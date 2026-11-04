@@ -331,7 +331,7 @@ try {
     const ap = read('apps/admin/src/AdminPortal.tsx');
     assert.doesNotMatch(ap, /STAFF_OPTION_KEYS\.map/);
     assert.doesNotMatch(ap, /if \(\(STAFF_OPTION_KEYS as readonly string\[\]\)\.includes\(pf\.key\)\) return null;/);
-    assert.match(read('apps/admin/src/ownerSettings.ts'), /'approval_pin'\] as const;/);
+    assert.match(read('apps/admin/src/ownerSettings.ts'), /'approval_pin', 'rooms'\] as const;/);
   });
   await ok('the web form: the approval PIN only while the switch is on; switched off, a PIN set before may be removed; a new one is never sent then', () => {
     assert.match(tab, /api\.get<Record<string, boolean>>\('\/api\/flags'\)/);

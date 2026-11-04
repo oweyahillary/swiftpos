@@ -8,6 +8,7 @@
  * - evenShares / itemShares: split the bill evenly per person, or by item per guest (A151's rules: the legs always add
  *   up to the bill exactly — the cloud refuses a set that does not).
  * - pointsEarned: the loyalty points a sale earns, as the web POS has shown them (1 point per KES 10, times the tier).
+ * - pointsAfterSale: what the desktop POS shows after a sale to a loyalty customer — the points earned, the new balance.
  *
  * Pure: no imports, no network. Used by @zaptill/ui's QuickCash, TipPicker and BillSplit, and by both payment screens.
  */
@@ -79,6 +80,17 @@ export function itemSplitReady(shares: number[], total: number): boolean {
   return shares.filter((a) => a > 0).length >= 2 && Math.abs(sum - total) < 0.01;
 }
 
-/** The loyalty points a sale of `charged` earns (1 point per KES 10, times the customer's tier multiplier). */
-export const pointsEarned = (charged: number, multiplier = 1) =>
-  Math.max(0, Math.floor(Math.floor(Math.max(0, charged) / 10) * (multiplier > 0 ? multiplier : 1)));
+/** The loyalty points a sale of `charged` earns (1 point per KES 10, times the customer's tier multiplier) — `earnRate`
+ *  points per KES 10 where the business set one (the cloud's rule when it credits them; the desktop POS passes it). */
+export const pointsEarned = (charged: number, multiplier = 1, earnRate = 1) =>
+  Math.max(0, Math.floor(Math.floor(Math.max(0, charged) / 10) * (earnRate > 0 ? earnRate : 1) * (multiplier > 0 ? multiplier : 1)));
+
+/**
+ * Owner, 2026-11-04: after a sale to a customer the desktop POS shows the points it earns and the customer's new balance
+ * (as the web's payment screen), from the points they had before the sale (an online look-up). `charged` is the bill the
+ * cloud credits points on (after discounts, without the tip).
+ */
+export function pointsAfterSale(before: { points: number; multiplier: number; earnRate: number }, charged: number): { earned: number; balance: number } {
+  const earned = pointsEarned(charged, before.multiplier, before.earnRate);
+  return { earned, balance: Math.max(0, Math.floor(before.points)) + earned };
+}

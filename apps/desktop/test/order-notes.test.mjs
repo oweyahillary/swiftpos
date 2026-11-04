@@ -156,8 +156,9 @@ ok('a tap never joins a line that carries a note ("2 spicy" + a tap is a new lin
 ok('a note changes only a line not yet sent (a sent line is refused — it would be cooked twice)',
   /if \(item && sentQtyOf\(item\) > 0\) \{\s*setKitchenMsg\(/.test(pos)
   && /\{ \.\.\.it, notes: note \}/.test(pos) && /!item\.isFuel && sentQtyOf\(item\) === 0 &&/.test(pos));
+// 2026-11-04: + Print bill (the order's note on the bill too); the sale's line shape is one helper (saleLine).
 ok('the sale sends each line\'s note and the order\'s note',
-  (pos.match(/notes: item\.notes \?\? null/g) ?? []).length === 2 && (pos.match(/notes: orderNote\.trim\(\) \|\| null/g) ?? []).length === 2);
+  (pos.match(/notes: item\.notes \?\? null/g) ?? []).length === 2 && (pos.match(/notes: orderNote\.trim\(\) \|\| null/g) ?? []).length === 3);
 ok('a held order keeps its note, and a recall brings it back',
   /orderNote: orderNote\.trim\(\) \|\| undefined/.test(pos) && (pos.match(/setOrderNote\(held\.orderNote \?\? ''\)/g) ?? []).length === 2);
 ok('the note editor is on every line (not a fuel line) and on the order',

@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT, platformOfLegs, legsAfterPick } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
 import { cleanDeliveryFee, amountDue as amountDueWithFee } from '@zaptill/core/delivery';
-import { enabledFromSetting, paymentButtons, catalogueMethod } from '@zaptill/core/paymentCatalogue';   // A429
+import { enabledFromSetting, paymentButtons, catalogueMethod, withRoomCharge } from '@zaptill/core/paymentCatalogue';   // A429
 import type { AppliedOffer } from '@zaptill/core/offers';   // A445
 import type { PlatformQuote, PlatformRecord } from '@zaptill/core/platformPrices';   // A619 (types only: the file loads on demand)
 import type { CartItem } from '../lib/cart';
@@ -107,6 +107,8 @@ interface Props {
   lines?: BillLine[];
   /** 2026-11-04: opened from the cart's Split bill — "Split the bill" shows at once. */
   startSplit?: boolean;
+  /** Owner, 2026-11-04: Room charge is offered (the Rooms switch and the online licence). */
+  rooms?: boolean;
 }
 
 // A429: the buttons are the branch's switched-on methods from shared/paymentCatalogue.ts (Cash, M-Pesa, Card, Glovo
@@ -114,8 +116,9 @@ interface Props {
 // business's own methods (A96). Delivery apps (Glovo …) collect from the customer and settle later, so nothing enters
 // the drawer: cash reconciliation filters on method = 'cash' specifically, so no other method can inflate expected cash.
 
-export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers: rungOffers = [], onAccount = null, onConfirm, onClose, onDisplay, stkPhone, stkMasked, platformCart, lines = [], startSplit = false }: Props) {
-  const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);
+export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers: rungOffers = [], onAccount = null, onConfirm, onClose, onDisplay, stkPhone, stkMasked, platformCart, lines = [], startSplit = false, rooms = false }: Props) {
+  const buttons = useMemo(() => withRoomCharge(paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), rooms),
+    [enabledMethods, customMethods, rooms]);
   // A552: On account only where this till offers it (a credit customer held; main/creditSale.ts decides again at the sale).
   const methods = useMemo(() => buttons.filter((b) => b.code !== 'credit' || onAccount?.offered), [buttons, onAccount?.offered]);
   // The first leg starts on cash when the branch takes cash, else on its first method.

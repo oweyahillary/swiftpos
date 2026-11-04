@@ -115,6 +115,14 @@ export const POS_FEATURES = [
     label: 'Items at zero stock: hide',
     description: 'A tracked item whose stock at the branch is 0 or less is not on the desktop POS menu or the web POS, and cannot be sold, until stock comes in.',
   },
+  // Owner, 2026-11-04 ("3 yes": Room only for a business with rooms): "Charge to room" was offered to every restaurant on
+  // the web. Off unless the owner turns it on (Settings › Business › POS options); the desktop POS offers it only with the
+  // online licence too (paymentCatalogue.ts roomChargeRefusal).
+  {
+    key: 'rooms',
+    label: 'Rooms',
+    description: 'The business has rooms: a sale can be charged to a guest’s room (Room on the web POS, the Room charge payment where a branch takes it). Desktop POS: with the online licence.',
+  },
 ] as const;
 
 /**

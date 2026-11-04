@@ -28,6 +28,7 @@
  * able to take the counter down.
  */
 import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
+import { cleanCourse } from '@zaptill/core/courses';
 import { getLocalDb } from './localDb';
 import { isSoldByWeight, weightUnitOf } from '@zaptill/core/scaleBarcode';   // A577
 import { getDeviceConfig, saveDeviceConfig } from './deviceConfig';
@@ -89,6 +90,8 @@ interface CartLine {
    *  `note` is the older name, still read so a payload from before 0.6.24 prints unchanged. */
   notes?: string | null;
   note?: string;
+  /** Owner, 2026-11-04: a restaurant's course ("Mains") — a heading on the kitchen and dispatch tickets. */
+  course?: string | null;
   selectedVariants?: Array<{ groupName?: string; optionName?: string }>;
   selectedModifiers?: Array<{ name?: string; optionName?: string; price?: number }>;   // A555: the till sends optionName
   comboComponents?: Array<{
@@ -275,6 +278,8 @@ export interface SaleForPrint {
   voided?: { at: Date; by: string; reason?: string };
   /** A552: a sale on account — the customer, and what they owe after it (the receipt's payment block). */
   account?: { customer: string; balanceOwed: number };
+  /** Owner, 2026-11-04: Print bill — the bill before payment under "BILL - NOT A RECEIPT" (shared/printing proforma). */
+  proforma?: boolean;
 }
 
 /**
@@ -389,6 +394,7 @@ export function printSale(
 
     const lines: OrderLine[] = sale.cart.map(l => {
       const lineStationIds = stationsForCategory(l.product.category_id ?? l.product.categories?.id, ids, routing);
+      const course = cleanCourse(l.course);
       return {
         name:       l.product.name,
         quantity:   l.quantity,
@@ -398,6 +404,7 @@ export function printSale(
         lineTotal:  toCents(l.lineTotal),
         units:      toUnits(l, ids, lineStationIds, routing).map(stripKitchen),
         note:       cleanNote(l.notes ?? l.note) ?? undefined,   // A367
+        ...(course ? { course } : {}),   // owner 2026-11-04: a line with no course prints as before
       };
     });
 
@@ -407,6 +414,7 @@ export function printSale(
       business,
       reprint: sale.reprint,
       voided:  sale.voided,   // 0.6.28: kitchen void
+      ...(sale.proforma ? { proforma: true } : {}),   // owner 2026-11-04: Print bill (a sale's receipt has no such key)
       order: {
         billNumber:     sale.billNumber,
         orderType:      ORDER_TYPES[sale.orderType] ?? 'counter',

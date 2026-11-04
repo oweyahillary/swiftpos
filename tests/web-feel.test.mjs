@@ -73,8 +73,10 @@ ok('ShiftConfirmations\' dialog fades and pops', /p-4 animate-fade-in/.test(C('S
 ok('the Toast slides in (not the dead tailwindcss-animate classes)', /animate-slide-down/.test(C('Toast.tsx')) && !/slide-in-from-top/.test(C('Toast.tsx')));
 const overlays = (pos.match(/<div style=\{s\.overlay\}/g) || []).length;
 ok('every web POS dialog backdrop fades in', overlays > 0 && (pos.match(/<div style=\{s\.overlay\} className="animate-fade-in">/g) || []).length === overlays, `${overlays}`);
+// 2026-11-04: the fuel keypad's panel pops in through its look (cashier/Forecourt.tsx KEYPAD_LOOK, @zaptill/ui FuelKeypad).
 ok('every web POS dialog panel pops in',
-  !/<div style=\{s\.modal\}>/.test(pos) && !/<div style=\{\{\s*\.\.\.s\.modal/.test(pos) && (pos.match(/animate-pop-in/g) || []).length >= 10);
+  !/<div style=\{s\.modal\}>/.test(pos) && !/<div style=\{\{\s*\.\.\.s\.modal/.test(pos) && (pos.match(/animate-pop-in/g) || []).length >= 9
+  && /card: \{ className: 'animate-pop-in'/.test(P('cashier/Forecourt.tsx')));
 ok('the payment dialog fades and pops; its receipt and M-Pesa screens pop', (P('PaymentModal.tsx').match(/animate-pop-in/g) || []).length === 3 && /py-6 animate-fade-in/.test(P('PaymentModal.tsx')));
 for (const f of ['ShiftModal.tsx', 'MinimartPOS.tsx', 'ParkingPOS.tsx', 'NoteModal.tsx', 'KitchenVoidModal.tsx', 'ZReportModal.tsx', 'PrinterSettingsModal.tsx']) {
   const t = P(f);

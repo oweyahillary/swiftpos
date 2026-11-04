@@ -237,6 +237,8 @@ export function createIpcShared(handle: IpcHandle) {
     payload: any,
     kinds: Array<'kitchen' | 'dispatch' | 'receipt'>,
     reprint?: { at: Date; count: number },
+    /** Owner, 2026-11-04: Print bill — the receipt station prints the bill before payment (no number, no payments). */
+    proforma = false,
     // 0.5.27 — returns the stations that produced NOTHING. printSale has always
     // computed this and every caller threw it away, so a station with no printer
     // bound on this terminal was skipped in silence. That is register D8, and
@@ -322,6 +324,7 @@ export function createIpcShared(handle: IpcHandle) {
           kotCount:       effective.filter(
             st => st.kind !== 'receipt' && assignedIds.has(st.id)).length,
           reprint,
+          ...(proforma ? { proforma: true } : {}),
         },
         {
           name:            sess?.business_name ?? '',

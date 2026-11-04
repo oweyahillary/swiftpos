@@ -56,7 +56,8 @@ await ok('both POS draw a line\'s chips with it (the web\'s one line of sizes is
   assert.doesNotMatch(web, /selectedVariants\.map\(\(v\) => `\$\{v\.groupName\}: \$\{v\.optionName\}`\)\.join/);
 });
 await ok('the desktop\'s Split bill: a restaurant only, the payment screen opened on "Split the bill"', () => {
-  assert.match(desk, /\{flags\.isRestaurant && cart\.length > 0 && \(\s*<button type="button" onClick=\{\(\) => openPayment\(true\)\}/);
+  // 2026-11-04: in one row with Print bill and Transfer (the online licence's; apps/desktop/test/print-bill-transfer).
+  assert.match(desk, /\{flags\.isRestaurant && cart\.length > 0 && \(\s*<div className="flex gap-2">\s*<button type="button" onClick=\{\(\) => openPayment\(true\)\}/);
   assert.match(desk, /startSplit=\{payStartsSplit\}/);
   assert.match(read('apps/desktop/src/renderer/components/PaymentModal.tsx'), /const \[showSplit, setShowSplit\] = useState\(startSplit\);/);
 });

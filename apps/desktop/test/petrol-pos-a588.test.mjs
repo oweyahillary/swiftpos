@@ -250,6 +250,7 @@ try {
 
   console.log('\n5. The keypad');
   {
+    const kp = fs.readFileSync(path.join(desktop, '..', '..', 'packages', 'ui', 'src', 'FuelKeypad.tsx'), 'utf8');
     const type = (keys, field) => keys.reduce((s, k) => FC.keyIn(s, k, field), '');
     ok('amount: 2 decimals at most, no leading zero, one point', type(['0', '5', '0', '0', '.', '2', '5', '9'], 'amount') === '500.25'
       && type(['.', '5'], 'amount') === '0.5' && type(['1', '.', '.', '2'], 'amount') === '1.2');
@@ -262,14 +263,15 @@ try {
     ok('12.5 L at 184.50 → KES 2,306.25 (amount = litres × price, the fuel path\'s rule)', l.amount === 2306.25 && l.litres === 12.5 && FC.moneyText(l.amount) === '2,306.25');
     ok('no price → no litres (never a divide by zero)', FC.fuelSale('amount', '500', 0).litres === 0);
     ok('the quick amounts: 500, 1,000, 2,000 — and Full tank (→ litres)', JSON.stringify(FC.QUICK_AMOUNTS) === '[500,1000,2000]'
-      && src('renderer/components/PumpsView.tsx').includes("onClick={() => { setField('litres'); setEntry(''); setFullTank(true); }}"));
+      && kp.includes("onClick={() => { setField('litres'); setEntry(''); setFullTank(true); }}"));   // 2026-11-04: @zaptill/ui FuelKeypad
     const pv = src('renderer/components/PumpsView.tsx'), pos = src('renderer/pages/POSPage.tsx');
     ok('Add to sale hands the litres and the amount to POSPage.addFuelLine — the fuel line as always (quantity = litres, isFuel, pumpId)',
-      pv.includes('onAddFuel(active, sale.litres, sale.amount);') && pos.includes('onAddFuel={addFuelLine}')
+      pv.includes('onAdd={(litres, amount) => { onAddFuel(active, litres, amount); setActive(null); }}') && kp.includes('if (ready) onAdd(sale.litres, sale.amount);')
+      && pos.includes('onAddFuel={addFuelLine}')
       && /const addFuelLine = \(pump: Pump, litres: number, amount: number\) => \{[\s\S]{0,700}quantity: litres,[\s\S]{0,200}lineTotal: amount,\s+isFuel: true,\s+pumpId: pump\.id,/.test(pos)
       && pos.includes("order_type: flags.isPetrol ? 'fuel_sale'"));
-    ok('a USB numpad works the keypad (digits, ., Backspace, Enter, Escape)', pv.includes("window.addEventListener('keydown', onKey);")
-      && pv.includes("else if (e.key === 'Enter') { confirm(); e.preventDefault(); }"));
+    ok('a USB numpad works the keypad (digits, ., Backspace, Enter, Escape)', kp.includes("window.addEventListener('keydown', onKey);")
+      && kp.includes("else if (e.key === 'Enter') { confirm(); e.preventDefault(); }"));
   }
 
   console.log('\n6. The bundle (A517): the forecourt loads when opened');
