@@ -9,7 +9,7 @@
  *     licence, so the premium gate is met by being here.
  * What the customer typed comes back HERE (checked by the channel's publisher — only the typed fields) to accept or correct;
  * nothing is attached until "Use for this sale". "Save my details for next time" makes the customer's record (the loyalty
- * customer, as LoyaltyPanel's Add) and attaches it; without it the details serve this sale only (the PIN on the invoice,
+ * customer, as the old LoyaltyPanel's Add) and attaches it; without it the details serve this sale only (the PIN on the invoice,
  * the name on the receipt, the phone for the M-Pesa prompt). A typed number is masked for someone without customers.contacts.
  * Loaded on demand.
  */

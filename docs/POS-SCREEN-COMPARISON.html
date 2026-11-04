@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POS Screen Comparison</title>
+<style>
+:root {
+  --bg: #f7f6f2; --card: #ffffff; --ink: #1d232b; --muted: #5d6673; --line: #dedbd3;
+  --accent: #b86b00; --keep: #1f7a4d; --add: #2459a8; --decide: #8a3fa0; --chip: #f0ede6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --card: #171e27; --ink: #e6e9ee; --muted: #9aa4b2; --line: #2a3340;
+    --accent: #f0a63a; --keep: #4cc38a; --add: #7aa7ff; --decide: #d08ae6; --chip: #212a35;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --card: #171e27; --ink: #e6e9ee; --muted: #9aa4b2; --line: #2a3340;
+  --accent: #f0a63a; --keep: #4cc38a; --add: #7aa7ff; --decide: #d08ae6; --chip: #212a35;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.7rem; margin: 0 0 4px; }
+h2 { font-size: 1.3rem; margin: 40px 0 8px; padding-top: 8px; border-top: 2px solid var(--accent); }
+h3 { font-size: 1rem; margin: 20px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+h3.keep { color: var(--keep); } h3.add { color: var(--add); } h3.decide { color: var(--decide); }
+p, li { color: var(--ink); }
+.muted { color: var(--muted); }
+nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 8px; }
+nav a { text-decoration: none; color: var(--ink); background: var(--chip); border: 1px solid var(--line);
+  padding: 4px 12px; border-radius: 999px; font-size: .9rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 10px 0; }
+ul.keep { margin: 0; padding-left: 20px; }
+ul.keep li { margin: 4px 0; }
+label.pick { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 8px 0; }
+label.pick input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--accent); }
+.what { font-weight: 600; }
+.why { color: var(--muted); font-size: .93rem; margin-top: 2px; }
+.tag { display: inline-block; font-size: .75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  margin-left: 6px; vertical-align: 1px; border: 1px solid currentColor; }
+.tag.yes { color: var(--keep); } .tag.no { color: var(--muted); } .tag.ask { color: var(--decide); }
+.radio { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 6px; }
+.radio label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.radio input { accent-color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+.bar { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 12px 0;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button { font: inherit; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; }
+button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+textarea { width: 100%; min-height: 160px; font: .9rem/1.4 Consolas, monospace; background: var(--card);
+  color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 10px; display: none; }
+@media print { nav, .bar, textarea { display: none !important; } h2 { break-before: page; } }
+</style>
+</head>
+<body>
+<main>
+<h1>POS screens: one design for both POS</h1>
+<p class="muted">Prepared 4 Nov 2026 from the code on <code>dev</code>. The desktop POS is the base, because most customers use it.
+Each screen lists what the desktop already does (kept as it is), the web POS features I suggest adding, and the
+points where you need to choose. Tick or untick, then press <b>Copy my choices</b> and paste the result to Claude.</p>
+
+<div class="card" style="border-color:var(--keep)">
+<b>Decided by the owner, 4 Nov 2026.</b>
+<ul class="keep">
+  <li>Payment: quick cash buttons, tip buttons (5 / 10 / 15 %, custom), split evenly per person, split by item per guest,
+  loyalty points shown. Not added: receipt preview / Print again, a customer name box.</li>
+  <li>Cart: courses with Held / Fires now and Fire course; Print bill, Transfer, Split bill and Room on the desktop too
+  (premium). Variants as chips.</li>
+  <li>Product tile: "Sold out", "Later"; the word "Options".</li>
+  <li>Forecourt: Activate pump stays, and the desktop gets it too.</li>
+  <li><b>Small screens:</b> smaller type or extra buttons are fine, but the screens must not look cluttered or become
+  hard to find your way around. A feature a business does not use stays out of sight (courses only for restaurants,
+  Room only for hotels, the fuel pieces only on a forecourt).</li>
+</ul>
+</div>
+
+<div class="card">
+<b>How it will be built.</b> After the shared-components branch is merged into dev, one screen at a time, starting
+with the payment screen. Each screen is built once and used by both POS. On a phone or tablet the web POS keeps its
+own layout of the same screen (for example the cart as a full-screen sheet). New features load only when needed, so the
+desktop POS's start-up code stays inside its size limit.
+</div>
+
+<nav>
+  <a href="#payment">1. Payment screen</a>
+  <a href="#cart">2. Cart lines</a>
+  <a href="#tile">3. Product tile</a>
+  <a href="#fuel">4. Forecourt</a>
+  <a href="#tidy">Also found</a>
+</nav>
+
+<!-- ───────────────────────── 1. Payment ───────────────────────── -->
+<h2 id="payment">1. Payment screen</h2>
+
+<h3 class="keep">Kept from the desktop POS</h3>
+<div class="card"><ul class="keep">
+  <li>One card per payment with <b>+ Split payment</b>; every part can be any method, M-Pesa prompt and On account included.</li>
+  <li>A <b>reference</b> on every non-cash payment (the web asks for none on a single card payment).</li>
+  <li>M-Pesa prompt inside the payment screen: once the customer pays, the sale <b>completes and prints by itself</b>.</li>
+  <li>M-Pesa <b>Payments received</b>: tap the payment, the sale completes.</li>
+  <li>On account: search the customer here, see the limit, what they owe and what is left; the approver's PIN is asked before the sale.</li>
+  <li>Manual discount, amount or %, capped at the role's maximum with "Ask a manager" (the web has no discount box today).</li>
+  <li>The customer screen follows the payment.</li>
+  <li>Delivery platform sales (Glovo and others) at platform prices, with the order number.</li>
+  <li>Exact amounts: the parts must add up to the bill, cash given must cover the cash part.</li>
+</ul></div>
+
+<h3 class="add">Add from the web POS</h3>
+<label class="pick"><input type="checkbox" data-id="pay-quick" data-label="Payment: quick cash buttons" checked>
+  <span><span class="what">Quick cash buttons</span><span class="tag yes">recommended</span>
+  <div class="why">Exact, the next notes up (50, 100, 200, 500, 1,000) and the next round 100 / 1,000, with the change
+  shown at once. Saves typing on most cash sales.</div></span></label>
+
+<label class="pick"><input type="checkbox" data-id="pay-tip" data-label="Payment: tip buttons 5/10/15%" checked>
+  <span><span class="what">Tip buttons: 5%, 10%, 15%, custom, clear</span><span class="tag yes">recommended</span>
+  <div class="why">Today the desktop tip is a plain number in a folded "Discount / tip" section. Hidden for On account, as on the web.</div></span></label>
+
+<label class="pick"><input type="checkbox" data-id="pay-even" data-label="Payment: split evenly per person" checked>
+  <span><span class="what">Split evenly per person</span><span class="tag yes">recommended</span>
+  <div class="why">"4 people" divides the bill into four equal parts. Useful wherever a group shares a bill; each part still pays by any method.</div></span></label>
+
+<label class="pick"><input type="checkbox" data-id="pay-byitem" data-label="Payment: split by item per guest">
+  <span><span class="what">Split by item per guest</span><span class="tag ask">your call</span>
+  <div class="why">Each guest pays for what they had. Mostly restaurants and bars; more steps for the cashier.</div></span></label>
+
+<label class="pick"><input type="checkbox" data-id="pay-loyalty" data-label="Payment: loyalty points shown" checked>
+  <span><span class="what">Loyalty: points earned and the new balance after the sale</span><span class="tag yes">recommended</span>
+  <div class="why">The desktop payment screen shows nothing about loyalty today. Shown only when a customer is on the sale and loyalty is on.</div></span></label>
+
+<label class="pick"><input type="checkbox" data-id="pay-preview" data-label="Payment: receipt preview and Print again on the success screen">
+  <span><span class="what">Receipt preview and a Print again button on the success screen</span><span class="tag no">not suggested</span>
+  <div class="why">The desktop took its print button off on purpose (version 0.6.29): the receipt prints by itself, and a
+  "did not print" warning shows when it fails. Tick only if cashiers ask for a reprint here.</div></span></label>
+
+<label class="pick"><input type="checkbox" data-id="pay-name" data-label="Payment: customer name box in the payment screen">
+  <span><span class="what">A customer name box in the payment screen</span><span class="tag no">not suggested</span>
+  <div class="why">The desktop adds the customer from the cart (+ Customer), which also gives loyalty and On account. Two places would confuse.</div></span></label>
+
+<p class="muted">Not offered: the web's WhatsApp receipt button (it only shows a "set up the WhatsApp provider" message
+today) and its eTIMS signature check (eTIMS is parked; clients file it themselves).</p>
+
+<!-- ───────────────────────── 2. Cart ───────────────────────── -->
+<h2 id="cart">2. Cart lines</h2>
+
+<h3 class="keep">Kept from the desktop POS</h3>
+<div class="card"><ul class="keep">
+  <li>Variants and <b>add-ons as small chips</b> on the line (the web does not show add-ons on the line at all).</li>
+  <li>The kitchen mark: 🍳 once sent, "2 sent" when only part went.</li>
+  <li>The note button hidden once a line went to the kitchen; tapping a noted item makes a new line.</li>
+  <li>The stricter kitchen rules: taking any sent quantity off, removing a sent line or clearing a sent order always goes
+  through the kitchen void (reason, made or not, manager PIN when that switch is on). Extra added after a send comes off freely.</li>
+  <li>Hold (restaurants) with the held-orders count; "+ Customer" in the cart header.</li>
+  <li>Price each, per litre or per kg; fuel and weighed lines cannot have their quantity changed.</li>
+</ul></div>
+
+<h3 class="add">Add from the web POS</h3>
+<label class="pick"><input type="checkbox" data-id="cart-courses" data-label="Cart: courses, Held / Fires now, Fire course" checked>
+  <span><span class="what">Courses: a course on each line, Held / Fires now, and "Fire mains"</span><span class="tag yes">recommended for restaurants</span>
+  <div class="why">Starters go to the kitchen now, mains are held until the waiter fires them. Shown only for restaurants.</div></span></label>
+
+<label class="pick"><input type="checkbox" data-id="cart-extras" data-label="Cart: Print bill, Transfer, Split bill, Room on the desktop" checked>
+  <span><span class="what">Print bill, Transfer table, Split bill, Charge to room</span><span class="tag yes">recommended for restaurants and hotels</span>
+  <div class="why">The web's code marks these "web-only premium extras". Kept premium (online licence) on the desktop too.</div></span></label>
+
+<h3 class="decide">Your choice</h3>
+<div class="card">
+  <div class="what">Variants on the line</div>
+  <div class="radio">
+    <label><input type="radio" name="cart-variants" value="Cart variants: chips (desktop)" checked> Chips, as the desktop (recommended)</label>
+    <label><input type="radio" name="cart-variants" value="Cart variants: one text line (web)"> One text line, as the web</label>
+  </div>
+</div>
+
+<!-- ───────────────────────── 3. Tile ───────────────────────── -->
+<h2 id="tile">3. Product tile</h2>
+
+<h3 class="keep">Kept from the desktop POS</h3>
+<div class="card"><ul class="keep">
+  <li>The <b>branch price</b>, with "from" on items that have sizes or options.</li>
+  <li>Long-press to see the item's stock at other branches (stock rights and online licence).</li>
+  <li>Sold-out items hidden or greyed, as the owner sets; a tap on one is refused.</li>
+  <li>Columns by screen width, the list loading as you scroll, an exact match first in search.</li>
+  <li>The scanner reads barcodes, PLUs and scale labels.</li>
+</ul></div>
+
+<h3 class="decide">Your choice</h3>
+<div class="card">
+  <div class="what">Badge wording</div>
+  <div class="radio">
+    <label><input type="radio" name="tile-badges" value="Tile badges: Sold out / Later, sentence case" checked> "Sold out", "Later" (recommended: easier to read)</label>
+    <label><input type="radio" name="tile-badges" value="Tile badges: SOLD OUT / LATER, capitals"> "SOLD OUT", "LATER"</label>
+  </div>
+  <div class="what" style="margin-top:12px">Items with options</div>
+  <div class="radio">
+    <label><input type="radio" name="tile-options" value="Tile options: the word Options" checked> The word "Options" (recommended)</label>
+    <label><input type="radio" name="tile-options" value="Tile options: the gear icon"> A ⚙ icon, as the desktop</label>
+  </div>
+</div>
+
+<!-- ───────────────────────── 4. Forecourt ───────────────────────── -->
+<h2 id="fuel">4. Forecourt</h2>
+
+<h3 class="keep">Kept from the desktop POS</h3>
+<div class="card"><ul class="keep">
+  <li>Pump cards drawn as dispensers: grade colour, state (Idle, In use, Off, No price), the last sale, price per litre, litres today.</li>
+  <li>A gauge per grade: the tank level with a low mark (online licence), otherwise litres today against yesterday.</li>
+  <li>The <b>fuel keypad</b>: KES or litres with the other worked out live, 500 / 1,000 / 2,000 and Full tank; a USB number pad works too.</li>
+  <li>Pumps / Shop tabs.</li>
+</ul></div>
+
+<h3 class="decide">Your choice</h3>
+<label class="pick"><input type="checkbox" data-id="fuel-activate" data-label="Forecourt: keep Activate pump on the web POS">
+  <span><span class="what">"Activate pump" before fuelling</span><span class="tag ask">tell me if anyone uses it</span>
+  <div class="why">Only the web POS has it: the cashier taps Activate and the cloud marks the pump in use. The desktop never
+  asks. Ticked: it stays and the desktop gets it too. Unticked: it goes.</div></span></label>
+
+<!-- ───────────────────────── Also found ───────────────────────── -->
+<h2 id="tidy">Also found while comparing</h2>
+<div class="card"><ul class="keep">
+  <li>The web POS has <b>no manual discount box</b> at the moment (its discount panel exists but is never shown). The shared
+  payment screen brings the desktop's back to the web.</li>
+  <li>The web's split payment cannot send an M-Pesa prompt; the desktop's can. Fixed by the shared screen.</li>
+  <li>Old web files no screen uses: <code>PetrolPOS.tsx</code>, and the unused discount and loyalty panels. Removed during the work.</li>
+  <li>Both POS guard against a double tap on Charge; the web also sends a key so the cloud never records a sale twice.
+  The shared screen keeps both, under the hood.</li>
+</ul></div>
+
+<div class="bar">
+  <button id="copy">Copy my choices</button>
+  <button class="ghost" id="show">Show as text</button>
+  <span id="done" class="muted"></span>
+</div>
+<textarea id="out" readonly aria-label="Your choices as text"></textarea>
+
+<div class="tablewrap card" style="margin-top:28px">
+<b>Where each POS's screens live (for reference)</b>
+<table>
+<tr><th>Screen</th><th>Desktop POS</th><th>Web POS</th></tr>
+<tr><td>Payment</td><td><code>apps/desktop/src/renderer/components/PaymentModal.tsx</code></td><td><code>apps/dashboard/src/pages/pos/PaymentModal.tsx</code> and its split / M-Pesa panels</td></tr>
+<tr><td>Cart lines, tile</td><td><code>apps/desktop/src/renderer/pages/POSPage.tsx</code></td><td><code>apps/dashboard/src/pages/pos/CashierScreen.tsx</code></td></tr>
+<tr><td>Forecourt</td><td><code>apps/desktop/src/renderer/components/PumpsView.tsx</code></td><td><code>apps/dashboard/src/pages/pos/cashier/Forecourt.tsx</code></td></tr>
+</table>
+</div>
+</main>
+<script>
+(function () {
+  var KEY = 'zaptill.screen-comparison';
+  function inputs() { return Array.prototype.slice.call(document.querySelectorAll('input')); }
+  function save() {
+    var s = {};
+    inputs().forEach(function (i) { s[i.dataset.id || (i.name + '=' + i.value)] = i.checked; });
+    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* a convenience only */ }
+  }
+  try {
+    var s = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (s) inputs().forEach(function (i) { var k = i.dataset.id || (i.name + '=' + i.value); if (k in s) i.checked = s[k]; });
+  } catch (e) { /* defaults */ }
+  inputs().forEach(function (i) { i.addEventListener('change', save); });
+
+  function text() {
+    var lines = ['POS screen choices (desktop POS as the base):'];
+    inputs().forEach(function (i) {
+      if (i.type === 'checkbox') lines.push((i.checked ? '[x] ' : '[ ] ') + i.dataset.label);
+      else if (i.checked) lines.push('(o) ' + i.value);
+    });
+    return lines.join('\n');
+  }
+  var out = document.getElementById('out'), done = document.getElementById('done');
+  document.getElementById('show').onclick = function () { out.value = text(); out.style.display = 'block'; out.select(); };
+  document.getElementById('copy').onclick = function () {
+    var t = text();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(t).then(function () { done.textContent = 'Copied. Paste it to Claude.'; },
+        function () { out.value = t; out.style.display = 'block'; out.select(); done.textContent = 'Copy it from the box below.'; });
+    } else { out.value = t; out.style.display = 'block'; out.select(); done.textContent = 'Copy it from the box below.'; }
+  };
+})();
+</script>
+</body>
+</html>

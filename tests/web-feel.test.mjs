@@ -76,7 +76,7 @@ ok('every web POS dialog backdrop fades in', overlays > 0 && (pos.match(/<div st
 ok('every web POS dialog panel pops in',
   !/<div style=\{s\.modal\}>/.test(pos) && !/<div style=\{\{\s*\.\.\.s\.modal/.test(pos) && (pos.match(/animate-pop-in/g) || []).length >= 10);
 ok('the payment dialog fades and pops; its receipt and M-Pesa screens pop', (P('PaymentModal.tsx').match(/animate-pop-in/g) || []).length === 3 && /py-6 animate-fade-in/.test(P('PaymentModal.tsx')));
-for (const f of ['ShiftModal.tsx', 'MinimartPOS.tsx', 'ParkingPOS.tsx', 'PetrolPOS.tsx', 'NoteModal.tsx', 'KitchenVoidModal.tsx', 'ZReportModal.tsx', 'PrinterSettingsModal.tsx']) {
+for (const f of ['ShiftModal.tsx', 'MinimartPOS.tsx', 'ParkingPOS.tsx', 'NoteModal.tsx', 'KitchenVoidModal.tsx', 'ZReportModal.tsx', 'PrinterSettingsModal.tsx']) {
   const t = P(f);
   ok(`${f}: its dialogs fade and pop`, /animate-fade-in/.test(t) && /animate-pop-in/.test(t) && !/<div style=\{s\.overlay\}/.test(t));
 }

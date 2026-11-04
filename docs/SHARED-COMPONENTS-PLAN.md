@@ -1028,6 +1028,91 @@ copies".
 | Every root suite (`tests/*.test.mjs`) | 327 ok; 3 "FAIL(127)" = the `async.c` exit after "0 failed" (`petrol-pos-web-a588`, `report-collected`, `void-owner-row`) |
 | Migration tests | shard 1/2: all pass (one file's exit is the `async.c` crash after "all green"); shard 2/2: all 52 pass |
 
+## 8j. One design for both POS screens (owner decision 2026-11-04, not committed — unstaged, on top of 8i)
+
+The owner's decisions are at the top of `docs/POS-SCREEN-COMPARISON.html`: the desktop POS is the base; the web's
+quick cash, tip buttons, split evenly / by item and loyalty points come to it; the web gets the desktop's Discount box,
+references and the M-Pesa prompt inside a split payment. Built screen by screen, each piece once in `packages/ui` with
+its rules in `packages/core`; each app keeps its look (class names / inline styles) in its own file, as 8e–8g (the
+shared `Paint` type is now `packages/ui/src/paint.ts`, used by `CategoryPanel` too). Small screens: the web keeps its
+phone layout; a piece a business does not use stays out of sight.
+
+**Budget (owner, 2026-11-04):** the desktop POS's main chunk may be up to **460 kB** (was 450; `petrol-pos-a588`'s 452
+raised too — one number in `lazy-load-a517`, `customer-details-a607`, `customer-display-a606`, `petrol-pos-a588`).
+
+### Screen 1 — the payment screen (done; desktop loyalty not done, below)
+
+| Piece | Where | Desktop | Web |
+|---|---|---|---|
+| Quick cash (Exact, the next notes 50–1,000, the next round 100 / 1,000) | `@zaptill/ui/QuickCash`; `@zaptill/core/tender` `quickTenders` (the web's rule, proved equal on every amount 0.07–6,000) | new, under each cash payment's Tendered; the change shows as before | the same buttons (the base is now what is due, tip and fee included — the old base used the uncapped `total` prop) |
+| Tip 5 / 10 / 15 %, typed, Clear | `@zaptill/ui/TipPicker`; `tipAt` / `tipPercentOf` | replaces the plain Tip field (the fold "Discount / tip" is now "Discount"); hidden, and not charged, while a payment is On account | the same piece |
+| Discount box (amount / %, capped, "Ask a manager") | `@zaptill/ui/DiscountBox` | the same box as before | **new** (folded "▸ Discount", only with `sales.discount`): on what offers left, capped together with loyalty and a promo code (`capDiscountPct`, as the cloud); the receipt preview gets a "Discount" line only when there is one |
+| Split the bill — evenly per person, by item per guest | `@zaptill/ui/BillSplit`; `evenShares` / `itemShares` (A151's rules) | new "Split the bill" beside "+ Split payment" (loaded on demand, `BillSplitPanel`, 3 kB): the shares become one payment per person ("Person 1"), each any method — the M-Pesa prompt and On account included | the toggles "Split evenly" and "Split by item" become one, "Split the bill (per person)", by item behind it (`SplitBillPanel` replaces `EvenSplitPanel` and `ByItemSplitPanel`) |
+| A reference on every non-cash payment | — | as before | **new** on a card or another non-cash single payment (optional; M-Pesa keeps its code, a platform its order #) |
+| The M-Pesa prompt inside a split payment | the web's `MpesaStkPanel` without an order → the cloud's `/api/mpesa/stk-push-pos` (A607's POS prompt) | as before | **new** "Send prompt" on a split's M-Pesa part (by method or per person); a paid prompt's leg goes to the cloud as `status: 'completed'` (as the desktop's, and A621's taken payments) |
+| Double-charge guards | — | `placingRef` kept | `chargingRef` and the idempotency key kept |
+
+Not added (owner): receipt preview / Print again on the desktop, a customer name box on the desktop.
+
+**Loyalty on the desktop — not done.** The desktop POS holds no loyalty data (no points, tiers, earn rate or the
+`loyalty_enabled` switch; the cloud credits points when the sale arrives). "Points earned / new balance" there needs a
+new online look-up of the customer's points and tier (the tier rule is the server's `getTier`, not yet in core) —
+online only. The web keeps its lines; its estimate now comes from `@zaptill/core/tender` `pointsEarned` (same formula).
+
+Removed from the web (imported by nothing): `PetrolPOS.tsx` (the petrol station sells in `CashierScreen` since A588),
+`DiscountPanel.tsx`, `LoyaltyPanel.tsx` (their two types moved to `cashier/types.ts`), `EvenSplitPanel.tsx`,
+`ByItemSplitPanel.tsx`. Tests updated: `web-pos-theme` (90 → 85 themed uses: PetrolPOS's 5), `web-feel` (no
+PetrolPOS), `permissions-web-a490` (the Discount box is `sales.discount`), `mpesa-c2b-a621` (`|| l.prompted`);
+`web-pos-green-baseline.json` (the removed files; PaymentModal 5 → 4: the tip's amount is white on both POS). The dashboard's light-colours block regenerated (`scripts/build-light-colours.mjs`: one rule only a removed file used).
+Main chunk: **444.5 → 448.9 kB**. Test: `tests/pos-payment-screen.test.mjs` (18 cases; CI step "One payment screen for
+both POS").
+
+### Screen 2 — cart lines (partial)
+
+Done: a line's sizes and add-ons as chips on both POS (`@zaptill/ui/LineChips`; the web showed the sizes as text and
+no add-ons); the desktop's **Split bill** under Charge for a restaurant (the payment screen opens on "Split the bill" —
+offline, nothing new behind it). The desktop's kitchen mark, note rule, kitchen-void rules and Hold are unchanged.
+
+**Stopped — each needs the owner (it changes how a POS behaves beyond the decisions, or its backend):**
+- *Courses (a course per line, Held / Fires now, Fire course) on the desktop.* On the web a held course is a cloud
+  order's `fire_status` (`POST /api/orders/:id/fire-course`; the cloud's KDS hides held lines). The desktop's kitchen is
+  its own printed tickets and its open orders live in its SQLite: holding a course needs a new column on an open order's
+  lines (a local migration), Send to kitchen printing only the fired courses and Fire printing the rest — a change to
+  kitchen printing and to what an open order carries, which this work rules out. It could work offline once built.
+- *Transfer table on the desktop.* The web moves a cart between tables in its own screen state; the desktop's open
+  orders are rows in its SQLite (shared between POSs through a branch server) — moving one is a main-process change.
+- *Print bill on the desktop.* A new printout (a guest check) through the desktop's printers — a printing change.
+- *Charge to room.* The web shows 🏨 Room to **every restaurant**: there is no hotel business type (restaurant, cafe,
+  retail, minimart, parking, petrol_station, other). "Room only for hotels" needs a way to know a hotel (a new type or
+  a switch). The sale itself is an ordinary sale with an `other` payment ("Room 12 — guest") and would work offline on
+  the desktop.
+
+### Screen 3 — the product tile (done for the decided points)
+
+"Later", "Sold out", "Options" in sentence case, the same words on both POS (`@zaptill/ui/TileBadges`): the desktop's
+capitals (`uppercase`) and ⚙, and the web's "LATER", "SOLD OUT", "options", are gone. The desktop's tile is otherwise
+as before (branch price with "from", long press, the sold-out rule, columns, paging); the web's tile keeps its own frame
+(its phone layout) — giving it the desktop's frame was not done.
+
+Main chunk after screens 2 and 3: **449.7 kB**. Test: `tests/pos-cart-and-tile.test.mjs` (CI step "One cart line and
+product tile for both POS").
+
+### Screen 4 — the forecourt (blocked)
+
+*Activate pump on the desktop:* `PATCH /api/pumps/:id/activate` needs `fuel.manage` (a cashier rarely holds it — on the
+web the call then fails quietly and the pump is marked only in that screen) and the cloud refuses every desktop write
+not listed in `lib/terminalWrites.ts` (A159). Adding it is a server security change (which token may activate a pump,
+and who) — an owner decision. The desktop's dispensers, gauges and fuel keypad on the web (the web's
+`cashier/Forecourt.tsx` is a simpler strip) were not started.
+
+### Proof (Task 2, after the four screens)
+
+`tsc` (dashboard, desktop), desktop `build:all`, dashboard `vite build`: pass. `check-shared-sync` (58 modules, no
+copies), `check-test-registration`, `check-no-till-wording`, `check-doc-refs`, `check-register-consistency`, both green
+ratchets: pass. Full local CI (288 steps): only the known local noise (schema audit without `python3`, the
+`${{ matrix.part }}` shard step, the libuv `async.c` exits after all cases passed, `money-reports`' local-hour case under
+`TZ=UTC`) plus the stale light-colours block, regenerated. Every root suite: 329 ok, 3 `async.c` exits after "0 failed".
+
 ## 9. Rollback
 
 - **Step 1:** revert the step's commit(s) — the copies come back with `check-shared-sync`'s entry; delete

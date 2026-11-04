@@ -17,10 +17,7 @@ import type { Product, Category, VariantGroup, VariantOption, SelectedVariant, O
 import PaymentModal, { type PlatformCart } from './PaymentModal';
 // A607: the customer's details for this sale — typed by the cashier, by the customer here or on the customer screen.
 const SaleCustomerPanel = lazy(() => import('./SaleCustomerPanel'));
-import DiscountPanel from './DiscountPanel';
-import type { DiscountState } from './DiscountPanel';
-import LoyaltyPanel from './LoyaltyPanel';
-import type { LoyaltyState } from './LoyaltyPanel';
+import type { DiscountState, LoyaltyState } from './cashier/types';
 import ZReportModal from './ZReportModal';
 import ShiftModal from './ShiftModal';
 import type { Shift, ShiftModalMode } from './ShiftModal';
@@ -56,6 +53,8 @@ import WeightModal from './WeightModal';   // A577: items sold by weight
 import { FuelStrip, PumpGrade, type PumpTank } from './cashier/Forecourt';   // A588: the grades as nozzles, a pump's grade and tank
 import { QUICK_AMOUNTS } from '@zaptill/core/forecourt';   // A588: 500 / 1,000 / 2,000 (and Full tank)
 import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, formatWeight } from '@zaptill/core/scaleBarcode';   // A577
+import LineChips, { type LineChipsLook } from '@zaptill/ui/LineChips';   // 2026-11-04: a line's sizes and add-ons
+import TileBadges, { type TileBadgesLook } from '@zaptill/ui/TileBadges';   // 2026-11-04: Later / Sold out / Options
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1803,10 +1802,9 @@ export default function CashierScreen() {
                         style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}), ...(soldOut || later ? { opacity: 0.5, filter: 'grayscale(1)' } : {}) }}
                         onClick={() => addToCart(product)}
                       >
-                        {later && <span data-testid="tile-later" style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700, border: '1px dashed #6b7280' }}>LATER</span>}
-                        {soldOut && !later && <span style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700 }}>SOLD OUT</span>}
+                        {/* "Later", "Sold out", "Options" — sentence case, the desktop's words too (@zaptill/ui TileBadges, 2026-11-04) */}
+                        <TileBadges later={later} soldOut={soldOut} options={hasVariants} look={TILE_BADGES_LOOK} />
                         {inCart && <span key={cartQty} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{cartQty}</span>}
-                        {hasVariants && <span style={s.variantBadge}>options</span>}
                         {(product as any).is_fuel && <span style={s.fuelBadge}>⛽</span>}
                         <div style={s.productImage}>
                           {product.image_url ? (
@@ -1973,11 +1971,8 @@ export default function CashierScreen() {
                 <div style={s.cartItem}>
                   <div style={s.cartItemInfo}>
                     <div style={s.cartItemName}>{item.product.name}</div>
-                    {item.selectedVariants.length > 0 && (
-                      <div style={s.cartItemVariants}>
-                        {item.selectedVariants.map((v) => `${v.groupName}: ${v.optionName}`).join(' · ')}
-                      </div>
-                    )}
+                    {/* Sizes and add-ons as chips, as the desktop POS (@zaptill/ui LineChips, owner decision 2026-11-04) */}
+                    <LineChips variants={item.selectedVariants} addOns={item.selectedModifiers} look={LINE_CHIPS_LOOK} />
                     <div style={s.cartItemPrice}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : item.measureUnit ? '/kg' : 'each'}</div>
                   </div>
                   <div style={s.cartItemControls}>
@@ -3233,7 +3228,9 @@ const s: Record<string, React.CSSProperties> = {
   },
   cartItemInfo: { gridColumn: 1 },
   cartItemName: { fontSize: 13, fontWeight: 600, color: 'var(--pos-text)' },
-  cartItemVariants: { fontSize: 11, color: '#7c3aed', marginTop: 1 },
+  chipRow:        { display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 },
+  chipVariant:    { fontSize: 11, background: 'var(--pos-surface, #1f2937)', color: '#94a3b8', padding: '1px 6px', borderRadius: 4 },
+  chipAddOn:      { fontSize: 11, background: 'var(--pos-surface, #1f2937)', color: '#a78bfa', padding: '1px 6px', borderRadius: 4 },
   cartItemPrice: { fontSize: 11, color: 'var(--pos-text3)' },
   cartItemControls: {
     gridColumn: 2, gridRow: '1 / 3', display: 'flex', alignItems: 'center', gap: 4,
@@ -3339,4 +3336,14 @@ const s: Record<string, React.CSSProperties> = {
   },
   variantTotalLabel: { fontSize: 13, color: 'var(--pos-text3)' },
   variantTotalValue: { fontSize: 16, fontWeight: 700, color: 'var(--pos-text)' },
+};
+
+/** How the web POS paints a cart line's chips (@zaptill/ui LineChips): its inline styles above, on its theme tokens. */
+const LINE_CHIPS_LOOK: LineChipsLook = { row: { style: s.chipRow }, variant: { style: s.chipVariant }, addOn: { style: s.chipAddOn } };
+
+/** How the web POS paints a tile's badges (@zaptill/ui TileBadges): Later / Sold out top right, Options top left. */
+const TILE_BADGES_LOOK: TileBadgesLook = {
+  later: { style: { ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700, border: '1px dashed #6b7280' } },
+  soldOut: { style: { ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700 } },
+  options: { style: s.variantBadge },
 };

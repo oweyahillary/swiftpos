@@ -26,12 +26,13 @@
  * inline styles on its theme tokens (--act-strong, --pos-*). A look entry that depends on the state (a tab chosen, a
  * menu greyed, the pin on) is a function of it.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import {
   ALL_CATEGORIES, ALL_MENUS, PANEL_PREFS_KEY, categoryGroups, menuBarEdges, menuBarLabel, menuTabs, parsePanelPrefs,
   panelPrefsText, panelStartsOpen, panelOpenAfterPick, productCounts, resolveMenu,
   type CategoryLike, type MenuLike, type MenuTab, type PanelPrefs, type ProductLike,
 } from '@zaptill/core/menuFilter';
+import { painted, type Paint } from './paint';
 
 function readPrefs(): PanelPrefs {
   try { return parsePanelPrefs(window.localStorage.getItem(PANEL_PREFS_KEY)); } catch { return parsePanelPrefs(null); }
@@ -54,13 +55,8 @@ export function useCategoryPanel() {
 export type CategoryPanelState = ReturnType<typeof useCategoryPanel>;
 
 /** How one element is painted: class names (a string — the desktop), or an inline style and / or class names (the web's
- *  styles; the desktop's colour dot, whose colour is the category's). */
-export type Paint = string | { className?: string; style?: CSSProperties };
-
-/** A Paint as the element's props. */
-function painted(paint: Paint): { className?: string; style?: CSSProperties } {
-  return typeof paint === 'string' ? { className: paint } : paint;
-}
+ *  styles; the desktop's colour dot, whose colour is the category's) — ./paint.ts, shared with the other pieces. */
+export type { Paint };
 
 /** One of this file's pieces with an app's look: what the app's own CategoryPanel.tsx exports in its place, so the
  *  screens that use it pass no look. */

@@ -25,7 +25,7 @@
 //   5  premium: the second-screen form needs the online licence and the PC's touch-screen setting.
 //   6  the local schema 78 (orders.buyer_kra_pin), REQUIRED with it; a sale saves the PIN (normalised; a bad one dropped) and
 //      sends it to the cloud; the receipt prints "Buyer PIN: …"; the eTIMS flag pulled (older cloud → kept) and relayed.
-//   7  the bundle: every new panel lazy — the POS's main chunk < 450 kB (lazy-load-a517) and ≤ 452 kB (petrol-pos-a588).
+//   7  the bundle: every new panel lazy — the POS's main chunk < 460 kB (lazy-load-a517, petrol-pos-a588; owner 2026-11-04).
 //
 // MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted and checked byte for byte — listed in the A607 entry).
 import fs from 'node:fs';
@@ -415,7 +415,8 @@ try {
       console.log(`  (built: main chunk ${(main.code.length / 1024).toFixed(1)} kB)`);
       ok('the details panel, "Customer types it", the form, its keyboard and the M-Pesa prompt are NOT in the POS\'s main chunk',
         !['renderer/components/SaleCustomer.tsx', 'renderer/components/CustomerTypesIt.tsx', 'renderer/components/MpesaStkPanel.tsx', 'CustomerAskForm.tsx', 'customerDetails.ts'].some(inMain));
-      ok('the POS\'s main chunk < 450 kB (lazy-load-a517) and ≤ 452 kB (petrol-pos-a588)', main.code.length < 450 * 1024 && main.code.length <= 452 * 1024, `${(main.code.length / 1024).toFixed(1)} kB`);
+      // Owner, 2026-11-04: one budget, 460 kB (was 450 here and in lazy-load-a517, 452 in petrol-pos-a588).
+      ok('the POS\'s main chunk < 460 kB (lazy-load-a517, petrol-pos-a588)', main.code.length < 460 * 1024, `${(main.code.length / 1024).toFixed(1)} kB`);
     }
   }
 } finally {

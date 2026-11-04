@@ -137,9 +137,11 @@ await ok('discount: sales.discount or its set-up part — no discount reaches th
   assert.match(pm, /const mayDiscount = hasPermission\('sales\.discount'\) \|\| hasPermission\('sales\.discount_preset'\);/);
   assert.match(pm, /const rawPromoDiscount\s+= mayDiscount \? \(discountState\?\.discount_amount \?\? 0\) : 0;/);
   assert.equal((pm.match(/discount_id:\s+mayDiscount \? \(discountState\?\.discount\.id \?\? null\) : null,/g) ?? []).length, 2);
-  const dp = read('pages/pos/DiscountPanel.tsx');
-  assert.match(dp, /const mayDiscount = hasPermission\('sales\.discount'\) \|\| hasPermission\('sales\.discount_preset'\);/);
-  assert.match(dp, /if \(!mayDiscount\) return null;/);
+  // 2026-11-04: the DiscountPanel no screen showed is gone; the payment screen's own Discount box (as the desktop POS's)
+  // is offered only with sales.discount, and its amount reaches the sale only with it.
+  assert.match(pm, /const mayTypeDiscount = hasPermission\('sales\.discount'\);/);
+  assert.match(pm, /const manualNum\s+= mayTypeDiscount \? /);
+  assert.match(pm, /\{mayTypeDiscount && \(/);
 });
 await ok('void and refund: sales.void and sales.refund, each on its own', () => {
   assert.equal(Refund.canVoidOrder({ status: 'completed', payments: [] }, true), true);

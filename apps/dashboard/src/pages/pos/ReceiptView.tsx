@@ -31,6 +31,8 @@ interface Props {
   deliveryFree?: boolean;
   loyaltyDiscount?: number;
   promoDiscount?: number;
+  /** 2026-11-04: the cashier's own discount (the payment screen's Discount box); 0 / absent: no line (as before). */
+  manualDiscount?: number;
   promoName?: string;
   customerName?: string;
   /** A607: the buyer's KRA PIN for this sale. */
@@ -73,7 +75,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
   {
     business, branchName, orderNumber, cart, total, subtotal, vatAmount, ctlAmount = 0, ctlRate = 0, currency,
     payments, tendered, change, tip = 0, deliveryFee = 0, deliveryFree = false,
-    loyaltyDiscount = 0, promoDiscount = 0, promoName, customerName, buyerPin,
+    loyaltyDiscount = 0, promoDiscount = 0, manualDiscount = 0, promoName, customerName, buyerPin,
     footerMessage = 'Thank you for your business!',
     etims = null,
     compact = false,
@@ -180,9 +182,10 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {divider()}
 
       {/* Totals */}
-      {(!compact || promoDiscount > 0 || loyaltyDiscount > 0) && line('Subtotal', `${currency} ${fmtMoney(subtotal)}`)}
+      {(!compact || promoDiscount > 0 || loyaltyDiscount > 0 || manualDiscount > 0) && line('Subtotal', `${currency} ${fmtMoney(subtotal)}`)}
       {promoDiscount > 0 && line(`${promoName ?? 'Promo discount'}`, `- ${currency} ${fmtMoney(promoDiscount)}`, false, '#92400e')}
       {loyaltyDiscount > 0 && line('Loyalty discount', `- ${currency} ${fmtMoney(loyaltyDiscount)}`, false, '#065f46')}
+      {manualDiscount > 0 && line('Discount', `- ${currency} ${fmtMoney(manualDiscount)}`)}
       {/* A349: the taxes INSIDE the total (after any discount) — the figures the cloud stores for this sale. */}
       {line(`incl. ${vatLabel}`, `${currency} ${fmtMoney(vatAmount)}`)}
       {ctlRate > 0 && line(`incl. CTL (${ctlRate}%)`, `${currency} ${fmtMoney(ctlAmount)}`)}

@@ -20,7 +20,7 @@
 //      the last answer kept (with its time) when the cloud cannot answer.
 //   5  the keypad: amount (2 decimals) or litres (3), the other worked out (litres = KES ÷ price; amount = litres × price,
 //      the fuel path's own rule), 500 / 1,000 / 2,000 and Full tank (→ litres); the line goes through addFuelLine as always.
-//   6  the bundle (A517): PumpsView and the branch lookup load when opened — the POS's main chunk ≤ 452 kB (445 until A605).
+//   6  the bundle (A517): PumpsView and the branch lookup load when opened — the POS's main chunk < 460 kB (445 until A605; 452 until the owner's 2026-11-04 budget).
 //
 // MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted — listed in the A588 report):
 //   - POSPage's matchFuel back to `flags.isPetrol ? (p as any).is_fuel === true : !(p as any).is_fuel` → 1 fails
@@ -298,7 +298,8 @@ try {
       ok('the POS still in the main chunk (POSPage, the payment, the cart)', ['renderer/pages/POSPage.tsx', 'renderer/components/PaymentModal.tsx', 'renderer/lib/cart.ts'].every(inMain));
       // 2026-10-28: 445 → 452 kB. A605's brand palette (shared/themes.ts) must paint the first screen in the brand's colours
       // and A601's cut-off notice sits on the POS page — 448.9 kB with both; the new Manager / Tech panels stay in their lazy pages.
-      ok('the main chunk ≤ 452 kB (449.7 kB before A588; 445 until A605\'s palette)', main.code.length <= 452 * 1024, `${kb} kB`);
+      // Owner, 2026-11-04: 452 → 460 kB, the one budget every suite pins (lazy-load-a517, customer-details-a607, customer-display-a606).
+      ok('the main chunk < 460 kB (449.7 kB before A588; 445 until A605\'s palette)', main.code.length < 460 * 1024, `${kb} kB`);
     }
   }
 } catch (e) {

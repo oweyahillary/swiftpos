@@ -825,6 +825,17 @@ jobs:
       - name: One body font (Source Sans 3)
         run: node --no-warnings tests/font-global.test.mjs
 
+      # One design for both POS (owner decision 2026-11-04), screen 1 — the payment screen: quick cash, the tip buttons,
+      # the Discount box and Split the bill (evenly / by item) built once (@zaptill/ui, @zaptill/core/tender) and used by
+      # both POS; the web's reference on a non-cash payment and the M-Pesa prompt inside a split payment. In the loop too.
+      - name: One payment screen for both POS
+        run: node --no-warnings tests/pos-payment-screen.test.mjs
+
+      # One design for both POS, screens 2 and 3: a cart line's sizes and add-ons as chips and the tile's words (Later,
+      # Sold out, Options) built once (@zaptill/ui LineChips, TileBadges); the desktop's Split bill for a restaurant.
+      - name: One cart line and product tile for both POS
+        run: node --no-warnings tests/pos-cart-and-tile.test.mjs
+
       # A622 — the cloud keeps a till's install_error (the updater's reason an install did not take) and the admin
       # portal's Desktop updates line shows it.
       - name: Why an install did not take, on the admin portal (A622)

@@ -34,8 +34,11 @@ type Mode = 'input' | 'waiting' | 'success' | 'failed' | 'manual';
 interface Props {
   total: number;
   currency: string;
-  orderId: string;
-  onSuccess: (mpesaRef: string) => void;
+  /** The cloud order this pays (sent first: /api/mpesa/stk-push). Absent: a part of a split payment, before the order —
+   *  the POS prompt (/api/mpesa/stk-push-pos, as the desktop POS's), owner decision 2026-11-04. */
+  orderId?: string;
+  /** The M-Pesa code; `prompted` = the customer paid this prompt (not a code typed by hand). */
+  onSuccess: (mpesaRef: string, prompted: boolean) => void;
   onCancel: () => void;
   /** A607: the number the customer gave for this sale (2547XXXXXXXX); masked = shown masked to this person. */
   phone?: string | null;
@@ -62,6 +65,8 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
   const [error, setError]       = useState('');
   const [mpesaConfigured, setMpesaConfigured] = useState<boolean | null>(null);
 
+  // The POS prompt's own reference (no order yet): letters, digits and dashes, as /stk-push-pos asks.
+  const clientRef  = useRef(`WEB-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
   const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const countRef   = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -105,13 +110,17 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
     setSecondsLeft(MAX_WAIT_SECS);
 
     try {
-      const res = await api.post<{ checkoutRequestId: string }>('/api/mpesa/stk-push', {
-        phone:    phone.trim(),
-        amount:   Math.ceil(total),
-        order_id: orderId,
-        account_reference: orderId.slice(-12),
-        description: 'ZapTill payment',
-      });
+      const res = orderId
+        ? await api.post<{ checkoutRequestId: string }>('/api/mpesa/stk-push', {
+          phone:    phone.trim(),
+          amount:   Math.ceil(total),
+          order_id: orderId,
+          account_reference: orderId.slice(-12),
+          description: 'ZapTill payment',
+        })
+        : await api.post<{ checkoutRequestId: string }>('/api/mpesa/stk-push-pos', {
+          phone: phone.trim(), amount: Math.ceil(total), client_ref: clientRef.current,
+        });
 
       setCheckoutId(res.checkoutRequestId);
 
@@ -133,7 +142,7 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
           if (status.status === 'completed') {
             cleanup();
             setMode('success');
-            setTimeout(() => onSuccess(status.mpesaRef ?? ''), 1500);
+            setTimeout(() => onSuccess(status.mpesaRef ?? '', true), 1500);
           } else if (status.status === 'failed' || status.status === 'cancelled') {
             cleanup();
             setMode('failed');
@@ -194,7 +203,7 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
           <button
             style={{ ...s.btnConfirm, opacity: manualRef.length >= 8 ? 1 : 0.4 }}
             disabled={manualRef.length < 8}
-            onClick={() => onSuccess(manualRef)}
+            onClick={() => onSuccess(manualRef, false)}
           >
             Confirm payment
           </button>

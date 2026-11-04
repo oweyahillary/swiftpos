@@ -12,6 +12,13 @@
     "./MethodDot": "./src/MethodDot.tsx",
     "./Pager": "./src/Pager.tsx",
     "./CategoryPanel": "./src/CategoryPanel.tsx",
+    "./paint": "./src/paint.ts",
+    "./QuickCash": "./src/QuickCash.tsx",
+    "./TipPicker": "./src/TipPicker.tsx",
+    "./DiscountBox": "./src/DiscountBox.tsx",
+    "./BillSplit": "./src/BillSplit.tsx",
+    "./LineChips": "./src/LineChips.tsx",
+    "./TileBadges": "./src/TileBadges.tsx",
     "./package.json": "./package.json"
   },
   "peerDependencies": {

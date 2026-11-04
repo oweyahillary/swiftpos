@@ -18,15 +18,17 @@ import type { ComboMap } from '../lib/ticketLines';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import VariantModal from '../components/VariantModal';
 import MethodDot from '@zaptill/ui/MethodDot';
+import LineChips, { type LineChipsLook } from '@zaptill/ui/LineChips';
+import TileBadges, { type TileBadgesLook } from '@zaptill/ui/TileBadges';
 import PaymentModal from '../components/PaymentModal';
 import type { PaymentResult, PlatformCart } from '../components/PaymentModal';
 import PrinterSettingsModal from '../components/PrinterSettingsModal';
 import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
-// A595: a void / refund is opened rarely — kept out of the main chunk (lazy-load-a517: ≤ 450 kB) to make room for the split
+// A595: a void / refund is opened rarely — kept out of the main chunk (lazy-load-a517: < 460 kB since 2026-11-04) to make room for the split
 // rights' catalogue the POS reads (shared/permissions.ts).
 const VoidModal = lazy(() => import('../components/VoidModal'));
-// A444: one order from History. A621: loaded when opened — keeps the POS's main chunk under its budget (450 kB) with the
+// A444: one order from History. A621: loaded when opened — keeps the POS's main chunk under its budget (450 kB then, 460 kB since 2026-11-04) with the
 // M-Pesa payment notifications added to the payment screen and the POS page.
 const OrderDetailPanel = lazy(() => import('../components/OrderDetailPanel'));
 import { reverseActionFor, isRefunded, ageMinutes, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
@@ -155,6 +157,20 @@ function useLongPress(on: (() => void) | null) {
 // badge, and a tap says so instead of adding it (main refuses it at Charge too).
 // A580: `later` — the item's menu is closed and shown only because "Later" is on: greyed with a "Later" badge; a tap is
 // refused in A578's words (handleTap's first check), nothing added.
+/** How this POS paints a cart line's chips (the class names stay in this app, where its Tailwind build finds them). */
+const LINE_CHIPS_LOOK: LineChipsLook = {
+  row: 'flex flex-wrap gap-1',
+  variant: 'text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded',
+  addOn: 'text-xs bg-gray-800 text-purple-400 px-1.5 py-0.5 rounded',
+};
+
+/** How this POS paints a tile's badges: Later / Sold out top right, Options top left. */
+const TILE_BADGES_LOOK: TileBadgesLook = {
+  later: 'absolute top-2 right-2 z-10 bg-gray-950/90 border border-dashed border-gray-500 text-gray-200 text-[11px] font-semibold px-1.5 py-0.5 rounded',
+  soldOut: 'absolute top-2 right-2 z-10 bg-gray-950/90 border border-gray-600 text-gray-100 text-[11px] font-semibold px-1.5 py-0.5 rounded',
+  options: 'absolute top-2 left-2 text-[11px] bg-gray-800/80 text-gray-300 px-1.5 py-0.5 rounded',
+};
+
 /** A588: a petrol station's two counters, always at the top — the pumps (fuel) and the forecourt shop (its items). */
 function ForecourtTabs({ view, onView }: { view: string; onView: (v: 'pumps' | 'products') => void }) {
   const tab = (v: 'pumps' | 'products', label: string, icon: string) => (
@@ -188,24 +204,13 @@ const ProductTile = memo(function ProductTile({ product, cartCount, currency, on
       data-testid={later ? 'tile-later' : soldOut ? 'tile-sold-out' : undefined}
       className={`relative bg-gray-900 border rounded-xl p-3 text-left transition duration-150 ease-out [@media(hover:hover)]:hover:scale-[1.02] active:scale-[0.97] active:duration-75 active:border-action-500 ${soldOut || later ? 'opacity-50 grayscale border-gray-800' : inCart ? 'border-action-500/60 bg-action-500/5' : 'border-gray-800 hover:border-gray-700'}`}
     >
-      {later && (
-        <span className="absolute top-2 right-2 z-10 bg-gray-950/90 border border-dashed border-gray-500 text-gray-200 text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded">
-          Later
-        </span>
-      )}
-      {soldOut && !later && (
-        <span className="absolute top-2 right-2 z-10 bg-gray-950/90 border border-gray-600 text-gray-100 text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded">
-          Sold out
-        </span>
-      )}
+      {/* "Later", "Sold out", "Options" — sentence case, the same words on the web POS (@zaptill/ui TileBadges, 2026-11-04) */}
+      <TileBadges later={later} soldOut={soldOut} options={!!(product.has_variants || product.has_modifiers)} look={TILE_BADGES_LOOK} />
       {inCart && !soldOut && (
         <span key={cartCount} data-testid="tile-count"
           className="absolute top-2 right-2 bg-action-500 text-gray-950 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center animate-bump">
           {cartCount}
         </span>
-      )}
-      {(product.has_variants || product.has_modifiers) && (
-        <span className="absolute top-2 left-2 text-xs bg-gray-800/80 text-gray-400 px-1.5 py-0.5 rounded">⚙</span>
       )}
       {product.image_url ? (
         <img src={product.image_url} alt={product.name} loading="lazy" decoding="async" className="w-full h-20 object-cover rounded-lg mb-2" />
@@ -435,6 +440,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
+  const [payStartsSplit, setPayStartsSplit] = useState(false);   // 2026-11-04: Split bill opens it on "Split the bill"
   // A552: On account on this till — offered?, and may the person signed in approve it themselves (read as Pay opens).
   const [onAccount, setOnAccount] = useState<{ offered: boolean; selfApproves: boolean; chosen?: boolean } | null>(null);
   useEffect(() => {
@@ -1303,6 +1309,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
   // ── Payment ────────────────────────────────────────────
 
+  /** Charge (or, 2026-11-04, Split bill: the payment screen opens on "Split the bill"). */
+  const openPayment = (split: boolean) => {
+    // 0.6.27: with the 'delivery_fee' switch a delivery needs its rider and its fee before payment (0.6.33: a free delivery
+    // too — the rider is still paid it).
+    const problem = deliveryProblem(posFeatures.delivery_fee, orderType, deliveryPerson, deliveryFee);
+    if (problem) { setDeliveryMsg(problem); return; }
+    setPayStartsSplit(split);
+    setShowPayment(true);
+  };
+
   const handleCharge = async (payment: PaymentResult) => {
     if (!branchId) return;
     // Return before any await — this is the whole point of the ref (see decl).
@@ -2157,16 +2173,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                     <button onClick={() => removeItem(index)} className="w-6 h-6 text-gray-400 hover:text-red-400 flex items-center justify-center transition-colors">✕</button>
                   </div>
                 </div>
-                {(item.selectedVariants.length > 0 || item.selectedModifiers.length > 0) && (
-                  <div className="flex flex-wrap gap-1">
-                    {item.selectedVariants.map((v: any) => (
-                      <span key={v.optionId} className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{v.groupName}: {v.optionName}</span>
-                    ))}
-                    {item.selectedModifiers.map((m: any) => (
-                      <span key={m.optionId} className="text-xs bg-gray-800 text-purple-400 px-1.5 py-0.5 rounded">+{m.optionName}</span>
-                    ))}
-                  </div>
-                )}
+                {/* Sizes and add-ons as chips (@zaptill/ui LineChips — the same piece on the web POS, 2026-11-04) */}
+                <LineChips variants={item.selectedVariants} addOns={item.selectedModifiers} look={LINE_CHIPS_LOOK} />
                 {/* A367: the line's note, and the button that edits it. */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1" data-testid="line-note">
@@ -2219,13 +2227,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
               <span>Total</span><span>{currency} {toPay.toLocaleString()}</span>
             </div>
             <button
-              onClick={() => {
-                // 0.6.27: with the 'delivery_fee' switch a delivery needs its rider and its fee before payment (0.6.33: a
-                // free delivery too — the rider is still paid it).
-                const problem = deliveryProblem(posFeatures.delivery_fee, orderType, deliveryPerson, deliveryFee);
-                if (problem) { setDeliveryMsg(problem); return; }
-                setShowPayment(true);
-              }}
+              onClick={() => openPayment(false)}
               // Stopped here as well as in the main process. assertCanSell is the
               // real enforcement, but letting a cashier ring a full basket and
               // then fail at payment wastes their time and the customer's.
@@ -2234,6 +2236,14 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             >
               Charge {currency} {toPay.toLocaleString()}
             </button>
+            {/* 2026-11-04 (one design for both POS, as the web POS): a restaurant's bill split between the guests — the
+                payment screen opens on "Split the bill" (evenly or by item). */}
+            {flags.isRestaurant && cart.length > 0 && (
+              <button type="button" onClick={() => openPayment(true)} disabled={blocked} data-testid="cart-split-bill"
+                className="w-full border border-gray-700 hover:border-gray-600 disabled:opacity-40 text-gray-300 text-sm font-medium rounded-xl py-2 transition-colors">
+                Split bill
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2315,6 +2325,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           onClose={() => { setShowPayment(false); setPayError(''); }}
           onDisplay={setPayView}
           stkPhone={buyer?.stkPhone} stkMasked={buyer?.masked}
+          lines={cart.map((i) => ({ name: i.product.name, qty: i.quantity, amount: i.lineTotal }))}   // 2026-11-04: split by item
+          startSplit={payStartsSplit}
         />
       )}
 

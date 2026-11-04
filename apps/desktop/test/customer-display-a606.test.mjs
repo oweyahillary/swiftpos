@@ -19,7 +19,7 @@
 //   4  stages: idle → sale → payment → thank you → idle (8 s), the stage's start stamped in main.
 //   5  the words by business type: shop items, restaurant order + table, petrol litres and price per litre, weighed kg —
 //      the REAL view rendered (react-dom/server).
-//   6  the bundle: the customer screen page is its own chunk, never in the POS's main chunk (≤ 452 kB still holds).
+//   6  the bundle: the customer screen page is its own chunk, never in the POS's main chunk (the 460 kB budget still holds).
 //
 // MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted — listed in the A606 report):
 //   - customerScreen.ts sanitiseDisplayState copying the raw line (…l) instead of the whitelist → 2 "no cost price" fails
@@ -357,8 +357,8 @@ try {
       ok('the customer screen page, its view and its rules are their own chunk — not in the POS\'s', !inMain('renderer/pages/CustomerDisplayPage.tsx')
         && !inMain('CustomerScreenView.tsx') && !inMain('customerScreen.ts') && !inMain('renderer/lib/customerDisplayFeed.ts')
         && chunks.some((c) => c.isDynamicEntry && mods(c).some((m) => m.endsWith('/src/renderer/pages/CustomerDisplayPage.tsx'))));
-      // Both budgets: petrol-pos-a588 (≤ 452 kB) and lazy-load-a517 (< 450 kB). 448.9 kB before A606.
-      ok('the POS\'s main chunk < 450 kB still (lazy-load-a517) and ≤ 452 kB (petrol-pos-a588)', main.code.length < 450 * 1024, `${kb} kB`);
+      // Owner, 2026-11-04: one budget, 460 kB (was < 450 in lazy-load-a517, ≤ 452 in petrol-pos-a588). 448.9 kB before A606.
+      ok('the POS\'s main chunk < 460 kB still (lazy-load-a517, petrol-pos-a588)', main.code.length < 460 * 1024, `${kb} kB`);
     }
   }
 } finally {
