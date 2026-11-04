@@ -44,6 +44,7 @@ import { registerBackupHandlers } from './ipc/backup';   // A600
 import { registerHistoryUploadHandlers } from './ipc/historyUpload';   // A602
 import { registerCustomerDisplayHandlers } from './ipc/customerDisplay';   // A606
 import { registerCustomerDetailsHandlers } from './ipc/customerDetails';   // A607
+import { registerMpesaC2bHandlers } from './ipc/mpesaC2b';   // A621
 
 export function registerIpcHandlers() {
 
@@ -88,5 +89,6 @@ export function registerIpcHandlers() {
   registerHistoryUploadHandlers(ctx);   // A602: the history upload (going online later)
   registerCustomerDisplayHandlers(ctx);   // A606: the customer screen (a dual-screen POS)
   registerCustomerDetailsHandlers(ctx);   // A607: customer details on both screens, the M-Pesa prompt
+  registerMpesaC2bHandlers(ctx);   // A621: M-Pesa payments received, tapped on the payment screen
   registerBranchReportHandlers(ctx);   // reports.ts
 }

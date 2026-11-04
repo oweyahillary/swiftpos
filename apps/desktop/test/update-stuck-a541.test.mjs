@@ -20,8 +20,8 @@
 // MUTATIONS TO CONFIRM BITE (each verified by editing dist/main / the source and re-running):
 //   - classifyGatewayCall back to "every non-GET is trading"                 → "foreign-orders all night: not busy" fails
 //   - GATEWAY_TRADING without the orders route                               → "a sale through the gateway counts" fails
-//   - startupInstallPlan without the signInStart check                       → "a start by hand: no install" fails
-//   - startupInstallPlan without the triedVersion check                      → "not twice after a failure" fails
+//   - startupInstallPlan without the updatedLaunch check                     → "the relaunch after an update: no install" fails
+//   - runStartupInstall prompting at an automatic start without the task     → "an automatic start without the task" fails
 //   - runStartupInstall marking the try AFTER the install                    → "the try is recorded before the install" fails
 //   - signInStartFrom ignoring the flag's age                                → "a stale hand-over marker: not a sign-in start" fails
 //   - buildUpdateReport dropping the blocker                                 → "the report: the blocker" fails
@@ -118,6 +118,8 @@ console.log('\n1. The gateway: trading only (an allowlist)\n');
     ['POST', 'attendance/node/punches', B],
     // A607: the desktop POS's M-Pesa prompt (config, the push, its status) — background: the sale itself marks trading
     ['GET', 'mpesa/config', B], ['POST', 'mpesa/stk-push-pos', B], ['GET', 'mpesa/status/ws_CO_1', B],
+    // A621: the payments received at the branch's number (the list, a tap, giving one back) — background, as the prompt is
+    ['GET', 'payments/c2b/recent', B], ['POST', 'payments/c2b/claim', B], ['POST', 'payments/c2b/release', B],
   ];
   const wrong = ROUTES.filter(([m, p, k]) => A.classifyGatewayCall(m, `/node/cloud/api/${p}`).kind !== k)
     .map(([m, p, k]) => `${m} ${p}: ${A.classifyGatewayCall(m, `/node/cloud/api/${p}`).kind} (want ${k})`);
@@ -171,14 +173,15 @@ console.log('\n2. Install at start-up (a start at Windows sign-in)\n');
 {
   const staged = (o = {}) => ({ version: '1.0.20', installerPath: 'C:\\x\\ZapTill-1.0.20.exe', approved: true, at: '2026-10-18T01:00:00Z', ...o });
   const base = (o = {}) => ({ signInStart: true, updatedLaunch: false, running: '1.0.19', staged: staged(), installerExists: true,
-    triedVersion: null, server: true, shareReady: true, ...o });
+    server: true, shareReady: true, ...o });
   const P = (o) => U.startupInstallPlan(base(o));
   ok('downloaded, approved, newer, a sign-in start → install', P({}).install === true, P({}).reason);
-  ok('a start by hand: no install', P({ signInStart: false }).install === false);
+  // A622: every start installs a waiting update — a server opened by hand too; only the start after an install does not.
+  ok('A622: a start by hand installs too', P({ signInStart: false, openedByHand: true }).install === true);
   ok('the relaunch after an update: no install (no loop)', P({ updatedLaunch: true }).install === false);
   ok('not approved any more (A503): no install', P({ staged: staged({ approved: false }) }).install === false);
   ok('older / the same version: no install', P({ staged: staged({ version: '1.0.18' }) }).install === false && P({ staged: staged({ version: '1.0.19' }) }).install === false);
-  ok('not twice after a failure (once per version)', P({ triedVersion: '1.0.20' }).install === false && P({ triedVersion: '1.0.18' }).install === true);
+  ok('A622: no "once per version" — a version tried before is tried again at the next start', P({ triedVersion: '1.0.20' }).install === true);
   ok('the cloud now holds, or approves an older one → withdrawn', P({ cloudApproved: null }).withdrawn === true && P({ cloudApproved: '1.0.19' }).withdrawn === true
     && P({ cloudApproved: '1.0.20' }).install === true && P({ cloudApproved: '1.0.21' }).install === true && P({ cloudApproved: undefined }).install === true);
   ok('the installer gone from disk: no install', P({ installerExists: false }).install === false);
@@ -211,11 +214,16 @@ console.log('\n2. Install at start-up (a start at Windows sign-in)\n');
   }
   {
     const { r, seq } = await run({ signInStart: false });
-    ok('a start by hand: nothing at all', r.installing === false && seq.length === 0, seq.join(','));
+    ok('A622: an automatic start (the restart task): through the updater task', r.installing === true
+      && seq.join(',') === 'tried:1.0.20,task:1.0.20,record:startup:1.0.19->1.0.20,beforeQuit,quit', seq.join(','));
   }
   {
-    const { r, seq } = await run({ triedVersion: '1.0.20' });
-    ok('after a failed try: nothing at all (not at every start)', r.installing === false && seq.length === 0, seq.join(','));
+    const { r, seq } = await run({ signInStart: false }, { task: false });
+    ok('A622: an automatic start without the task: nothing installed, never a Windows prompt', r.installing === false && seq.length === 0, seq.join(','));
+  }
+  {
+    const { r, seq } = await run({ updatedLaunch: true });
+    ok('A622: the start right after an install (or a try): nothing at all — one try per start, no loop', r.installing === false && seq.length === 0, seq.join(','));
   }
   {
     const { r, seq } = await run({}, { cloud: null });

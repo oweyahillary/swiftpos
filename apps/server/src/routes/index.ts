@@ -48,6 +48,8 @@ import recipesRoutes       from './recipes';
 import printersRoutes      from './printers';
 import mpesaRoutes         from './mpesa';
 import mpesaSettingsRoutes from './mpesaSettings';   // A618
+import c2bRoutes           from './c2b';             // A621: M-Pesa payment notifications (Safaricom C2B)
+import c2bSettingsRoutes   from './c2bSettings';     // A621: the owner's switch, store number and registration
 import webhooksRoutes      from './webhooks';
 import { fuelTanksRouter, pumpsRouter } from './fueltanks';
 import combosRoutes        from './combos';
@@ -144,6 +146,8 @@ router.use('/credit',         creditRoutes);
 router.use('/notifications',  notificationsRoutes);
 router.use('/webhooks',       webhooksRoutes);
 router.use('/mpesa/settings', mpesaSettingsRoutes);   // A618: the STK push details per branch — before /mpesa
+router.use('/mpesa/c2b-settings', c2bSettingsRoutes);   // A621: before /mpesa
+router.use('/payments/c2b',   c2bRoutes);   // A621: Safaricom's addresses may not contain "mpesa" — so not under /mpesa
 router.use('/mpesa',          mpesaRoutes);
 router.use('/fuel-tanks',     fuelTanksRouter);
 router.use('/pumps',          pumpsRouter);

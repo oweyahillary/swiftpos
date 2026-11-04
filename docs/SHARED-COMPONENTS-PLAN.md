@@ -986,6 +986,48 @@ changed.
 **Step 3 — what is left** (all wait on an owner decision): the product tile and the fuel entry (8g), the forecourt
 pieces (8g), the cash entry and the cart line (above), `WeightModal`, `NoteModal`, `KitchenVoidModal` (8e).
 
+## 8i. `dev` merged (A621, font, A622) (2026-11-04, not committed)
+
+In plain words: the branch now has everything `dev` has up to df80142 — M-Pesa payment notifications (A621, migration
+188), one body font for every screen (Source Sans 3), install-first at every start with the updater's reason and the
+support-log sections (A622), and the gitleaks allowlist entry — with `dev`'s behaviour and the branch's structure. The
+one new shared rule (`mpesaPayments`) lives once in `packages/core`. After the merge the desktop POS's main chunk is
+**444.5 kB**, back under the old 450 kB budget (A621 moved the order detail panel out of it), so 8h's open point is
+gone.
+
+### The merge (`git merge --no-commit --no-ff origin/dev`, `dev` at df80142, merge base c2ab634)
+
+`dev` brought 4 commits (92 files). Its shared-code changes since the merge base: the new `mpesaPayments` (A621: in
+`shared/` and two app copies, all byte-identical) and the font line in the customer screen's two views
+(`CustomerAskForm`, `CustomerScreenView`: the font family is `var(--font-body, …)`, in every copy alike).
+
+| Conflict | Files | Resolution |
+|---|---|---|
+| new module — `mpesaPayments` (A621) | `shared/` + `apps/dashboard/src/lib/` + `apps/desktop/src/shared/` | one file, `packages/core/src/mpesaPayments.ts`; the three paths removed; its header names the package instead of the copies; imports are `@zaptill/core/mpesaPayments` (the desktop's on-demand chunk stays its own, as on `dev`). `diff` against `dev`'s `shared/mpesaPayments.ts`: the header line only |
+| modify/delete — the customer screen's views | `apps/{dashboard/src/lib,desktop/src/shared}/{CustomerAskForm,CustomerScreenView}.tsx` | deleted; `dev`'s font lines are in `packages/ui/src/` (the same three lines, checked by diff) |
+| content — `apps/desktop/src/renderer/pages/POSPage.tsx` | 1 (import block only) | `dev`'s lazy `MpesaArrivedNotice` line kept; `scaleBarcode` from `@zaptill/core/scaleBarcode`. Against `origin/dev` the merged file differs in import specifiers only |
+| content — imports | desktop `main/supportLogs.ts`, `renderer/lib/posApi.ts` | `dev`'s lines, `@zaptill/core/<name>` specifiers |
+| package files | admin `package.json` / lock | both dependencies kept (`@zaptill/core` and `@fontsource-variable/source-sans-3`) |
+| `scripts/check-shared-sync.mjs` | 1 | the branch's empty `SHARED` kept (`dev` added the `mpesaPayments` copies) |
+| relative import in a line that merged cleanly | server `routes/c2b.ts` (`../lib/businessDay`) | `@zaptill/core/businessDay` (found by resolving every relative import in the 92 files `dev` changed: this was the only one naming a module that is no longer in the app) |
+| tests | `apps/desktop/test/mpesa-c2b-a621.test.mjs` (builds the rule from `packages/core/src/mpesaPayments.ts`); `tests/font-global.test.mjs` | the font suite's screen folders: `packages/ui/src` added (the shared screens), the desktop's `src/shared` (empty on the branch; absent in a fresh checkout, where reading it would throw) dropped |
+
+`packages/core` holds **44 modules**; `check-shared-sync`: "50 modules live in packages/core and packages/ui with no
+copies".
+
+**Proof:**
+
+| Check | Result |
+|---|---|
+| `tsc` — server (with `packages/core`), dashboard, admin, desktop `tsconfig.json` and `build:main` (`tsc -b --force`) | pass |
+| Builds — server (clean `dist`), desktop `build:all`, dashboard and admin `vite build` | pass |
+| `check-shared-sync`, `check-test-registration`, `check-no-till-wording`, `check-register-consistency`, `check-doc-refs` | pass |
+| A621 / A622 / font suites | `tests/mpesa-c2b-a621` 44, `scripts/test-migration-188` 16, `tests/a622-install-error` 4, `tests/font-global` 4; desktop `mpesa-c2b-a621` 17, `a622-install-first` 29, `update-stuck-a541` 53, `update-open-a546` 46 — all pass |
+| Main chunk budget | `lazy-load-a517` 44/0 (**444.5 kB**, 455,122 characters; `dev`: 443.9 kB), `customer-details-a607` 87/0, `customer-display-a606` 66/0 |
+| Full local CI (every `ci.yml` step, `TZ=UTC`) | 286 steps, 8 "failed", all known local noise: schema audit (no `python3`), the `${{ matrix.part }}` shard step (both shards run by hand: all pass), the libuv `async.c` exit after all cases passed (`petrol-pos-web-a588`, `server-setup-a503`, `a554-log-fixes`, `monthly-pack-till`; re-run: 0 failed), `money-reports`' local-hour case under `TZ=UTC`, and the offline-suites loop failing on those same exits |
+| Every root suite (`tests/*.test.mjs`) | 327 ok; 3 "FAIL(127)" = the `async.c` exit after "0 failed" (`petrol-pos-web-a588`, `report-collected`, `void-owner-row`) |
+| Migration tests | shard 1/2: all pass (one file's exit is the `async.c` crash after "all green"); shard 2/2: all 52 pass |
+
 ## 9. Rollback
 
 - **Step 1:** revert the step's commit(s) — the copies come back with `check-shared-sync`'s entry; delete

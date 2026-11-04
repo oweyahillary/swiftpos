@@ -10,6 +10,7 @@ import type { PlatformQuote, PlatformRecord } from '@zaptill/core/platformPrices
 import type { CartItem } from '../lib/cart';
 import { posApi, type CreditCustomerView } from '../lib/posApi';   // A552
 const MpesaStk = lazy(() => import('./MpesaStkPanel'));   // A607: the M-Pesa prompt, loaded when an M-Pesa leg shows
+const MpesaReceived = lazy(() => import('./MpesaReceivedPanel'));   // A621: payments to the Till number / Paybill, tapped
 
 // Payment modal — split tender + discount + tip.
 //
@@ -209,7 +210,8 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
   // 2026-11-02 (owner: "once prompting is confirmed and paid by the customer it should print direct no need to click
   // charge"): while an M-Pesa prompt is out Charge is not shown; once the customer pays (the receipt fills the leg) the
   // sale completes and prints by itself — when that payment settles the bill (a split with another leg still to take, an
-  // account sale, or a failed charge: Charge, as before).
+  // account sale, or a failed charge: Charge, as before). A621: so does a payment received to the Till number / Paybill
+  // that the cashier tapped (stkCompletes covers both).
   const [stkStage, setStkStage] = useState<string>('idle');
   const stkCompletes = useRef(false);
   const stkOut = stkStage === 'sending' || stkStage === 'waiting';
@@ -415,6 +417,8 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
               </div>
               {leg.method === 'mpesa' && <Suspense fallback={null}><MpesaStk amount={leg.resolvedAmount} currency={currency} phone={stkPhone} masked={stkMasked} onStage={setStkStage}
                 onPaid={(r, paid) => { stkCompletes.current = paid + EPSILON >= leg.resolvedAmount; setLeg(i, { reference: r }); }} /></Suspense>}
+              {leg.method === 'mpesa' && <Suspense fallback={null}><MpesaReceived toPay={leg.resolvedAmount} currency={currency} reference={legs[i].reference} placing={placing}
+                onCode={(code) => { stkCompletes.current = code !== ''; setLeg(i, { reference: code }); }} /></Suspense>}
 
               {/* A552: On account — the customer (search by name or phone), what they owe and have left, the PIN */}
               {leg.method === 'credit' && (

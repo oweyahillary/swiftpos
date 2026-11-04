@@ -57,7 +57,7 @@ module.exports = {
         'line-in':        'line-in 700ms ease-out',   // a colour fade, not movement: the new cart line's tint clears
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['var(--font-body)'],   // the one body font: index.css --font-body
         mono: ['JetBrains Mono', 'monospace'],
       },
     },

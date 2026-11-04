@@ -19,6 +19,8 @@ export type StoredUpdateState = {
   blocker: string | null; server: boolean; waiting_server: boolean; downloaded_at: string | null; startup_failed: boolean;
   /** A554: the till answers a log pull from the admin portal (A533) — said by the till itself, not read off its version. */
   log_pull: boolean;
+  /** A622: why the last install of the waiting version did not take, in the updater's words ("installer exit 2"). */
+  install_error: string | null;
 };
 
 const VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
@@ -56,5 +58,6 @@ export function cleanUpdateState(body: unknown): StoredUpdateState | null {
     downloaded_at: state === 'downloaded' ? iso(b.downloaded_at) : null,
     startup_failed: b.startup_failed === true,
     log_pull: b.log_pull === true,   // A554
+    install_error: text(b.install_error, 160),   // A622
   };
 }

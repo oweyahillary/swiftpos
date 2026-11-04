@@ -181,6 +181,19 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "branch_c2b_settings": {
+    "branch_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "enabled": "\"boolean\" NOT NULL",
+    "store_number": "\"text\"",
+    "token_hash": "\"text\"",
+    "registered_at": "\"timestamp with time zone\"",
+    "registered_shortcode": "\"text\"",
+    "registered_environment": "\"text\"",
+    "last_error": "\"text\"",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_by": "\"uuid\""
+  },
   "branch_cloud_plans": {
     "branch_id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -894,6 +907,26 @@
     "note": "\"text\"",
     "recorded_by": "\"uuid\"",
     "recorded_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "mpesa_c2b_payments": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "shortcode": "\"text\" NOT NULL",
+    "trans_id": "\"text\" NOT NULL",
+    "trans_type": "\"text\"",
+    "amount": "\"numeric\" NOT NULL",
+    "trans_time": "\"timestamp with time zone\"",
+    "bill_ref": "\"text\"",
+    "first_name": "\"text\"",
+    "phone_masked": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "held_by": "\"text\"",
+    "held_ref": "\"text\"",
+    "held_at": "\"timestamp with time zone\"",
+    "order_id": "\"uuid\"",
+    "used_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "mpesa_stk_requests": {

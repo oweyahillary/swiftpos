@@ -25,7 +25,7 @@ module.exports = {
         'on-brand': 'rgb(var(--on-brand) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['var(--font-body)'],   // the one body font: index.css --font-body
         mono: ['JetBrains Mono', 'monospace'],
       },
       // A470 (owner: "look and feel, response animations, speed"): short, quiet motion so every tap answers and things

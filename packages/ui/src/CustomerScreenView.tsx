@@ -38,7 +38,7 @@ export const groupDigits = (d: string) => d.replace(/\B(?=(\d{3})+(?!\d))/g, ' '
 
 const CSS = `
 .cs{position:fixed;inset:0;display:flex;flex-direction:column;background:#f6f7f9;color:#15202b;overflow:hidden;
-  font-family:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,sans-serif;font-variant-numeric:tabular-nums;
+  font-family:var(--font-body,"Segoe UI",system-ui,sans-serif);font-variant-numeric:tabular-nums;
   -webkit-font-smoothing:antialiased;cursor:none;user-select:none}
 .cs-top{display:flex;align-items:center;gap:1.4vh;padding:2.6vh 3.2vw 1.8vh}
 .cs-logo{height:6.4vh;max-width:18vw;object-fit:contain}

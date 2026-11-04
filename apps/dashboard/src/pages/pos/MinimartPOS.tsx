@@ -904,7 +904,6 @@ const s: Record<string, React.CSSProperties> = {
     height: '100%',
     overflow: 'hidden',
     background: '#0f172a',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
     color: '#f1f5f9',
   },
 
@@ -968,7 +967,6 @@ const s: Record<string, React.CSSProperties> = {
     color: '#f1f5f9',
     fontSize: 15,
     fontWeight: 500,
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
     padding: '10px 0',
     letterSpacing: '0.02em',
   },
@@ -991,7 +989,6 @@ const s: Record<string, React.CSSProperties> = {
     padding: '6px 14px',
     cursor: 'pointer',
     flexShrink: 0,
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   scanMsg: {
     fontSize: 12,
@@ -1022,7 +1019,6 @@ const s: Record<string, React.CSSProperties> = {
     color: '#94a3b8',
     fontSize: 12,
     cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   parkedLabel: { maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   parkedCount: {
@@ -1044,7 +1040,6 @@ const s: Record<string, React.CSSProperties> = {
     color: '#64748b',
     fontSize: 12,
     cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   catalogueToggle: {
     display: 'flex',
@@ -1058,7 +1053,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 500,
     cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
     whiteSpace: 'nowrap',
   },
 
@@ -1094,7 +1088,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 13,
     outline: 'none',
     boxSizing: 'border-box',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   productGrid: {
     flex: 1,
@@ -1118,7 +1111,6 @@ const s: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     gap: 5,
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   productCardActive: {
     border: '1.5px solid rgb(var(--act-fill, 59 130 246) / 0.6)',
@@ -1182,7 +1174,6 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     padding: '4px 8px',
     borderRadius: 6,
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   cartList: {
     flex: 1,
@@ -1236,7 +1227,6 @@ const s: Record<string, React.CSSProperties> = {
     color: '#94a3b8',
     fontSize: 16,
     cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   qtyNum: {
     minWidth: 28,
@@ -1310,7 +1300,6 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: 'pointer',
     letterSpacing: '0.01em',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   // ── Modals ─────────────────────────────────────────────────────────────────
@@ -1352,7 +1341,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 15,
     outline: 'none',
     boxSizing: 'border-box',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   modalMeta: { fontSize: 14, color: '#94a3b8', fontWeight: 600 },
   modalTotal: {
@@ -1376,7 +1364,6 @@ const s: Record<string, React.CSSProperties> = {
     color: '#94a3b8',
     fontSize: 14,
     cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   modalConfirm: {
     flex: 2,
@@ -1388,7 +1375,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 700,
     cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   modalSecondary: {
     flex: 1,
@@ -1400,7 +1386,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
     cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
 
   // ── Not-found ──────────────────────────────────────────────────────────────
@@ -1424,7 +1409,6 @@ const s: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #1e293b',
     color: '#f1f5f9',
     cursor: 'pointer',
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
     textAlign: 'left',
   },
   notFoundResultName: { fontSize: 13, fontWeight: 500 },

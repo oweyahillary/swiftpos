@@ -331,12 +331,13 @@ jobs:
       #     (42P16) and reached the owner's database.
       #
       # The runner discovers scripts/test-migration*.mjs rather than listing
-      # them, so a new one is covered by existing.
-      - name: Migrations against real Postgres
-        run: |
-          npm install --no-audit --no-fund
-          node scripts/run-migration-tests.mjs --self-test
-          npm run test:migrations
+      # them, so a new one is covered by existing. They run in the two
+      # `migrations` jobs below, in parallel with this one (2026-11-02).
+      #
+      # The root install is PGlite, which the schema-drift and analytics steps
+      # below need too.
+      - name: Install the root packages (PGlite)
+        run: npm install --no-audit --no-fund
 
       # Server DB refs (supabase.from/.rpc/filter-columns) vs the schema the
       # migrations build in PGlite. Runs here because it needs the root install
@@ -818,6 +819,30 @@ jobs:
       - name: Business settings menu (A620)
         run: node --no-warnings tests/business-settings-menu-a620.test.mjs
 
+      # One body font, set once (owner, 2026-11-03: Source Sans 3): each app's --font-body, Tailwind's font-sans reading it,
+      # the font bundled (offline too), and no screen naming a font of its own (monospace, Courier and the brand's Space
+      # Grotesk allowed). In the loop too.
+      - name: One body font (Source Sans 3)
+        run: node --no-warnings tests/font-global.test.mjs
+
+      # A622 — the cloud keeps a till's install_error (the updater's reason an install did not take) and the admin
+      # portal's Desktop updates line shows it.
+      - name: Why an install did not take, on the admin portal (A622)
+        run: node --no-warnings tests/a622-install-error.test.mjs
+
+      # A621 — M-Pesa payment notifications (Safaricom C2B; owner, 2026-11-02: "they prefer paying to the till or paybill
+      # directly; what the cashier gets is a notification of the payments done, then they match it to the bill"): the
+      # confirmation read (Kenyan time, never a full phone number); the callback addresses (https, no word Safaricom
+      # refuses, only the token's hash kept); Register with the branch's details and the Buy Goods store number, saved only
+      # once Safaricom accepted, one branch per number; the sandbox test payment; Safaricom always "Accepted", one row per
+      # M-Pesa code, the branch's POSs rung; the POS list (best fit first, "unchanged" without a read, premium only); claim
+      # (first POS wins, two at once exactly one), release by the holder, an order's code marks it used; the unmatched
+      # list. Migration 188 replayed into PGlite. Needs the server build.
+      - name: M-Pesa payment notifications (A621) and migration 188
+        run: |
+          TZ=UTC node --no-warnings tests/mpesa-c2b-a621.test.mjs
+          node --no-warnings scripts/test-migration-188.mjs
+
       # A599 — Attendance (premium, the 'attendance' flag set in the admin portal): punches only from a ZKTeco device
       # through the branch server, for everyone. The pairing (in / out alternately in time order, a night shift on the day
       # it started, an odd last punch a missing punch-out not counted, a 16 h gap never paired); flag off → every route
@@ -859,6 +884,59 @@ jobs:
       # build. In the loop too.
       - name: Admin portal POS options (A604)
         run: node --no-warnings tests/admin-pos-options-a604.test.mjs
+
+  # 2026-11-02 (owner: "11 min is a lot of time"): the server job ran its named steps, every migration test and the
+  # loop over every tests/*.test.mjs one after the other (~10.5 minutes). The migration tests (two halves) and the loop
+  # now run as jobs of their own, at the same time as the named steps — the same tests, about half the wait.
+  migrations:
+    name: Migrations against real Postgres (part ${{ matrix.part }} of 2)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install the root packages (PGlite)
+        run: npm install --no-audit --no-fund
+
+      - name: The runner catches a failing and a hanging test
+        if: matrix.part == 1
+        run: node scripts/run-migration-tests.mjs --self-test
+
+      - name: Migration tests, part ${{ matrix.part }} of 2
+        run: node scripts/run-migration-tests.mjs --shard ${{ matrix.part }}/2
+
+  offline-suites:
+    # Every tests/*.test.mjs, so a suite with no named step above still runs. Same setup as the server job.
+    name: Offline suites (every tests/*.test.mjs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install server deps
+        working-directory: apps/server
+        run: npm ci
+
+      - name: Install dashboard deps
+        working-directory: apps/dashboard
+        run: npm ci
+
+      - name: Build server
+        working-directory: apps/server
+        run: npm run build
+
+      - name: Install the root packages (PGlite)
+        run: npm install --no-audit --no-fund
 
       - name: Run offline suites
         run: |
@@ -1810,6 +1888,16 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/customer-details-a607.test.mjs
 
+      # A621 — M-Pesa payment notifications on the desktop POS: the list, the tap and the give-back through main with a fake
+      # cloud (the licence and a connection first, the cloud's stamp sent back, another POS's tap refused); what a tapped
+      # payment does to the M-Pesa leg; the notice; the push channel's ring; the IPC channels bridged and validated; the
+      # payment screen completes the sale itself when a tapped payment settles it.
+      - name: Desktop M-Pesa payment notifications (A621)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/mpesa-c2b-a621.test.mjs
+
       # A619 — delivery platform prices on the desktop POS: local schema 79; the pull stores the rules and each item's own
       # platform price (an older cloud keeps them) and the branch server relays both; order:create accepts a Glovo sale at
       # Glovo prices (saved at them, the payload with price_list, the rule and the uplift) and refuses a lower price, a
@@ -1865,7 +1953,7 @@ jobs:
 
       # A541 — tills and branch servers stuck on an old version since the A513 autostart install their update: a start at
       # Windows sign-in installs an approved, newer, downloaded update before serving (the updater task, else the
-      # installer; once per version, never on a start by hand); the branch server is busy only for real trading (every
+      # installer; A622: now every start, see below); the branch server is busy only for real trading (every
       # gateway route classified — a drawer's foreign-orders poll all night no longer holds it); the report says why it
       # has not installed; managers (never cashiers) are told after 3 days.
       - name: Desktop stuck updates install (A541)
@@ -1879,6 +1967,15 @@ jobs:
         env:
           TZ: UTC
         run: node --no-warnings test/update-open-a546.test.mjs
+
+      # A622 — every start installs a waiting update first (a branch server opened by hand too, no "once per version";
+      # the start right after an install never does — no loop); why an install did not take, in the updater's words, is
+      # logged and reported; a support log carries the PC's other logs (the updater's log, Windows' events naming ZapTill).
+      - name: Desktop installs first at every start; every log in a support bundle (A622)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/a622-install-first.test.mjs
 
       # A554 — fixes from the first pulled till log (B Foods' branch server) and the owner's test: the push channel takes a
       # renewed token on the open socket (or reconnects itself, never a 1006) and keeps itself alive (ping every 25 s, a

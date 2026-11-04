@@ -25,6 +25,7 @@
 import fs from 'fs';
 import zlib from 'zlib';
 import { redactLog } from '@zaptill/core/logRedact';
+import type { LogSection } from './machineLogs';
 
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
 export const LOG_CAP_BYTES = 2 * 1024 * 1024;
@@ -146,6 +147,8 @@ export interface BuildOptions {
   includeAuth?: boolean;
   /** Lines under the header (version, sync, push channel, disk …) — kept when the pack trims the oldest log lines. */
   diagnostics?: string[];
+  /** A622: the PC's other logs (machineLogs.ts — the updater's log, Windows' events), each a section after auth.log. */
+  sections?: LogSection[];
 }
 
 /** The whole file: header, the log, auth.log — every secret removed. */
@@ -169,6 +172,7 @@ export function buildSupportText(header: SupportHeader, logTexts: Iterable<strin
     headerText(header), '', ...diag,
     `── swiftpos.log, last ${range}${log.dropped ? ` (older lines left out: over ${Math.round(logCap / 1048576)} MB)` : ''} ──`, log.text, '',
     ...(withAuth ? [`── auth.log, last ${range}${auth.dropped ? ' (older lines left out)' : ''} ──`, auth.text, ''] : []),
+    ...(opts.sections ?? []).flatMap((x) => [`── ${x.title} ──`, x.text, '']),
   ].join('\n');
   return { text: redactLog(text), droppedOld: log.dropped > 0 || auth.dropped > 0 };
 }

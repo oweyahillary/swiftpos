@@ -299,6 +299,15 @@ contextBridge.exposeInMainWorld('swiftpos', {
       ipcRenderer.on('mpesa:stk', h);
       return () => { ipcRenderer.removeListener('mpesa:stk', h); };
     },
+    // A621: M-Pesa payments received (main/mpesaC2b.ts) — listed, tapped, given back; the cloud's ring.
+    receivedList:    (p: { amount?: number; ref?: string })              => ipcRenderer.invoke('mpesa:receivedList', p),
+    receivedClaim:   (p: { trans_id: string; sale_ref: string })         => ipcRenderer.invoke('mpesa:receivedClaim', p),
+    receivedRelease: (p: { trans_id: string; sale_ref: string })         => ipcRenderer.invoke('mpesa:receivedRelease', p),
+    onReceivedArrived: (cb: (v: any) => void) => {
+      const h = (_e: unknown, v: any) => cb(v);
+      ipcRenderer.on('mpesa:receivedArrived', h);
+      return () => { ipcRenderer.removeListener('mpesa:receivedArrived', h); };
+    },
   },
 
   // Held orders (restaurant tabs). Backed by SQLite in the main process since

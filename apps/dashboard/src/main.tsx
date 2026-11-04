@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ThemeProvider } from './context/ThemeContext';
 import { applyAppFlavor } from './lib/appFlavor';
+import '@fontsource-variable/source-sans-3';   // the body font's files (index.css --font-body), bundled
 import './index.css';
 import { stopWheelOnNumberInputs } from '@zaptill/ui/numberInputs';
 import { RELEASE } from '@zaptill/core/release';

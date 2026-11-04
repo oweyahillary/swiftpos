@@ -65,7 +65,7 @@ export default function CustomerDisplayWebPage() {
       {hint && (
         <div data-testid="cs-web-hint" onClick={() => setHint(false)}
           style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', background: '#15202b', color: '#fff',
-            padding: '10px 16px', borderRadius: 10, fontFamily: 'system-ui, sans-serif', fontSize: 15, zIndex: 10 }}>
+            padding: '10px 16px', borderRadius: 10, fontSize: 15, zIndex: 10 }}>
           Drag this window to the customer's screen, then press F11 for full screen.
         </div>
       )}

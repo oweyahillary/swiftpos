@@ -44,6 +44,8 @@ export interface UpdateStateReport {
   downloaded_at: string | null;
   /** A start-up install of this version was tried and this machine still runs the old one. */
   startup_failed: boolean;
+  /** A622: the updater's reason the last install of the waiting version did not take ("1.0.23: installer exit 2"), or null. */
+  install_error: string | null;
   /**
    * A554: this till answers a log pull from the admin portal (A533) — the admin portal goes by this, not by the version
    * (a test build labelled 1.0.19 with the 1.0.20 code answered a pull it had been warned would wait). A cloud before
@@ -62,7 +64,7 @@ const clip = (s: unknown, n: number): string | null => {
 
 /** The report from what autoUpdate.ts holds. Pure. */
 export function buildUpdateReport(s: { status: UpdateStatus; running: string; stateAt: string | null; idleNote: string | null; task: boolean | null;
-  blocker?: string | null; server?: boolean; startupFailed?: string | null }): UpdateStateReport {
+  blocker?: string | null; server?: boolean; startupFailed?: string | null; installError?: string | null }): UpdateStateReport {
   const st = s.status;
   const downloaded = st.state === 'downloaded';
   const dAt = typeof st.downloadedAt === 'number' && Number.isFinite(st.downloadedAt) ? new Date(st.downloadedAt).toISOString() : null;
@@ -84,6 +86,7 @@ export function buildUpdateReport(s: { status: UpdateStatus; running: string; st
     downloaded_at: downloaded ? dAt : null,
     startup_failed: !!s.startupFailed && (!st.version || st.version === s.startupFailed),
     log_pull: true,   // A554
+    install_error: clip(s.installError, 160),   // A622
   };
 }
 
@@ -91,7 +94,7 @@ export function buildUpdateReport(s: { status: UpdateStatus; running: string; st
 export function reportKey(r: UpdateStateReport): string {
   const pct = r.percent === null ? '' : String(Math.floor(r.percent / 25));
   return [r.running, r.state, r.version, pct, r.since, r.approved, r.error, (r.idle_note ?? '').replace(/\d+/g, '#'), r.task,
-    r.blocker, r.server, r.waiting_server, r.startup_failed].join('|');   // A541
+    r.blocker, r.server, r.waiting_server, r.startup_failed, r.install_error].join('|');   // A541, A622
 }
 
 export interface UpdateReporterDeps {

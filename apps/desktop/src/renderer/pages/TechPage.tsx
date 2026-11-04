@@ -13,6 +13,7 @@ import HistoryUploadPanel from '../components/HistoryUploadPanel';   // A602
 import CustomerScreenPanel from '../components/CustomerScreenPanel';   // A606
 import type { TechSession, TechStatus } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
+import { TECH_SECTIONS, initialTechSection, rememberTechSection, type TechSection } from '../lib/techMenu';   // A622
 
 interface Props {
   onExit: () => void;   // close session -> back to PIN pad
@@ -31,6 +32,9 @@ export default function TechPage({ onExit }: Props) {
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
+  // A622: one section at a time, from the menu at the top.
+  const [section, setSection] = useState<TechSection>(initialTechSection);
+  const pick = (id: TechSection) => { setSection(id); rememberTechSection(id); window.scrollTo({ top: 0 }); };
 
   const load = async () => {
     const s = await posApi.tech.getSession();
@@ -239,6 +243,20 @@ export default function TechPage({ onExit }: Props) {
           </button>
         </div>
 
+        {/* A622: the menu — stays in view; one section shows at a time */}
+        <nav className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-[#080c14]/95 backdrop-blur border-b border-[#1e293b] flex flex-wrap gap-1.5"
+          aria-label="Technician sections" data-testid="tech-menu">
+          {TECH_SECTIONS.map((s) => (
+            <button key={s.id} type="button" onClick={() => pick(s.id)} aria-current={section === s.id ? 'page' : undefined}
+              data-testid={`tech-menu-${s.id}`}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${section === s.id
+                ? 'bg-amber-500 text-black' : 'bg-[#1e293b] text-gray-200 hover:bg-[#26344b]'}`}>
+              {s.label}
+            </button>
+          ))}
+        </nav>
+
+        {section === 'device' && (<>
         {/* Device identity */}
         <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Device</h2>
@@ -257,7 +275,9 @@ export default function TechPage({ onExit }: Props) {
 
         {/* A606: the customer screen (a dual-screen POS) — on / off, which screen, identify, test */}
         <CustomerScreenPanel className="bg-[#0d1424] border-[#1e293b]" />
+        </>)}
 
+        {section === 'sync' && (<>
         {/* Sync health */}
         <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Sync</h2>
@@ -331,7 +351,9 @@ export default function TechPage({ onExit }: Props) {
           {/* A599: on the branch server with the 'attendance' flag on — the attendance devices (hidden entirely otherwise) */}
           {(dev?.device_role === 'node' || dev?.device_role === 'office') && <AttendanceDevicesPanel />}
         </section>
+        </>)}
 
+        {section === 'branch' && (<>
         {/* A415: Rejoin this till */}
         <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4" data-testid="tech-rejoin">
           <h2 className="text-sm font-semibold text-gray-300 mb-1">Rejoin this POS</h2>
@@ -352,7 +374,9 @@ export default function TechPage({ onExit }: Props) {
             {rejoinMsg && <p className={`text-[11px] ${rejoinMsg.ok ? 'text-action-300' : 'text-red-400'}`}>{rejoinMsg.text}</p>}
           </div>
         </section>
+        </>)}
 
+        {section === 'logs' && (<>
         {/* Diagnostics */}
         <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Diagnostics</h2>
@@ -397,7 +421,9 @@ export default function TechPage({ onExit }: Props) {
           {/* Mode switch (offline<->web) lands in step 5 — placeholder so the slot is visible. */}
           <p className="text-[11px] text-gray-400 mt-3">Mode switch (offline ↔ web) arrives with the sync bridge.</p>
         </section>
+        </>)}
 
+        {section === 'branch' && (<>
         {/* Branch role (Phase 3) */}
         <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-1">Branch role</h2>
@@ -425,13 +451,17 @@ export default function TechPage({ onExit }: Props) {
           <div className="mt-3"><TechFindServer isServer={!!dev?.device_role && dev.device_role !== 'till'} onJoined={load} /></div>
           {roleMsg && <p className={`text-xs mt-2 ${/fail|refused|No branch/i.test(roleMsg) ? 'text-red-400' : 'text-green-400'}`}>{roleMsg}</p>}
         </section>
+        </>)}
 
         {/* A496: why this machine has (or has not) got its update */}
+        {section === 'updates' && (
         <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-2">Updates</h2>
           <UpdateDiagnosticsPanel />
         </section>
+        )}
 
+        {section === 'backups' && (<>
         {/* Backups & retention (Phase 2c) */}
         <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-1">Backups &amp; retention</h2>
@@ -474,7 +504,9 @@ export default function TechPage({ onExit }: Props) {
 
         {/* A602: going online later — the sales history's upload, how far back, quiet hours */}
         <HistoryUploadPanel />
+        </>)}
 
+        {section === 'database' && (<>
         {/* Read-only database console */}
         <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-1">Database (read-only)</h2>
@@ -529,10 +561,12 @@ export default function TechPage({ onExit }: Props) {
             </div>
           )}
         </section>
+        </>)}
 
         {/* Client branding (A302) — the tech-gated feed for the A301 write path */}
-        <BrandingEditor />
+        {section === 'branding' && <BrandingEditor />}
 
+        {section === 'reset' && (<>
         {/* Reset this device */}
         <section className="bg-[#0d1424] border border-red-900/40 rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-1">Reset this device</h2>
@@ -613,6 +647,7 @@ export default function TechPage({ onExit }: Props) {
             </div>
           )}
         </section>
+        </>)}
 
         {(busy || msg) && (
           <p className="text-xs text-center text-gray-400">{busy ? `${busy}…` : msg}</p>
