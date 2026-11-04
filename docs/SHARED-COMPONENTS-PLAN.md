@@ -1113,6 +1113,15 @@ ratchets: pass. Full local CI (288 steps): only the known local noise (schema au
 `${{ matrix.part }}` shard step, the libuv `async.c` exits after all cases passed, `money-reports`' local-hour case under
 `TZ=UTC`) plus the stale light-colours block, regenerated. Every root suite: 329 ok, 3 `async.c` exits after "0 failed".
 
+## 8k. `dev` merged (v1.0.24) (2026-11-04, not committed)
+
+`git merge --no-commit --no-ff origin/dev` (`dev` at 2f9922c, merge base df80142): the 1.0.24 version bump only —
+`shared/release.ts` and its two app copies (dashboard, server), the desktop `package.json` / lock, `docs/AUDIT-REGISTER.md`.
+The three copies were modify/delete conflicts: deleted; git carried the one changed line (`RELEASE = '1.0.24'`) into
+`packages/core/src/release.ts`. Checked: `check-shared-sync` (58 modules, no copies), `check-register-consistency`, the
+server rebuilt (clean `dist`) and `tests/release-version` 8/0. The merge is staged on its own; the owner's 2026-11-04
+decisions (8l) are unstaged on top.
+
 ## 9. Rollback
 
 - **Step 1:** revert the step's commit(s) — the copies come back with `check-shared-sync`'s entry; delete
