@@ -395,6 +395,9 @@ try {
   });
   await ok('nothing changed since the stamp → "unchanged", without reading the payments', async () => {
     await seed();
+    // A change in the same millisecond as the stamp counts as a change (c2bChangedSince: >=, one read too many at worst);
+    // on a fast runner seed() and the first read share a millisecond — let the clock move so "nothing changed" holds.
+    await new Promise((r) => setTimeout(r, 5));
     const first = await call('GET', '/api/payments/c2b/recent?amount=1080', TILL_1);
     mem.calls = [];
     const again = await call('GET', `/api/payments/c2b/recent?amount=1080&since=${first.body.stamp}`, TILL_1);

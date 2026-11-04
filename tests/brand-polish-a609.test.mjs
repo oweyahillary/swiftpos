@@ -29,7 +29,8 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const esbuild = createRequire(path.join(ROOT, 'apps/dashboard/package.json'))('esbuild');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a609-'));
 const load = async (entry, name) => {
-  await esbuild.build({ entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: path.join(tmp, `${name}.cjs`), logLevel: 'silent' });
+  await esbuild.build({ entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: path.join(tmp, `${name}.cjs`), logLevel: 'silent',
+    nodePaths: [path.join(ROOT, 'apps/dashboard/node_modules')] });   // @zaptill/core for a desktop file: CI installs only the dashboard here
   return createRequire(import.meta.url)(path.join(tmp, `${name}.cjs`));
 };
 const boot = path.join(tmp, 'boot-entry.ts');
