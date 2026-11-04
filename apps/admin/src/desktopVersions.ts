@@ -31,6 +31,8 @@ export interface TillUpdateState {
   idle_note?: string | null; task?: boolean | null;
   /** A541: why it cannot install by itself, the branch server, waiting for the server's copy, since when, a start-up try. */
   blocker?: string | null; server?: boolean | null; waiting_server?: boolean | null; downloaded_at?: string | null; startup_failed?: boolean | null;
+  /** A622: why the last install did not take, in the updater's words ("1.0.23: installer exit 2"). */
+  install_error?: string | null;
 }
 /** A541: a download waiting this long gets "ready for n days" on its line. */
 export const READY_LONG_MS = 72 * 60 * 60_000;
@@ -47,6 +49,8 @@ export function downloadedLine(s: TillUpdateState, v: string | null | undefined,
     ? ` · ready for ${Math.floor((now - Date.parse(s.downloaded_at)) / 86_400_000)} days` : "";
   // A546: a till opened by hand installs a waiting update first (Windows asks there — somebody is at the till).
   const after = s.server ? "or it installs at the next Windows sign-in" : "or it installs the next time ZapTill is opened (Windows will ask)";
+  // A622: the installer's own failure says the most — it is what support has to fix on that PC.
+  if (s.install_error) return `Downloaded${ver} — the install failed (${s.install_error.replace(/^[\d.]+:\s*/, "")}); it tries again each time ZapTill starts${long}`;
   if (s.blocker && s.task === false) {
     return `Downloaded${ver} — can't install silently on this PC (no ZapTill Updater task): run the installer once as administrator, ${after}${long}`;
   }

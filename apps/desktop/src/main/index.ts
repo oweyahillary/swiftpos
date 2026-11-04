@@ -322,10 +322,11 @@ app.whenReady().then(async () => {
     // A541 (owner, 2026-10-20: "since we added the autostart feature most apps are not updating, they are stuck in the
     // old version"): a start at Windows sign-in with an approved, newer update already downloaded installs it HERE —
     // before the branch server serves and before any window — through the updater task (no prompt), else the installer
-    // (Windows may ask; somebody has just signed in). Once per version; a start by hand or after an update never does.
+    // (Windows may ask; somebody has just signed in). A622: every start does, a branch server opened by hand too — only the
+    // start right after an install (--updated) never does.
     // initAutoUpdate is idempotent (called again below as before); it starts nothing until the start-up is over.
     try { initAutoUpdate(); } catch (e) { console.error('[startup] autoUpdate init failed:', e); }
-    // A546: and a till opened by hand installs a waiting update first, as a backup ("Updating ZapTill…", then the PIN screen).
+    // A546: and ZapTill opened by hand installs a waiting update first ("Updating ZapTill…", then the PIN screen).
     if (await installAtStartIfDue({ signInStart: signInStart && !tillSignIn, updatedLaunch: process.argv.includes('--updated'),
       openedByHand: !isAutoLaunch(process.argv) || openedDuringSignIn })) {
       logLine('startup', 'closing to install the waiting update before serving or opening — ZapTill starts again after the install');

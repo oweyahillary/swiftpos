@@ -55,8 +55,9 @@ import { markQuitting } from './serverMode';   // A508
 import { execFile } from 'child_process';
 import fs from 'fs';   // A541: the kept installer still on disk
 import { defaultTaskDeps, hasUpdaterTask, requestTaskInstall, updaterLogTail, type TaskInstallResult } from './updaterTask';   // A509
+import { readUpdaterOutcome, type UpdaterOutcome } from './updaterTask';   // A622
 import { whenStartupSettled, lastStartupLine, UPDATE_AFTER_LAUNCH_MS, UPDATE_AFTER_SETTLED_MS } from './lowImpactStart';   // A513
-import { readUpdateWaiting, writeUpdateWaiting } from './lowImpactStart';   // A546
+import { readUpdateWaiting, writeUpdateWaiting, UPDATED_ARG } from './lowImpactStart';   // A546, A622
 import { graphicsLine } from './lowImpactStart';   // A513
 import { buildUpdateReport, createUpdateReporter, type UpdateStateReport } from './updateReport';   // A534
 
@@ -148,6 +149,7 @@ export function _resetUpdateDiagnostics(): void {
   lastIdleInstall = null; idleNote = null; taskKnown = null; taskCheckedAt = 0; taskInstallStarted = false; closeTaskDone = false;
   stateAt = null;   // A534
   idleBlocker = null; startupInstallFailed = null;   // A541
+  installError = null;   // A622
 }
 
 // ── A509: the updater task (updaterTask.ts) — an install with no Windows prompt ─────────────────────────────────────
@@ -209,7 +211,7 @@ export function currentUpdateReport(): UpdateStateReport {
   let server = false;
   try { server = isNodeRole(getDeviceConfig()?.device_role ?? null); } catch { /* tests */ }
   return buildUpdateReport({ status: current, running, stateAt, idleNote, task: taskKnown,
-    blocker: idleBlocker, server, startupFailed: startupInstallFailed });   // A541
+    blocker: idleBlocker, server, startupFailed: startupInstallFailed, installError });   // A541, A622
 }
 /** A541: why the downloaded update cannot install by itself here (silentInstallBlocker, a refusal), or null. */
 let idleBlocker: string | null = null;
@@ -292,7 +294,10 @@ export interface UpdateCheckDeps {
   route?: (cloudUrl: string) => { base: string; headers: Record<string, string> };
   token: () => string | null;
   refresh: () => Promise<boolean>;
+  /** The version compared with the approved one: what runs, or a newer one already downloaded (then `downloaded`). */
   running: string;
+  /** A622: set when `running` is a download waiting to install, not what this machine runs — the log says which. */
+  downloaded?: boolean;
   log?: (line: string) => void;
   /**
    * A443: on a branch server — fetch the approved version for the branch's tills (whether or not this server needs it),
@@ -371,7 +376,9 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
     if (bySupport) return say({ decision, approved, bySupport, reason: 'updates for this business are released by ZapTill support (desktop only) — nothing to download' });
     return say({ decision, approved, reason: 'the business is on hold (no version approved) — nothing to download' });
   }
-  if (decision !== 'update' || !approved || !token) return say({ decision, approved, reason: `approved ${approved}, this machine runs ${d.running} — nothing to download` });
+  if (decision !== 'update' || !approved || !token) return say({ decision, approved, reason: d.downloaded
+    ? `approved ${approved}: ${d.running} is downloaded and waiting to install — nothing to download`
+    : `approved ${approved}, this machine runs ${d.running} — nothing to download` });
   if (d.selfUpdate === false) return say({ decision, approved, reason: `approved ${approved}: this machine's own download is already under way` });
   const via = shared ?? d.route?.(cloud) ?? { base: cloud, headers: {} };
   d.updater.setFeedURL({ provider: 'generic', url: feedUrlFor(via.base, approved) });
@@ -568,7 +575,7 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
     busy = true;
     try {
       const r = await runUpdateCheck({
-        ...d.checkDeps({ running: held ?? d.running, selfUpdate: !downloading }),
+        ...d.checkDeps({ running: held ?? d.running, selfUpdate: !downloading }), downloaded: !!held,
         selfUpdate: !downloading,
         onStarted: (c) => { cancel = c; touch(); },
       });
@@ -683,6 +690,33 @@ export function reportIdleInstall(running: string): (IdleInstallRecord & { ok: b
   return lastIdleInstall;
 }
 
+/**
+ * A622: the updater task's last answer, when it is about a version newer than what runs — the install did not take.
+ * The first start that sees it writes it to the log with the updater's own last lines (so a pulled log carries the
+ * installer's exit code); every start returns it for the update report ("install failed: installer exit 2"). Never throws.
+ */
+const OUTCOME_NOTED_KEY = 'update_outcome_noted';
+let installError: string | null = null;
+export function failedInstallReason(o: UpdaterOutcome | null, running: string): string | null {
+  if (!o || (o.state !== 'failed' && o.state !== 'refused') || !o.version || !VERSION_RE.test(running)) return null;
+  if (compareVersions(o.version, running) <= 0) return null;
+  return `${o.version}: ${o.state === 'refused' ? 'the updater refused it — ' : ''}${o.reason || 'no reason given'}`;
+}
+function noteFailedInstall(running: string): string | null {
+  if (process.platform !== 'win32') return null;
+  const deps = defaultTaskDeps();
+  const o = readUpdaterOutcome(deps);
+  const why = failedInstallReason(o, running);
+  if (!why || !o) return null;
+  const stamp = `${o.version}|${o.at ?? ''}`;
+  if (readKept<string>(OUTCOME_NOTED_KEY) !== stamp) {
+    noteUpdate(`the install of ${why} — this machine still runs ${running}; it tries again at the next start`);
+    for (const line of updaterLogTail(deps, 8)) noteUpdate(`updater.log: ${line}`);
+    writeKept(OUTCOME_NOTED_KEY, stamp);
+  }
+  return why;
+}
+
 /** How the machine finds out whether Windows would stop an install nobody is there for. */
 export interface ElevationProbe {
   platform: string;
@@ -791,7 +825,7 @@ export function createIdleInstaller(d: IdleInstallDeps) {
     if (v && c.approved) state.blocker = await d.blocker().catch((e: any) => `Windows could not be asked (${e?.message ?? e})`);
     // An idle install of this very version that did not take (the machine came back on the old one) is not tried again
     // and again — once is enough; it installs when ZapTill is closed.
-    if (v && !state.blocker && d.failedBefore?.(v)) state.blocker = 'an earlier install of it while idle did not take';
+    if (v && !state.blocker && d.failedBefore?.(v)) state.blocker = 'an earlier install of it while idle did not take — it installs the next time ZapTill starts';
     if (v && !state.blocker && refused && refused.version === v && t - refused.at < TASK_REFUSED_RETRY_MS) state.blocker = `the updater task refused it (${refused.reason})`;
     try { d.onBlocker?.(v && c.approved ? state.blocker : null); } catch { /* never stops the check */ }   // A541
     const verdict = installVerdict(state, t);
@@ -869,9 +903,13 @@ export function closeInstallPlan(s: {
 // machine without the A509 updater task the idle install is refused (Windows would ask for permission with nobody
 // there). Now, when ZapTill starts at sign-in with an approved, newer update already downloaded, it installs it BEFORE it
 // serves the branch: through the updater task (no prompt), else electron-updater's installer (Windows may ask — somebody
-// has just signed in, so somebody is there). Once per version: the attempt is recorded before anything is installed, so
-// an install that does not take is never tried again at every start (it installs when ZapTill is closed, or idle);
-// the start after the install is not a sign-in start, and the new version is not newer — no loop.
+// has just signed in, so somebody is there).
+//
+// A622 (owner, 2026-11-04, after TJS T1 sat on 1.0.20 for a week: "on start up whether is a server or a till it should
+// always install downloaded updates they should happen as the first thing on startup"): EVERY start installs a waiting
+// update first — a branch server opened by hand too, and no more "once per version". The guard against a loop is the
+// start after an install: the relaunch task (and our own fallback) starts ZapTill with --updated, and that start never
+// installs. So an installer that fails costs one try per start, and the next start tries again.
 
 /** What electron-updater downloaded, kept across restarts (it is otherwise known only after the first check, 4 min in). */
 export interface StagedUpdate { version: string; installerPath: string | null; approved: boolean; at: string }
@@ -928,16 +966,14 @@ export interface StartupInstallInput {
   running: string;
   staged: StagedUpdate | null;
   installerExists: boolean;
-  /** The version a start-up install was already tried for (once per version). */
-  triedVersion: string | null;
   server: boolean;
   /** A branch server holds the branch's copy of the version for its tills (A496 — never leave them without it). */
   shareReady: boolean;
   /** The cloud's answer now: the approved version, null = hold, undefined = not answered (the last answer stands). */
   cloudApproved?: string | null;
   /**
-   * A546: a person opened the till (not Windows, not the restart task, not the relaunch after an update) — the backup:
-   * an approved update waiting installs first, before the PIN screen ("Updating ZapTill…"). Never on a branch server.
+   * A546: a person opened ZapTill (not Windows, not the restart task, not the relaunch after an update): the waiting
+   * update installs first, with the "Updating ZapTill…" screen. A622: a branch server too.
    */
   openedByHand?: boolean;
   /**
@@ -950,13 +986,12 @@ export interface StartupInstallInput {
 /** Pure: install the waiting update now, at start-up? */
 export function startupInstallPlan(s: StartupInstallInput): { install: boolean; reason: string; withdrawn?: boolean } {
   const no = (reason: string, withdrawn = false) => ({ install: false, reason, ...(withdrawn ? { withdrawn } : {}) });
-  if (s.updatedLaunch) return no('ZapTill has just been updated');
-  if (s.openedByHand && s.server) return no('a branch server opened by hand — it installs at the next Windows sign-in, or when closed');   // A546: unchanged (A541)
-  if (!s.signInStart && !s.openedByHand) return no('not a start at Windows sign-in (started by hand, or by the restart task) — only a sign-in start installs first');
+  // A622: every start installs a waiting update first — a branch server or a POS, at sign-in or opened by hand. The one
+  // exception is the start right after an install (or an install that did not start): one try per start, never a loop.
+  if (s.updatedLaunch) return no('ZapTill has just been updated, or an install was just tried — it starts as usual and tries again at the next start');
   const v = s.staged?.version ?? null;
   if (!v || !VERSION_RE.test(v)) return no('no update downloaded');
   if (!VERSION_RE.test(s.running) || compareVersions(v, s.running) <= 0) return no(`${v} is not newer than ${s.running}`);
-  if (s.triedVersion === v) return no(`an install of ${v} at start-up was tried once already and did not take — it installs when ZapTill is closed`);
   if (!s.staged!.approved) return no(`${v} is no longer approved — it will not be installed`);
   if (s.cloudApproved === null) return no(`the business is now on hold — ${v} will not be installed`, true);
   if (typeof s.cloudApproved === 'string' && VERSION_RE.test(s.cloudApproved) && compareVersions(s.cloudApproved, v) < 0) {
@@ -1003,8 +1038,8 @@ export async function runStartupInstall(d: StartupInstallDeps): Promise<{ instal
   const in0 = d.input();
   const first = startupInstallPlan(in0);
   if (!first.install) {
-    // Said only when something newer is waiting at a sign-in start (not at every start by hand).
-    const waiting = in0.signInStart && !in0.updatedLaunch && !!in0.staged && VERSION_RE.test(in0.running) && compareVersions(in0.staged.version, in0.running) > 0;
+    // Said only when something newer is waiting (not "no update downloaded" at every start).
+    const waiting = !!in0.staged && VERSION_RE.test(in0.running) && compareVersions(in0.staged.version, in0.running) > 0;
     if (waiting) d.log(`start-up install: ${first.reason}`);
     return { installing: false, reason: first.reason };
   }
@@ -1023,9 +1058,11 @@ export async function runStartupInstall(d: StartupInstallDeps): Promise<{ instal
   // till opened by hand later still installs it (with the Windows prompt — somebody is there).
   const quiet = input.quiet === true;
   const byHand = !quiet && input.openedByHand === true && !input.signInStart;
-  if (quiet && !(await d.task().catch(() => false))) {
+  // A622: a start nobody asked for (the restart task after a crash) installs through the updater task only, like a quiet one.
+  const unattended = !quiet && !byHand && !input.signInStart;
+  if ((quiet || unattended) && !(await d.task().catch(() => false))) {
     const why = 'no ZapTill Updater task on this PC — Windows would ask for permission and nobody may be at the POS';
-    d.log(`start-up install: ${v} not installed at Windows sign-in: ${why}; it installs the next time ZapTill is opened (Windows will ask)`);
+    d.log(`start-up install: ${v} not installed ${quiet ? 'at Windows sign-in' : 'at this automatic start'}: ${why}; it installs the next time ZapTill is opened (Windows will ask)`);
     return { installing: false, reason: why };
   }
   d.log(`start-up install: ${plan.reason}${cloudApproved === undefined ? ' (the cloud did not answer — the last answer stands)' : ''}`);
@@ -1041,9 +1078,9 @@ export async function runStartupInstall(d: StartupInstallDeps): Promise<{ instal
   let drawers = 0;
   try { drawers = d.openDrawers(); } catch { /* not known */ }
   if (drawers > 0) d.log(`start-up install: ${drawers} drawer${drawers === 1 ? ' is' : 's are'} open on this machine — kept as they are (the local database); ZapTill comes back with ${drawers === 1 ? 'it' : 'them'} open`);
-  // Once per version, recorded BEFORE anything is installed — an install that does not take is not tried at every start.
+  // Recorded BEFORE anything is installed: the next start knows this version was tried (the admin portal's report).
   d.markTried({ version: v, from, at: new Date(now()).toISOString() });
-  const when = quiet ? 'at Windows sign-in (quietly)' : byHand ? 'when ZapTill was opened' : 'at sign-in';
+  const when = quiet ? 'at Windows sign-in (quietly)' : byHand ? 'when ZapTill was opened' : unattended ? 'at an automatic start' : 'at sign-in';
   const go = (how: string) => {
     try { d.record({ from, to: v, at: new Date(now()).toISOString(), reason: 'startup', why: how }); } catch { /* never */ }
     try { d.beforeQuit(); } catch (e: any) { d.log(`start-up install: closing for the install: ${e?.message ?? e} — going on`); }
@@ -1055,8 +1092,8 @@ export async function runStartupInstall(d: StartupInstallDeps): Promise<{ instal
   if (await d.task().catch(() => false)) {
     const r = await d.viaTask(v, !quiet).catch((e: any) => ({ ok: false as const, reason: `the updater task could not be asked (${e?.message ?? e})` }));
     if (r.ok) { go(`the updater task, ${when}`); d.quit(); return { installing: true, reason: 'the updater task' }; }
-    if (quiet) {
-      d.log(`start-up install: ${r.reason} — not installed at Windows sign-in (no prompt with nobody there); it installs the next time ZapTill is opened`);
+    if (quiet || unattended) {
+      d.log(`start-up install: ${r.reason} — not installed ${quiet ? 'at Windows sign-in' : 'at this automatic start'} (no prompt with nobody there); it installs the next time ZapTill is opened`);
       return failed(r.reason);
     }
     d.log(`start-up install: ${r.reason} — trying the installer instead (Windows may ask for permission; somebody is at the ${byHand ? 'till' : 'machine — they have just signed in'})`);
@@ -1241,6 +1278,8 @@ export function initAutoUpdate(): void {
 
   // A508: what the last idle install did (logged once after its restart; the Tech page shows it).
   try { reportIdleInstall(running); } catch { /* never stops the updater */ }
+  // A622: and why it did not take, in the updater's own words (the installer's exit code) — logged once, reported.
+  try { installError = noteFailedInstall(running); } catch { /* never stops the updater */ }
   // A508: every minute — may the downloaded update install now, with nobody there? (installVerdict)
   let elevation: { version: string; at: number; answer: Promise<string | null> } | null = null;
   const idle = createIdleInstaller({
@@ -1325,8 +1364,7 @@ export function initAutoUpdate(): void {
         const server = isNodeRole(cfg?.device_role ?? null);
         let exists = false;
         try { exists = !!staged?.installerPath && fs.existsSync(staged.installerPath); } catch { exists = false; }
-        return { signInStart, updatedLaunch, running, staged, installerExists: exists,
-          triedVersion: readKept<StartupInstallTry>(triedKey)?.version ?? null, server,
+        return { signInStart, updatedLaunch, running, staged, installerExists: exists, server,
           shareReady: !staged || !server || !!readyVersion(shareDir(), staged.version),
           openedByHand: byHand, quiet: quiet === true };
       },
@@ -1384,7 +1422,8 @@ export function initAutoUpdate(): void {
       quitAndInstall: () => {
         closeTaskDone = true;
         autoUpdater.quitAndInstall(false /* the progress shows — somebody has just signed in */, true);
-        setTimeout(() => { noteUpdate('the start-up install did not start — ZapTill starts again as it was'); app.relaunch(); app.exit(0); }, 2 * 60_000);
+        // A622: started again as "after an update", so that start does not try the install once more (no loop).
+        setTimeout(() => { noteUpdate('the start-up install did not start — ZapTill starts again as it was'); app.relaunch({ args: [UPDATED_ARG] }); app.exit(0); }, 2 * 60_000);
       },
       log: noteUpdate,
     });

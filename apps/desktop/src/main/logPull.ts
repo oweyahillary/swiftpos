@@ -36,6 +36,7 @@ import { channelHealth } from './nodeHealth';
 import {
   buildSupportText, packSupportText, lazyLogFiles, rolledPaths, rangeLabel, syncSummary, sendVerdict, type SupportHeader,
 } from './supportLogs';
+import { machineLogSections, type LogSection } from './machineLogs';   // A622
 
 export const MAX_TRIES = 3;
 /** A pull reads further back than the Tech page's button (2 MB): 3 MB of log text — under the cloud's 4 MB unpack limit. */
@@ -107,13 +108,13 @@ function diskFree(): string | null {
 }
 
 /** The text sent for one request (every secret removed — supportLogs.buildSupportText). Exported for the tests. */
-export function pullText(r: LogRequest, nowMs = Date.now()): string {
+export function pullText(r: LogRequest, nowMs = Date.now(), sections: LogSection[] = []): string {
   const windowMs = r.range_hours * 3_600_000;
   const since = nowMs - windowMs;
   return buildSupportText(header(r),
     lazyLogFiles(rolledPaths(getLogPath(), KEEP_FILES), since),
     r.include?.auth ? lazyLogFiles(rolledPaths(getAuthLogPath(), AUTH_KEEP_FILES), since) : [],
-    nowMs, { windowMs, logCap: PULL_LOG_CAP_BYTES, includeAuth: r.include?.auth === true, diagnostics: diagnostics(r) }).text;
+    nowMs, { windowMs, logCap: PULL_LOG_CAP_BYTES, includeAuth: r.include?.auth === true, diagnostics: diagnostics(r), sections }).text;
 }
 
 type Outcome = 'sent' | 'closed' | 'failed' | 'skipped';
@@ -125,7 +126,10 @@ async function answer(r: LogRequest): Promise<Outcome> {
   if (n === 0) logLine('tech', `A533: ZapTill support asked for this till's log (request ${r.id}, the last ${range}${r.include?.auth ? ', with the sign-in history' : ''}) — sending`);
   let status: number | null = null; let body: any = null;
   try {
-    const packed = packSupportText(pullText(r));
+    // A622: with the PC's other logs — the updater's (an install's exit code) and Windows' events naming ZapTill.
+    const now = Date.now();
+    const sections = await machineLogSections(now, r.range_hours * 3_600_000).catch(() => []);
+    const packed = packSupportText(pullText(r, now, sections));
     const res = await liveCloudPost('/api/support/logs', { log_gz_b64: packed.b64, bytes: packed.bytes, trimmed: packed.trimmed,
       terminal_code: getDeviceConfig()?.terminal_code ?? null, app_version: safe(() => app.getVersion(), null), request_id: r.id });
     status = res.status; body = await res.json().catch(() => null);

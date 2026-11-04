@@ -6,7 +6,8 @@ import { assertPayload } from '../ipcValidate';
 import { getBuildInfo } from '../buildInfo';
 import { getLocalDb } from '../localDb';
 import { logLine, getLogPath, getAuthLogPath, KEEP_FILES, AUTH_KEEP_FILES } from '../logFile';
-import { buildSupportText, packSupportText, readLogFiles, rolledPaths, sendVerdict, syncSummary, type SupportHeader } from '../supportLogs';   // A519
+import { buildSupportText, packSupportText, readLogFiles, rolledPaths, sendVerdict, syncSummary, WINDOW_MS, type SupportHeader } from '../supportLogs';   // A519
+import { machineLogSections } from '../machineLogs';   // A622
 import { lastStartupLine } from '../lowImpactStart';
 import fs from 'fs';
 import path from 'path';   // A516
@@ -252,7 +253,7 @@ export function registerTechHandlers(ctx: IpcShared) {
   // logRedact.ts), with a short header, to the cloud (POST /api/support/logs, under this till's own session); the admin
   // portal shows it on the client's page. A technician's session only (the log names staff and sales). Offline: the
   // Tech page offers "Save log to file" (tech:saveLog) instead.
-  const supportText = (): string => {
+  const supportText = async (): Promise<string> => {
     const cfg = getDeviceConfig();
     const db = getLocalDb();
     const sess = db.prepare(`SELECT business_id, business_name FROM session WHERE id=1`).get() as any;
@@ -269,12 +270,15 @@ export function registerTechHandlers(ctx: IpcShared) {
       sync: cfg?.node_url && !isNodeRole(cfg.device_role) ? syncSummary(channelHealth()) : [],
       tech: tech ? `${tech.techName} (${tech.techId})` : null, at: new Date().toISOString(),
     };
+    // A622: with the PC's other logs — the updater's (an install's exit code) and Windows' events naming ZapTill.
+    const now = Date.now();
+    const sections = await machineLogSections(now, WINDOW_MS).catch(() => []);
     return buildSupportText(header, readLogFiles(rolledPaths(getLogPath(), KEEP_FILES)),
-      readLogFiles(rolledPaths(getAuthLogPath(), AUTH_KEEP_FILES)), Date.now()).text;
+      readLogFiles(rolledPaths(getAuthLogPath(), AUTH_KEEP_FILES)), now, { sections }).text;
   };
   handle('tech:sendLogs', async () => {
     if (!getActiveSession()) throw new Error('Tech session required');
-    const packed = packSupportText(supportText());
+    const packed = packSupportText(await supportText());
     let status: number | null = null; let body: any = null;
     try {
       const raw = getRawTechToken();
@@ -295,7 +299,7 @@ export function registerTechHandlers(ctx: IpcShared) {
     const choice = await dialog.showSaveDialog(win!, { title: 'Save the log for support', defaultPath: name,
       filters: [{ name: 'Text', extensions: ['txt'] }] });
     if (choice.canceled || !choice.filePath) return { ok: false, canceled: true };
-    fs.writeFileSync(choice.filePath, supportText(), 'utf8');
+    fs.writeFileSync(choice.filePath, await supportText(), 'utf8');
     logLine('tech', `A519: log saved to a file for support`);
     return { ok: true, path: choice.filePath };
   });
