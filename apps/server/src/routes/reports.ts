@@ -10,6 +10,7 @@ import { chunkIn } from '../lib/pgQuery';
 import { summariseKitchenVoids, kitchenVoidText } from '@zaptill/core/kitchenLines';
 import { sumOrderTax, orderTax, keptFraction } from '../lib/orderTax';
 import { splitByMethod, addMethods, methodList } from '../lib/staffMethods';   // A439
+import { upliftByPlatform } from '../lib/platformPricing';   // A619
 import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';   // 0.6.34
 import { getDayCutoff } from '../lib/dayCutoff';
 
@@ -822,6 +823,13 @@ router.get('/master', requirePermission('reports.sales'), async (req, res) => {
     }
   }
 
+  // ── 4b. A619: of the delivery platforms' sales, what their prices added (platform − normal prices) ─────────────────
+  // Read on its own (lib/platformPricing.ts): before migration 187 it is empty and the report is as before.
+  const platformUplift = await upliftByPlatform(() => byBranch(supabase.from('orders')
+    .select('price_list, platform_uplift, status')
+    .eq('business_id', req.businessId).eq('status', 'completed').not('price_list', 'is', null)
+    .gte('created_at', start).lte('created_at', end), bf));
+
   // ── 5. Category breakdown ─────────────────────────────────────────────────
   const orderIds = completed.map(o => o.id);
   // Shape of what the loop below actually produces — the previous declaration
@@ -905,7 +913,9 @@ router.get('/master', requirePermission('reports.sales'), async (req, res) => {
       amount,
       pct: totalRevenue > 0 ? (amount / totalRevenue) * 100 : 0,
     })),
-    payments: Object.entries(payments).map(([method, amount]) => ({ method, amount })),
+    // A619: a delivery platform's row also says what its prices added ("of which uplift"); absent = none.
+    payments: Object.entries(payments).map(([method, amount]) => ({ method, amount,
+      ...(platformUplift[method] ? { uplift: platformUplift[method] } : {}) })),
     categoryBreakdown,
     ...(seesExpenses ? { expenses: {
       total: totalExpenses,

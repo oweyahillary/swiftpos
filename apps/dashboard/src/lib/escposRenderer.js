@@ -1,7 +1,5 @@
 // scripts/escpos-renderer/buffer-shim.js
-if (typeof globalThis.Buffer === "undefined") {
-  globalThis.Buffer = { from: (a) => Uint8Array.from(a) };
-}
+var PrinterBuffer = typeof globalThis.Buffer !== "undefined" ? globalThis.Buffer : { from: (a) => Uint8Array.from(a) };
 
 // shared/printing/src/document.ts
 var DocBuilder = class {
@@ -1076,7 +1074,7 @@ function toEscPos(doc, opts = {}) {
   const feed = opts.cut && doc.cutFeed !== void 0 ? doc.cutFeed : opts.feedBeforeCut;
   if (feed) push(ESC, 100, Math.max(0, Math.min(255, feed)));
   if (opts.cut) push(GS, 86, 66, 0);
-  return Buffer.from(out);
+  return PrinterBuffer.from(out);
 }
 
 // shared/printing/src/routing.ts

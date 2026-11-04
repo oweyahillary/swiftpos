@@ -2,8 +2,9 @@ import MethodDot from '@zaptill/ui/MethodDot';
 import type { AppliedOffer } from '@zaptill/core/offers';   // A445
 import { enabledFromSetting, paymentButtons } from '@zaptill/core/paymentCatalogue';   // A429
 import { methodColour, methodSolid, methodTint } from '@zaptill/core/paymentColours';
+import { isPlatformMethod, needsPlatformConfirm, changesText, type PlatformQuote, type PlatformRecord } from '@zaptill/core/platformPrices';   // A619
 import type { MonoRaster } from '../../lib/escposRenderer';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { generateOrderNumber, extractTaxes } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
@@ -102,18 +103,24 @@ interface Props {
   /** A607: the customer's details for this sale (SaleCustomerPanel): the name, the buyer's KRA PIN, a saved customer, and
    *  the number for the M-Pesa prompt (masked: shown masked to this person). */
   buyer?: { sale: { customer_name?: string; customer_phone?: string; buyer_kra_pin?: string; customer_id?: string }; stkPhone: string | null; masked?: boolean } | null;
+  /** A619: the cart at a delivery platform's prices (its offers recomputed on them, and what the order records) — null:
+   *  the platform's prices do not apply here (e.g. a parking bill). Absent: every method at normal prices. */
+  platformCart?: (platform: string) => PlatformCart | null;
 }
+
+/** A619: a cart re-priced for a delivery platform (shared/platformPrices.ts platformQuote), its offers and its record. */
+export type PlatformCart = PlatformQuote<CartItem> & { offers: AppliedOffer[]; record: PlatformRecord };
 
 function fmt(n: number) {
   return Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export default function PaymentModal({
-  cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptLogo, receiptFooter, receiptPay,
+  cart: rungCart, total, subtotal: rungSubtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptLogo, receiptFooter, receiptPay,
   posFeatures,
   orderType = 'retail', tableNumber,
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
-  maxDiscountPct = 10, existingOrderId, offers = [],
+  maxDiscountPct = 10, existingOrderId, offers: rungOffers = [],
   initialEvenSplit,
   pumpId,
   customMethods = [],
@@ -124,6 +131,7 @@ export default function PaymentModal({
   deliveryFree = false,
   riderFee = 0,
   buyer = null,
+  platformCart,
 }: Props) {
   // 0.6.33: what the order records as the delivery fee — the rider's; on a free delivery the customer pays none of it.
   const free = deliveryFree && riderFee > 0;
@@ -140,7 +148,24 @@ export default function PaymentModal({
   const branchButtons = paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web');
   const builtInMethods = (['cash', 'mpesa', 'card', 'credit'] as SingleMethod[]).filter(m => branchButtons.some(b => b.code === m));
   const extraMethods = branchButtons.filter(b => !(['cash', 'mpesa', 'card', 'credit'] as string[]).includes(b.code));
-  const [method, setMethod]         = useState<string>(() => builtInMethods[0] ?? extraMethods[0]?.code ?? 'cash');
+  const [method, setMethodRaw]      = useState<string>(() => builtInMethods[0] ?? extraMethods[0]?.code ?? 'cash');
+
+  // ── A619: delivery platform prices ──────────────────────────────────────────
+  // Owner, 2026-11-01: "the moment a cashier picks glovo or uber eats as the payment method the price changes" — the sale
+  // was rung at normal prices; with a platform chosen (one payment, never a split) every line is at the platform's price,
+  // its offers recomputed on them; any other method: the rung prices again. Charge asks first only for a platform. A bill
+  // already open (sent before payment) keeps the prices it was opened at.
+  const [confirmingPlatform, setConfirmingPlatform] = useState(false);
+  const [platformRef, setPlatformRef] = useState('');
+  const setMethod = (m: string) => { setMethodRaw(m); setConfirmingPlatform(false); };
+  const platform = !splitMode && !evenSplitMode && !byItemMode && isPlatformMethod(method) ? method : null;
+  const platformName = platform ? (branchButtons.find((b) => b.code === platform)?.name ?? platform) : '';
+  const quote = useMemo(() => (platform && platformCart && !existingOrderId ? platformCart(platform) : null),
+    [platform, platformCart, existingOrderId]);
+  const cart = quote?.lines ?? rungCart;
+  const subtotal = quote?.platformSubtotal ?? rungSubtotal;
+  const offers = quote ? quote.offers : rungOffers;
+  const platformFields = quote ? quote.record : {};
   // Credit account for the attached customer (fetched when 'credit' is chosen).
   const [creditInfo, setCreditInfo] = useState<{ credit_limit: number; credit_balance: number; available_credit: number } | null>(null);
   const [creditLoading, setCreditLoading] = useState(false);
@@ -244,9 +269,14 @@ export default function PaymentModal({
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
+  const offerOff = Math.min(subtotal, Math.round(offers.reduce((s, o) => s + o.amount, 0) * 100) / 100);
   const rawLoyaltyDiscount = loyaltyState?.discountAmount ?? 0;
+  // A619: at a platform's prices a percentage discount is that percentage of the platform's bill; a fixed one stays.
   const rawPromoDiscount   = mayDiscount ? (discountState?.discount_amount ?? 0) : 0;
-  const rawDiscount        = rawLoyaltyDiscount + rawPromoDiscount;
+  const promo = discountState?.discount;
+  const promoOff = quote && rawPromoDiscount > 0 && promo?.type === 'percentage'
+    ? Math.round((subtotal - offerOff) * Number(promo.value)) / 100 : rawPromoDiscount;
+  const rawDiscount        = rawLoyaltyDiscount + promoOff;
 
   // Clamp the combined discount to the server's ceiling BEFORE charging. The
   // server recomputes the order with the same cap and stores the capped total;
@@ -256,7 +286,6 @@ export default function PaymentModal({
   // server's capDiscount exactly.
   // A445: offers come off first and are not capped; the manual discount (loyalty + a promo code) is capped on what is
   // left — exactly as the cloud recomputes it (orders.ts) and the till does.
-  const offerOff = Math.min(subtotal, Math.round(offers.reduce((s, o) => s + o.amount, 0) * 100) / 100);
   const cappedDiscount = capDiscountPct(rawDiscount, Math.round((subtotal - offerOff) * 100) / 100, maxDiscountPct);
   const discountWasCapped = cappedDiscount < rawDiscount - 0.005;
   /** The WHOLE discount: offers + the capped manual one (orders.discount_amount). */
@@ -272,6 +301,8 @@ export default function PaymentModal({
   // The total actually charged: subtotal minus the capped discount. `total` came
   // in reflecting the uncapped discount, so recompute rather than trust it.
   const chargedTotal  = Math.round((subtotal - allDiscount) * 100) / 100;
+  // A619: a tip on a platform's bill is worked out on that bill (the rung total is the normal-price one).
+  const tipBase = quote ? chargedTotal : total;
   // A349: VAT and the levy on what is actually CHARGED (after the capped discount), at the business's own rates — the
   // figures the receipt shows and the payload carries (the cloud recomputes and stores its own; they now agree).
   const taxes = extractTaxes(chargedTotal, Number(business?.vat_rate ?? 16), Number(business?.ctl_rate ?? 0) || 0);
@@ -349,6 +380,7 @@ export default function PaymentModal({
       ctl_amount:      chargedCtl,
       discount_amount: allDiscount,
       ...offerFields,   // A445
+      ...platformFields,   // A619: price_list (the cloud re-derives the platform's prices), the rule, the uplift
       discount_id:     mayDiscount ? (discountState?.discount.id ?? null) : null,
       total:           chargedTotal,
       tip_amount:      tipAmount,
@@ -427,7 +459,7 @@ export default function PaymentModal({
         amount:          grandTotal,
         amount_tendered: method === 'cash' ? tenderedNum : (method === 'credit' ? 0 : grandTotal),
         change_given:    method === 'cash' ? change : 0,
-        reference:       null,
+        reference:       platform ? (platformRef.trim() || null) : null,   // A619: the platform's order #
       }];
       const endpoint = existingOrderId
         ? `/api/orders/${existingOrderId}/pay`
@@ -437,7 +469,7 @@ export default function PaymentModal({
       );
       setCompletedOrder(makeCompletedOrder(
         orderNumber,
-        [{ method, amount: grandTotal, reference: '' }],
+        [{ method, amount: grandTotal, reference: platform ? platformRef.trim() : '' }],
         method === 'cash' ? tenderedNum : grandTotal,
         method === 'cash' ? change : 0,
         orderId ?? existingOrderId,
@@ -716,6 +748,7 @@ export default function PaymentModal({
   }
 
   // ── Payment entry screen ──────────────────────────────────────────────────
+  const splitRow = platform ? 'hidden' : 'flex items-center justify-between';   // A619
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4 py-6 animate-fade-in">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-full overflow-hidden animate-pop-in">
@@ -732,6 +765,15 @@ export default function PaymentModal({
           <div className="text-center py-2">
             <p className="text-gray-400 text-sm">Total due</p>
             <p className="text-white text-3xl font-bold mt-1">{currency} {fmt(grandTotal)}</p>
+            {/* A619: the platform's prices, said plainly — never a "+15%" line */}
+            {quote && (
+              <p className="text-sky-300 text-xs mt-1" data-testid="platform-prices">
+                {platformName} prices: {changesText(quote.changes)}{quote.changes.length ? ` — total ${currency} ${fmt(quote.platformSubtotal)}` : ''}
+              </p>
+            )}
+            {platform && existingOrderId && (
+              <p className="text-gray-400 text-xs mt-1">This bill was opened already — it is charged at the prices it was opened at.</p>
+            )}
             {offerOff > 0 && offers.map((o) => (
               <p key={o.offer_id} data-testid="payment-offer" className="text-amber-300 text-xs mt-1">Includes offer {o.name}: {currency} {fmt(o.amount)}</p>
             ))}
@@ -761,8 +803,8 @@ export default function PaymentModal({
             </div>
           )}
 
-          {/* Split toggles */}
-          <div className="flex items-center justify-between">
+          {/* Split toggles — A619: not while a delivery platform is chosen (it pays the whole bill) */}
+          <div className={splitRow}>
             <p className="text-gray-400 text-sm">Split payment (by method)</p>
             <button
               onClick={() => { setSplitMode(s => !s); setEvenSplitMode(false); setByItemMode(false); }}
@@ -771,7 +813,7 @@ export default function PaymentModal({
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${splitMode ? 'translate-x-5' : ''}`} />
             </button>
           </div>
-          <div className="flex items-center justify-between">
+          <div className={splitRow}>
             <p className="text-gray-400 text-sm">Split evenly (per person)</p>
             <button
               onClick={() => { setEvenSplitMode(s => !s); setSplitMode(false); setByItemMode(false); }}
@@ -790,7 +832,7 @@ export default function PaymentModal({
               onCancel={() => setEvenSplitMode(false)}
             />
           )}
-          <div className="flex items-center justify-between">
+          <div className={splitRow}>
             <p className="text-gray-400 text-sm">Split by item (per guest)</p>
             <button
               onClick={() => { setByItemMode(s => !s); setSplitMode(false); setEvenSplitMode(false); }}
@@ -866,7 +908,7 @@ export default function PaymentModal({
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {[5, 10, 15].map(pct => {
-                      const amt = Math.round((total * pct) / 100 * 100) / 100;
+                      const amt = Math.round((tipBase * pct) / 100 * 100) / 100;
                       const active = Math.abs(tipAmount - amt) < 0.005 && tipAmount > 0;
                       return (
                         <button key={pct} type="button"
@@ -881,7 +923,7 @@ export default function PaymentModal({
                     })}
                     <input
                       type="number" min={0} placeholder="Custom"
-                      value={tipAmount > 0 && ![5,10,15].some(p => Math.abs(tipAmount - total*p/100) < 0.005) ? tipAmount : ''}
+                      value={tipAmount > 0 && ![5,10,15].some(p => Math.abs(tipAmount - tipBase*p/100) < 0.005) ? tipAmount : ''}
                       onChange={e => setTipAmount(Math.max(0, parseFloat(e.target.value) || 0))}
                       className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm placeholder-gray-600"
                     />
@@ -1028,10 +1070,31 @@ export default function PaymentModal({
                 {placing && <span className="spin-dot" aria-hidden />}
                 {placing ? 'Creating order…' : '📱 Initiate M-Pesa payment'}
               </button>
+            ) : confirmingPlatform ? (
+              // A619: "a confirmation of payment method when a cashier clicks charge glovo, uber but cash there is no need"
+              <div className="space-y-3" data-testid="platform-confirm">
+                <div>
+                  <p className="text-white font-semibold">Charge to {platformName}?</p>
+                  <p className="text-sky-300 text-sm mt-0.5">
+                    {quote ? `${platformName} prices: ${changesText(quote.changes)}` : `${platformName} — normal prices`} · {currency} {fmt(grandTotal)}
+                  </p>
+                </div>
+                <input type="text" value={platformRef} onChange={(e) => setPlatformRef(e.target.value)} autoFocus
+                  placeholder={branchButtons.find((b) => b.code === platform)?.reference ?? 'Order #'}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500" />
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setConfirmingPlatform(false)} disabled={placing}
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-3 text-sm font-medium">Back</button>
+                  <button type="button" data-testid="payment-confirm" onClick={handleCharge} disabled={placing}
+                    className="flex-[2] bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
+                    {placing && <span className="spin-dot" aria-hidden />}{placing ? 'Processing…' : `Charge to ${platformName}`}
+                  </button>
+                </div>
+              </div>
             ) : (
               <button
                 data-testid="payment-confirm"
-                onClick={handleCharge}
+                onClick={needsPlatformConfirm(platform) ? () => setConfirmingPlatform(true) : handleCharge}
                 disabled={placing || !cashValid || !creditValid}
                 className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
               >
@@ -1040,7 +1103,9 @@ export default function PaymentModal({
                   ? 'Processing…'
                   : method === 'credit'
                     ? `Charge to account — ${currency} ${fmt(grandTotal)}`
-                    : `Confirm ${method === 'card' ? 'card' : 'cash'} payment — ${currency} ${fmt(grandTotal)}`}
+                    : platform
+                      ? `Charge ${platformName} — ${currency} ${fmt(grandTotal)}`   // A619: asks first (above)
+                      : `Confirm ${method === 'card' ? 'card' : 'cash'} payment — ${currency} ${fmt(grandTotal)}`}
               </button>
             )}
           </div>

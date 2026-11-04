@@ -32,6 +32,8 @@ export interface AttendancePalette {
   ramp: string[];
   off: string;
   missing: string;
+  /** A616: a late arrival (the bar under a grid cell, the Late arrivals card) */
+  late: string;
   ink: string;
   grid: string;
 }
@@ -39,13 +41,13 @@ const LIGHT = {
   cards: { hours: '#2a78d6', days: '#1baf7a', avg: '#6250d6', missed: '#e34948', corrections: '#eda100' },
   accent: '#0d9488',
   ramp: ['#d6f5ec', '#a5e6d1', '#5fceb0', '#1fa98a', '#0b7a64'],
-  off: '#e5e7eb', missing: '#dc2626', ink: '#0f172a', grid: '#e2e8f0',
+  off: '#e5e7eb', missing: '#dc2626', late: '#d97706', ink: '#0f172a', grid: '#e2e8f0',
 };
 const DARK = {
   cards: { hours: '#3987e5', days: '#199e70', avg: '#9085e9', missed: '#e66767', corrections: '#c98500' },
   accent: '#2dd4bf',
   ramp: ['#123b33', '#155e4f', '#13826b', '#1fa98a', '#5fceb0'],
-  off: '#1f2937', missing: '#f87171', ink: '#f9fafb', grid: '#1f2937',
+  off: '#1f2937', missing: '#f87171', late: '#fbbf24', ink: '#f9fafb', grid: '#1f2937',
 };
 export function attendancePalette(mode: Mode, brandAccent?: string | null): AttendancePalette {
   const base = mode === 'dark' ? DARK : LIGHT;
@@ -72,6 +74,21 @@ export function hoursWords(h: number | null | undefined): string {
   const hh = Math.floor(mins / 60), mm = mins % 60;
   return mm ? `${hh} h ${mm} min` : `${hh} h`;
 }
+/** A616: 25 → "25 min late"; 70 → "1 h 10 min late"; 0 → "" (on time). */
+export function lateWords(min: number | null | undefined): string {
+  const m = Math.round(Number(min) || 0);
+  if (m <= 0) return '';
+  return `${m >= 60 ? hoursWords(m / 60) : `${m} min`} late`;
+}
+/** A616: minutes after midnight → "HH:MM" (a shift's start or end). */
+export function clockOf(min: number): string {
+  const m = ((Math.round(min) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+/** A616: a shift's times in words: "09:00 – 17:00", "18:00 – 06:00 (next day)". */
+export const shiftTimes = (s: { start_min: number; end_min: number }): string =>
+  `${clockOf(s.start_min)} – ${clockOf(s.end_min)}${s.end_min <= s.start_min && s.end_min !== 0 ? ' (next day)' : ''}`;
+
 /** An ISO instant's clock time in East Africa Time ("07:58"), — when none. */
 export function clockEAT(iso: string | null | undefined): string {
   if (!iso) return '—';
@@ -106,29 +123,45 @@ export const preferredView = (dates: readonly string[]): 'week' | 'month' => (da
 // ── The cloud's answer (GET /api/attendance/report) ─────────────────────────────────────────────────────────────────
 export interface AttShift { in: string; out: string | null; minutes: number; long: boolean; inId: string; outId: string | null }
 export interface AttCorrection { id: string; kind: 'added' | 'moved' | 'removed'; at: string | null; was: string | null; reason: string; byName: string | null; when: string }
-export interface AttDay { date: string; firstIn: string | null; lastOut: string | null; hours: number; minutes: number; shifts: AttShift[]; missingOut: boolean; long: boolean; corrections: AttCorrection[] }
-export interface AttTotals { hours: number; daysWorked: number; avgHours: number; missedOuts: number; corrections: number; longShifts: number }
+/** A616: a branch's work shift (start / end in minutes after midnight; an end at or before the start is the next day). */
+export interface AttWorkShift { id: string; branch_id: string; name: string; start_min: number; end_min: number; grace_min: number }
+export interface AttDay {
+  date: string; firstIn: string | null; lastOut: string | null; hours: number; minutes: number; shifts: AttShift[]; missingOut: boolean; long: boolean; corrections: AttCorrection[];
+  shift?: { id: string; name: string; start_min: number; end_min: number } | null; lateMin?: number;
+}
+export interface AttTotals { hours: number; daysWorked: number; avgHours: number; missedOuts: number; corrections: number; longShifts: number; lateDays?: number; lateMinutes?: number }
 export interface AttPerson {
   key: string; person_id: string | null; user_id: string | null; name: string; attendance_no: number | null; attendance_only: boolean;
   active: boolean; branch_id: string | null; branch_name: string | null; totals: AttTotals; daily: Record<string, number>; missing: string[];
+  late?: string[]; shift_id?: string | null;
   hourly_rate?: number | null; pay?: number | null; days?: AttDay[];
 }
-export interface AttReport { from: string; to: string; dates: string[]; payVisible: boolean; people: AttPerson[]; team: { hours: number; people: number; missedOuts: number; corrections: number; pay?: number } }
+export interface AttReport {
+  from: string; to: string; dates: string[]; payVisible: boolean; people: AttPerson[];
+  team: { hours: number; people: number; missedOuts: number; corrections: number; pay?: number; lateDays?: number; lateMinutes?: number };
+  /** A616: the shifts of the branches in the report (none: no lateness anywhere). */
+  shifts?: AttWorkShift[];
+}
+/** A616: the report has shifts, so lateness is shown. */
+export const hasShifts = (r: Pick<AttReport, 'shifts'>): boolean => (r.shifts?.length ?? 0) > 0;
 
 /** The Excel download: Summary (one row a person; pay only when the cloud sent it) and the chosen person's days. */
 export function attendanceSheets(r: AttReport, person?: AttPerson | null): ReportSheet[] {
   const pay = r.payVisible === true;
+  const late = hasShifts(r);
   const sheets: ReportSheet[] = [{
     name: 'Summary',
     columns: [
       { key: 'name', label: 'Name' }, { key: 'no', label: 'Device number' }, { key: 'branch', label: 'Branch' },
       { key: 'hours', label: 'Hours', dp: 2 }, { key: 'days', label: 'Days worked' }, { key: 'avg', label: 'Average hours a day', dp: 2 },
       { key: 'missed', label: 'Missed punch-outs' }, { key: 'corrections', label: 'Corrections' },
+      ...(late ? [{ key: 'lateDays', label: 'Days late' }, { key: 'lateMin', label: 'Minutes late' }] : []),
       ...(pay ? [{ key: 'rate', label: 'Hourly rate', money: true }, { key: 'pay', label: 'Estimated pay', money: true }] : []),
     ],
     rows: r.people.map((p) => ({
       name: p.name, no: p.attendance_no ?? '', branch: p.branch_name ?? '', hours: p.totals.hours, days: p.totals.daysWorked,
       avg: p.totals.avgHours, missed: p.totals.missedOuts, corrections: p.totals.corrections,
+      ...(late ? { lateDays: p.totals.lateDays ?? 0, lateMin: p.totals.lateMinutes ?? 0 } : {}),
       ...(pay ? { rate: p.hourly_rate ?? '', pay: p.pay ?? '' } : {}),
     })),
   }, {
@@ -139,11 +172,12 @@ export function attendanceSheets(r: AttReport, person?: AttPerson | null): Repor
   if (person?.days) {
     sheets.push({
       name: person.name,
-      columns: [{ key: 'date', label: 'Date' }, { key: 'in', label: 'First in' }, { key: 'out', label: 'Last out' },
-        { key: 'hours', label: 'Hours', dp: 2 }, { key: 'flag', label: 'Check' }, { key: 'corr', label: 'Corrections' }],
+      columns: [{ key: 'date', label: 'Date' }, ...(late ? [{ key: 'shift', label: 'Shift' }] : []), { key: 'in', label: 'First in' }, { key: 'out', label: 'Last out' },
+        { key: 'hours', label: 'Hours', dp: 2 }, ...(late ? [{ key: 'late', label: 'Minutes late' }] : []), { key: 'flag', label: 'Check' }, { key: 'corr', label: 'Corrections' }],
       rows: person.days.map((d) => ({
-        date: d.date, in: clockEAT(d.firstIn), out: clockEAT(d.lastOut), hours: d.hours,
-        flag: [d.missingOut ? 'Missing punch-out' : '', d.long ? 'Over 12 h' : ''].filter(Boolean).join(', '),
+        date: d.date, ...(late ? { shift: d.shift?.name ?? '' } : {}), in: clockEAT(d.firstIn), out: clockEAT(d.lastOut), hours: d.hours,
+        ...(late ? { late: d.lateMin ?? 0 } : {}),
+        flag: [d.missingOut ? 'Missing punch-out' : '', d.long ? 'Long shift' : ''].filter(Boolean).join(', '),
         corr: d.corrections.map((c) => `${c.kind}: ${c.reason}${c.byName ? ` (${c.byName})` : ''}`).join('; '),
       })),
     });

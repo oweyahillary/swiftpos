@@ -4,6 +4,9 @@ import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '@zaptill/core/busi
 import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import HistoryMethodsPicker from './HistoryMethodsPicker';
 import BranchPaymentMethods from './BranchPaymentMethods';   // A429
+import { PlatformPricesEditor } from './PlatformPrices';   // A619
+import { enabledFromSetting } from '@zaptill/core/paymentCatalogue';
+import { cleanRounding } from '@zaptill/core/platformPrices';
 import { mpesaDescribe, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
 
 /** A492: what this branch's customers pay to by M-Pesa — read-only on the web; set on the branch's till by its manager. */
@@ -274,6 +277,10 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
         {/* A429: the payment methods this branch takes — each a switch. */}
         <BranchPaymentMethods override={overrides.payment_methods_enabled} businessDefault={defaults.payment_methods_enabled}
           onSave={(v) => save('payment_methods_enabled', v)} />
+        {/* A619: this branch's delivery platform prices — only the platforms it takes (the rounding is the business's). */}
+        <PlatformPricesEditor scope="branch" value={overrides.delivery_platform_prices} fallback={defaults.delivery_platform_prices}
+          platforms={enabledFromSetting(overrides.payment_methods_enabled ?? defaults.payment_methods_enabled ?? null)}
+          rounding={cleanRounding(defaults.delivery_platform_rounding)} onSave={(v) => save('delivery_platform_prices', v)} />
         {/* A492: the branch's M-Pesa number — shown; set on the branch's till by its manager. */}
         <div className="mt-4"><BranchMpesaLine branchId={branchId} /></div>
       </div>

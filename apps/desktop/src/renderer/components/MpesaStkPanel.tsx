@@ -16,8 +16,12 @@ import { phoneError, maskTypedPhone, newAskId, stkWords, type StkStage } from '@
 
 interface Stk { stage: StkStage; amount: number; currency: string; reason: string | null; mpesaRef: string | null }
 
-export default function MpesaStkPanel({ amount, currency, phone: given, masked: givenMasked = false, onPaid }: {
-  amount: number; currency: string; phone?: string | null; masked?: boolean; onPaid: (mpesaRef: string) => void;
+export default function MpesaStkPanel({ amount, currency, phone: given, masked: givenMasked = false, onPaid, onStage }: {
+  amount: number; currency: string; phone?: string | null; masked?: boolean;
+  /** The M-Pesa receipt and the whole shillings the customer paid. */
+  onPaid: (mpesaRef: string, paidAmount: number) => void;
+  /** 2026-11-02: the prompt's stage — the payment screen hides Charge while a prompt is out (the sale completes itself). */
+  onStage?: (stage: StkStage) => void;
 }) {
   const [offered, setOffered] = useState(false);
   const [askable, setAskable] = useState(false);
@@ -38,7 +42,8 @@ export default function MpesaStkPanel({ amount, currency, phone: given, masked: 
     posApi.customerDetails.saleInfo().then((i) => { seesRef.current = i.seesContacts; }).catch(() => {});
     const offStk = posApi.mpesa.onStk((s: Stk) => {
       setStk(s);
-      if (s?.stage === 'paid' && s.mpesaRef && !paidRef.current) { paidRef.current = true; onPaid(s.mpesaRef); }
+      onStage?.(s?.stage ?? 'idle');
+      if (s?.stage === 'paid' && s.mpesaRef && !paidRef.current) { paidRef.current = true; onPaid(s.mpesaRef, Number(s.amount) || 0); }
     });
     const offAns = posApi.customerDisplay.onAnswered((a) => {
       if (!a || a.id !== askId.current) return;
@@ -49,15 +54,18 @@ export default function MpesaStkPanel({ amount, currency, phone: given, masked: 
       live = false; offStk(); offAns();
       if (askId.current) void posApi.customerDisplay.cancelAsk(askId.current).catch(() => {});
       void posApi.mpesa.stkReset().catch(() => {});   // both screens back
+      onStage?.('idle');
     };
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!offered) return null;
   const pErr = masked ? null : phoneError(phone, true);
   const busy = stk?.stage === 'sending' || stk?.stage === 'waiting';
+  // 2026-11-02 (the owner's STK test): once paid the prompt is done — Send stayed live and a second prompt could go out.
+  const paid = stk?.stage === 'paid';
   const send = async () => {
     setError('');
-    if (pErr || busy || !(amount > 0)) { if (pErr) setError(pErr); return; }
+    if (pErr || busy || paid || !(amount > 0)) { if (pErr) setError(pErr); return; }
     paidRef.current = false;
     await posApi.mpesa.stkStart({ phone, amount, currency, ref: `POS-${Date.now().toString(36).toUpperCase()}` }).catch((e: any) => setError(e?.message ?? 'The prompt could not be sent.'));
   };
@@ -80,19 +88,19 @@ export default function MpesaStkPanel({ amount, currency, phone: given, masked: 
       {masked ? (
         <div className="flex items-center justify-between text-sm text-white" data-testid="stk-masked">
           <span>{maskTypedPhone(phone)}</span>
-          <button onClick={() => { setPhone(''); setMasked(false); }} className="text-xs text-action-400">Change</button>
+          {!paid && <button onClick={() => { setPhone(''); setMasked(false); }} className="text-xs text-action-400">Change</button>}
         </div>
       ) : (
-        <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="M-Pesa phone (07XX XXX XXX)" inputMode="tel" disabled={busy}
+        <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="M-Pesa phone (07XX XXX XXX)" inputMode="tel" disabled={busy || paid}
           className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white" data-testid="stk-phone" />
       )}
-      <div className="flex flex-wrap gap-2">
+      {!paid && <div className="flex flex-wrap gap-2">
         <button onClick={send} disabled={busy || waiting} className="rounded-lg bg-action-500 px-3 py-1.5 text-xs font-semibold text-gray-950 disabled:opacity-40" data-testid="stk-send">
           {stk?.stage === 'failed' ? 'Try again' : 'Send M-Pesa prompt'}
         </button>
         {!busy && <button onClick={() => setTypesIt(true)} className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs text-gray-200">Customer types it</button>}
         {!busy && askable && !waiting && <button onClick={askScreen} className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs text-gray-200" data-testid="stk-ask">Ask the customer</button>}
-      </div>
+      </div>}
       {waiting && <p className="text-xs text-sky-300">The customer is typing their M-Pesa number on the customer screen…</p>}
       {words && (
         <p className={`text-sm font-semibold ${stk?.stage === 'paid' ? 'text-white' : stk?.stage === 'failed' ? 'text-red-400' : 'text-sky-300'}`} data-testid="stk-status">

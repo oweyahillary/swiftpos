@@ -16,7 +16,7 @@
  *   staff            { user: { id, name, roles: { name }, status }, roster } — the roster row exactly as branch-staff
  *                    sends it (bcrypt PIN hash, the permission map; override PIN never), and only to a till's own session
  *   config           money / look / setup: that topic's pos/init keys (shared/syncTopics.ts CONFIG_KEYS)
- *   branding         { branding, themeId, branchBranding }
+ *   branding         { branding, themeId, themesPremium (A617), branchBranding }
  *   branch_branding  A544 (migration 156): { branchBranding } — THIS branch's override (null: none, or themes off)
  *   print_stations   { stations } — the whole list with category_ids, as /api/stations (a few rows)
  *   tables / pumps   the row, at this branch (pumps: or every branch)
@@ -341,8 +341,9 @@ async function rowsFor(c: ChangesCaller, branch: string | null, entries: RawEntr
     for (const e of cfgEntries) {
       if (e.table_name === 'branding') {
         // A544: with the branch's override — the themes switch turning on or off takes it on or off too.
+        // A617: + whether the POS has Themes (a free theme is served without it).
         out.push(entry(e, 'branding', 'branding', 'upsert', { branding: body.branding ?? null, themeId: body.themeId ?? null,
-          branchBranding: body.branchBranding ?? null }));
+          themesPremium: body.themesPremium === true, branchBranding: body.branchBranding ?? null }));
         continue;
       }
       if (e.table_name === 'branch_branding') {

@@ -3,12 +3,13 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission, requirePermission, assertBranchAccess, can } from '../middleware/rbac';
+import { requireAnyPermission, requirePermission, assertBranchAccess, can, outsideReach } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 import { cutoffSettingValue } from '@zaptill/core/businessDay';   // 0.6.34
 import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';   // A429
+import { PLATFORM_PRICES_KEY, rulesSettingValue } from '@zaptill/core/platformPrices';   // A619
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
@@ -29,7 +30,7 @@ export const BRANCH_PUBLIC_COLUMNS = 'id, business_id, name, address, phone, cit
 
 /** A582: a partner (lib/webPartners.ts) reads a branch named in the path only when it is theirs — another branch of the
  *  business is "not found" to them (its name, address, staff and settings). The owner and managers as before. */
-const partnerOutside = (req: any, branchId: string): boolean => req.webPartner === true && !assertBranchAccess(req, branchId);
+const partnerOutside = (req: any, branchId: string): boolean => outsideReach(req, branchId);   // A582; A612: a paused branch too
 
 // GET /api/branches — list all branches for this business
 router.get('/', requireAuth, async (req, res) => {
@@ -41,12 +42,14 @@ router.get('/', requireAuth, async (req, res) => {
     .order('created_at', { ascending: true });
 
   if (error) { sendError(res, error); return; }
+  // A612: a branch whose cloud is paused is listed, marked (Settings shows it paused; the picker leaves it out).
+  const rows = ((data ?? []) as unknown as Array<{ id: string }>).map((b) => (req.pausedBranches?.has(b.id) ? { ...b, cloud_paused: true } : b));
   // A550: a partner who works at some branches is offered those in the dashboard's picker (one of every branch: all).
   if (req.webPartner && !req.allBranches) {
-    res.json(((data ?? []) as unknown as Array<{ id: string }>).filter((b) => req.partnerBranches.includes(b.id)));
+    res.json(rows.filter((b) => req.partnerBranches.includes(b.id)));
     return;
   }
-  res.json(data);
+  res.json(rows);
 });
 
 // GET /api/branches/:id
@@ -272,11 +275,12 @@ const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operat
   'cashier_sees_shift_sales',   // A416: a cashier closing a shift sees their sales
   'cashier_history_totals',    // A418: a cashier's History shows the total of what is filtered
   'payment_methods_enabled',   // A429: the payment methods this branch takes
+  PLATFORM_PRICES_KEY,         // A619: this branch's delivery platform prices (the rounding stays the business's)
   'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'];   // A450 / A492: each branch its own M-Pesa number
 
 /** A490: the keys that may set one branch override (any one of them). */
 export function branchSettingKeys(key: string): string[] {
-  if (key === 'payment_methods_enabled') return ['settings.payments'];
+  if (key === 'payment_methods_enabled' || key === PLATFORM_PRICES_KEY) return ['settings.payments'];   // A429, A619
   if (['receipt_header', 'receipt_footer'].includes(key)) return ['settings.branches', 'receipt.manage'];
   return ['settings.branches'];
 }
@@ -358,6 +362,12 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branche
   if (key === PAYMENT_METHODS_ENABLED_KEY) {
     const clean = enabledSettingValue(value);
     if (clean === null) { res.status(400).json({ error: 'Choose payment methods from the list.' }); return; }
+    stored = clean;
+  }
+  // A619: this branch's delivery platform prices — a percentage or an amount per item, by platform.
+  if (key === PLATFORM_PRICES_KEY) {
+    const clean = rulesSettingValue(value);
+    if (clean === null) { res.status(400).json({ error: 'Each platform takes a percentage (up to 500%) or an amount per item.' }); return; }
     stored = clean;
   }
   // 0.6.37 (A387): a branch's own History methods — a list of method codes ([] = every method).

@@ -16,6 +16,7 @@ import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '@zaptill/core/busin
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';   // A429
+import { PLATFORM_PRICES_KEY, PLATFORM_ROUNDING_KEY, rulesSettingValue, roundingSettingValue } from '@zaptill/core/platformPrices';   // A619
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
@@ -122,6 +123,7 @@ export function settingPermission(key: string): string | null {
   if (key === STOCK_COUNT_FREEZE_KEY) return 'inventory.count_freeze';  // A502
   if (RECEIPT_SETTING_KEYS.has(key)) return 'receipt.manage';
   if (key === PAYMENT_METHODS_ENABLED_KEY) return 'settings.payments';
+  if (key === PLATFORM_PRICES_KEY || key === PLATFORM_ROUNDING_KEY) return 'settings.payments';   // A619
   if (LOYALTY_SETTING_KEYS.has(key)) return 'settings.pos';
   // A595 (F3): scheduled report e-mails send the business's figures to any address — their own part of
   // settings.integrations (settings.report_emails).
@@ -175,6 +177,8 @@ const READABLE_SETTING_KEYS = new Set([
   'cashier_history_methods',
   // A429: the payment methods switched on (a JSON list of catalogue codes; absent = the defaults).
   'payment_methods_enabled',
+  // A619: the delivery platforms' price rules (JSON by platform) and the business's rounding of their prices.
+  'delivery_platform_prices', 'delivery_platform_rounding',
   // A416: a cashier closing a shift sees their sales ("true"); off by default (lib/cashierShiftSales.ts).
   'cashier_sees_shift_sales',
   // A418: a cashier's History shows the total of what is filtered ("true"); only while cashier_sees_shift_sales is on.
@@ -395,7 +399,8 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     row.receipt_logo_enabled = req.body.receipt_logo_enabled;
   }
   if (has('theme_id')) {
-    // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag.
+    // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag — A617: except a
+    // free theme (FREE_THEME_IDS: Ocean, Teal, Sky), which every business may choose.
     const err = themeWriteError(req.body.theme_id, await themesEnabled(req.businessId));
     if (err) { res.status(400).json({ error: err }); return; }
     row.theme_id = req.body.theme_id;
@@ -826,6 +831,25 @@ router.post('/settings', requireAuth, (req, res, next) => {
       ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingPm.id)
       : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
     if (pmErr) { sendError(res, pmErr); return; }
+    res.json({ key, value: clean });
+    return;
+  }
+
+  // ── A619: the delivery platforms' prices (rules by platform) and their rounding — only clean values are stored ──
+  if (key === PLATFORM_PRICES_KEY || key === PLATFORM_ROUNDING_KEY) {
+    const clean = key === PLATFORM_PRICES_KEY ? rulesSettingValue(value) : roundingSettingValue(value);
+    if (clean === null) {
+      res.status(400).json({ error: key === PLATFORM_PRICES_KEY
+        ? 'Each platform takes a percentage (up to 500%) or an amount per item.'
+        : 'Choose exact, nearest shilling, up to the nearest 5 or up to the nearest 10.', code: 'INVALID_VALUE' });
+      return;
+    }
+    const { data: existingPp } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: ppErr } = existingPp
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingPp.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (ppErr) { sendError(res, ppErr); return; }
     res.json({ key, value: clean });
     return;
   }

@@ -29,7 +29,12 @@ if (!existsSync(dist)) {
 const R = await import(pathToFileURL(dist).href);
 
 // ── What tills are told ──
-ok('themes OFF → null, whatever is stored (the till keeps today\'s look)', R.effectiveThemeId(false, 'violet') === null && R.effectiveThemeId(false, null) === null);
+ok('themes OFF → null for a premium theme or nothing (the till keeps today\'s look)', R.effectiveThemeId(false, 'violet') === null && R.effectiveThemeId(false, null) === null);
+// A617 (owner, 2026-11-01: "basic themes for everyone, the rest premium").
+ok('A617: the free themes are Ocean, Teal and Sky — one list, in the shared registry', JSON.stringify(R.FREE_THEME_IDS) === '["ocean","teal","sky"]'
+  && R.isFreeThemeId('teal') && !R.isFreeThemeId('violet') && !R.isFreeThemeId(null));
+ok('A617: themes OFF + a free theme chosen → that theme; an unknown id → null (never the default Ocean)',
+  ['ocean', 'teal', 'sky'].every((t) => R.effectiveThemeId(false, t) === t) && R.effectiveThemeId(false, 'emerald') === null && R.effectiveThemeId(false, undefined) === null);
 ok('themes ON + a chosen theme → that theme', R.effectiveThemeId(true, 'violet') === 'violet');
 ok('themes ON + nothing chosen → Ocean (the default)', R.effectiveThemeId(true, null) === 'ocean' && R.effectiveThemeId(true, undefined) === 'ocean');
 ok('themes ON + an unknown or retired id → Ocean, never nothing', R.effectiveThemeId(true, 'emerald') === 'ocean' && R.effectiveThemeId(true, 42) === 'ocean');
@@ -37,7 +42,8 @@ ok('the flag key is "themes"', R.THEMES_FLAG === 'themes');
 
 // ── What a branding write may set ──
 ok('null clears the theme — always allowed, flag or not', R.themeWriteError(null, false) === null && R.themeWriteError(null, true) === null);
-ok('choosing a theme needs the business\'s flag', /not enabled/.test(R.themeWriteError('violet', false) ?? ''));
+ok('choosing a premium theme needs the business\'s flag', ['violet', 'lagoon', 'orchid', 'blossom'].every((t) => /not enabled/.test(R.themeWriteError(t, false) ?? '')));
+ok('A617: a free theme is accepted without the flag', ['ocean', 'teal', 'sky'].every((t) => R.themeWriteError(t, false) === null));
 ok('with the flag, a curated theme is accepted', R.themeWriteError('violet', true) === null && R.themeWriteError('blossom', true) === null);
 ok('a non-curated id is refused — even with the flag (Emerald was rejected for looking like "paid")',
   /curated/.test(R.themeWriteError('emerald', true) ?? '') && /curated/.test(R.themeWriteError('Ocean', true) ?? '') && /curated/.test(R.themeWriteError(7, true) ?? ''));
@@ -47,9 +53,14 @@ const src = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const pos = src('apps/server/src/routes/pos.ts');
 ok('/pos/init computes themeId with effectiveThemeId + the flag',
   // A544: the flag is read once into themesOn — the branch override (branchBranding) is served by the same answer.
-  /const themesOn = await themesEnabled\(req\.businessId\);\s*const themeId = effectiveThemeId\(themesOn, branding\?\.theme_id\);/.test(pos));
+  // A612 phase 4: the flag AND (billed per branch) the branch paying for Themes, then the same effectiveThemeId.
+  /const themesBusiness = await themesEnabled\(req\.businessId\);/.test(pos)
+  && /const themesOn = themesBusiness && \(!themesPaying \|\| [^;]+;(?:\s*\/\/[^\n]*)*\s*const themeId = effectiveThemeId\(themesOn, branding\?\.theme_id\);/.test(pos));
 ok('…served top-level, NOT inside `branding` (a business may have themes without a branding row)',
-  /\n    themeId,\n(?:\s*\/\/[^\n]*\n)*\s*branchBranding,\n    receiptHeader:/.test(pos) && !/branding: branding \? \{[^}]*themeId/.test(pos));
+  /\n    themeId,\n(?:\s*\/\/[^\n]*\n)*\s*themesPremium: themesOn,\n(?:\s*\/\/[^\n]*\n)*\s*branchBranding,\n    receiptHeader:/.test(pos) && !/branding: branding \? \{[^}]*themeId/.test(pos));
+// A617: a free theme id no longer says "Themes" — the POS is told themesPremium (the customer screen's logo and colours).
+ok('A617: /pos/init and a branding change tell the POS themesPremium (the flag and, per branch, its branch paying)',
+  /themesPremium: themesOn,/.test(pos) && /themesPremium: body\.themesPremium === true/.test(src('apps/server/src/lib/syncChanges.ts')));
 // A597: + primary_hex, secondary_hex (migration 179), read through selectBusinessBranding.
 ok('…and theme_id is selected with the branding row', /'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id(?:, primary_hex, secondary_hex)?'/.test(pos));
 ok('a flag flip moves the catalogue version (tills see it within the 20-s check)',

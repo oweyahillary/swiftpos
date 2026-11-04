@@ -44,6 +44,7 @@ const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const WA = require(path.join(DIST, 'lib/writeActivity.js'));
 const CP = require(path.join(DIST, 'lib/cloudPlan.js'));
 const W = require(path.join(DIST, 'jobs/watchdog.js'));
+const { REQUIRED_DESKTOP_SCHEMA } = require(path.join(DIST, 'lib/desktopSchema.js'));   // the POS below is up to date, whatever the number
 const log = console.log;
 console.warn = () => {}; console.error = () => {};
 
@@ -62,7 +63,7 @@ const reset = () => {
     businesses: [{ id: B, name: 'Krunch & Co', status: 'active' }],
     branches: [{ id: BR, business_id: B, name: 'Westlands' }],
     user_devices: [1, 2, 3].map((n) => ({ id: `u${n}`, business_id: B, branch_id: BR, device_id: `d${n}`, status: 'approved', retired_at: null,
-      last_seen_at: iso(T0 - 60_000), last_sync_at: iso(T0 - 60_000), app_version: '1.0.22', schema_version: 78 })),   // A607: the current local schema (REQUIRED_DESKTOP_SCHEMA)
+      last_seen_at: iso(T0 - 60_000), last_sync_at: iso(T0 - 60_000), app_version: '1.0.22', schema_version: REQUIRED_DESKTOP_SCHEMA })),   // the current local schema (A607 78, A619 79): an up-to-date POS opens no alert
     // a day left open a week ago: one problem that stays open across the runs
     business_days: [{ id: 'bd1', business_id: B, branch_id: BR, device_id: 'd1', terminal_code: 'T1', business_date: '2026-10-20', status: 'open' }],
     ops_events: [{ id: 'o1', kind: 'backup', status: 'ok', created_at: iso(T0 - 3_600_000) }],

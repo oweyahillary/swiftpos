@@ -6,8 +6,8 @@
  *   STANDARD (every client): the items, quantities and prices as they are rung up, the discounts and the running total; at
  *     payment the amount due and, for cash, the amount given and the change; then "Thank you" and back to idle. Idle shows
  *     the business name plainly.
- *   PREMIUM: the logo and brand colours (the business's 'themes' flag, exactly as A597 / A605: the POS is told a theme id
- *     only while it is on); an idle slideshow of the owner's images and the M-Pesa details at payment (the ONLINE LICENCE,
+ *   PREMIUM: the logo and brand colours (the business's 'themes' flag, exactly as A597 / A605; A617: the POS is told
+ *     themesPremium, as a free theme id is served without the flag); an idle slideshow of the owner's images and the M-Pesa details at payment (the ONLINE LICENCE,
  *     web_pos_enabled — A460).
  *
  * What crosses to the customer's screen is ONE small state (DisplayState), and it is cleaned by sanitiseDisplayState on
@@ -241,8 +241,11 @@ export interface DisplayMpesa { kind: 'buy_goods' | 'paybill'; number: string; a
 
 export interface DisplayContentInput {
   businessName: string | null;
-  /** The effective theme id: non-null only while the business's 'themes' flag is on (A325). */
+  /** The effective theme id (A325). A617: a free theme (Ocean, Teal, Sky) is served without Themes too. */
   themeId: string | null;
+  /** A617: does the POS have Themes (pos/init themesPremium)? The logo and colours need it. undefined / null = not told
+   *  (an older cloud, which served a theme id only with Themes): the theme id decides, as before. */
+  themesPremium?: boolean | null;
   logo: string | null;
   primaryHex: string | null;
   secondaryHex: string | null;
@@ -268,7 +271,7 @@ const hexOrNull = (v: unknown): string | null => (typeof v === 'string' && /^#[0
 
 /** The premium gate, in one place: brand colours and logo follow themes; the slideshow and M-Pesa follow the licence. */
 export function gateDisplayContent(i: DisplayContentInput): DisplayContent {
-  const themesOn = typeof i.themeId === 'string' && i.themeId !== '';
+  const themesOn = typeof i.themeId === 'string' && i.themeId !== '' && i.themesPremium !== false;   // A617
   const m = i.mpesa;
   const mpesa = i.licensed && m && /^\d{5,8}$/.test(m.number) && (m.kind === 'buy_goods' || m.kind === 'paybill')
     ? { kind: m.kind, number: m.number, account: m.kind === 'paybill' ? (text(m.account, 20) || null) : null } : null;

@@ -97,6 +97,8 @@ export function createStkPrompt(deps: StkDeps) {
     const amount = stkAmount(p.amount);
     const ref = typeof p.ref === 'string' && /^[A-Za-z0-9-]{1,40}$/.test(p.ref) ? p.ref : null;
     const currency = typeof p.currency === 'string' && /^[A-Z]{3}$/.test(p.currency) ? p.currency : 'KES';
+    // 2026-11-02 (the owner's STK test): a paid prompt stays paid until the panel closes (reset) — never a second prompt.
+    if (state.stage === 'paid') { deps.log('stk: already paid — no second prompt'); return { ...state }; }
     stop(); run++; checkout = null;
     const mine = run;
     if (!phone) { set({ ...IDLE, stage: 'failed', currency, reason: 'Enter a Kenyan mobile number — 07XX or 01XX.' }); return { ...state }; }
@@ -109,7 +111,8 @@ export function createStkPrompt(deps: StkDeps) {
       if (mine !== run) return { ...state };
       const j = await r.json().catch(() => ({}));
       if (r.status !== 200 || typeof j?.checkoutRequestId !== 'string' || !j.checkoutRequestId) {
-        const why = r.status === 422 ? 'M-Pesa is not set up for this business.'
+        // A618: where the owner sets it up (Settings › Business › Integrations › M-Pesa on the web dashboard) — per branch now
+        const why = r.status === 422 ? 'M-Pesa prompts are not set up for this branch. The owner adds them in Settings › Business › Integrations › M-Pesa.'
           : typeof j?.details === 'string' ? j.details.slice(0, 120) : typeof j?.error === 'string' ? j.error.slice(0, 120) : 'The prompt could not be sent.';
         deps.log(`stk: refused (${r.status})`);
         set({ stage: 'failed', reason: why });

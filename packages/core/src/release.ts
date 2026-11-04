@@ -9,7 +9,7 @@
  * otherwise). One module in packages/core (@zaptill/core/release), used by the cloud, the dashboard and the admin portal.
  */
 
-export const RELEASE = '1.0.22';
+export const RELEASE = '1.0.23';
 
 /** "v0.6.28 · 47a86c9" — the commit when the host told the build it (Vercel / Render); "v0.6.28" alone otherwise. */
 export function releaseLabel(release: string | null | undefined, commit?: string | null): string {

@@ -677,6 +677,41 @@ jobs:
       - name: Watchdog calls cut (A598)
         run: TZ=UTC node --no-warnings tests/supabase-calls-a598.test.mjs
 
+      # A611 — branch-drawers 6,575 calls for 2,564 asks with the 5-minute memory on: a POS acking a day close every beat
+      # (refused, or matching no row) moved its business's write generation each time. A 401 / 403 / 429, and a route's
+      # forgetNothing, no longer do. Needs the server build.
+      - name: Refusals keep the memory (A611)
+        run: TZ=UTC node --no-warnings tests/quiet-refusals-a611.test.mjs
+
+      # A612 phase 1 — the cloud billed per branch (migration 182 branch_cloud_plans, each branch inheriting its business's
+      # plan): a branch past its 7 unpaid days (or Disabled) is paused — its POS refused everything but sign-in, the
+      # technician, support logs and the update state (nothing up, nothing down: no price reaches it); nobody sees it on the
+      # web (the owner and partners narrowed to the open branches, a paused branch picked → BRANCH_PICKED_PAUSED, a manager
+      # of one → BRANCH_PAUSED); every branch paused → the web paused. Needs the server build.
+      - name: Cloud per branch (A612) and migration 182
+        run: |
+          TZ=UTC node --no-warnings tests/branch-cloud-a612.test.mjs
+          node --no-warnings scripts/test-migration-182.mjs
+
+      # A612 phases 3-4 — billed per branch: ONE invoice to the owner for the branches due that day (itemised: Cloud,
+      # Analytics, Attendance, Themes, the Premium package; the branches in a note), ZapTill's notices per branch, payments
+      # for the branches ticked (each its own period; a locked one afresh, its locked time not charged), a branch's plan,
+      # "Bill per branch", a new branch billed from the day it is made, ZapTill's billing details; premium per branch
+      # (analytics, attendance, the POS's themes). Needs the server build.
+      - name: Billing per branch and premium per branch (A612)
+        run: TZ=UTC node --no-warnings tests/branch-billing-a612.test.mjs
+
+      # A617 — current clients keep Themes, free (migration 185: every branch row of a business with the themes flag gets
+      # Themes at its own price 0, once; an own price already set never overwritten); a branch's own price for an add-on or
+      # the package (the bill and the invoice line at the price that applied; the admin save merged and checked — unknown
+      # key, negative, a word → 400; a database before 185 saves the rest and says so); ZapTill's default look, Ocean, Teal
+      # and Sky free to every business, the rest premium (the cloud's pull and write, the customer screen's logo and colours
+      # on themesPremium, the Branding page). Migration 185 replayed into PGlite. Needs the server build.
+      - name: Basic themes for everyone and own prices per branch (A617) and migration 185
+        run: |
+          TZ=UTC node --no-warnings tests/a617-themes-basic-and-own-prices.test.mjs
+          node --no-warnings scripts/test-migration-185.mjs
+
       # A592 — "How can we make these messages look better": every admin Telegram message and email laid out the same —
       # Telegram HTML (a client "A&B <Shop>" escaped, valid), URL buttons ("Close it remotely", "Open run", "Guide"), a 400
       # "can't parse entities" sent again as plain text; "8 days 22 h" not "214 h", "Mon 26 Oct 13:07 EAT"; client problems
@@ -751,6 +786,38 @@ jobs:
           TZ=UTC node --no-warnings tests/customer-details-a607.test.mjs
           node --no-warnings scripts/test-migration-181.mjs
 
+      # A618 — M-Pesa STK push details per branch, the business's as the default (owner, 2026-11-01: "different branches
+      # might have different payment method some paybill some buy goods"): the branch's own when complete → the business's
+      # → not set up (an incomplete row falls back); Buy Goods signs with the store number and pays the Till number; the
+      # desktop POS's /stk-push-pos (its branch), the web POS's /stk-push (the order's branch) and /config; the settings
+      # routes the owner's only (a manager with settings.business, a partner, a POS 403), never a secret, the passkey or
+      # the whole key in GET, secrets encrypted, a blank one kept; Test connection a token only (Sandbox / Live); the
+      # receipt-number warning; migration 186 not run → the business's, never a failed payment. Migration 186 replayed
+      # into PGlite. Needs the server build.
+      - name: M-Pesa STK push per branch (A618) and migration 186
+        run: |
+          TZ=UTC node --no-warnings tests/a618-branch-mpesa.test.mjs
+          node --no-warnings scripts/test-migration-186.mjs
+
+      # A619 — delivery platform prices: the one pricing file (a percentage or an amount per item, every rounding, an item's
+      # own platform price, add-ons, quantity, 0 = normal; the payment flow — a platform as the one payment, no split, the
+      # confirmation for a platform only); the cloud prices a Glovo sale itself (accepted at Glovo prices, a lower claimed
+      # price refused, a split never priced for a platform, a till's offline sale at an old rate kept with the difference
+      # recorded), offers on platform prices, the order's record, the settings (branch over business; rounding per
+      # business), the master report's "of which uplift", before migration 187 never a failed sale. Migration 187 replayed
+      # into PGlite. Needs the server build. In the loop too.
+      - name: Delivery platform prices (A619) and migration 187
+        run: |
+          node --no-warnings tests/platform-prices-a619.test.mjs
+          TZ=UTC node --no-warnings tests/platform-prices-cloud-a619.test.mjs
+          node --no-warnings scripts/test-migration-187.mjs
+
+      # A620 — Settings › Business: a grouped left menu (Your business, Selling, Setup, Integrations; a dropdown on a phone),
+      # Integrations' pages (M-Pesa the owner's, KRA eTIMS, Webhooks) with the old links redirected, the Payments page in
+      # three sections without the M-Pesa details, the report e-mails on Reports, the kitchen ticket on Printers.
+      - name: Business settings menu (A620)
+        run: node --no-warnings tests/business-settings-menu-a620.test.mjs
+
       # A599 — Attendance (premium, the 'attendance' flag set in the admin portal): punches only from a ZKTeco device
       # through the branch server, for everyone. The pairing (in / out alternately in time order, a night shift on the day
       # it started, an odd last punch a missing punch-out not counted, a 16 h gap never paired); flag off → every route
@@ -758,10 +825,17 @@ jobs:
       # attendance-only person never a users row; the branch server's ingest idempotent, its own branch only; "Not
       # matched" → link assigns retroactively; corrections keep the original; the rights' defaults; pay only with
       # staff.pay. Migration 180 replayed into PGlite. Needs the server build. In the loop too.
-      - name: Attendance (A599) and migration 180
+      # A614: one attendance device per branch — a second refused 409 BRANCH_HAS_DEVICE, migration 183's unique index.
+      # A616: punches grouped into work days before pairing (before 06:00 is the night before; a night guard's day from
+      # noon), so one missed punch never shifts the next days; shifts per branch (copy, end, pin a person), late arrivals;
+      # the report as before while migration 184 has not run. Migration 184 replayed into PGlite.
+      - name: Attendance (A599, A614, A616) and migrations 180, 183, 184
         run: |
           TZ=UTC node --no-warnings tests/attendance-a599.test.mjs
           node --no-warnings scripts/test-migration-180.mjs
+          node --no-warnings scripts/test-migration-183.mjs
+          node --no-warnings scripts/test-migration-184.mjs
+          node --no-warnings scripts/test-attendance-demo-seed.mjs   # the dev demo data still fits the schema
 
       # A601 — the desktop-only cut-off (DESKTOP_ONLY_CUTOFF_AT): unset or before the date nothing is refused; from it a
       # desktop-only POS's backup writes 503 CLOUD_BACKUP_OFF while sign-in, joining a POS, the catalogue / staff changes,
@@ -1728,6 +1802,16 @@ jobs:
         env:
           TZ: UTC
         run: node --no-warnings test/customer-details-a607.test.mjs
+
+      # A619 — delivery platform prices on the desktop POS: local schema 79; the pull stores the rules and each item's own
+      # platform price (an older cloud keeps them) and the branch server relays both; order:create accepts a Glovo sale at
+      # Glovo prices (saved at them, the payload with price_list, the rule and the uplift) and refuses a lower price, a
+      # split and a rule changed since; a cash sale untouched; the payment screen asks only for a platform.
+      - name: Desktop delivery platform prices (A619)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/platform-prices-a619.test.mjs
 
       # A564 — Manager › Stock › Other branches on the till: the lookup and the requests through the branch server's gateway
       # (A410) with the person's own sign-in; offline "Needs a connection"; a refusal keeps the cloud's words; the keys

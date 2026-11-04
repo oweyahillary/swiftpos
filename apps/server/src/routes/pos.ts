@@ -4,6 +4,7 @@ import { effectiveKeysForRow, clientPermissionMap } from '../lib/effectivePermis
 import { offersForBranch } from './offers';   // A445
 import { promotionOffersFor } from '../lib/promotionOffers';   // A518
 import { enabledFromSetting } from '@zaptill/core/paymentCatalogue';   // A429
+import { loadPlatformPricing } from '../lib/platformPricing';   // A619
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '@zaptill/core/orderNotes';
 import { parseReversalRules, REVERSAL_SETTING_KEYS } from '@zaptill/core/reversalRules';
@@ -45,6 +46,9 @@ import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '@zaptill/core/customerScree
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
 import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601
+import { BRANCH_PICKED_PAUSED_BODY } from '../lib/branchPauseScope';   // A612
+import { cloudFactsFor } from '../lib/cloudPlan';                     // A612
+import { featureBranches } from '../lib/branchBilling';               // A612: premium per branch
 /** A593: GET /test-data-clears per (business, the POS's last applied clear) — lib/quietMemo.ts. */
 const clearsMemo = quietMemo<unknown[]>('pos.test_clears');
 
@@ -330,6 +334,12 @@ router.get('/init', async (req, res) => {
   // is unchanged for anything not yet sending branch_id.
   const requestedBranchId =
     typeof req.query.branch_id === 'string' ? req.query.branch_id : null;
+  // A612: a paused branch's menu and prices are nobody's — its own POS was refused before (accessRefusal); a web POS or the
+  // dashboard naming it is too.
+  if (requestedBranchId && req.pausedBranches?.has(requestedBranchId)) {
+    res.status(403).json(BRANCH_PICKED_PAUSED_BODY);
+    return;
+  }
 
   // A531 (owner, 2026-10-19: "asking for the same 10 times an hour is not logical"): the answer is built once per
   // catalogue version (buildInit below, kept by lib/posInit.ts) — the next till of the business, and the next ask while
@@ -471,8 +481,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
   // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
   // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
-  const themesOn = await themesEnabled(req.businessId);
-  const themeId = effectiveThemeId(themesOn, branding?.theme_id);
+  const themesBusiness = await themesEnabled(req.businessId);
   // A346: does the business have the web POS? Same entitlement as web sign-in (lib/webAccess.ts) — fully usable = active
   // or in grace (owner, 2026-09-27: "stock should only appear if the web pos is enabled"; reports-only week → no).
   const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
@@ -484,6 +493,12 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // The branch the till OPERATES on (the licence gate, in the route, reads its desktop_licensed — D11): the bound branch it
   // sent, falling back to the main branch only for legacy callers with no binding.
   const opBranch = boundBranch ?? mainBranch;
+  // A612 phase 4 (premium per branch): billed per branch, Themes only on a branch that pays for it (premium or the package);
+  // another branch's POS keeps the standard look. Billed as one: the business's flag alone, as before.
+  const themesPaying = featureBranches(await cloudFactsFor(req.businessId).catch(() => null), 'themes');
+  const themesOn = themesBusiness && (!themesPaying || themesPaying.includes(String((opBranch as { id?: string } | null)?.id ?? '')));
+  // A617: without Themes here, a free theme (Ocean, Teal, Sky) the owner chose, else ZapTill's default look (null).
+  const themeId = effectiveThemeId(themesOn, branding?.theme_id);
   // A544: this branch's override of the business branding (theme, brand colour, receipt footer) — only while the business
   // has themes (A325); null otherwise, so a till and the web POS apply none (stored, never applied). Only the till's own
   // branch's row: another branch's override never reaches it.
@@ -617,6 +632,10 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       ...effectiveBrandColours(themesOn, branding),
     } : null,
     themeId,
+    // A617: does this POS have Themes (the flag and, billed per branch, its branch pays)? themeId alone no longer says so —
+    // a free theme (Ocean, Teal, Sky) is served without it. The customer screen's logo and colours follow this (an older
+    // POS ignores it and reads themeId as before).
+    themesPremium: themesOn,
     // A544: the branch's own override ({ branchId, themeId, accentHex, receiptFooter }), or null. The till and the web POS
     // resolve per field: branch → business → ZapTill default (lib/branchBranding.ts). Older tills ignore it.
     branchBranding,
@@ -635,6 +654,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     cashierHistoryTotals: historyTotalsOn(receiptText.cashier_sees_shift_sales, receiptText.cashier_history_totals),
     // A429: the payment methods this branch takes (catalogue codes); the branch's own value wins; absent = the defaults.
     paymentMethodsEnabled: enabledFromSetting(receiptText.payment_methods_enabled),
+    // A619: the delivery platforms' prices — the business's rounding and this branch's rule per platform (its own, else
+    // the business's); { rounding: 'exact', rules: {} } = normal prices. Always sent; older POSs ignore it.
+    platformPrices: await loadPlatformPricing(req.businessId, (opBranch as { id?: string } | null)?.id ?? null),
     // 0.6.35 (A384): the tech allocated to this client (admin portal) — their name and number on the till's Help.
     // Always sent: null = no tech → the Help shows SwiftPOS support's numbers (shared/support.ts). Older tills ignore it.
     support: await getSupportContact(req.businessId),

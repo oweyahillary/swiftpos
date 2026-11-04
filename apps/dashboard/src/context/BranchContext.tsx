@@ -30,6 +30,8 @@ export interface Branch {
   phone:    string | null;
   is_main:  boolean;
   status:   'active' | 'inactive';
+  /** A612: this branch's cloud is paused (billed per branch, unpaid) — listed for Settings, never offered in the picker. */
+  cloud_paused?: boolean;
 }
 
 interface BranchContextValue {
@@ -68,10 +70,12 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     try {
       // A550: a partner of some branches gets only theirs from /api/branches, and no "All Branches" (/api/auth/session);
       // the owner — or an older cloud without /session — keeps the picker as it was.
-      const [data, web] = await Promise.all([
+      const [listed, web] = await Promise.all([
         api.get<Branch[]>('/api/branches'),
         api.get<{ allBranches?: boolean; partner?: boolean }>('/api/auth/session').catch(() => null),
       ]);
+      // A612: a paused branch is nobody's to pick (a remembered one falls back to an open branch below).
+      const data = listed.filter((b) => !b.cloud_paused);
       const all = web?.allBranches !== false;
       // A582: a partner of two or more branches (not every one) — "All my branches", their branches combined
       const mine = !all && web?.partner === true && data.length >= 2;
@@ -82,6 +86,10 @@ export function BranchProvider({ children }: { children: ReactNode }) {
       // Restore persisted selection, else default to main branch
       const saved = localStorage.getItem(STORAGE_KEY);
       const choice = restoreChoice(saved, data, all, mine);
+      // A612: the remembered branch is paused — every request names it (X-Branch-Id), so remember the open choice instead.
+      if (saved && listed.some((b) => b.id === saved && b.cloud_paused)) {
+        localStorage.setItem(STORAGE_KEY, choice.kind === 'branch' ? choice.id : choice.kind === 'mine' ? MY_BRANCHES : 'all');
+      }
       if (choice.kind === 'all') {
         setActiveBranchState(null); setAllMine(false);
       } else if (choice.kind === 'mine') {
@@ -113,6 +121,15 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     }
     setLoading(true);
     fetchBranches();
+  }, [session, fetchBranches]);
+
+  // A612: the cloud refused a paused branch that was picked (BRANCH_PICKED_PAUSED, lib/api.ts) — reload the list; the
+  // paused branch drops out and an open one is picked.
+  useEffect(() => {
+    if (!session) return;
+    const on = () => { void fetchBranches(); };
+    window.addEventListener('zaptill:branch-picked-paused', on);
+    return () => window.removeEventListener('zaptill:branch-picked-paused', on);
   }, [session, fetchBranches]);
 
   function setActiveBranch(branch: Branch | null) {

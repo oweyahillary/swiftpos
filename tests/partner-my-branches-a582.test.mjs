@@ -28,6 +28,10 @@
  *   O  one-branch-only reads answer 400 PICK_ONE_BRANCH "Pick one of your branches for this" (never an empty page).
  *   W  writes in a set: refused 400 PICK_ONE_BRANCH before any route (orders, staff, expenses, stock, settings) — sign-in
  *      housekeeping and marking their own notifications read still go; picking one branch writes as before.
+ *   P  A612 (the cloud billed per branch): W PAUSED through its own plan row — the same sweep (and credit, loyalty, the web
+ *      POS's reads, M-Pesa, attendance) as the OWNER and a partner of every branch, no branch picked, W forged too: never
+ *      a W marker; the owner's totals X + Y + Z; W picked → BRANCH_PICKED_PAUSED; W's cashier → BRANCH_PAUSED; paid again →
+ *      W back at once.
  *
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted — listed in the A582 entry):
  *   - branchFilter answering { kind: 'all' } for a set                          → S and C fail (W everywhere)
@@ -494,6 +498,92 @@ await ok('…their own notifications can still be marked read (only theirs: W\'s
 await ok('one branch picked: the same write is not refused as a set (it reaches the route)', async () => {
   const r = await call('PATCH', '/api/loss-alerts/la-x/dismiss', T.pat, { headers: { 'x-branch-id': X }, body: {} });
   assert.notEqual(r.body?.code, 'PICK_ONE_BRANCH', r.text.slice(0, 160));
+});
+
+// ═══ P — A612: Westgate PAUSED (the cloud billed per branch) ══════════════════════════════════════════════════════════
+// Owner, 2026-10-30: "if a branch does not pay it should not view its data and the owner should not see it too, it cuts
+// across all users". W is paused through its own plan row (branch_cloud_plans, migration 182: paid until 30 days ago);
+// X, Y and Z are paid. The SAME reads as S, as the owner and as a partner of every branch with no branch picked — never a
+// W marker; the owner's totals are X + Y + Z; W picked → BRANCH_PICKED_PAUSED; W's own cashier → BRANCH_PAUSED.
+console.log('\nP. A612 — Westgate paused: nobody sees it, the owner included\n');
+const CP = require(path.join(DIST, 'lib/cloudPlan.js'));
+const pauseW = () => {
+  reset(); CP._resetStanding();
+  const now = Date.now(), DAYMS = 86_400_000, iso = (ms) => new Date(ms).toISOString();
+  mem.db.businesses[0].web_access_expires_at = iso(now + 20 * DAYMS);
+  mem.db.cloud_plans = [{ business_id: B, period: 'monthly', amount: 3000, currency: 'KES', custom_until: null, notes: null, updated_by: null,
+    created_at: iso(now - 200 * DAYMS), billing_from: null }];
+  const row = (b, until) => ({ branch_id: b, business_id: B, period: 'monthly', amount: 3000, currency: 'KES', custom_until: null, paid_until: until,
+    billing_from: null, web_off: false, created_at: iso(now - 200 * DAYMS) });
+  mem.db.branch_cloud_plans = [row(X, iso(now + 20 * DAYMS)), row(Y, iso(now + 20 * DAYMS)), row(Z, iso(now + 20 * DAYMS)), row(W, iso(now - 30 * DAYMS))];
+};
+const T612 = { wanda: sign({ userId: WANDA, branchId: W, permissionKeys: ['orders.create', 'orders.view_all', 'reports.sales'] }) };
+// The branch list names W on purpose (marked paused, for Settings); every other read must not. A612 adds the reads A582's
+// list did not carry: credit accounts, loyalty, the web POS's credit customers and catalogue check, M-Pesa, attendance.
+const SWEEP612 = [...READS.filter((p) => p !== '/api/branches'),
+  '/api/credit/customers', '/api/credit/customer/c-w', '/api/credit/customer/c-w/history', '/api/credit/candidates',
+  '/api/loyalty/customers', '/api/loyalty/customer/c-w/transactions', '/api/pos/credit-customers', '/api/pos/catalogue-version',
+  '/api/mpesa/config', `/api/attendance/report?${RANGE}`, '/api/attendance/people', `/api/attendance/punches?${RANGE}`,
+  '/api/attendance/devices', '/api/attendance/unmatched', '/api/attendance/device-users'];
+pauseW();
+await ok(`the owner, no branch picked: ${SWEEP612.length} reads — never a row, total, count or name of W (and never a 500)`, async () => {
+  const bad = [];
+  for (const p of SWEEP612) {
+    const r = await get(p, T.owner, {});
+    const l = leaks(r.text);
+    if (l.length || !OKSTATUS.has(r.status)) bad.push(`${p} → ${r.status} ${l.join(',')}`);
+  }
+  assert.deepEqual(bad, []);
+});
+await ok('the owner with W forged in ?branch_id= and ?branch= — never W', async () => {
+  const bad = [];
+  for (const p of SWEEP612) for (const fp of FORGE(p)) {
+    const r = await get(fp, T.owner, {});
+    const l = leaks(r.text.split(`branch_id=${W}`).join('').split(`branch=${W}`).join(''));
+    if (l.length || !OKSTATUS.has(r.status)) bad.push(`${fp} → ${r.status} ${l.join(',')}`);
+  }
+  assert.deepEqual(bad, []);
+});
+await ok(`a partner of every branch, no branch picked: the same reads — never W`, async () => {
+  const bad = [];
+  for (const p of SWEEP612) {
+    const r = await get(p, T.pall, {});
+    const l = leaks(r.text);
+    if (l.length || !OKSTATUS.has(r.status)) bad.push(`${p} → ${r.status} ${l.join(',')}`);
+  }
+  assert.deepEqual(bad, []);
+});
+await ok('the owner still sees the paid branches, together: sales X + Y + Z (700 over 4 orders), orders theirs', async () => {
+  const r = await get(`/api/reports/sales?${RANGE}`, T.owner, {});
+  assert.equal(r.status, 200, r.text.slice(0, 200));
+  assert.equal(r.body.summary.totalOrders, 4);
+  assert.deepEqual(r.body.branchBreakdown.map((b) => b.branch_id).sort(), [X, Y, Z].sort());
+  const o = await get('/api/orders', T.owner, {});
+  assert.deepEqual(o.body.orders.map((x) => x.branch_id).sort(), [X, X, Y, Z].sort());
+});
+await ok('W picked: 403 BRANCH_PICKED_PAUSED (the dashboard drops it); X picked: X as before', async () => {
+  const r = await get(`/api/reports/sales?${RANGE}`, T.owner, { 'x-branch-id': W });
+  assert.equal(r.status, 403); assert.equal(r.body.code, 'BRANCH_PICKED_PAUSED');
+  const x = await get(`/api/reports/sales?${RANGE}`, T.owner, { 'x-branch-id': X });
+  assert.deepEqual(x.body.branchBreakdown.map((b) => b.branch_id), [X]);
+});
+await ok('W\'s own cashier: 403 BRANCH_PAUSED on every read', async () => {
+  for (const p of ['/api/orders', `/api/reports/sales?${RANGE}`, '/api/shifts']) {
+    const r = await get(p, T612.wanda, {});
+    assert.equal(r.status, 403, p); assert.equal(r.body.code, 'BRANCH_PAUSED', p);
+  }
+});
+await ok('the branch list: W listed, marked cloud_paused (the picker leaves it out); the others not marked', async () => {
+  const r = await get('/api/branches', T.owner, {});
+  assert.equal(r.status, 200);
+  assert.equal(r.body.find((b) => b.id === W)?.cloud_paused, true);
+  assert.ok(r.body.filter((b) => b.id !== W).every((b) => !b.cloud_paused));
+});
+await ok('W paid again (its row): the owner sees W again at once (forgetStanding)', async () => {
+  mem.db.branch_cloud_plans.find((p) => p.branch_id === W).paid_until = new Date(Date.now() + 20 * 86_400_000).toISOString();
+  CP.forgetStanding(B);
+  const r = await get(`/api/reports/sales?${RANGE}`, T.owner, {});
+  assert.ok(leaks(r.text).length, 'W is back');
 });
 
 server.close();

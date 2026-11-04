@@ -28,6 +28,9 @@
  *   mpesa_passkey          — from Safaricom
  *   mpesa_type             — 'CustomerBuyGoodsOnline' | 'CustomerPayBillOnline'
  *
+ *   A618 (2026-11-01): these are the business's DEFAULT; a branch may have its own (branch_mpesa_settings, migration 186).
+ *   Both are put in on Settings › Business › Integrations › M-Pesa (STK push) — routes/mpesaSettings.ts; lib/branchMpesa.ts reads them.
+ *
  * ENVIRONMENT VARIABLES
  * ─────────────────────
  *   MPESA_ENVIRONMENT      — 'sandbox' | 'production'. REQUIRED in production
@@ -47,7 +50,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, oneBranchOnly } from '../middleware/rbac';
-import { decryptSecret } from '../lib/crypto';
+import { getMpesaConfig, stkParties, type MpesaConfig } from '../lib/branchMpesa';   // A618: per branch, the business's as default
 import { sendError }   from '../lib/sendError';
 import { maskCustomerContacts } from '../lib/personalData';   // A595
 import { normaliseKenyanPhone, stkAmount } from '@zaptill/core/customerDetails';   // A607
@@ -115,59 +118,16 @@ const STK_TIMEOUT_MS = 70_000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-interface MpesaConfig {
-  consumerKey:    string;
-  consumerSecret: string;
-  shortcode:      string;
-  passkey:        string;
-  type:           'CustomerBuyGoodsOnline' | 'CustomerPayBillOnline';
-}
+// A618 (owner, 2026-11-01: "it should be per branch since different branches might have different payment method some
+// paybill some buy goods"): the details come from lib/branchMpesa.ts — the branch's own (migration 186) when complete,
+// else the business's (business_settings, H9-encrypted secret and passkey, legacy plain text still read), else null.
+// The STK request's parties from stkParties: Buy Goods signs with the store number and pays the Till number.
+const NOT_CONFIGURED_MESSAGE = 'M-Pesa is not set up for this branch. The owner adds it in Settings › Business › Integrations › M-Pesa (STK push).';
 
-// Decrypt without throwing — a missing/rotated APP_ENCRYPTION_KEY or a
-// corrupt value shouldn't crash the payment flow; getMpesaConfig() already
-// treats a missing credential as "M-Pesa not configured", which is the
-// correct, visible failure mode here (same pattern lib/etims/index.ts uses).
-function safeDecrypt(v: string): string | null {
-  try { return decryptSecret(v); } catch { return null; }
-}
-
-async function getMpesaConfig(businessId: string): Promise<MpesaConfig | null> {
-  const { data, error } = await supabase
-    .from('business_settings')
-    .select('key, value')
-    .eq('business_id', businessId)
-    .in('key', [
-      'mpesa_consumer_key',
-      'mpesa_consumer_secret',
-      'mpesa_shortcode',
-      'mpesa_passkey',
-      'mpesa_type',
-    ]);
-
-  if (error || !data?.length) return null;
-
-  const cfg: Record<string, string> = {};
-  data.forEach(row => { cfg[row.key] = row.value; });
-
-  // H9: consumer_secret and passkey are encrypted at rest (business.ts write
-  // path) — decrypt here. decryptSecret() itself passes any legacy plaintext
-  // value through unchanged, so this also works for rows written before this
-  // fix, without needing the one-time backfill to have run yet.
-  const consumerSecret = cfg.mpesa_consumer_secret ? safeDecrypt(cfg.mpesa_consumer_secret) : null;
-  const passkey        = cfg.mpesa_passkey ? safeDecrypt(cfg.mpesa_passkey) : null;
-
-  if (!cfg.mpesa_consumer_key || !consumerSecret ||
-      !cfg.mpesa_shortcode    || !passkey) {
-    return null;
-  }
-
-  return {
-    consumerKey:    cfg.mpesa_consumer_key,
-    consumerSecret,
-    shortcode:      cfg.mpesa_shortcode,
-    passkey,
-    type:           (cfg.mpesa_type as MpesaConfig['type']) ?? 'CustomerBuyGoodsOnline',
-  };
+/** A618: the branch a web POS order was made at — the prompt uses that branch's details (the session's when unknown). */
+async function orderBranch(businessId: string, orderId: string, fallback: string | null): Promise<string | null> {
+  const { data } = await supabase.from('orders').select('branch_id').eq('id', orderId).eq('business_id', businessId).maybeSingle();
+  return ((data as { branch_id?: string | null } | null)?.branch_id) ?? fallback;
 }
 
 async function getDarajaToken(config: MpesaConfig): Promise<string> {
@@ -266,11 +226,9 @@ router.post('/stk-push', requireAuth, async (req, res) => {
     return;
   }
 
-  const config = await getMpesaConfig(req.businessId);
+  const config = await getMpesaConfig(req.businessId, await orderBranch(req.businessId, String(order_id), req.branchId ?? null));   // A618
   if (!config) {
-    res.status(422).json({
-      error: 'M-Pesa not configured for this business. Add M-Pesa credentials in Settings.',
-    });
+    res.status(422).json({ error: NOT_CONFIGURED_MESSAGE, code: 'NOT_CONFIGURED' });
     return;
   }
 
@@ -288,13 +246,11 @@ router.post('/stk-push', requireAuth, async (req, res) => {
     const callbackUrl = `${CALLBACK_BASE}/api/mpesa/callback`;
 
     const stkBody = {
-      BusinessShortCode: config.shortcode,
+      ...stkParties(config),   // A618: BusinessShortCode, PartyB (Buy Goods: the Till number), TransactionType
       Password:          password,
       Timestamp:         timestamp,
-      TransactionType:   config.type,
       Amount:            amountInt,
       PartyA:            formattedPhone,
-      PartyB:            config.shortcode,
       PhoneNumber:       formattedPhone,
       CallBackURL:       callbackUrl,
       AccountReference:  (account_reference ?? order_id).slice(0, 12),
@@ -378,9 +334,9 @@ router.post('/stk-push-pos', requireAuth, requirePermission('orders.create'), as
     res.status(400).json({ error: 'client_ref is required (letters, digits and dashes).', code: 'BAD_REF' });
     return;
   }
-  const config = await getMpesaConfig(req.businessId);
+  const config = await getMpesaConfig(req.businessId, req.branchId ?? null);   // A618: this POS's branch
   if (!config) {
-    res.status(422).json({ error: 'M-Pesa not configured for this business. Add M-Pesa credentials in Settings.', code: 'NOT_CONFIGURED' });
+    res.status(422).json({ error: NOT_CONFIGURED_MESSAGE, code: 'NOT_CONFIGURED' });
     return;
   }
 
@@ -405,13 +361,11 @@ router.post('/stk-push-pos', requireAuth, requirePermission('orders.create'), as
       method:  'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        BusinessShortCode: config.shortcode,
+        ...stkParties(config),   // A618: BusinessShortCode, PartyB (Buy Goods: the Till number), TransactionType
         Password:          password,
         Timestamp:         timestamp,
-        TransactionType:   config.type,
         Amount:            amountInt,
         PartyA:            formattedPhone,
-        PartyB:            config.shortcode,
         PhoneNumber:       formattedPhone,
         CallBackURL:       `${CALLBACK_BASE}/api/mpesa/callback`,
         AccountReference:  clientRef.slice(-12),
@@ -729,11 +683,12 @@ router.get('/status/:checkoutId', requireAuth, maskCustomerContacts(), async (re
 // Returns whether M-Pesa is configured — no secrets exposed.
 
 router.get('/config', requireAuth, async (req, res) => {
-  const config = await getMpesaConfig(req.businessId);
+  const config = await getMpesaConfig(req.businessId, req.branchId ?? null);   // A618: the session's branch (the default without one)
   res.json({
     configured: config !== null,
     type:       config?.type ?? null,
     shortcode:  config?.shortcode ?? null,
+    source:     config?.source ?? null,   // A618: 'branch' (its own) | 'business' (the default)
     environment: ENV,
   });
 });

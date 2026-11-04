@@ -7,7 +7,7 @@ import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import { applyOffers } from '@zaptill/core/offers';   // A494: the offer discount a sale claims, re-checked on the till's own offers
 import { syncPush, createLocalOrder } from '../syncEngine';
-import { tillBranchId } from '../deviceConfig';   // A446
+import { tillBranchId, getPlatformPricing } from '../deviceConfig';   // A446; A619
 import { signedIn as sessionPerson, signedInCan, personCan } from '../tillAccess';
 import { historyScope } from '../shiftService';
 import { markKitchenPaid } from '../kitchenService';
@@ -16,6 +16,8 @@ import { receiptPayloadFromDetail } from '@zaptill/core/orderDetail';
 import { openBills, type IpcShared } from './shared';
 import { prepareCreditSale, pullCreditCustomers } from '../creditSale';   // A552
 import { saleStockRefusal } from '../stockGateLocal';   // A563
+import { checkPlatformSale } from '../platformSale';   // A619
+import { cleanOwnPrices } from '@zaptill/core/platformPrices';
 
 /** A sale and its tickets: kitchen exclusions, reprints and order:create. */
 export function registerSaleHandlers(ctx: IpcShared) {
@@ -177,6 +179,14 @@ export function registerSaleHandlers(ctx: IpcShared) {
     } catch { return none; }
   }
 
+  /** A619: an item's own price on a delivery platform, from this POS's catalogue (null: none — the platform's uplift). */
+  function ownPlatformPrice(productId: string, platform: string): number | null {
+    try {
+      const r = getLocalDb().prepare(`SELECT platform_prices FROM products WHERE id = ?`).get(productId) as { platform_prices?: string | null } | undefined;
+      return cleanOwnPrices(r?.platform_prices ?? null)[platform] ?? null;
+    } catch { return null; }   // a database before local schema 79
+  }
+
   handle('order:create', async (_event, orderPayload: any) => {
     // A519: paying a bill already open is never refused (finish what was started); a sale nobody opened needs "Sell".
     const refusedSale = sellRefusal('pay', sessionPerson(), isOpenBill(getLocalDb(), orderPayload?.order_number, openBills));
@@ -186,6 +196,10 @@ export function registerSaleHandlers(ctx: IpcShared) {
     // or sent order that holds an item which has since sold out is refused only for that line. Unknown stock sells.
     const soldOut = saleStockRefusal(orderPayload);
     if (soldOut) { logLine('sale', `A563: refused a sale — ${soldOut}`); throw new Error(soldOut); }
+    // A619: a sale at a delivery platform's prices — the platform alone pays it, and each line is what this POS's rules give
+    // (the screen's figure is checked here, offline too); the sale then records the rule and what it added.
+    const platformCheck = checkPlatformSale(orderPayload, getPlatformPricing(), ownPlatformPrice);
+    if (!platformCheck.ok) { logLine('sale', `A619: refused a sale — ${platformCheck.error}`); throw new Error(platformCheck.error); }
     // A490: a discount given by hand needs sales.discount — the till is the authority here (offline too; the cloud never
     // refuses a till's sale for it). What offers took off is not the person's discount. Nothing else about selling asks.
     // A494: what the offers took is re-checked on THIS till's offers (the same engine the cart and the cloud use) — the

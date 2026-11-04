@@ -2,13 +2,14 @@
  * themeVars.ts (dashboard) — A328 (client branding Phase 2, slice 4b-1): a business's action theme → the CSS variables
  * behind the web POS's `action-*` colours (tailwind.config.js, src/index.css).
  *
- *  • themes OFF, or no branding → null: nothing is set; index.css falls back to Tailwind green — unchanged.
+ *  • themes OFF, or no branding → null: nothing is set; index.css falls back to Tailwind green — unchanged. A617: a free
+ *    theme (themes.ts FREE_THEME_IDS) the owner chose is worn without Themes too (never the brand colours).
  *  • themes ON → the theme's fixed shades (shared registry, lib/themes.ts `themeTokens`), mapped so every existing label
  *    stays readable: 500 fills (dark text) → fillDark (500); 600 fills (white text) → pressedLight (700); links → textDark
  *    (400) in dark mode, textLight (700) in light mode. An unknown or unchosen theme id resolves to the default.
  *  computeDashboardThemeVars is PURE; applyDashboardThemeVars is the only DOM write.
  */
-import { resolveTheme, themeTokens, resolveBrandLayer, brandPalette, cleanBrandHex, contrast, type Hex, type BrandPalette } from '@zaptill/core/themes';
+import { resolveTheme, isFreeThemeId, themeTokens, resolveBrandLayer, brandPalette, cleanBrandHex, contrast, type Hex, type BrandPalette } from '@zaptill/core/themes';
 
 /** A597: + the owner's brand colours and the logo (GET /api/business/branding). */
 export interface BrandingForTheme {
@@ -27,12 +28,19 @@ export const DASHBOARD_THEME_VARS = ['action-t-500', 'action-t-600', 'action-d-4
 const channels = (hex: Hex): string => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(' ');
 
 export function computeDashboardThemeVars(b: BrandingForTheme | null | undefined): Record<string, string> | null {
-  if (!b || b.themes_enabled !== true) return null;
+  if (!b) return null;
+  // A617 (owner, 2026-11-01): without Themes, a free theme the owner chose (Ocean, Teal, Sky) — never the brand colours.
+  if (b.themes_enabled !== true) return isFreeThemeId(b.theme_id) ? themeVars(b.theme_id) : null;
   // A597 / A605: the owner's primary colour wins over the curated theme — its palette on the back office AND the web POS
   // (index.css data-brand), each job the nearest shade on the colour's own scale that reads there.
   const p = brandPalette(b.primary_hex);
   if (p) return brandColourVars(p, brandPalette(b.secondary_hex));
-  const k = themeTokens(resolveTheme(b.theme_id ?? null));
+  return themeVars(b.theme_id ?? null);
+}
+
+/** A curated theme's variables (an unknown or unchosen id → the default). PURE. */
+function themeVars(themeId: string | null): Record<string, string> {
+  const k = themeTokens(resolveTheme(themeId));
   return {
     'action-t-500': channels(k.fillDark),       // 500: dark-text fills — dark text reads on every theme's 500
     'action-t-600': channels(k.pressedLight),   // 700: white-text fills — white reads on every theme's 700

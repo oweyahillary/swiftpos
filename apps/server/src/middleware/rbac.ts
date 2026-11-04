@@ -129,7 +129,16 @@ export function hasFullSettingsAccess(req: Request): boolean {
 // Returns null when the owner wants cross-branch data (no filter applied).
 
 export function branchScope(req: Request): string | null {
-  if (req.isOwner) {
+  const b = scopeBeforePause(req);
+  // A612: a branch whose cloud is paused is nobody's to read — the owner's too (lib/branchPauseScope.ts).
+  return b && b !== NO_BRANCH && req.pausedBranches?.has(b) ? NO_BRANCH : b;
+}
+
+function scopeBeforePause(req: Request): string | null {
+  // A612: the owner / a partner of every branch, with some branches paused and none picked, reads the open ones — as
+  // A582's set (two or more), or pinned to the one open branch.
+  if (req.pinnedBranch) return req.pinnedBranch;
+  if (req.isOwner && !inBranchSet(req)) {
     // Owner's selected branch arrives as the X-Branch-Id header (set globally by
     // the dashboard api client); a query param still works as a fallback.
     // Absent both = owner is viewing "All Branches" → no filter.
@@ -162,8 +171,29 @@ export const NO_BRANCH = '00000000-0000-0000-0000-000000000000';
  * The branch half of what used to read `req.isOwner`: where the owner was let past a "your own branch" check, a partner of
  * every branch is too. Never the owner's other powers — those still read req.isOwner (the A550 entry lists each check).
  */
-export function allBranchAccess(req: Pick<Request, 'isOwner' | 'allBranches'>): boolean {
+export function allBranchAccess(req: Pick<Request, 'isOwner' | 'allBranches'> & Partial<Pick<Request, 'branchSet' | 'pinnedBranch'>>): boolean {
+  // A612: a read narrowed to the open branches (some paused) is not every branch — the route takes the set's path (A582)
+  // or the one open branch's.
+  if (inBranchSet(req as Pick<Request, 'branchSet'>) || req.pinnedBranch) return false;
   return req.isOwner === true || req.allBranches === true;
+}
+
+// ── A612: a branch whose cloud is paused ──────────────────────────────────────────────────────────────────────────────
+/** Outside this reader's reach: a paused branch (anyone, the owner too); for a partner, a branch not theirs (A582). Anyone
+ *  else exactly as before (a manager's own screens may still read another open branch where they did). */
+export function outsideReach(req: Request, branchId: string | null | undefined): boolean {
+  if (branchId && req.pausedBranches?.has(branchId)) return true;
+  return req.webPartner === true && !assertBranchAccess(req, branchId ?? null);
+}
+/** A query without the paused branches' rows (rows with no branch — the business's own — kept). Nothing paused: as is. */
+export function withoutPaused<Q>(q: Q, req: Pick<Request, 'pausedBranches'>, col = 'branch_id'): Q {
+  const ids = req.pausedBranches ? [...req.pausedBranches] : [];
+  if (!ids.length) return q;
+  return (q as unknown as { or: (f: string) => Q }).or(`${col}.is.null,${col}.not.in.(${ids.join(',')})`);
+}
+/** Is this branch open to read across branches (a comparison, another branch's stock)? Paused: no. */
+export function branchOpen(req: Pick<Request, 'pausedBranches'>, branchId: string): boolean {
+  return !req.pausedBranches?.has(branchId);
 }
 
 // assertBranchAccess checks that a specific branch_id is accessible to the
@@ -171,7 +201,8 @@ export function allBranchAccess(req: Pick<Request, 'isOwner' | 'allBranches'>): 
 // Returns true if access is allowed, false if it should be rejected with 403.
 
 export function assertBranchAccess(req: Request, branchId: string | null | undefined): boolean {
-  if (req.isOwner) return true;
+  if (branchId && req.pausedBranches?.has(branchId)) return false;   // A612: a paused branch — nobody's, the owner's too
+  if (req.isOwner && !inBranchSet(req)) return true;
   // A582: "All my branches" — any branch of the set (only reads get this far: requireAuth refuses a write in a set).
   if (inBranchSet(req)) return !!branchId && (req.branchSet as string[]).includes(branchId);
   // A550: a partner of every branch acts at any branch of theirs (the token's list — this business's, checked at sign-in).

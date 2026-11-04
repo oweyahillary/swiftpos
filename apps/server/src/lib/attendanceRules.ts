@@ -12,13 +12,20 @@
  *      out) are put in time order.
  *   2. A punch within DOUBLE_TAP_S (2 minutes) of the previous one is a double tap and ignored for the pairing (still
  *      listed for the day).
- *   3. Walking in order, the punches pair up alternately: the first is an IN, the next an OUT, the next an IN, …
- *   4. An IN with no next punch within MAX_SHIFT_HOURS (16 h) is a MISSING PUNCH-OUT: flagged, not counted, and the next
- *      punch starts a new IN. So one forgotten punch-out never swallows the next day.
- *   5. A pair counts on the BUSINESS DAY OF ITS IN (the owner's day cut-off, lib/businessDay.ts businessDateEAT): a night
- *      shift 22:00 → 06:00 is one shift of the day it started, whatever the cut-off.
- *   6. Per person per business day: first in, last out, worked = the sum of the paired intervals, missing punch-outs
- *      flagged. A pair over LONG_SHIFT_HOURS (12 h) is flagged "check" (often a forgotten punch-out the next punch closed).
+ *   3. A616 (owner, 2026-10-31, from a real ZKTeco export): the punches are grouped into WORK DAYS first, then paired
+ *      within each day alone — so one forgotten punch never shifts the following days (before, the pairing ran across
+ *      days: one missed punch-out paired 18:31 with the next morning's 08:21 and every day after went wrong).
+ *      A work day starts at DAY_START_MIN (06:00: a punch 00:00-05:59 is the night before's punch-out), or 6 h before
+ *      the person's pinned shift (nights 18:00 → noon), or — not pinned — at whichever of 06:00, noon and 6 h before
+ *      each of their branch's shifts their punches fit best (chooseDayStart). The sales day cut-off plays no part.
+ *   4. Within a day, alternately: the first is an IN, the next an OUT, … An odd last punch is a MISSING PUNCH-OUT:
+ *      flagged, not counted.
+ *   5. A night shift 22:00 → 06:00 is one shift of the day it started.
+ *   6. Per person per work day: first in, last out, worked = the sum of the paired intervals, missing punch-outs
+ *      flagged. A pair over LONG_SHIFT_HOURS (12 h) is flagged "check".
+ *   7. A616 shifts (per branch, migration 184): the day's shift is the person's pinned one, else the one starting
+ *      nearest their first punch; LATE when the first punch is more than the shift's grace after its start (minutes
+ *      counted from the start).
  * Hours are rounded to 2 dp for display; minutes are kept whole for sums.
  *
  * THE DEVICE NUMBER (attendance_no): one per person, unique per BUSINESS (a person may punch at another branch's device
@@ -34,6 +41,10 @@ export const CLOCK_BY_DEVICE_MESSAGE = 'Clocking in and out is done on the atten
 export const DOUBLE_TAP_S = 120;
 export const MAX_SHIFT_HOURS = 16;
 export const LONG_SHIFT_HOURS = 12;
+/** A616: a work day starts at 06:00 by default (owner: a punch 00:00-05:59 belongs to the night before). */
+export const DAY_START_MIN = 360;
+/** A616: a pinned shift's work day starts this long before the shift. */
+export const DAY_BEFORE_SHIFT_MIN = 360;
 export const MAX_RANGE_DAYS = 93;
 export const MAX_ATTENDANCE_NO = 999_999_999;
 /** The most punches one ingest call may carry (the branch server sends more in further calls). */
@@ -99,6 +110,9 @@ export interface Punch {
   reason?: string | null;
 }
 export interface Shift { in: string; out: string | null; minutes: number; long: boolean; inId: string; outId: string | null }
+/** A branch's work shift (migration 184): start / end in minutes after midnight (end <= start: past midnight). */
+export interface WorkShift { id: string; name: string; start_min: number; end_min: number; grace_min: number }
+export interface DayShift { id: string; name: string; start_min: number; end_min: number }
 export interface DayResult {
   date: string;
   firstIn: string | null;
@@ -111,48 +125,70 @@ export interface DayResult {
   long: boolean;
   punches: number;
   doubleTaps: number;
+  /** A616: the work shift of the day (the pinned one, else the one starting nearest the first punch); null without shifts. */
+  shift?: DayShift | null;
+  /** A616: minutes after the shift's start of the first punch, when beyond its grace; 0 = on time. */
+  lateMin?: number;
+}
+export interface PairOptions {
+  /** The person's branch's active shifts. */
+  shifts?: readonly WorkShift[];
+  /** The shift pinned to the person (attendance_people.shift_id). */
+  pinned?: WorkShift | null;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+const DAY_MIN = 1440;
+const wrap = (m: number) => ((m % DAY_MIN) + DAY_MIN) % DAY_MIN;
+/** The work date of a moment for a work day starting `dayStart` minutes after midnight (East Africa Time). */
+export function workDate(at: string | number, dayStart: number): string {
+  const t = typeof at === 'number' ? at : Date.parse(at);
+  return new Date(t + EAT_MS - wrap(dayStart) * MIN_MS).toISOString().slice(0, 10);
+}
+/** Minutes after midnight, East Africa Time. */
+const clockMin = (at: string | number) => { const t = typeof at === 'number' ? at : Date.parse(at); return Math.floor(wrap((t + EAT_MS) / MIN_MS)); };
+/** a − b on the 24 h clock, in (−720, 720]. */
+export function clockDiff(a: number, b: number): number { const d = wrap(a - b); return d > DAY_MIN / 2 ? d - DAY_MIN : d; }
+/** A shift's work day starts DAY_BEFORE_SHIFT_MIN before it: 09:00 → 03:00, 18:00 (nights) → 12:00. */
+export const dayStartOf = (s: Pick<WorkShift, 'start_min'>): number => wrap(s.start_min - DAY_BEFORE_SHIFT_MIN);
+/** The shift starting nearest a clock time (ties: the earlier start). */
+export function nearestShift<S extends Pick<WorkShift, 'start_min'>>(shifts: readonly S[], minute: number): S | null {
+  let best: S | null = null, gap = Infinity;
+  for (const s of [...shifts].sort((a, b) => a.start_min - b.start_min)) { const g = Math.abs(clockDiff(minute, s.start_min)); if (g < gap) { best = s; gap = g; } }
+  return best;
+}
 
-/**
- * One person's punches → their shifts by business day (the rule above). Punches may arrive in any order; voided ones
- * must already be left out. Returns a map date → day (only days that have a punch).
- */
-export function pairPunches(punches: readonly Punch[], cutoffMinutes = 0): Map<string, DayResult> {
-  const sorted = [...punches].filter((p) => Number.isFinite(Date.parse(p.at))).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.id.localeCompare(b.id));
+const sortPunches = (punches: readonly Punch[]) =>
+  [...punches].filter((p) => Number.isFinite(Date.parse(p.at))).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.id.localeCompare(b.id));
+
+function pairByDay(sorted: readonly Punch[], dayStart: number): Map<string, DayResult> {
   const days = new Map<string, DayResult>();
   const day = (date: string): DayResult => {
     let d = days.get(date);
     if (!d) { d = { date, firstIn: null, lastOut: null, minutes: 0, hours: 0, shifts: [], missingOut: false, long: false, punches: 0, doubleTaps: 0 }; days.set(date, d); }
     return d;
   };
-  let open: Punch | null = null;
+  const kept = new Map<string, Punch[]>();
   let last = -Infinity;
   for (const p of sorted) {
     const t = Date.parse(p.at);
-    day(businessDate(t, cutoffMinutes)).punches++;
-    if (t - last < DOUBLE_TAP_S * 1000) { day(businessDate(t, cutoffMinutes)).doubleTaps++; last = t; continue; }
+    const d = day(workDate(t, dayStart));
+    d.punches++;
+    if (t - last < DOUBLE_TAP_S * 1000) { d.doubleTaps++; last = t; continue; }
     last = t;
-    if (open && t - Date.parse(open.at) > MAX_SHIFT_HOURS * 3_600_000) {
-      const d = day(businessDate(open.at, cutoffMinutes));
-      d.shifts.push({ in: open.at, out: null, minutes: 0, long: false, inId: open.id, outId: null });
-      d.missingOut = true;
-      open = null;
-    }
-    if (!open) { open = p; continue; }
-    const minutes = Math.round((t - Date.parse(open.at)) / MIN_MS);
-    const long = minutes > LONG_SHIFT_HOURS * 60;
-    const d = day(businessDate(open.at, cutoffMinutes));
-    d.shifts.push({ in: open.at, out: p.at, minutes, long, inId: open.id, outId: p.id });
-    d.minutes += minutes;
-    if (long) d.long = true;
-    open = null;
+    (kept.get(d.date) ?? kept.set(d.date, []).get(d.date)!).push(p);
   }
-  if (open) {
-    const d = day(businessDate(open.at, cutoffMinutes));
-    d.shifts.push({ in: open.at, out: null, minutes: 0, long: false, inId: open.id, outId: null });
-    d.missingOut = true;
+  for (const [date, list] of kept) {
+    const d = days.get(date)!;
+    for (let i = 0; i < list.length; i += 2) {
+      const a = list[i], b = list[i + 1];
+      if (!b) { d.shifts.push({ in: a.at, out: null, minutes: 0, long: false, inId: a.id, outId: null }); d.missingOut = true; continue; }
+      const minutes = Math.round((Date.parse(b.at) - Date.parse(a.at)) / MIN_MS);
+      const long = minutes > LONG_SHIFT_HOURS * 60;
+      d.shifts.push({ in: a.at, out: b.at, minutes, long, inId: a.id, outId: b.id });
+      d.minutes += minutes;
+      if (long) d.long = true;
+    }
   }
   for (const d of days.values()) {
     const ins = d.shifts.map((s) => s.in).sort();
@@ -163,6 +199,64 @@ export function pairPunches(punches: readonly Punch[], cutoffMinutes = 0): Map<s
   }
   return days;
 }
+
+/** A pair is long beyond 12 h, or beyond its shift's length + 2 h when that is more (a 12 h night guard is not "long"). */
+const longAfter = (s?: Pick<WorkShift, 'start_min' | 'end_min'> | null) => Math.max(LONG_SHIFT_HOURS * 60, s ? shiftLength(s) + 120 : 0);
+
+/** How badly a grouping fits: a missing punch-out 240, a long pair 600, a first punch's distance to the nearest shift start (≤ 360). */
+function misfit(days: Map<string, DayResult>, shifts: readonly WorkShift[]): number {
+  const longest = shifts.reduce((m, s) => Math.max(m, longAfter(s)), longAfter(null));
+  let cost = 0;
+  for (const d of days.values()) {
+    if (d.missingOut) cost += 240;
+    cost += 600 * d.shifts.filter((s) => s.minutes > longest).length;
+    if (shifts.length && d.firstIn) cost += Math.min(Math.abs(clockDiff(clockMin(d.firstIn), nearestShift(shifts, clockMin(d.firstIn))!.start_min)), 360);
+  }
+  return cost;
+}
+
+/**
+ * When a person's work day starts (minutes after midnight): their pinned shift's start less 6 h; else, of 06:00 (the
+ * owner's rule: 00:00-05:59 is the night before), noon, and 6 h before each of their branch's shifts, the one their punches
+ * fit best (misfit; ties: that order). So a night guard 18:00 → 06:10 pairs without being pinned.
+ */
+export function chooseDayStart(punches: readonly Punch[], opts: PairOptions = {}): number {
+  if (opts.pinned) return dayStartOf(opts.pinned);
+  const shifts = opts.shifts ?? [];
+  const sorted = sortPunches(punches);
+  const candidates = [...new Set([DAY_START_MIN, 720, ...shifts.map(dayStartOf)])];
+  let best = DAY_START_MIN, bestCost = Infinity;
+  for (const c of candidates) { const cost = misfit(pairByDay(sorted, c), shifts); if (cost < bestCost) { best = c; bestCost = cost; } }
+  return best;
+}
+
+/** The day's shift and lateness (A616): the pinned shift, else the one starting nearest the first punch. */
+export function shiftOfDay(firstIn: string | null, opts: PairOptions = {}): { shift: DayShift | null; lateMin: number } {
+  if (!firstIn) return { shift: null, lateMin: 0 };
+  const s = opts.pinned ?? nearestShift(opts.shifts ?? [], clockMin(firstIn));
+  if (!s) return { shift: null, lateMin: 0 };
+  const late = clockDiff(clockMin(firstIn), s.start_min);
+  return { shift: { id: s.id, name: s.name, start_min: s.start_min, end_min: s.end_min }, lateMin: late > s.grace_min ? late : 0 };
+}
+
+/**
+ * One person's punches → their shifts by work day (the rule above). Punches may arrive in any order; voided ones must
+ * already be left out. Returns a map date → day (only days that have a punch), and the work day's start used.
+ */
+export function pairWorkDays(punches: readonly Punch[], opts: PairOptions = {}): { days: Map<string, DayResult>; dayStart: number } {
+  const dayStart = chooseDayStart(punches, opts);
+  const days = pairByDay(sortPunches(punches), dayStart);
+  if (opts.pinned || opts.shifts?.length) {
+    for (const d of days.values()) {
+      const s = shiftOfDay(d.firstIn, opts);
+      d.shift = s.shift; d.lateMin = s.lateMin;
+      for (const x of d.shifts) x.long = x.minutes > longAfter(s.shift);
+      d.long = d.shifts.some((x) => x.long);
+    }
+  }
+  return { days, dayStart };
+}
+export const pairPunches = (punches: readonly Punch[], opts: PairOptions = {}): Map<string, DayResult> => pairWorkDays(punches, opts).days;
 
 // ── A person's period ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -177,15 +271,15 @@ export interface Correction {
   when: string;
 }
 export interface PersonDay extends DayResult { corrections: Correction[] }
-export interface PersonTotals { minutes: number; hours: number; daysWorked: number; avgHours: number; missedOuts: number; corrections: number; longShifts: number }
-export interface PersonPeriod { days: PersonDay[]; totals: PersonTotals }
+export interface PersonTotals { minutes: number; hours: number; daysWorked: number; avgHours: number; missedOuts: number; corrections: number; longShifts: number; lateDays: number; lateMinutes: number }
+export interface PersonPeriod { days: PersonDay[]; totals: PersonTotals; dayStart: number }
 
 /**
- * The days of [from, to] for one person — every pair whose IN is in the period. `punches` should start up to
- * MAX_SHIFT_HOURS before the period (so an OUT just after it is not read as an IN) and end MAX_SHIFT_HOURS after it.
+ * The days of [from, to] for one person — every work day in the period. `punches` should start a day before the period
+ * (so an OUT just after it is not read as an IN) and end a day after it.
  */
-export function personPeriod(punches: readonly Punch[], from: string, to: string, cutoffMinutes = 0, corrections: readonly Correction[] = []): PersonPeriod {
-  const all = pairPunches(punches, cutoffMinutes);
+export function personPeriod(punches: readonly Punch[], from: string, to: string, opts: PairOptions = {}, corrections: readonly Correction[] = []): PersonPeriod {
+  const { days: all, dayStart } = pairWorkDays(punches, opts);
   const days: PersonDay[] = [];
   for (const [date, d] of [...all.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     if (date < from || date > to) continue;
@@ -194,7 +288,7 @@ export function personPeriod(punches: readonly Punch[], from: string, to: string
   for (const c of corrections) {
     const at = c.at ?? c.was;
     if (!at) continue;
-    const date = businessDate(at, cutoffMinutes);
+    const date = workDate(at, dayStart);
     if (date < from || date > to) continue;
     let d = days.find((x) => x.date === date);
     if (!d) {
@@ -205,15 +299,53 @@ export function personPeriod(punches: readonly Punch[], from: string, to: string
   }
   const minutes = days.reduce((s, d) => s + d.minutes, 0);
   const worked = days.filter((d) => d.minutes > 0).length;
+  const late = days.filter((d) => (d.lateMin ?? 0) > 0);
   return {
     days,
+    dayStart,
     totals: {
       minutes, hours: r2(minutes / 60), daysWorked: worked, avgHours: worked ? r2(minutes / 60 / worked) : 0,
       missedOuts: days.reduce((s, d) => s + d.shifts.filter((x) => !x.out).length, 0),
       corrections: days.reduce((s, d) => s + d.corrections.length, 0),
       longShifts: days.reduce((s, d) => s + d.shifts.filter((x) => x.long).length, 0),
+      lateDays: late.length, lateMinutes: late.reduce((s, d) => s + (d.lateMin ?? 0), 0),
     },
   };
+}
+
+// ── Shifts (A616) ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** "09:00" / "9:05" / 540 → minutes after midnight (0 … 1439); "24:00" is 00:00. Else null. */
+export function clockMinutes(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isInteger(v) && v >= 0 && v < DAY_MIN ? v : null;
+  if (typeof v !== 'string') return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2]);
+  if (h === 24 && mi === 0) return 0;
+  return h < 24 && mi < 60 ? h * 60 + mi : null;
+}
+/** Minutes after midnight → "HH:MM". */
+export const clockText = (m: number) => `${String(Math.floor(wrap(m) / 60)).padStart(2, '0')}:${String(wrap(m) % 60).padStart(2, '0')}`;
+/** A shift's length in minutes (an end at or before the start runs past midnight). */
+export const shiftLength = (s: Pick<WorkShift, 'start_min' | 'end_min'>) => wrap(s.end_min - s.start_min) || DAY_MIN;
+/**
+ * A shift as sent ({ name, start, end, grace? } — times "HH:MM" or minutes), checked: a name of 1-40 characters, start and
+ * end clock times, at most 16 h long, grace 0-120 minutes (default 10). Returns the reason it is refused instead.
+ */
+export function cleanShift(raw: unknown): { name: string; start_min: number; end_min: number; grace_min: number } | { error: string } {
+  if (!raw || typeof raw !== 'object') return { error: 'A shift needs a name, a start and an end.' };
+  const r = raw as Record<string, unknown>;
+  const name = typeof r.name === 'string' ? r.name.replace(/\s+/g, ' ').trim() : '';
+  if (!name || name.length > 40) return { error: 'A shift name is 1-40 characters.' };
+  const start = clockMinutes(r.start ?? r.start_min), end = clockMinutes(r.end ?? r.end_min);
+  if (start === null || end === null) return { error: 'Start and end are times like 09:00.' };
+  if (start === end) return { error: 'A shift cannot start and end at the same time.' };
+  if (shiftLength({ start_min: start, end_min: end }) > MAX_SHIFT_HOURS * 60) return { error: `A shift is at most ${MAX_SHIFT_HOURS} hours.` };
+  const g = r.grace ?? r.grace_min;
+  const grace = g === undefined || g === null || g === '' ? 10 : Number(g);
+  if (!Number.isInteger(grace) || grace < 0 || grace > 120) return { error: 'Grace is 0-120 minutes.' };
+  return { name, start_min: start, end_min: end, grace_min: grace };
 }
 
 /** Estimated pay: hours × the hourly rate, 2 dp — null without a rate. */

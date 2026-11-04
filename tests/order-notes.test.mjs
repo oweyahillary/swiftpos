@@ -123,10 +123,12 @@ ok('the web cashier screen has the note editor on lines and on the order, with t
   assert.match(cs, /picks=\{notePicks\}/);
   assert.match(read('apps/dashboard/src/pages/pos/cashier/usePOSData.ts'), /setNotePicks\(parseNotePicks\(init\.noteQuickPicks \?\? null\)\)/);
 });
-ok('the owner edits the quick picks beside the kitchen list', () => {
-  const rs = read('apps/dashboard/src/pages/settings/RestaurantSettingsPage.tsx');
+ok('the owner edits the quick picks beside the kitchen list (A620: on Printers, moved from Restaurant setup)', () => {
+  const rs = read('apps/dashboard/src/pages/settings/KitchenTicketSettings.tsx');
   assert.match(rs, /Quick notes for orders/);
   assert.match(rs, /saveSetting\('order_note_picks', JSON\.stringify\(list\)\)/);
+  assert.match(read('apps/dashboard/src/pages/settings/PrintersPage.tsx'), /<KitchenTicketSettings \/>/);
+  assert.doesNotMatch(read('apps/dashboard/src/pages/settings/RestaurantSettingsPage.tsx'), /Quick notes for orders<\/h2>/);
 });
 ok('the kitchen display shows the order note above the dishes', () => {
   assert.match(read('apps/dashboard/src/pages/kds/KDSPage.tsx'), /\{ticket\.orders\?\.notes && \(/);

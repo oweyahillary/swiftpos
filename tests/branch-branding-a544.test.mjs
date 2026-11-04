@@ -266,11 +266,11 @@ try {
     assert.equal(k.status, 200, k.text.slice(0, 300));
     assert.equal(k.body.branchBranding.accentHex, '#f5b800'); assert.equal(k.body.branchBranding.branchId, BR2);
   });
-  await ok('themes off: init carries no override (null) and no theme — stored, not applied', async () => {
+  await ok('themes off: init carries no override (null) — stored, not applied; A617: the business\'s free theme (Ocean) still served', async () => {
     reset(false);
     const r = await call('GET', `/api/pos/init?branch_id=${BR}`, T.till, undefined, { 'x-device-id': 'dev-T1' });
     assert.equal(r.status, 200, r.text.slice(0, 300));
-    assert.equal(r.body.branchBranding, null); assert.equal(r.body.themeId, null);
+    assert.equal(r.body.branchBranding, null); assert.equal(r.body.themeId, 'ocean'); assert.equal(r.body.themesPremium, false);
     assert.ok(bb(BR), 'the row is kept');
   });
   await ok('before migration 156 (no table): init still answers, with no override', async () => {
@@ -377,7 +377,8 @@ try {
     assert.equal((await call('GET', `/api/business/branding/branches/${BR}/served`)).status, 401);
     reset(false);
     const off = await call('GET', `/api/business/branding/branches/${BR}/served`, T.owner);
-    assert.equal(off.status, 200); assert.equal(off.body.themeId, null); assert.equal(off.body.branchBranding, null, 'themes off → nothing served');
+    // A617: Ocean is a free theme — served without themes; the branch's override (premium) is not.
+    assert.equal(off.status, 200); assert.equal(off.body.themeId, 'ocean'); assert.equal(off.body.branchBranding, null, 'themes off → no override served');
   });
   // The REAL reprint (lib/reprintReceipt.ts) bundled with the API, the print server and the renderer stubbed: what it hands
   // the renderer as the footer, given what each route answers.

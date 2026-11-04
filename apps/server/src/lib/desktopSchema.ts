@@ -83,7 +83,10 @@
  *  simply sells every item each (no weight keypad) and reads no scale labels. */
 /** 78 = A607: orders.buyer_kra_pin (the order payload; migration 181). A till on 77 keeps syncing; its sales simply carry
  *  no buyer KRA PIN (eTIMS then uses the attached customer's PIN, if any). */
-export const REQUIRED_DESKTOP_SCHEMA = 78;
+/** 79 = A619: device_config.platform_prices and products.platform_prices (both pulled; migration 187). A POS on 78 keeps
+ *  syncing; its sales simply stay at normal prices whatever the method (the cloud prices a sale for a platform only when
+ *  the sale claims it). */
+export const REQUIRED_DESKTOP_SCHEMA = 79;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

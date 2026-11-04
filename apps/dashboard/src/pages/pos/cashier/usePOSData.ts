@@ -10,6 +10,7 @@
 
 import { gateDisplayContent, slidesFromWire, type DisplayContent } from '@zaptill/core/customerScreen';   // A606
 import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
+import { cleanPricing, type PlatformPricing } from '@zaptill/core/platformPrices';   // A619
 import { parseNotePicks } from '@zaptill/core/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';
 import { scaleSettingsOrDefault, type ScaleSettings } from '@zaptill/core/scaleBarcode';   // A577
@@ -78,6 +79,8 @@ export interface POSData {
   paymentMethodsEnabled: string[] | null;
   /** A445: the branch's offers, cleaned (shared/offers.ts). */
   offers: Offer[];
+  /** A619: the delivery platforms' prices for this branch (shared/platformPrices.ts); none = normal prices. */
+  platformPricing: PlatformPricing;
   /** A577: how the business's weighing scales print their labels (the default until pos/init says). */
   scaleSettings: ScaleSettings;
   orderMode:         'pay_first' | 'order_first';
@@ -95,6 +98,7 @@ export function usePOSData(): POSData {
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [paymentMethodsEnabled, setPaymentMethodsEnabled] = useState<string[] | null>(null);   // A429
   const [offers, setOffers] = useState<Offer[]>([]);   // A445
+  const [platformPricing, setPlatformPricing] = useState<PlatformPricing>(() => cleanPricing(null));   // A619
   const [scaleSettings, setScaleSettings] = useState<ScaleSettings>(() => scaleSettingsOrDefault(null));   // A577
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
@@ -143,6 +147,7 @@ export function usePOSData(): POSData {
       setPaymentMethods(init.paymentMethods ?? []);
       setPaymentMethodsEnabled(Array.isArray(init.paymentMethodsEnabled) ? init.paymentMethodsEnabled : null);   // A429
       setOffers((Array.isArray(init.offers) ? init.offers : []).flatMap((o) => { const c = cleanOffer(o); return c.ok ? [(c as { offer: Offer }).offer] : []; }));   // A445
+      setPlatformPricing(cleanPricing(init.platformPrices ?? null));   // A619 (an older cloud sends none: normal prices)
       setVariantsByProduct(init.variantsByProduct ?? {});
       setComboItems(init.comboItems ?? {});
       setKitchenExclusions(init.kitchenExclusions ?? []);
@@ -178,6 +183,7 @@ export function usePOSData(): POSData {
       setReceiptPay(init.receiptPayNumber ? { label: init.receiptPayLabel ?? '', number: init.receiptPayNumber } : null);   // A450
       // A606: the customer screen's look and premium parts — the same gate as the desktop's (lib/customerScreen.ts).
       setCustomerContent(gateDisplayContent({ businessName: (init as any).businessName ?? null, themeId: look.themeId ?? null,
+        themesPremium: init.themesPremium,   // A617: a free theme is served without Themes — the logo and colours need it
         logo: init.branding?.logoPng ?? null, primaryHex: colours.primaryHex, secondaryHex: colours.secondaryHex, accentHex: look.accentHex ?? null,
         licensed: (init as any).webPosEnabled === true, slides: slidesFromWire((init as any).customerScreen ?? null), mpesa: (init as any).mpesa ?? null }));
       setCurrency(init.currency ?? 'KES');
@@ -268,6 +274,7 @@ export function usePOSData(): POSData {
     customerContent,   // A606
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
+    platformPricing,   // A619
     scaleSettings,   // A577
     loading, error,
     reload: () => setTick(t => t + 1),

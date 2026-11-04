@@ -112,8 +112,12 @@ function trackWrite(req: Request, res: Response, next: NextFunction): void {
   if (NOT_A_WRITE.test(path) || READ_POST.test(path)) { next(); return; }
   res.on('finish', () => {
     const b = (req as { businessId?: string }).businessId ?? null;
-    // Never signed in (refused before any route ran): nothing of any business was written.
-    if (!b && (res.statusCode === 401 || res.statusCode === 403 || res.statusCode === 429)) return;
+    // Refused (not signed in, not allowed, too many): nothing was written. A611: for a signed-in business too — a POS
+    // posting acks that changed nothing (~1,100 a day) moved its business's generation each time, and so every answer
+    // remembered for it (the branch drawers above all) was read again on the next ask.
+    if (res.statusCode === 401 || res.statusCode === 403 || res.statusCode === 429) return;
+    // A611: the route says it changed nothing a remembered answer holds (lib/forgetOnWrite.ts's A533 flag).
+    if ((res as { locals?: { forgetNothing?: boolean } }).locals?.forgetNothing) return;
     noteWrite(b);
     if (!b) { noteCatalogueWrite(null); notePeopleWrite(null); }
   });

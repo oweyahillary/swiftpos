@@ -100,7 +100,7 @@ const reset = (flag = true) => {
       { id: DEV2, business_id: B, branch_id: BR2, name: 'CBD door', ip: '192.168.2.201', port: 4370, comm_key: 0, serial: 'CBD123', removed_at: null, created_at: ago(9e6) },
       { id: DEVX, business_id: B2, branch_id: BRX, name: 'Theirs', ip: '10.0.0.2', port: 4370, comm_key: 0, serial: 'X1', removed_at: null, created_at: ago(9e6) },
     ],
-    attendance_people: [], attendance_device_users: [], attendance_device_actions: [], clock_events: [],
+    attendance_people: [], attendance_device_users: [], attendance_device_actions: [], clock_events: [], attendance_shifts: [],
     business_settings: [], branch_settings: [], cloud_plans: [], refresh_tokens: [], audit_log: [], notifications: [], admin_users: [], ops_events: [],
     sync_versions: [], sync_changes: [], sync_change_floor: [{ id: 1, floor_seq: 0 }], roles: [], role_permissions: [], permissions: [],
   };
@@ -125,9 +125,9 @@ const T = {
   till: sign({ userId: null, deviceId: 'dev-T', till: true, permissionKeys: ['*'], surface: 'desktop' }),
   serverX: sign({ userId: null, businessId: B2, branchId: BRX, deviceId: 'dev-X', till: true, permissionKeys: ['*'], surface: 'desktop' }),
 };
-const call = async (method, p, token, body) => {
+const call = async (method, p, token, body, extra = {}) => {
   const r = await fetch(`http://127.0.0.1:${port}${p}`, { method,
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...extra },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   const text = await r.text();
   let json = null; try { json = JSON.parse(text); } catch { /* not json */ }
@@ -448,6 +448,35 @@ try {
     const devs = await call('GET', '/api/attendance/devices', T.owner);
     assert.ok(devs.body.devices.every((d) => !('comm_key' in d) && 'comm_key_set' in d), 'the comm key never reaches the web');
   });
+  await ok('A614: one device per branch — a second refused 409 BRANCH_HAS_DEVICE (naming the one there), nothing written', async () => {
+    const before = mem.db.attendance_devices.length;
+    const r = await call('POST', '/api/attendance/devices', T.owner, { name: 'Back door', ip: '192.168.1.202', branch_id: BR });
+    assert.equal(r.status, 409, JSON.stringify(r.body));
+    assert.equal(r.body.code, 'BRANCH_HAS_DEVICE');
+    assert.match(r.body.error, /already has its attendance device \(Front door\)/);
+    assert.equal(mem.db.attendance_devices.length, before);
+  });
+  await ok('A614: the device removed — a new one goes in its place; two adds racing: the database\'s unique index answers the same', async () => {
+    const front = mem.db.attendance_devices.find((d) => d.id === DEV);
+    const was = front.removed_at;
+    front.removed_at = ago(1);
+    const r = await call('POST', '/api/attendance/devices', T.owner, { name: 'New door', ip: '192.168.1.203', branch_id: BR });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    mem.db.attendance_devices = mem.db.attendance_devices.filter((d) => d.name !== 'New door');
+    mem.db.attendance_device_actions = (mem.db.attendance_device_actions ?? []).filter((a) => a.device_id !== r.body.id);
+    mem.fail = (table, op) => (table === 'attendance_devices' && op === 'insert' ? { code: '23505', message: 'duplicate key value violates unique constraint "attendance_devices_one_per_branch"' } : null);
+    const race = await call('POST', '/api/attendance/devices', T.owner, { name: 'Racer', ip: '192.168.1.204', branch_id: BR });
+    mem.fail = () => null;
+    front.removed_at = was;
+    assert.equal(race.status, 409, JSON.stringify(race.body));
+    assert.equal(race.body.code, 'BRANCH_HAS_DEVICE');
+  });
+  await ok('A614: the web offers "Add device" only for a branch with none; the POS says a branch has one device', () => {
+    const page = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/attendance/AttendancePage.tsx'), 'utf8');
+    assert.match(page, /const free = \(branchId \? branches\.filter\(\(b\) => b\.id === branchId\) : branches\)\.filter\(\(b\) => !taken\.has\(b\.id\)\);/);
+    assert.match(page, /data-testid="att-one-device"/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/components/AttendanceDevicesPanel.tsx'), 'utf8'), /A branch has one attendance device\./);
+  });
   await ok('a manager sees their own branch only (the CBD guard not in their report)', async () => {
     mem.db.clock_events.push({ id: 'cbd-1', business_id: B, branch_id: BR2, person_id: 'p-cbd', staff_id: null, source: 'device', event_type: 'punch', recorded_at: at('2026-10-22T06:00:00+03:00'), created_at: ago(1) },
       { id: 'cbd-2', business_id: B, branch_id: BR2, person_id: 'p-cbd', staff_id: null, source: 'device', event_type: 'punch', recorded_at: at('2026-10-22T18:00:00+03:00'), created_at: ago(1) });
@@ -456,6 +485,25 @@ try {
     const o = await call('GET', `/api/attendance/report?from=2026-10-19&to=2026-10-25&branch_id=${BR2}`, T.owner);
     assert.deepEqual(o.body.people.map((p) => p.name), ['Guard']); assert.equal(o.body.people[0].totals.hours, 12);
     assert.equal(o.body.people[0].attendance_only, true);
+  });
+  await ok('"All branches" on the page means all: branch_id=all beats the sidebar branch (X-Branch-Id); the page always sends it', async () => {
+    // 2026-10-31 (owner, dev): the picker said All branches, the sidebar Karatina — the page sent no branch_id, the server read
+    // the sidebar's branch alone, and the demo data of the other branch showed 0 h.
+    const side = await call('GET', '/api/attendance/report?from=2026-10-19&to=2026-10-25', T.owner, undefined, { 'X-Branch-Id': BR });
+    assert.ok(!side.body.people.some((p) => p.name === 'Guard'), 'no branch_id: the sidebar branch alone, as before');
+    const all = await call('GET', '/api/attendance/report?from=2026-10-19&to=2026-10-25&branch_id=all', T.owner, undefined, { 'X-Branch-Id': BR });
+    assert.ok(all.body.people.some((p) => p.name === 'Guard'), 'branch_id=all: every branch');
+    const pe = await call('GET', '/api/attendance/people?branch_id=all', T.owner, undefined, { 'X-Branch-Id': BR });
+    assert.ok(pe.body.people.some((p) => p.branch_id === BR2));
+    const m = await call('GET', '/api/attendance/report?from=2026-10-19&to=2026-10-25&branch_id=all', T.manager);
+    assert.ok(!m.body.people.some((p) => p.name === 'Guard'), 'a manager asking for all still gets their own branch');
+    const page = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/attendance/AttendancePage.tsx'), 'utf8');
+    assert.match(page, /p\.set\('branch_id', branchId \|\| 'all'\);/);
+    for (const r of ['people', 'unmatched', 'device-users', 'devices']) assert.ok(page.includes(`/api/attendance/${r}?branch_id=\${branchId || 'all'}`), r);
+    assert.doesNotMatch(page, /branchId \? `\?branch_id=/);
+    // "This month" widened the whole page to the 31-day grid (a flex column item with mx-auto sizes to its content):
+    // the page keeps the screen's width and the grid scrolls inside its card
+    assert.match(page, /className="p-4 sm:p-6 w-full min-w-0 max-w-7xl mx-auto space-y-4" data-testid="attendance-page"/);
   });
 
   console.log('\n$. pay\n');
@@ -533,6 +581,118 @@ try {
     assert.ok(AV.attendanceSheets({ ...report, payVisible: true })[0].columns.some((c) => c.key === 'pay'));
     assert.equal(s[1].rows[0]['2026-10-19'], 0);
   });
+  await ok('A616 on the page: late in words, a shift\'s times, Late columns in the Excel only once the report has shifts', async () => {
+    assert.equal(AV.lateWords(25), '25 min late'); assert.equal(AV.lateWords(70), '1 h 10 min late'); assert.equal(AV.lateWords(0), '');
+    assert.equal(AV.shiftTimes({ start_min: 540, end_min: 1020 }), '09:00 – 17:00');
+    assert.equal(AV.shiftTimes({ start_min: 1080, end_min: 360 }), '18:00 – 06:00 (next day)');
+    assert.equal(AV.shiftTimes({ start_min: 1020, end_min: 0 }), '17:00 – 00:00');
+    const base = { from: '2026-10-19', to: '2026-10-19', dates: ['2026-10-19'], payVisible: false, team: { hours: 8 },
+      people: [{ name: 'A', attendance_no: 1, branch_name: 'W', totals: { hours: 8, daysWorked: 1, avgHours: 8, missedOuts: 0, corrections: 0, lateDays: 1, lateMinutes: 25 }, daily: { '2026-10-19': 8 },
+        days: [{ date: '2026-10-19', firstIn: at('2026-10-19T13:25:00+03:00'), lastOut: at('2026-10-19T21:25:00+03:00'), hours: 8, missingOut: false, long: false, corrections: [], shift: { name: 'Afternoon', start_min: 780 }, lateMin: 25 }] }] };
+    assert.ok(!AV.attendanceSheets(base)[0].columns.some((c) => c.key === 'lateDays'), 'no shifts: no Late columns');
+    const withShifts = AV.attendanceSheets({ ...base, shifts: [{ id: 's', name: 'Afternoon', start_min: 780, end_min: 1260 }] }, base.people[0]);
+    assert.equal(withShifts[0].rows[0].lateMin, 25);
+    assert.deepEqual([withShifts[2].rows[0].shift, withShifts[2].rows[0].late], ['Afternoon', 25]);
+    const page = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/attendance/AttendancePage.tsx'), 'utf8');
+    assert.match(page, /\{access\?\.edit && <ShiftsPanel /, 'the Shifts section for whoever corrects attendance');
+    assert.match(page, /api\.put\(`\/api\/attendance\/people\/\$\{p\.id\}\/shift`/, 'pinning in People');
+  });
+  console.log('\nS. shifts and work days (A616)\n');
+  // Owner, 2026-10-31, with a real ZKTeco export (16 people, 693 punches): one forgotten punch-out paired 18:31 with the
+  // next morning's 08:21 under the old pairing (across days) — 96.9 h for someone who worked 83.1 h.
+  const SH = (id, name, start, end, grace = 10, branch_id = BR) => ({ id, business_id: B, branch_id, name, start_min: start, end_min: end, grace_min: grace, active: true });
+  const MORNING = SH('sh-9', 'Morning', 540, 1020), AFTERNOON = SH('sh-13', 'Afternoon', 780, 1260), EVENING = SH('sh-17', 'Evening', 1020, 0), NIGHT = SH('sh-n', 'Night', 1080, 360);
+  await ok('a forgotten punch-out stays on its own day: 18:31 (in, out missing) never pairs with the next morning\'s 08:21', async () => {
+    const days = R.pairPunches([P('a', '2026-03-20T18:31:00+03:00'), P('b', '2026-03-21T08:21:00+03:00'), P('c', '2026-03-21T17:00:00+03:00'), P('d', '2026-03-22T08:40:00+03:00'), P('e', '2026-03-22T18:33:00+03:00')]);
+    assert.equal(days.get('2026-03-20').missingOut, true); assert.equal(days.get('2026-03-20').minutes, 0);
+    assert.equal(days.get('2026-03-21').hours, 8.65); assert.equal(days.get('2026-03-21').missingOut, false);
+    assert.equal(days.get('2026-03-22').hours, 9.88);
+  });
+  await ok('00:00-05:59 belongs to the night before: 17:20 → 00:11 is one evening shift of the 20th', async () => {
+    const days = R.pairPunches([P('a', '2026-03-20T17:20:00+03:00'), P('b', '2026-03-21T00:11:00+03:00'), P('c', '2026-03-21T13:05:00+03:00'), P('d', '2026-03-21T19:31:00+03:00')]);
+    assert.equal(days.get('2026-03-20').hours, 6.85); assert.equal(days.get('2026-03-21').hours, 6.43);
+    assert.equal(R.workDate(at('2026-03-21T05:59:00+03:00'), R.DAY_START_MIN), '2026-03-20');
+    assert.equal(R.workDate(at('2026-03-21T06:00:00+03:00'), R.DAY_START_MIN), '2026-03-21');
+  });
+  const guardWeek = () => { const out = []; for (let d = 1; d <= 6; d++) { const dd = String(d).padStart(2, '0'), nx = String(d + 1).padStart(2, '0'); out.push(P(`i${d}`, `2026-10-${dd}T18:0${d}:00+03:00`), P(`o${d}`, `2026-10-${nx}T06:1${d}:00+03:00`)); } return out; };
+  await ok('a night guard 18:00 → 06:10, NOT pinned, pairs right once the branch has a Night shift (their work day starts at noon); 12 h is not "long" for a 12 h shift', async () => {
+    const p = R.personPeriod(guardWeek(), '2026-10-01', '2026-10-06', { shifts: [MORNING, AFTERNOON, EVENING, NIGHT] });
+    assert.equal(p.dayStart, 720);
+    assert.equal(p.totals.daysWorked, 6); assert.equal(p.totals.missedOuts, 0); assert.equal(p.totals.longShifts, 0);
+    assert.ok(p.days.every((d) => d.shift?.name === 'Night' && d.lateMin === 0 && d.hours > 12 && d.hours < 12.3), JSON.stringify(p.days.map((d) => [d.date, d.hours, d.shift?.name])));
+  });
+  await ok('pinned: the work day starts 6 h before the pinned shift; the pinned shift is the day\'s shift whatever the first punch', async () => {
+    const p = R.personPeriod(guardWeek(), '2026-10-01', '2026-10-06', { shifts: [MORNING, NIGHT], pinned: NIGHT });
+    assert.equal(p.dayStart, 720); assert.equal(R.dayStartOf(MORNING), 180);
+    assert.ok(p.days.every((d) => d.shift?.id === 'sh-n'));
+    const q = R.personPeriod([P('a', '2026-10-05T13:40:00+03:00'), P('b', '2026-10-05T21:00:00+03:00')], '2026-10-05', '2026-10-05', { shifts: [MORNING, AFTERNOON, EVENING], pinned: MORNING });
+    assert.equal(q.days[0].shift.name, 'Morning'); assert.equal(q.days[0].lateMin, 280);
+  });
+  await ok('late: the nearest shift to the first punch; beyond the grace = late, minutes counted from the start; within it, on time', async () => {
+    const opts = { shifts: [MORNING, AFTERNOON, EVENING] };
+    assert.deepEqual(R.shiftOfDay(at('2026-10-05T13:08:00+03:00'), opts), { shift: { id: 'sh-13', name: 'Afternoon', start_min: 780, end_min: 1260 }, lateMin: 0 });
+    assert.equal(R.shiftOfDay(at('2026-10-05T13:25:00+03:00'), opts).lateMin, 25);
+    assert.equal(R.shiftOfDay(at('2026-10-05T08:40:00+03:00'), opts).lateMin, 0, 'early is on time');
+    assert.equal(R.shiftOfDay(at('2026-10-05T17:30:00+03:00'), opts).shift.name, 'Evening');
+    const p = R.personPeriod([P('a', '2026-10-05T13:25:00+03:00'), P('b', '2026-10-05T21:00:00+03:00'), P('c', '2026-10-06T09:05:00+03:00'), P('d', '2026-10-06T17:00:00+03:00')], '2026-10-05', '2026-10-06', opts);
+    assert.equal(p.totals.lateDays, 1); assert.equal(p.totals.lateMinutes, 25);
+  });
+  await ok('no shifts: no shift, no lateness (the report as before)', async () => {
+    const p = R.personPeriod([P('a', '2026-10-05T13:25:00+03:00'), P('b', '2026-10-05T21:00:00+03:00')], '2026-10-05', '2026-10-05');
+    assert.equal(p.days[0].shift, undefined); assert.equal(p.totals.lateDays, 0);
+  });
+  await ok('a shift checked: "09:00"-"17:00", past midnight (17:00 → 00:00), grace 0-120; same start and end, over 16 h, bad times refused', async () => {
+    assert.deepEqual(R.cleanShift({ name: ' Morning ', start: '09:00', end: '17:00' }), { name: 'Morning', start_min: 540, end_min: 1020, grace_min: 10 });
+    assert.deepEqual(R.cleanShift({ name: 'Evening', start: '17:00', end: '24:00', grace: 0 }), { name: 'Evening', start_min: 1020, end_min: 0, grace_min: 0 });
+    assert.equal(R.shiftLength({ start_min: 1080, end_min: 360 }), 720);
+    for (const bad of [{ name: '', start: '09:00', end: '17:00' }, { name: 'X', start: '09:00', end: '09:00' }, { name: 'X', start: '06:00', end: '23:00' },
+      { name: 'X', start: '9am', end: '17:00' }, { name: 'X', start: '25:00', end: '17:00' }, { name: 'X', start: '09:00', end: '17:00', grace: 121 }]) assert.ok('error' in R.cleanShift(bad), JSON.stringify(bad));
+  });
+  await ok('shifts on the web: added, changed, copied to another branch (names it has skipped), ended (pins cleared); a manager only at their branch', async () => {
+    reset();
+    const add = await call('POST', '/api/attendance/shifts', T.owner, { branch_id: BR, name: 'Morning', start: '09:00', end: '17:00' });
+    assert.equal(add.status, 201, JSON.stringify(add.body)); assert.equal(add.body.start_min, 540); assert.equal(add.body.grace_min, 10);
+    await call('POST', '/api/attendance/shifts', T.owner, { branch_id: BR, name: 'Evening', start: '17:00', end: '00:00' });
+    assert.equal((await call('POST', '/api/attendance/shifts', T.owner, { branch_id: BR, name: 'Bad', start: '09:00', end: '09:00' })).body.code, 'BAD_SHIFT');
+    const ch = await call('PATCH', `/api/attendance/shifts/${add.body.id}`, T.owner, { grace: 15 });
+    assert.equal(ch.status, 200); assert.equal(ch.body.grace_min, 15); assert.equal(ch.body.start_min, 540);
+    mem.db.attendance_shifts.push(SH('sh-cbd', 'Evening', 1020, 0, 10, BR2));
+    const cp = await call('POST', '/api/attendance/shifts/copy', T.owner, { from_branch_id: BR, to_branch_id: BR2 });
+    assert.equal(cp.body.copied, 1, 'Morning copied, Evening (it has one) skipped');
+    assert.deepEqual(mem.db.attendance_shifts.filter((s) => s.branch_id === BR2 && s.active).map((s) => s.name).sort(), ['Evening', 'Morning']);
+    // a manager (Westlands) cannot add at CBD, nor change CBD's shift, and sees Westlands' only
+    assert.equal((await call('POST', '/api/attendance/shifts', T.manager, { branch_id: BR2, name: 'Late', start: '12:00', end: '20:00' })).status, 403);
+    assert.equal((await call('PATCH', '/api/attendance/shifts/sh-cbd', T.manager, { grace: 5 })).status, 404);
+    const seen = await call('GET', '/api/attendance/shifts', T.manager);
+    assert.ok(seen.body.shifts.length >= 2 && seen.body.shifts.every((s) => s.branch_id === BR));
+    assert.equal((await call('POST', '/api/attendance/shifts', T.cashier, { branch_id: BR, name: 'X', start: '09:00', end: '17:00' })).status, 403);
+    // pin, then end the shift: the pin is cleared
+    mem.db.attendance_people.push({ id: 'p-g', business_id: B, branch_id: BR, user_id: null, name: 'Guard', attendance_no: 40, active: true, shift_id: null });
+    assert.equal((await call('PUT', '/api/attendance/people/p-g/shift', T.owner, { shift_id: 'sh-cbd' })).body.code, 'BAD_SHIFT', 'a shift of another branch');
+    assert.equal((await call('PUT', '/api/attendance/people/p-g/shift', T.owner, { shift_id: add.body.id })).status, 200);
+    assert.equal((await call('GET', '/api/attendance/people', T.owner)).body.people.find((p) => p.id === 'p-g').shift_id, add.body.id);
+    assert.equal((await call('DELETE', `/api/attendance/shifts/${add.body.id}`, T.owner)).status, 200);
+    assert.equal(mem.db.attendance_people.find((p) => p.id === 'p-g').shift_id, null);
+    assert.equal(mem.db.attendance_shifts.find((s) => s.id === add.body.id).active, false, 'kept, ended');
+  });
+  await ok('the report: each day\'s shift and lateness, late days per person and for the team, the branch\'s shifts — and, with no shifts table yet (migration 184 not run), the report as before', async () => {
+    reset();
+    mem.db.attendance_shifts.push(MORNING, AFTERNOON, EVENING);
+    mem.db.attendance_people.push({ id: 'p-l', business_id: B, branch_id: BR, user_id: null, name: 'Latecomer', attendance_no: 41, active: true, shift_id: null });
+    const punch = (id, t) => ({ id, business_id: B, branch_id: BR, person_id: 'p-l', staff_id: null, source: 'device', event_type: 'punch', recorded_at: at(t), created_at: ago(1) });
+    mem.db.clock_events.push(punch('l1', '2026-10-20T13:40:00+03:00'), punch('l2', '2026-10-20T21:00:00+03:00'), punch('l3', '2026-10-21T17:20:00+03:00'), punch('l4', '2026-10-22T00:10:00+03:00'));
+    const r = await call('GET', '/api/attendance/report?from=2026-10-19&to=2026-10-25&person=p-l', T.owner);
+    const me = r.body.people.find((p) => p.person_id === 'p-l');
+    assert.deepEqual(me.late, ['2026-10-20', '2026-10-21']); assert.equal(me.totals.lateMinutes, 60);
+    assert.equal(me.daily['2026-10-21'], 6.83, 'the evening shift to 00:10 counted on the 21st');
+    assert.deepEqual(me.days.map((d) => d.shift?.name), ['Afternoon', 'Evening']);
+    assert.equal(r.body.team.lateDays, 2); assert.equal(r.body.shifts.length, 3);
+    mem.fail = (table) => (table === 'attendance_shifts' ? { message: 'relation "public.attendance_shifts" does not exist', code: '42P01' } : null);
+    const before = await call('GET', '/api/attendance/report?from=2026-10-19&to=2026-10-25', T.owner);
+    assert.equal(before.status, 200); assert.equal(before.body.team.lateDays, 0); assert.deepEqual(before.body.shifts, []);
+    assert.equal(before.body.people.find((p) => p.person_id === 'p-l').daily['2026-10-21'], 6.83);
+  });
+
 } finally {
   server.close();
 }

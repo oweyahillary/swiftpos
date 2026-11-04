@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo, memo, lazy, Suspense, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { applyOffers, type Offer } from '@zaptill/core/offers';   // A445
+type PlatformLib = typeof import('@zaptill/core/platformPrices');   // A619: loaded when the payment screen opens
 import { posApi } from '../lib/posApi';
 import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
 import type { CartItem } from '../lib/cart';
@@ -18,7 +19,7 @@ import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import VariantModal from '../components/VariantModal';
 import MethodDot from '@zaptill/ui/MethodDot';
 import PaymentModal from '../components/PaymentModal';
-import type { PaymentResult } from '../components/PaymentModal';
+import type { PaymentResult, PlatformCart } from '../components/PaymentModal';
 import PrinterSettingsModal from '../components/PrinterSettingsModal';
 import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
@@ -457,6 +458,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const [customMethods, setCustomMethods] = useState<{ code: string; name: string }[]>([]);
   // A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults).
   const [enabledMethods, setEnabledMethods] = useState<string[] | null>(null);
+  // A619: the delivery platforms' prices this POS charges, and the file that prices with them — both read when the payment
+  // screen opens (main checks the sale against the same); the file is not in the POS's first load.
+  const [platformPrices, setPlatformPrices] = useState<unknown>(null);
+  const [platformLib, setPlatformLib] = useState<PlatformLib | null>(null);
   // A445: the branch's offers (pulled with the menu; reloaded when it changes) and the clock they run by — the cart
   // applies them by themselves, offline too.
   const [offerList, setOfferList] = useState<{ offers: Offer[]; branchId: string | null }>({ offers: [], branchId: null });
@@ -1255,13 +1260,29 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const ctlRate = ctlRateFromServer;
   const subtotal = cartSubtotal(cart);
   // A445: what the offers take off this cart (shared/offers.ts — the same rules the cloud checks the sale with).
-  const offerResult = useMemo(() => applyOffers(cart.map((i, n) => ({
+  const offersOn = useCallback((lines: CartItem[]) => applyOffers(lines.map((i, n) => ({
     key: i.lineId ?? String(n),
     product_id: i.product?.id ?? null,
     category_id: i.product?.category_id ?? i.product?.categories?.id ?? null,
     unit_price: i.quantity > 0 ? i.lineTotal / i.quantity : 0,
     quantity: i.quantity,
-  })), offerList.offers, { at: offerClock, branchId: offerList.branchId }), [cart, offerList, offerClock]);
+  })), offerList.offers, { at: offerClock, branchId: offerList.branchId }), [offerList, offerClock]);
+  const offerResult = useMemo(() => offersOn(cart), [cart, offersOn]);
+  // A619: the cart at a delivery platform's prices for the payment screen, its offers recomputed on them.
+  // Null until the pricing file has loaded (the payment screen then waits before charging a platform).
+  const platformCart = useCallback((platform: string): PlatformCart | null => {
+    if (!platformLib) return null;
+    const pricing = platformLib.cleanPricing(platformPrices);
+    const q = platformLib.platformQuote(cart, platform, pricing);
+    return q ? { ...q, offers: offersOn(q.lines).applied, record: platformLib.platformRecord(platform, pricing, q.uplift),
+      label: platformLib.changesText(q.changes) } : null;
+  }, [cart, platformPrices, platformLib, offersOn]);
+  // A619: the platform prices as they are on this POS now, each time the payment screen opens (and the file, once).
+  useEffect(() => {
+    if (!showPayment) return;
+    posApi.pos.paymentMethodsEnabled().then((r) => setPlatformPrices(r?.platformPrices ?? null)).catch(() => {});
+    if (!platformLib) import('@zaptill/core/platformPrices').then((m) => setPlatformLib(m)).catch(() => {});
+  }, [showPayment]);   // eslint-disable-line react-hooks/exhaustive-deps
   const offerOff = offerResult.total;
   const toPay = Math.round((subtotal - offerOff) * 100) / 100;
   const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(toPay, vatRate, ctlRate);
@@ -1322,7 +1343,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         // 0.6.27: the fee on top of the bill ('delivery_fee' switch) — in the legs like the tip; the till pays the rider it.
         // 0.6.33: on a FREE delivery the fee is still the rider's (the drawer pays it) but not in the customer's legs.
         ...(riderFee > 0 ? { delivery_fee: riderFee, ...(freeNow ? { delivery_free: true } : {}) } : {}),
-        subtotal,
+        subtotal: payment.platform?.platformSubtotal ?? subtotal,   // A619: at the platform's prices when it is one
+        // A619: the platform whose prices these are — main checks each line against this POS's rules, the cloud again.
+        ...(payment.platform ? { price_list: payment.platform.platform } : {}),
         discount_amount: payment.discountAmount,
         // A445: the part offers took off, and which — the cloud checks them against its own prices.
         ...(payment.offerDiscount > 0 ? { offer_discount: payment.offerDiscount, offers: payment.offers } : {}),
@@ -1338,7 +1361,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         // which is why fuel reports read zero (audit backlog, rode along with
         // this rebuild as planned).
         pump_id: cart.find(i => i.isFuel && i.pumpId)?.pumpId ?? null,
-        items: cart.map(item => ({
+        items: (payment.platform?.lines ?? cart).map((item, idx) => ({
           product: {
             id: item.product.id,
             name: item.product.name,
@@ -1365,6 +1388,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           comboComponents: comboItems[item.product.id] ?? undefined,
           // A367: the line's note — kitchen ticket, receipt, the till's order_items.notes and the cloud's.
           notes: item.notes ?? null,
+          // A619: the line as it was rung (normal prices) — main re-derives the platform's price from it; never leaves main.
+          ...(payment.platform && item.product?.id ? { normal: { unitPrice: cart[idx].unitPrice, modifiers: cart[idx].selectedModifiers.map((m) => m.price) } } : {}),
         })),
         // A367: the note on the whole order.
         notes: orderNote.trim() || null,
@@ -2275,6 +2300,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           error={payError}
           customMethods={customMethods}
           enabledMethods={enabledMethods}
+          platformCart={platformCart}   // A619: a delivery platform's prices when it is the method
           deliveryFee={feeDue}
           rider={orderType === 'delivery' ? deliveryPerson.trim() || null : null}
           offers={offerResult.applied}
