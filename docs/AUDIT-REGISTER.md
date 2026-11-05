@@ -7619,7 +7619,7 @@ COMPILED rule with real bcrypt hashes + route pins); NEW `apps/desktop/test/void
 
 
 
-### A354 · P3 · OPEN (future build — design approved in outline 2026-10-10) · Android app (till + owner) and iPhone owner PWA
+### A354 · P3 · OPEN (Stage 0 built 2026-11-04 on the `android` branch — migration 189; design approved in outline 2026-10-10) · Android app (till + owner) and iPhone owner PWA
 Owner 2026-09-28, filing the auth move (A353): keep it open "just like the android app is". **Design revision 2 (2026-10-10)**,
 `docs/ANDROID-APP-DESIGN.md`, rewritten with the owner: "can we incorporate owners app not just a till an owner can log in and
 still perform some basic tasks and get reports?" and "go with PWA for iphone". Decided:
@@ -7642,6 +7642,17 @@ Store); Q5 owner mode only with the business's **web access** (cloud licence), f
 reports without tasks; locked/none = no sign-in); Q6 **managers may use owner mode** for their own branches and permission
 keys, cashiers may not. **Still open (§9):** Q2 till seat or web POS licence, Q4 hardware, Q7 Till 2 before Till 3, Q8
 background service, Q9 branch server machine, Q10 retention window. Not scheduled; no code yet.
+**Stage 0 built 2026-11-04** (branch `android`, `docs/ANDROID-APP-DESIGN.md` §10): `apps/android` — one Capacitor 8 app,
+app id `com.zaptill.app`, Android 10+; **What is this device?** (Shop POS / Owner or manager phone) with Reset app;
+Keystore-backed secrets (`@aparajita/capacitor-secure-storage`); the update feed approved per business **and per surface**
+like A348 (`android-till`, `mobile`; migration 189, nothing approved by default; `/api/app-update/android/*`), the admin
+portal's **Updates › ZapTill for Android** card (approve / hold, super admin, audited; a download link with the SHA-256);
+the in-app updater (the approved APK only, SHA-256 checked while it downloads, the session never sent past the cloud,
+Android's installer; a Shop POS between shifts); crash and error reports into the admin's alerts (`POST /api/app-errors`,
+category `app_errors`, one bell row per crash per 6 h); `.github/workflows/android.yml` (debug APK always, the release APK
+when the owner's key is in the secrets; the key never in the repository); the owners' install guide
+(`docs/Manuals/ANDROID-INSTALL.*`). Tests: `tests/android-stage0.test.mjs`, `scripts/test-migration-189.mjs`,
+`ApkDownloaderTest` (Gradle). Next: Owner stage A and Till stage 1.
 
 ### A353 · P3 · OPEN (future build) · Move sign-in (auth) from Supabase to SwiftPOS's own auth
 Owner 2026-09-28: "I also want to start the process of moving auth from superbase to my own auth but leave that as an open item in

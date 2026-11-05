@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installing ZapTill on an Android phone or tablet</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+@media print{h2{break-after:avoid}table,blockquote{break-inside:avoid}}
+</style></head>
+<body><div class="wrap">
+<h1>Installing ZapTill on an Android phone or tablet</h1>
+<p>For owners and managers installing ZapTill on their own phone, and for technicians setting up a shop tablet as a Shop POS.</p>
+<p>ZapTill for Android is not in the Play Store. You install it from a file (an APK) that ZapTill gives you. This guide shows how, and what to tap when Android asks questions on the way.</p>
+<blockquote><strong>This first version</strong> sets up the device and checks with ZapTill for updates. Signing in, reports and selling come in the next version, which you install the same way as this one (a new link from ZapTill). Once a device is signed in, it updates itself whenever ZapTill approves a new version for your business.</blockquote>
+<h2>Before you start</h2>
+<table><thead><tr><th>You need</th><th>How to check</th></tr></thead><tbody><tr><td>Android 10 or newer</td><td><strong>Settings › About phone › Android version</strong> (on some phones <strong>Settings › About phone › Software information</strong>)</td></tr><tr><td>About 30 MB of free space</td><td><strong>Settings › Storage</strong></td></tr><tr><td>The download link from ZapTill</td><td>ZapTill support sends it to you, or your technician installs the app for you</td></tr><tr><td>An internet connection</td><td>Wi-Fi or mobile data</td></tr></tbody></table>
+<h2>Step 1 — Download the app</h2>
+<ol><li>Open the link from ZapTill on the phone or tablet, in <strong>Chrome</strong>.</li><li>The link works for <strong>a few minutes only</strong>. If it says the link has expired (or &quot;AccessDenied&quot;), ask ZapTill for a new one.</li><li>Chrome may warn: <strong>&quot;This type of file can harm your device.&quot;</strong> Tap <strong>Download anyway</strong>. ZapTill files come only from ZapTill; never install a ZapTill file someone else sends you.</li></ol>
+<h2>Step 2 — Allow installs from Chrome (first time only)</h2>
+<ol><li>When the download finishes, tap <strong>Open</strong> (or open <strong>Files › Downloads</strong> and tap <strong>ZapTill-x.y.z.apk</strong>).</li><li>Android says: <strong>&quot;For your security, your phone is not allowed to install unknown apps from this source.&quot;</strong></li><li>Tap <strong>Settings</strong>, switch on <strong>Allow from this source</strong>, then tap the back arrow.</li></ol>
+<p>The words differ a little by phone make. On Samsung, Tecno, Infinix and most others the setting is called <strong>Install unknown apps</strong>.</p>
+<h2>Step 3 — Install</h2>
+<ol><li>Tap <strong>Install</strong>.</li><li><strong>Google Play Protect</strong> may say it has not seen this app before (&quot;Unsafe app blocked&quot; or &quot;Send app for scanning?&quot;). This is because ZapTill is installed from a file, not from the Play Store. Tap <strong>More details › Install anyway</strong> (or <strong>Don&#x27;t send</strong>, then <strong>Install</strong>).</li><li>When it says <strong>App installed</strong>, tap <strong>Open</strong>.</li></ol>
+<h2>Step 4 — What is this device?</h2>
+<p>The first time ZapTill opens it asks <strong>&quot;What is this device?&quot;</strong></p>
+<table><thead><tr><th>Choose</th><th>When</th></tr></thead><tbody><tr><td><strong>Shop POS</strong></td><td>A tablet at the counter that sells. Staff use their PINs.</td></tr><tr><td><strong>Owner / manager phone</strong></td><td>Your own phone or tablet, for reports and quick tasks. You sign in as yourself.</td></tr></tbody></table>
+<p>Tap your choice, read the note, then tap <strong>Use as …</strong>. The choice stays until <strong>Reset app</strong> (below), which clears everything ZapTill keeps on the device.</p>
+<h2>For technicians — check the file before installing it</h2>
+<p>Every update the app installs by itself is checked against its SHA-256 first, and Android refuses an update that is not signed by ZapTill. For the <strong>first</strong> install you can check the file yourself:</p>
+<ol><li>In the admin portal, open the client, tab <strong>Updates</strong>, card <strong>ZapTill for Android</strong>, and tap <strong>Get download link</strong>. The card shows the file&#x27;s <strong>SHA-256</strong>.</li><li>Download the file on a PC and run, in PowerShell: <code>Get-FileHash .\ZapTill-x.y.z.apk -Algorithm SHA256</code></li><li>The two values must be the same. Then copy the file to the tablet (USB cable, or a shared folder) and install it from <strong>Files</strong> as in Steps 2 and 3.</li></ol>
+<h2>Updates</h2>
+<ul><li>ZapTill approves each new version for your business before it reaches your devices. Nothing updates by itself without that approval.</li><li>A device that is not signed in yet (this first version) gets no updates by itself: it says <strong>Updates start once this device is joined to your business</strong>. Install a newer version from a new ZapTill link, as in Steps 1 to 3; your choice of device type is kept.</li><li>When an update is approved, the app shows <strong>Update to x.y.z</strong>. Tap it; Android asks <strong>&quot;Do you want to update this app?&quot;</strong> — tap <strong>Update</strong>.</li><li>A <strong>Shop POS</strong> updates only when no shift is open, never during service.</li><li>The first time, Android may ask you to allow <strong>Install unknown apps</strong> for <strong>ZapTill</strong> itself: the app opens that setting for you. Switch on <strong>Allow from this source</strong>, come back and tap <strong>Update</strong> again.</li></ul>
+<h2>Reset app</h2>
+<p><strong>Reset app</strong> (at the bottom of the app&#x27;s screen) clears the device type and everything ZapTill keeps on the device, and asks <strong>&quot;What is this device?&quot;</strong> again. Use it to turn an owner&#x27;s phone into a Shop POS or the other way round, or before giving the device to someone else.</p>
+<h2>If something goes wrong</h2>
+<table><thead><tr><th>What you see</th><th>What to do</th></tr></thead><tbody><tr><td>&quot;App not installed&quot; or &quot;conflicts with an existing package&quot;</td><td>An older ZapTill signed differently (a test version) is on the device. Uninstall it (<strong>Settings › Apps › ZapTill › Uninstall</strong>), then install again.</td></tr><tr><td>&quot;There was a problem parsing the package&quot;</td><td>The phone runs an Android older than 10, or the download was cut short. Check the Android version; download again.</td></tr><tr><td>The link says it has expired, or &quot;AccessDenied&quot;</td><td>Ask ZapTill for a new link; each one works for a few minutes.</td></tr><tr><td>Play Protect blocked the install</td><td>Tap <strong>More details › Install anyway</strong> (Step 3).</td></tr><tr><td>&quot;Could not reach ZapTill. Check the internet connection.&quot;</td><td>Connect to Wi-Fi or mobile data and tap <strong>Check for updates</strong> again.</td></tr><tr><td>&quot;The downloaded update does not match its SHA-256 — it was not installed.&quot;</td><td>The download was damaged or changed on the way; nothing was installed. Try again on another network. If it repeats, call ZapTill.</td></tr><tr><td>The app closed by itself</td><td>Open it again. ZapTill is told about the crash automatically when the app next opens.</td></tr></tbody></table>
+</div></body></html>

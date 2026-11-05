@@ -143,6 +143,16 @@ jobs:
           fi
           echo "No tracked .env files."
 
+      # Android Stage 0: ZapTill's Android release key is the owner's alone and reaches CI only as secrets
+      # (.github/workflows/android.yml). A keystore in the repository would hand anyone the power to sign "ZapTill".
+      - name: Assert no committed keystore files
+        run: |
+          found=$(git ls-files | grep -Ei '\.(jks|keystore|p12)$' || true)
+          if [ -n "$found" ]; then
+            echo "::error::Keystore file(s) tracked in git:"; echo "$found"; exit 1
+          fi
+          echo "No tracked keystore files."
+
       # This repo previously leaked a hardcoded Ed25519 signing key to a public
       # remote (see handoffs/handoff-14-07-2026.md §1), and a service-role key in
       # a packaged zip on 2026-08-08 (register A1). This is the guardrail that
@@ -916,6 +926,17 @@ jobs:
       # build. In the loop too.
       - name: Admin portal POS options (A604)
         run: node --no-warnings tests/admin-pos-options-a604.test.mjs
+
+      # Android Stage 0 (docs/ANDROID-APP-DESIGN.md) — ZapTill for Android's update feed approved per business and per
+      # surface like the desktop's A348 (android-till = the Shop POS, mobile = the owner's phone; nothing approved by
+      # default; a signed-in device's surface from its session, never the query); a release complete only with its APK
+      # and GitHub's SHA-256; the admin portal's approve / hold (super admin, audited) and download link; crash reports
+      # into the admin's alerts (category app_errors, one bell row per crash, redacted); the app's and the card's words.
+      # Migration 189 replayed into PGlite. Needs the server build. The APK itself: .github/workflows/android.yml.
+      - name: ZapTill for Android, cloud side (Android Stage 0) and migration 189
+        run: |
+          node --no-warnings tests/android-stage0.test.mjs
+          node --no-warnings scripts/test-migration-189.mjs
 
   # 2026-11-02 (owner: "11 min is a lot of time"): the server job ran its named steps, every migration test and the
   # loop over every tests/*.test.mjs one after the other (~10.5 minutes). The migration tests (two halves) and the loop

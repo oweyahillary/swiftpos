@@ -11,3 +11,5 @@
 *.ico binary
 *.xlsx binary
 *.zip binary
+# the Android Gradle wrapper (apps/android/android/gradle/wrapper)
+*.jar binary

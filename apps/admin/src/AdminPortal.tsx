@@ -18,6 +18,7 @@ import TestDataCard from "./TestDataCard";   // A396
 import SupportLogsCard from "./SupportLogsCard";   // A519
 import TillsDaysCard from "./TillsDaysCard";   // A523
 import DownloadZapTill from "./DownloadZapTill";   // A570: the installer, through our own server
+import AndroidAppCard from "./AndroidAppCard";   // Android Stage 0
 import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone, expiryText, desktopOnlyText, cutoffLine, desktopUpdatesLine } from "./cloudPlan";   // A569; A581 expiryText; A601
 import CloudPlanCard from "./CloudPlanCard";   // A581: the cloud payment plan
 import BranchBillingCard from "./BranchBillingCard";   // A612: the cloud per branch
@@ -1227,7 +1228,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
     ["billing",  "Plan & billing"],
     ["features", "Features"],
     ["tills",    "POS & days"],   // A523: support closes a till's day or drawer for the client
-    ["updates",  "Desktop updates"],
+    ["updates",  "Updates"],   // the desktop (A348) and, from Android Stage 0, ZapTill for Android
     ["account",  "Owner & account"],
     ["notes",    `Notes${notes.length ? ` (${notes.length})` : ""}`],
   ];
@@ -1943,6 +1944,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
       {/* A519: the logs this client's tills sent to support (Tech page › Send logs to support) */}
       {/* A570: the installer for this client's new till — the version approved for it first, through our own server */}
       {tab === "updates" && <DownloadZapTill req={req} apiUrl={apiUrl} clientId={client.id} />}
+      {/* Android Stage 0: ZapTill for Android — each mode approved or held on its own, and the APK for a new device */}
+      {tab === "updates" && <AndroidAppCard req={req} clientId={client.id} clientName={detail?.name ?? "this client"} isSuper={isSuper} askConfirm={askConfirm} />}
       {tab === "updates" && <SupportLogsCard clientId={client.id} req={req} />}
       {/* A523: every till's open day and drawers — close them for the client (any admin: super admin or agent) */}
       {tab === "tills" && <TillsDaysCard clientId={client.id} req={req} />}

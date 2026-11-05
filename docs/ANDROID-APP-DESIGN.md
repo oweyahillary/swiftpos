@@ -1,6 +1,6 @@
 # ZapTill — Android App and Owner Mobile Design
 
-Status: **design approved in outline (2026-10-10); Q1, Q3, Q5, Q6 decided (2026-10-11); build not started.** Register item **A354**.
+Status: **design approved in outline (2026-10-10); Q1, Q3, Q5, Q6 decided (2026-10-11); Stage 0 built 2026-11-04 on the `android` branch (§10).** Register item **A354**.
 Revision 2: rewritten with the owner on 2026-10-10. Supersedes the 2026-09-28 proposal: bill-number ranges are
 gone, discovery is the A427 broadcast, a till signs in as itself (A415), an owner mode is added, and the work is split
 into stages. Companion to `DESKTOP_DESIGN.md`, `BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` and `PHASE5-NODE-AUTHORITY.md`.
@@ -97,7 +97,8 @@ Store.
 
 ## 2. One app, two modes
 
-On first launch the app asks **"What is this device?"** — **Shop till** or **Owner / manager phone**.
+On first launch the app asks **"What is this device?"** — **Shop POS** or **Owner / manager phone** (the person reads
+"POS", never "till"; the cloud calls the two surfaces `android-till` and `mobile`).
 
 | | Till mode | Owner mode |
 |---|---|---|
@@ -591,3 +592,167 @@ subtle bugs live.
 | Q8 | **Foreground service** always on, or only while the app is open? | Till 4 | Always on while a shift is open |
 | Q9 | Branch server = existing desktop, or a dedicated office machine? | Till 3 | Support both; it is the same desktop app in server mode (A427) |
 | Q10 | Retention window default — 30 days? | Till 2 | 30 days unless a client reviews more on the tablet |
+
+---
+
+## 10. Stage 0 — built (2026-11-04, branch `android`)
+
+Everything in §5 "Stage 0 — Foundation", on the `android` branch (from `dev` at c5048fc0). No owner screens and no selling
+yet: each mode lands on a screen that says what comes next.
+
+### 10.1 What was built, and where
+
+| Part | Where | What it does |
+|---|---|---|
+| Shared rules | `packages/core/src/androidApp.ts` (`@zaptill/core/androidApp`) | The two surfaces (`android-till` = Shop POS, `mobile` = owner / manager phone) and their words; x.y.z versions; the release layout (tag `android-v<x.y.z>`, asset `ZapTill-<x.y.z>.apk`); the cloud's answer (`AndroidUpdateStatus`); **`updateVerdict`**, the one rule for the updater (never past the approved version, never "down"; a Shop POS only with no shift open; an owner's phone whenever the owner taps Update); the error-report shape. Used by the cloud, the admin portal and the app. |
+| The app | `apps/android` (Capacitor 8.6, app id `com.zaptill.app`, name **ZapTill**, Android 10+ = minSdk 29, target / compile SDK 36) | `src/`: the app's own screens (React + Vite, bundled into the APK): **What is this device?** (Shop POS / Owner or manager phone, then a confirm step), each mode's placeholder, **Updates**, **Reset app**. `android/`: the native project. |
+| Mode and Reset app | `src/device/mode.ts`, `src/device/reset.ts` | The mode in the app's preferences (not a secret). Reset app clears every preference, every secret and every downloaded update, then asks the question again. `resetBlocker()` is Till stage 2's hook (unsent sales); Stage 0 has none. |
+| Secure storage | `src/device/secrets.ts` over `@aparajita/capacitor-secure-storage` 8.0.1 | See 10.2. Stage 0 stores no secret yet; the names a later stage may use are listed there, so Reset app and a reader see them all. |
+| Cloud client | `src/cloud/client.ts`, `src/config.ts` | Every call through **CapacitorHttp** (the native HTTP stack): no web origin, so the cloud's CORS list needs no entry for the app. The base is `VITE_API_URL` at build time, else `https://api.zaptill.co.ke`: the one "authority target" seam (pinch point 10). |
+| Update feed | `apps/server/src/routes/appUpdate.ts`, `lib/androidReleases.ts`, `lib/androidApproval.ts`, migration **189** | `GET /api/app-update/android/status?surface=`: the approved version (null = held), the newest release, and the **offer** (version, file name, **SHA-256**, size, download path) when the approved APK can be handed out. Signed in, the business and the surface come from the **session** (a POS's own session → `android-till`, a person's → `mobile`), never from the query. Signed out (Stage 0): held, the newest release named. `GET /api/app-update/android/v/:version/apk` (signed in): only the version approved for this business and surface → 302 to the APK's short-lived GitHub link; otherwise 403. |
+| Approval per client | `apps/server/src/routes/adminAndroid.ts`, `apps/admin/src/AndroidAppCard.tsx`, `androidVersions.ts` | The admin portal's client page, tab **Updates** (renamed from "Desktop updates"; it now holds both apps), card **ZapTill for Android**: each surface approved or held on its own (super admin only, audited `android_update.approve` / `.hold`; only a complete, published release); **Get download link**: the APK's short-lived link and its SHA-256 for installing a new device (any admin for the newest or the client's approved version; a super admin any; audited `android.apk.download`). |
+| In-app updater | `src/updates/updater.ts`, `ApkUpdaterPlugin.java`, `ApkDownloader.java` | Asks the cloud, applies `updateVerdict`, downloads the offer natively into the app's private `cache/updates/`, hashing while it streams; a mismatch keeps nothing ("does not match its SHA-256 — it was not installed"). The session header goes **only** to the cloud's own host, never to the host it redirects to; every redirect must be https. Then Android's installer through the app's FileProvider, which shares only that folder. Without "Install unknown apps" for ZapTill the app opens that setting first. `shiftIsOpen()` is the Shop POS hook (Stage 0: no shifts). |
+| Crash and error reports | `src/errors/reporter.ts`, `CrashReporter.java`, `CrashReportsPlugin.java`, `apps/server/src/routes/appErrors.ts`, `lib/appErrors.ts` | See 10.3. |
+| Version | `apps/android/package.json` → `app/build.gradle` | One place: `versionName` = the package version, `versionCode` = x·1,000,000 + y·1,000 + z. |
+| CI | `.github/workflows/android.yml`; `ci.yml` step "ZapTill for Android, cloud side" | 10.5. |
+| Install guide | `docs/Manuals/ANDROID-INSTALL.md` (+ `.docx`, `.html`) | For owners and technicians: download, "Install unknown apps", Play Protect, first launch, checking the SHA-256, updates, Reset app, troubleshooting. |
+
+### 10.2 Decisions made while building
+
+1. **Secure storage: `@aparajita/capacitor-secure-storage` (8.0.1, Sept 2026, Capacitor 8), not a plugin of our own.**
+   Read before choosing: each value is encrypted with **AES-256-GCM** under its own key generated in the
+   **AndroidKeyStore** (the key never leaves it); only the ciphertext is stored, in the app's private preferences; `clear()`
+   serves Reset app. Rejected: `capacitor-secure-storage-plugin` (0.13, slower to follow Capacitor); AndroidX
+   `EncryptedSharedPreferences` (deprecated by Google in 2025); our own plugin (the same Keystore code to own and review,
+   for no gain). Its npm package lists `@capacitor/ios` and `@capacitor/keyboard` as dependencies; they are installed but
+   not built into the APK (Capacitor builds only the app's own direct plugins; the build lists three). With it, the
+   manifest opts out of Android backups and device-to-device transfer (`allowBackup="false"`,
+   `xml/data_extraction_rules.xml`): a copied session would break A415, and Keystore keys do not travel anyway.
+2. **Two approval columns** (`businesses.android_till_approved_version`, `mobile_approved_version`, migration 189), not
+   one: a client's shop tablets can stay on a version that works while the owner's phone takes a newer one. NULL = hold,
+   the default, as A348.
+3. **Releases live on GitHub Releases** beside the desktop's, tagged `android-v<x.y.z>` (never mixed with `v<x.y.z>`),
+   one asset `ZapTill-<x.y.z>.apk`. **The SHA-256 is GitHub's own record of the asset** (its `digest`), not a file next to
+   the APK that anyone with upload rights could replace along with it; a release without a digest is incomplete and
+   cannot be approved. `ANDROID_RELEASES_REPO` can point elsewhere (default: the desktop's repository). The Android list
+   reads the newest 100 releases (the desktop's pre-releases share the repository). When the files move to the VPS
+   (platform move), this follows A570's next step: the feed resolves through our own download server.
+4. **A signed-out device asks with `?surface=` and gets "held"** plus the newest release. This is what Stage 0's "gets a
+   version answer" means: there is no sign-in yet, so no business, so nothing can be approved for it. **Consequence:** a
+   Stage 0 install does not update itself; the next version (Owner A / Till 1) is installed from a new link, like the
+   first. From the first signed-in version on, the app updates itself.
+5. **Crash reports: a new route, `POST /api/app-errors`.** There was no client error route to reuse: the desktop keeps its
+   errors in its own log (A299) and sends the log only when support asks (A519, A533). The Android app has no technician
+   beside it, so it reports by itself, into the existing admin alerts (A589's bell) under a new category **`app_errors`**
+   ("Android app crashes and errors", client group: the bell and the Alerts page, never an email per crash). 10.3.
+6. **Install through `ACTION_VIEW` + FileProvider**, not the `PackageInstaller` session API: the same Android prompt, a
+   tenth of the code. Revisit if a later Android refuses it.
+7. **The app's screens are its own small Vite bundle** for Stage 0 (the mode question and the placeholders exist nowhere
+   else). Owner A loads the dashboard's owner screens and Till 1 the web POS screens: shared, not copied.
+
+### 10.3 Crash and error reports
+
+- **What is sent:** a native crash (the handler installed first thing in `MainActivity` writes `files/crash/pending.txt`
+  — a crashing process cannot be trusted with the network — and the app sends it at its next start), and the app's own
+  script errors and uncaught promise rejections. `{ surface, kind: crash|error, appVersion, message, stack, device }`,
+  where `device` is "Android 14 (API 34), samsung SM-T220": make and model only, no serial number, no name.
+- **App side:** at most 5 reports a run, each message once; reports wait until the mode is known; one that cannot be sent
+  is dropped (no retry loop).
+- **Cloud side:** no session needed (Stage 0 has none, and a crash before sign-in matters most), so: the global limiter
+  plus 30 reports per address per 10 minutes; every field trimmed and passed through the log redactor
+  (`@zaptill/core/logRedact`: tokens, keys, PINs, phone numbers); **one bell row per crash per 6 hours** however many
+  devices send it (fingerprint: surface, version, kind, the first lines of the message and the stack; never the device);
+  every report also in the cloud's log. With a session, the bell row names the business.
+
+### 10.4 Tools installed on the build PC (2026-11-04)
+
+| Tool | Where |
+|---|---|
+| Microsoft Build of OpenJDK 21.0.13 (winget `Microsoft.OpenJDK.21`) | `C:\Program Files\Microsoft\jdk-21.0.13.21-hotspot`; `JAVA_HOME` (user) |
+| Android command-line tools 16111833 (SHA-1 checked against Google's index) | `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest`; `ANDROID_HOME` (user) = `%LOCALAPPDATA%\Android\Sdk` |
+| Android SDK: platform-tools 37.0.1, platforms;android-36, build-tools;36.0.0 | `%LOCALAPPDATA%\Android\Sdk` (`sdkmanager` now hands over to Google's new `android` CLI: `android sdk install …`) |
+| Gradle 8.14.3 (the wrapper's, downloaded on the first build) | `%USERPROFILE%\.gradle` |
+
+No emulator (too heavy for this PC); the APK is tested on a real phone. Build it locally:
+
+```
+cd apps/android
+npm ci
+npm run apk:debug        # type-check, build the screens, cap sync, gradlew assembleDebug
+# → apps/android/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Built here on 2026-11-04: `app-debug.apk`, 9.1 MB, `com.zaptill.app` 0.1.0 (versionCode 1000), minSdk 29, target 36,
+permissions INTERNET and REQUEST_INSTALL_PACKAGES; `ApkDownloaderTest` 6/6 (a mismatch kept → its test fails, checked).
+The first build took ~14 minutes (Gradle's downloads); later ones about 30 seconds.
+
+### 10.5 CI, signing and the release key
+
+`.github/workflows/android.yml` runs on every push to `android`, on pull requests that touch the app, and on demand:
+type-check and build the screens, the native unit tests (`ApkDownloaderTest`: the SHA-256 check, a mismatch keeping
+nothing, the session never crossing hosts, only `ZapTill-x.y.z.apk` names), the **debug APK** always, and the **release
+APK signed with ZapTill's key** when the key is in the repository's secrets (its certificate printed by
+`apksigner verify --print-certs`, its SHA-256 beside it). The artifact is `zaptill-android` (kept 14 days). Nothing is
+published yet: not in `release.yml`, no `android-v` tag (10.6). The cloud side runs in `ci.yml` (step "ZapTill for
+Android, cloud side (Android Stage 0) and migration 189") and in the loop over every `tests/*.test.mjs`.
+
+**The release key is the owner's alone.** It is never in the repository (`*.jks` and `*.keystore` are ignored under
+`apps/android/android`), never printed, and reaches CI only as secrets, decoded into the runner's temporary folder for
+the build and deleted after it. Losing it means every device must uninstall and reinstall (§1.4): keep it like the
+Ed25519 technician key, two offline copies and the passwords in the password manager.
+
+**One-time, by the owner** (on a PC with JDK 21 — the build PC has it; `keytool` asks for the passwords, so they never
+appear in the command line or its history):
+
+```
+keytool -genkeypair -v -keystore zaptill-release.jks -alias zaptill -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=ZapTill, O=ZapTill, C=KE"
+keytool -list -v -keystore zaptill-release.jks -alias zaptill
+```
+
+Note the second command's **SHA-256 certificate fingerprint**: CI prints the same one for every release APK. Then add
+the four secrets (GitHub › the repository › Settings › Secrets and variables › Actions › New repository secret), or with
+the GitHub CLI from Git Bash in the folder holding the key (`gh secret set NAME` without `--body` asks for the value, so
+it stays out of the shell history):
+
+| Secret | Value | With the GitHub CLI |
+|---|---|---|
+| `ANDROID_KEYSTORE_BASE64` | the .jks file, base64 | `base64 -w0 zaptill-release.jks \| gh secret set ANDROID_KEYSTORE_BASE64` |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore password | `gh secret set ANDROID_KEYSTORE_PASSWORD` |
+| `ANDROID_KEY_ALIAS` | `zaptill` | `gh secret set ANDROID_KEY_ALIAS` |
+| `ANDROID_KEY_PASSWORD` | the key password | `gh secret set ANDROID_KEY_PASSWORD` |
+
+A device with the **debug** APK cannot take the **release** APK as an update (different signatures): uninstall it first.
+
+### 10.6 Publishing a version (by hand until the release step is added)
+
+1. Set the version in `apps/android/package.json` (higher than the last one).
+2. Run the **Android** workflow (with the secrets in place) and download `ZapTill-<version>.apk` from its artifact.
+3. `gh release create android-v<version> ZapTill-<version>.apk --prerelease --title "ZapTill for Android <version>" --notes "…"`.
+   GitHub records the SHA-256; the admin portal shows the release as complete within 5 minutes (or at once with **Refresh**).
+4. Approve it per client in the admin portal (Updates › ZapTill for Android).
+
+The release step (tag and upload from the workflow, like the desktop's `release.yml`) is added when the owner says the
+first version is ready (batch releases).
+
+### 10.7 What the owner checks (Stage 0's "done when")
+
+1. Run migration **189** on dev (`migrations/189_android_approved_versions.sql`; additive, every client held). Until it
+   runs the cloud answers "held" with a warning naming it, and the admin card says so.
+2. Install the APK on a test phone or tablet (`docs/Manuals/ANDROID-INSTALL.md`): it shows **What is this device?**;
+   after a choice, **Updates** says "ZapTill answered. Updates start once this device is joined to your business": the
+   version answer. A build talks to `https://api.zaptill.co.ke` unless built with `VITE_API_URL` (for dev:
+   `VITE_API_URL=<dev cloud> npm run apk:debug`).
+3. **Reset app** brings the question back.
+4. In the admin portal, a client's **Updates** tab shows the **ZapTill for Android** card (held on both surfaces; no
+   release yet until 10.6 is done once).
+
+### 10.8 Open items and decisions for later stages
+
+- **Till stage 1: the gates for an `android-till` session.** The cloud's A159 terminal-write guard and the A581 / A601
+  plan gates key on the surface `desktop`; a Shop POS session will carry `android-till`. Decide before Till 1 which of
+  them apply to it (the safe default: the same as a desktop POS, each check extended to both surfaces).
+- **A Stage 0 install never updates itself** (10.2 item 4): fine for test devices; say so to anyone given the APK.
+- **A download link on our website** (§1.4) is not built; the admin portal's link is.
+- **The release step** in CI (10.6).
+- **Play Protect** may warn on the first install; the guide says what to tap. A Play Store listing for owner mode stays
+  open (§1.4).

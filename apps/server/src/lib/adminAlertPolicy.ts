@@ -29,7 +29,7 @@ import { RULE_WORDS, type RuleId } from './watchdogRules';   // A592: each rule'
 
 export type AlertCategory =
   | 'server_errors' | 'overload' | 'database' | 'signin_attack' | 'backup' | 'deploy' | 'other_system'
-  | 'day_not_closed' | 'pos_not_syncing' | 'pos_signed_out' | 'pos_refused' | 'mpesa' | 'etims' | 'pos_updates'
+  | 'day_not_closed' | 'pos_not_syncing' | 'pos_signed_out' | 'pos_refused' | 'mpesa' | 'etims' | 'pos_updates' | 'app_errors'
   | 'billing';
 
 export type CategoryGroup = 'system' | 'client' | 'billing';
@@ -51,6 +51,7 @@ export const ALERT_CATEGORIES: readonly CategoryInfo[] = [
   { id: 'mpesa', label: 'M-Pesa payments unanswered or not matched', group: 'client', instantDefault: false },
   { id: 'etims', label: 'eTIMS invoices failed', group: 'client', instantDefault: false },
   { id: 'pos_updates', label: 'Points of sale that need updating', group: 'client', instantDefault: false },
+  { id: 'app_errors', label: 'Android app crashes and errors', group: 'client', instantDefault: false },   // Android Stage 0
   { id: 'billing', label: 'Billing notices (invoice issued, unpaid day 5, locked, trial ended, not interested)', group: 'billing', instantDefault: false },
 ];
 
@@ -184,7 +185,8 @@ export const CATEGORY_TODO: Record<AlertCategory, string> = {
   signin_attack: RULE_WORDS.signin_failures_ip.todo, backup: RULE_WORDS.backup_missed.todo, deploy: 'Open the run on GitHub and fix what it names',
   other_system: 'Open the Alerts page in the admin portal', day_not_closed: RULE_WORDS.day_not_closed.todo, pos_not_syncing: RULE_WORDS.till_not_syncing.todo,
   pos_signed_out: RULE_WORDS.till_signed_out.todo, pos_refused: RULE_WORDS.sync_refused.todo, mpesa: RULE_WORDS.payment_exception.todo,
-  etims: RULE_WORDS.etims_failed.todo, pos_updates: RULE_WORDS.old_tills.todo, billing: 'Record the payment when it comes in',
+  etims: RULE_WORDS.etims_failed.todo, pos_updates: RULE_WORDS.old_tills.todo,
+  app_errors: 'Read the report; if it repeats, hold that Android version', billing: 'Record the payment when it comes in',
 };
 
 /** The rule's words from its key ("day_not_closed:…" → Day not closed / Close it at the POS …), when it has an entry. */
@@ -243,7 +245,8 @@ const systemHeadline = (title: string) => { const t = title.replace(/^(Cloud|Bac
 export const CATEGORY_HEADLINE: Record<AlertCategory, string> = {
   server_errors: 'Server errors', overload: 'Server overloaded', database: 'Database unreachable', signin_attack: 'Failed sign-ins',
   backup: 'Backup', deploy: 'Deploy check', other_system: 'Cloud alert', day_not_closed: 'Day not closed', pos_not_syncing: 'POS not syncing',
-  pos_signed_out: 'POS signed out', pos_refused: 'Sync refused', mpesa: 'M-Pesa', etims: 'eTIMS', pos_updates: 'POS update needed', billing: 'Billing',
+  pos_signed_out: 'POS signed out', pos_refused: 'Sync refused', mpesa: 'M-Pesa', etims: 'eTIMS', pos_updates: 'POS update needed',
+  app_errors: 'Android app crash', billing: 'Billing',
 };
 
 /** The buttons of one alert: the client's page (a day not closed: "Close it remotely" — the POS & days tab), a guide, the Alerts page. */

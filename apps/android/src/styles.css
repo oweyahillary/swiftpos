@@ -1,0 +1,72 @@
+/* ZapTill for Android — Stage 0 screens. The ZapTill mark's colours (apps/website Logo.astro); one body font (Source Sans 3). */
+:root {
+  --bg: #050d12;
+  --panel: #0d1b22;
+  --border: #1f3640;
+  --text: #e6f1f3;
+  --muted: #8fa7ae;
+  --brand: #14b8a6;
+  --brand-light: #5eead4;
+  --danger: #f87171;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+body {
+  font-family: 'Source Sans 3 Variable', system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.screen {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.screen.centre { min-height: 100vh; justify-content: center; align-items: center; }
+
+h1 { font-size: 28px; line-height: 1.2; margin: 8px 0 0; }
+h2 { font-size: 18px; margin: 0 0 8px; }
+p { margin: 0 0 8px; }
+.lead { font-size: 19px; }
+.note { color: var(--muted); font-size: 15px; }
+.problem { color: var(--danger); }
+
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+.mark {
+  width: 34px; height: 34px; border-radius: 9px; display: inline-grid; place-items: center;
+  background: var(--bg); border: 1.5px solid var(--brand-light); color: var(--brand); font-weight: 800;
+}
+
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+
+.choices { display: grid; gap: 12px; }
+.choice {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  background: var(--panel); border: 1.5px solid var(--border); border-radius: 14px; padding: 20px; color: var(--text);
+  font: inherit; min-height: 96px;
+}
+.choice:active { border-color: var(--brand); }
+.choice-title { font-size: 21px; font-weight: 700; }
+.choice-detail { color: var(--muted); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+button { font: inherit; }
+.primary, .ghost {
+  min-height: 48px; padding: 0 20px; border-radius: 12px; font-weight: 600; cursor: pointer;
+}
+.primary { background: var(--brand); color: #031513; border: none; }
+.ghost { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
+.primary.danger { background: var(--danger); color: #1f0505; }
+.ghost.danger { color: var(--danger); border-color: rgba(248, 113, 113, 0.4); }
+button:disabled { opacity: 0.5; }
+
+@media (min-width: 900px) {
+  body { font-size: 18px; }
+  .choices { grid-template-columns: 1fr 1fr; }
+}

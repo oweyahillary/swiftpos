@@ -73,6 +73,9 @@ import tillsDaysAdminRoutes from './tillsDaysAdmin'; // A523: the same page in t
 import opsRoutes           from './ops';            // A525: the GitHub workflows post the deploy check and the scan
 import opsAdminRoutes      from './opsAdmin';       // A525: the admin portal's System page reads them
 import adminInstallerRoutes from './adminInstaller';   // A570: Download ZapTill, through the cloud
+import adminAndroidRoutes from './adminAndroid';   // Android Stage 0: approve and download the Android app
+import appUpdateRoutes from './appUpdate';         // Android Stage 0: the app's update feed, per business and surface
+import appErrorsRoutes from './appErrors';         // Android Stage 0: the app's crash and error reports
 import cloudPlanAdminRoutes from './cloudPlanAdmin';   // A581: the cloud payment plan
 import billingDetailsAdminRoutes from './billingDetailsAdmin';   // A612: ZapTill's billing details and prices
 import { forgetOnWrite }   from '../lib/forgetOnWrite';   // A528
@@ -135,6 +138,8 @@ router.use('/products',       productsRoutes);
 router.use('/branch-prices',  branchPricesRoutes);
 router.use('/pos',            posRoutes);
 router.use('/desktop-update', desktopUpdateRoutes);
+router.use('/app-update',     appUpdateRoutes);   // Android Stage 0 (docs/ANDROID-APP-DESIGN.md)
+router.use('/app-errors',     appErrorsRoutes);   // Android Stage 0: into the admin portal's alerts
 router.use('/variants',       variantsRoutes);
 router.use('/modifiers',      modifiersRoutes);
 router.use('/orders',         ordersRoutes);
@@ -172,6 +177,7 @@ router.use('/admin/billing-details', billingDetailsAdminRoutes);   // A612
 router.use('/admin/tills-days', tillsDaysAdminRoutes);   // A523: before /admin, which takes the rest of /admin/*
 router.use('/admin/ops',      opsAdminRoutes);   // A525: before /admin, which takes the rest of /admin/*
 router.use('/admin/desktop',  adminInstallerRoutes);   // A570: before /admin, which takes the rest of /admin/*
+router.use('/admin/android',  adminAndroidRoutes);   // Android Stage 0: before /admin, which takes the rest of /admin/*
 router.use('/admin',          adminRoutes);
 router.use('/tech',           techRoutes);
 router.use('/sync/backfill',  backfillRoutes);   // A602: before /sync (its own requireAuth, its own body limit — index.ts)

@@ -171,7 +171,7 @@ for (const { mod, pkg } of packaged) {
 // …and only by its package name. A relative import ('../../../packages/core/src/x') type-checks and even builds, but the
 // cloud's and the desktop main process's compiled code would then require a path outside the app: not shipped in the
 // installer's app.asar, not present on Render. The bundlers would inline it, so the rule is the same everywhere.
-const APP_SRC = ['apps/server/src', 'apps/dashboard/src', 'apps/admin/src', 'apps/desktop/src'];
+const APP_SRC = ['apps/server/src', 'apps/dashboard/src', 'apps/admin/src', 'apps/desktop/src', 'apps/android/src'];
 const RELATIVE_CORE = /(?:from\s+|import\(\s*|require\(\s*)['"](?:\.\.?\/)+(?:[^'"]*\/)?packages\/(?:core|ui)\b/;
 // @zaptill/ui is React screens consumed as source by Vite: the cloud and the desktop's main process (compiled by tsc, no
 // React, no bundler) must never import it.
