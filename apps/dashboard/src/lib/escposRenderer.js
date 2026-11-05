@@ -499,13 +499,18 @@ function renderProduction(ctx) {
     d.line("VOID", { align: "center", size: "large", bold: true });
     d.line(rule(cols));
   }
+  if (ctx.moved) {
+    d.line("MOVED", { align: "center", size: "large", bold: true });
+    d.line(rule(cols));
+  }
   d.line(`* * ${station.name.toUpperCase()} * *`, { align: "center", size: "tall", bold: true });
   d.blank();
   d.lines(pairOrStack(cols, `Order  ${order.billNumber}`, TYPE_CAPS[order.orderType]));
   d.lines(pairOrStack(cols, shortStamp(order.soldAt), `Cashier  ${order.cashierName}`));
   if (order.orderType === "dine_in" && order.tableNumber) {
-    d.line(`Table  ${order.tableNumber}`);
+    d.line(`Table  ${order.tableNumber}`, ctx.moved ? { bold: true } : void 0);
   }
+  if (ctx.moved) d.line(`From table  ${ctx.moved.from}`);
   if (order.orderType === "delivery" && order.deliveryPerson) {
     d.line(`Rider  ${order.deliveryPerson}`);
   }
@@ -1230,14 +1235,15 @@ function toUnits(line, ids, lineStationIds, routing) {
 
 // scripts/escpos-renderer/entry.ts
 var withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : /* @__PURE__ */ new Date() });
-function emit(station, order, business, reprint, proforma, voided) {
+function emit(station, order, business, reprint, proforma, voided, moved) {
   const doc = renderTicket({
     order: withDate(order),
     business,
     station,
     reprint,
     proforma,
-    voided: voided ? { at: /* @__PURE__ */ new Date(), by: String(voided.by ?? ""), reason: voided.reason } : void 0
+    voided: voided ? { at: /* @__PURE__ */ new Date(), by: String(voided.by ?? ""), reason: voided.reason } : void 0,
+    moved: moved ? { from: String(moved.from ?? "") } : void 0
   });
   return toEscPos(doc, {
     cut: station.cutPaper,
@@ -1313,7 +1319,15 @@ function stationConfigForType(type, id, paperWidthMm) {
   };
 }
 function renderStationEscPos(order, business, station) {
-  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business, void 0, station.proforma, station.voided);
+  return emit(
+    stationConfigForType(station.type, station.id, station.paperWidthMm),
+    order,
+    business,
+    void 0,
+    station.proforma,
+    station.voided,
+    station.moved
+  );
 }
 function stationHasContent(order, business, station) {
   const cfg = stationConfigForType(station.type, station.id, station.paperWidthMm);

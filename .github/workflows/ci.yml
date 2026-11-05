@@ -857,6 +857,18 @@ jobs:
       - name: One forecourt for both POS
         run: node --no-warnings tests/forecourt-shared.test.mjs
 
+      # Owner, 2026-11-05: Transfer table tells the kitchen — what it has of the order again under MOVED, with the new table
+      # and the one it left (shared/printing, through the web bundle); the web order moves on the cloud too
+      # (POST /api/orders/:id/move-table). The desktop's kitchen:move is in the desktop job (print-bill-transfer).
+      - name: Transfer table tells the kitchen (MOVED ticket)
+        run: node --no-warnings tests/table-move-kitchen.test.mjs
+
+      # Owner, 2026-11-05 ("both"): Reports › M-Pesa statement — the Org Portal's Excel/CSV or the business app's PDF, read
+      # in the browser (a real PDF made in the test, read by the dashboard's pdf.js), matched with @zaptill/core/mpesaStatement
+      # against the POS's M-Pesa sales (GET /api/payments/mpesa-statement/sales).
+      - name: M-Pesa statement check (Excel, CSV and PDF)
+        run: node --no-warnings tests/mpesa-statement.test.mjs
+
       # A622 — the cloud keeps a till's install_error (the updater's reason an install did not take) and the admin
       # portal's Desktop updates line shows it.
       - name: Why an install did not take, on the admin portal (A622)

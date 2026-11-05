@@ -14,6 +14,9 @@
 //   R  a sale's receipt is byte-identical: its ticket carries no proforma key, and its bytes equal the receipt rendered
 //      from the same order without the new code's field.
 //   T  Transfer: only a free table (no held tab, not the order's own); the sale screen moves the order's table.
+//   M  the kitchen told (owner, 2026-11-05): kitchen:move gives the order's kitchen lines the new table and queues what the
+//      kitchen still has (sent − voided) to the stations it went to, under MOVED with "From table <old>"; an order the
+//      kitchen never had prints nothing; the sale screen calls it only for an order with something sent.
 //   W  the sale screen: both buttons only for a restaurant with the online licence (Transfer: a dine-in order with a table).
 //
 // MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted):
@@ -22,6 +25,9 @@
 //   - printBill queueing ['kitchen', 'receipt']                          → B "the receipt station only"
 //   - freeTables keeping the tables a held tab is on                     → T "only a free table"
 //   - POSPage showing Print bill without onlineLicence                   → W
+//   - moveKitchenOrder not updating table_number                         → M "the ledger's table"
+//   - kitchen:move queueing without kitchen_moved                        → M "under MOVED"
+//   - kitchen:move printing the sent count, not sent − voided            → M "what the kitchen still has"
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -45,6 +51,8 @@ const PW = require(path.join(dist, 'print', 'printWorker.js'));
 const B = require(path.join(dist, 'escposBridge.js'));
 const { createIpcShared } = require(path.join(dist, 'ipc', 'shared.js'));
 const { registerSaleHandlers } = require(path.join(dist, 'ipc', 'sale.js'));
+const { registerKitchenHandlers } = require(path.join(dist, 'ipc', 'kitchen.js'));
+const K = require(path.join(dist, 'kitchenService.js'));
 const P = require('@swiftpos/printing');
 
 let pass = 0, fail = 0;
@@ -62,6 +70,7 @@ PW.assignments = () => [{ stationId: 'st-k', target: 'tcp://10.0.0.5:9100', pape
 const handlers = {};
 const ctx = createIpcShared((channel, fn) => { handlers[channel] = fn; });
 registerSaleHandlers(ctx);
+registerKitchenHandlers(ctx);
 const licence = (on) => db.prepare(`UPDATE device_config SET web_pos_enabled = ? WHERE id = 1`).run(on ? 1 : 0);
 
 const product = (id, name, category_id = 'c-food') => ({ id, name, category_id, categories: null, description: null });
@@ -137,8 +146,38 @@ console.log('\nT. Transfer\n');
   ok('only a free table: no held tab on it, not the order\'s own', JSON.stringify(freeTables(tables, held, '4').map((t) => t.name)) === '["1","3"]', JSON.stringify(freeTables(tables, held, '4')));
   const p = src('renderer/pages/POSPage.tsx');
   ok('the sale screen moves the order to the table picked (its number, lines and kitchen record stay)',
-    /onPick=\{\(t\) => \{ setShowTransfer\(false\); setTableNumber\(t\.name\); setBillMsg\(`Moved to Table \$\{t\.name\}\.`\); \}\}/.test(p));
+    /onPick=\{\(t\) => \{ setShowTransfer\(false\); void moveTable\(t\.name\); \}\}/.test(p)
+      && /const moveTable = async \(to: string\) => \{\s+const from = tableNumber;\s+setTableNumber\(to\);/.test(p));
   ok('the picker loads on demand', /const TransferTableModal = lazy\(\(\) => import\('\.\.\/components\/TransferTableModal'\)\);/.test(p));
+}
+
+console.log('\nM. the kitchen told of a move\n');
+{
+  queued.length = 0;
+  const line = (id, item, qty) => ({ line_id: id, product_id: item.product.id, product_name: item.product.name, unit_price: item.unitPrice, qty,
+    item: { ...item, quantity: qty, lineTotal: item.unitPrice * qty } });
+  K.recordKitchenSend('T1-4001', [line('l-wings', items[0], 3)], { order_type: 'dine_in', table_number: '4' });
+  K.recordKitchenVoid({ order_number: 'T1-4001', lines: [line('l-wings', items[0], 1)], reason: 'changed_mind', cooked: false }, null);
+  const r = await handlers['kitchen:move'](null, { order_number: 'T1-4001', from: '4', to: '7' });
+  ok('printed, nothing skipped', r?.printed === true && r.skipped.length === 0, JSON.stringify(r));
+  ok('the ledger\'s table is the new one', K.openKitchenOrders().find((o) => o.order_number === 'T1-4001')?.table_number === '7');
+  const entry = queued[0];
+  ok('under MOVED, from the old table', entry?.contexts[0].moved?.from === '4', JSON.stringify(entry?.contexts[0].moved));
+  ok('the stations the items went to (the kitchen), never the receipt', entry?.stations.length > 0 && entry.stations.every((s) => s.kind === 'kitchen'),
+    JSON.stringify(entry?.stations.map((s) => s.kind)));
+  const t = P.toPreview(renderAt(entry, 'kitchen'));
+  console.log(t);
+  const r2 = rows(t);
+  // The preview spaces out large text: MOVED reads "M O V E D".
+  ok('the ticket: MOVED, the new table, the old one', r2.some((x) => x.trim() === 'M O V E D') && r2.some((x) => x.trim() === 'Table  7')
+    && r2.some((x) => x.trim() === 'From table  4'), t);
+  ok('what the kitchen still has: 2 Wings (3 sent, 1 voided)', r2.some((x) => /^2\s+WINGS$/.test(x.trim())) && !r2.some((x) => /^3\s+WINGS/.test(x.trim())), t);
+  queued.length = 0;
+  const none = await handlers['kitchen:move'](null, { order_number: 'T1-4999', from: '2', to: '3' });
+  ok('an order the kitchen never had: nothing prints', none?.printed === false && queued.length === 0, JSON.stringify(none));
+  const p = src('renderer/pages/POSPage.tsx');
+  ok('the sale screen asks the kitchen only for an order with something sent',
+    /if \(!orderNumber \|\| !from \|\| !anySent\(cart\)\) \{ setBillMsg\(`Moved to Table \$\{to\}\.`\); return; \}\s+try \{\s+const r = await posApi\.kitchen\.move\(\{ order_number: orderNumber, from, to \}\);/.test(p));
 }
 
 console.log('\nW. the sale screen\n');

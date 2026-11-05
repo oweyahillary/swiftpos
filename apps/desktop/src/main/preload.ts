@@ -351,6 +351,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   kitchen: {
     sent:  (p: unknown) => ipcRenderer.invoke('kitchen:sent', p),
     void:  (p: unknown) => ipcRenderer.invoke('kitchen:void', p),
+    move:  (p: unknown) => ipcRenderer.invoke('kitchen:move', p),
     open:  ()           => ipcRenderer.invoke('kitchen:open'),
   },
 

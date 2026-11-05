@@ -118,7 +118,7 @@ export { renderToStaticMarkup } from 'react-dom/server';`);
       && cs.includes("import FuelKeypad from '@zaptill/ui/FuelKeypad';") && cs.includes('<FuelKeypad look={KEYPAD_LOOK} currency={currency}'));
     ok('litres shown to 3 decimals', FC.litresText(2000 / 184.5) === '10.840 L' && kp.includes('`= ${qtyText(sale.litres, unit)}`'));
     ok('the grade\'s own unit where it is not litres (fuel_unit)', cs.includes("unit={(fuelEntry as any).fuel_unit ?? 'L'}"));
-    ok('the fuel line as before (addFuelToCart: litres, the amount, isFuel)', cs.includes('onAdd={(litres, amount) => addFuelToCart(fuelEntry, litres, amount)}')
+    ok('the fuel line as before (addFuelToCart: litres, the amount, isFuel)', cs.includes('onAdd={(litres, amount) => addPumpFuel(fuelEntry, litres, amount)}') && cs.includes('addFuelToCart(grade, litres, amount);')
       && /quantity: litres,[\s\S]{0,120}lineTotal: amount,\s+isFuel: true,/.test(read('apps/dashboard/src/pages/pos/cashier/useCart.ts')));
   }
 } catch (e) {

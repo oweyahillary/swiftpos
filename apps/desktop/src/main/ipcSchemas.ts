@@ -148,6 +148,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── 0.6.28: kitchen ledger and kitchen voids ──────────────────────────────
   'kitchen:sent': { order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true } },
   'kitchen:void': { order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, reason: { t: 'string', min: 1 }, note: { t: 'string', optional: true }, cooked: { t: 'boolean', optional: true }, pin: { t: 'string', optional: true }, order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true } },
+  'kitchen:move': { order_number: { t: 'string', min: 1 }, from: { t: 'string', min: 1 }, to: { t: 'string', min: 1 } },
   'kitchen:open': NO_PAYLOAD,
 
   // ── idle ──────────────────────────────────────────────────────────────────

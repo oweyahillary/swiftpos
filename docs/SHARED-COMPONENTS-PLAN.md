@@ -1245,6 +1245,51 @@ selling, ungated. **No new cloud migration and no local schema change** (below, 
   `money-reports`' local-hour case under `TZ=UTC`, and the offline-suites loop failing on those. Every root suite one by
   one: all pass apart from those exits.
 
+## 8m. Item 4 of the owner's list (2026-11-05: "finish no 4") — the two points left open by 8l and the M-Pesa statement check — on dev, not committed
+
+### The kitchen told of a table move (both POS)
+
+- **The ticket** (`shared/printing`, one template for both POS): `PrintContext.moved = { from }` prints the production
+  ticket under a **MOVED** banner (like VOID), the new table in bold and `From table <old>` under it. Without `moved` the
+  ticket is as before. The web bundle is rebuilt from it (`scripts/escpos-renderer/entry.ts` passes `station.moved`).
+- **The desktop:** Transfer (`POSPage.moveTable`) calls `kitchen:move` only for an order with something sent. Main
+  (`ipc/kitchen.ts`) gives the order's open kitchen lines the new table (`kitchenService.moveKitchenOrder`) and queues
+  what the kitchen still has (sent − voided) to kitchen and dispatch with `kitchen_moved`; an order the kitchen never had
+  prints nothing. The answer line: "Moved to Table 7. The kitchen has a MOVED ticket." (or the stations that did not print).
+  The VOID ticket and the MOVED ticket build their items with one helper (`ticketItems`).
+- **The web:** Transfer is `CashierScreen.transferTable`: the order, its cloud id and its ticket number move together (the
+  ticket number used to stay behind). A sent order is moved on the cloud too — new route `POST /api/orders/:id/move-table`
+  (`orders.create`, the caller's business and branch, an open dine-in order only; the receipt and the tables screen read
+  its table) — and its sent lines print under MOVED at kitchen and dispatch.
+
+### The web pump tap opens the keypad (as on the desktop)
+
+- A pump with a priced grade opens the fuel keypad straight away (no Activate question). The pump's sale opens — and the
+  pump is activated (`PATCH /api/pumps/:id/activate`) — only when fuel is added, as on the desktop; closing the keypad
+  leaves nothing behind. A pump already on a sale switches to that sale first. A pump with no priced grade keeps the old
+  way (Activate, then the grade from the nozzle strip), with clearer words.
+
+### The M-Pesa statement check (owner, 2026-11-05: Excel/CSV and PDF, "both")
+
+- **Reports › M-Pesa statement** (web, `reports.payments`, the online licence): the owner uploads the M-PESA Org Portal's
+  Excel/CSV export or the M-PESA business app's PDF (a password-protected PDF asks for its password). The file is read in
+  the browser and never uploaded (`apps/dashboard/src/lib/statementFile.ts`: SheetJS — a CSV read as text, so 04/11/2026
+  is never guessed as April; pdf.js 4.10.38, loaded with the tab only).
+- **The rule** is `@zaptill/core/mpesaStatement`: the header row found by its titles (the portal's account details above
+  it do not matter); a PDF's text laid out in rows by its column titles (a wrapped description, or a date and its time on
+  two lines, joined to the transaction above; the header repeated on each page); Kenyan times; then the match — by the
+  receipt code (matched / amount differs), then the same amount within 15 minutes for a sale with no or an unknown code
+  (likely), a code a second sale used again never matched by amount; money in with no sale; sales with no money.
+- **The cloud** gives only the sales: `GET /api/payments/mpesa-statement/sales?from&to&branch_id` (routes/mpesaStatement.ts
+  — completed M-Pesa legs in those Kenyan days, at most 31, with the order's number, the code kept, the cashier and the
+  branch).
+
+### Proof
+
+- New: root `mpesa-statement` 32 (a real PDF made in the test and read by pdf.js; in `ci.yml`); root `table-move-kitchen` 15 (in `ci.yml`); desktop `print-bill-transfer` 21 → 29 (M: the real `kitchen:move` on
+  SQLite); root `forecourt-shared` 14 → 19 (T). Updated pin: `pump-activate`. Each mutant listed in its file's header was
+  made and seen to fail. `build-escpos-renderer --check`: reproducible.
+
 ## 9. Rollback
 
 - **Step 1:** revert the step's commit(s) — the copies come back with `check-shared-sync`'s entry; delete

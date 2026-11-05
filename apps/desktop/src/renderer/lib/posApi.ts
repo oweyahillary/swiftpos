@@ -958,6 +958,8 @@ declare global {
         void: (p: { order_number: string; lines: KitchenLinePayload[]; reason: string; note?: string; cooked?: boolean;
                     pin?: string; order_type?: string; table_number?: string }) =>
           Promise<{ ok: true; total: number; approvedBy: string | null; skipped: string[] }>;
+        /** 2026-11-05: Transfer table — the kitchen's lines take the new table; a MOVED ticket for what it has. */
+        move: (p: { order_number: string; from: string; to: string }) => Promise<{ printed: boolean; skipped: string[] }>;
         open: () => Promise<{ all: OpenKitchenOrder[]; shift: OpenKitchenOrder[] }>;
       };
       shift: {

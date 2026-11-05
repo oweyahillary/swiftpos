@@ -777,44 +777,63 @@ export default function CashierScreen() {
       fuel_product_name: null, price_per_litre: price }, selected, onSale);
   }
 
+  // Owner, 2026-11-05 (one design, the desktop's): a pump tapped opens the fuel keypad for its grade. The pump's sale
+  // opens — and the pump is activated — only when fuel is added, so a keypad closed without a sale leaves nothing behind.
+  // A pump already on an open sale switches to that sale first (more fuel goes on it). A pump with no priced grade keeps
+  // the old way: Activate, then the grade from the nozzle strip.
+  const [keypadPump, setKeypadPump] = useState<Pump | null>(null);
+  const saleOfPump = (pumpId: string) => Object.entries(openOrders).find(([, o]) => o.pumpId === pumpId);
+
   function onPumpTap(pump: Pump) {
-    const existing = Object.entries(openOrders).find(([, o]) => o.pumpId === pump.id);
+    const existing = saleOfPump(pump.id);
     if (existing) {
       const [key, order] = existing;
       setActiveKey(key);
       setCart(order.cart);
-      setView('products');
+    }
+    const grade = fuelById.get(pump.fuel_product_id ?? '');
+    if (grade && Number(grade.base_price) > 0) {
+      setKeypadPump(pump);
+      setFuelEntry(grade);
       return;
     }
+    if (existing) { setView('products'); return; }
     setPendingPump(pump);
     setShowPumpModal(true);
   }
 
-  async function confirmPump() {
-    if (!pendingPump) return;
-    const key = `pump-${pendingPump.id}-${Date.now()}`;
+  /** The keypad's Add: the pump's sale opens first when it has none, then the fuel line goes on the active sale. */
+  function addPumpFuel(grade: Product, litres: number, amount: number) {
+    if (keypadPump && !saleOfPump(keypadPump.id)) openPumpSale(keypadPump);
+    addFuelToCart(grade, litres, amount);
+    setKeypadPump(null);
+  }
 
-    // Optimistic UI update — show as dispensing immediately
-    setPumps(prev => prev.map(p =>
-      p.id === pendingPump!.id ? { ...p, status: 'dispensing' } : p
-    ));
+  function closeFuelKeypad() {
+    setFuelEntry(null);
+    setKeypadPump(null);
+  }
+
+  /** A new open sale for the pump, made the active one, and the pump activated (the cloud's answer is not waited for). */
+  function openPumpSale(pump: Pump) {
+    const key = `pump-${pump.id}-${Date.now()}`;
+    setPumps(prev => prev.map(p => (p.id === pump.id ? { ...p, status: 'dispensing' } : p)));
     setOpenOrders(prev => ({
       ...prev,
-      [key]: { tableId: null, tableName: pendingPump!.name, cart: [], covers: 1, openedAt: Date.now(), pumpId: pendingPump!.id, pumpName: pendingPump!.name },
+      [key]: { tableId: null, tableName: pump.name, cart: [], covers: 1, openedAt: Date.now(), pumpId: pump.id, pumpName: pump.name },
     }));
     setActiveKey(key);
     setCart([]);
+    posApi.patch(`/api/pumps/${pump.id}/activate`, {})
+      .catch((err: any) => console.error('[pump] Failed to activate on server:', err.message));   // this screen still shows it
+  }
+
+  function confirmPump() {
+    if (!pendingPump) return;
+    openPumpSale(pendingPump);
     setShowPumpModal(false);
     setPendingPump(null);
     setView('products');
-
-    // Persist status to backend (non-blocking — UI already updated)
-    try {
-      await posApi.patch(`/api/pumps/${pendingPump.id}/activate`, {});
-    } catch (err: any) {
-      console.error('[pump] Failed to activate on server:', err.message);
-      // Pump status in local state is still correct for this session
-    }
   }
 
   // ── Retail: park / resume ─────────────────────────────────────────────────
@@ -1154,6 +1173,50 @@ export default function CashierScreen() {
     const apply = kitchenVoid.apply;
     setKitchenVoid(null);
     apply(r.orderVoided);
+  }
+
+  // ── Transfer table ──────────────────────────────────────────────────────────
+  // The open order moves to the chosen table with its lines. Owner, 2026-11-05: one the kitchen has had also moves on the
+  // cloud (POST /api/orders/:id/move-table — the receipt and the tables screen read its table) and the kitchen gets what
+  // it has of the order again under MOVED, with the table it left, so the food goes to the right table.
+  async function transferTable() {
+    const fromKey = activeKey, toKey = transferTarget;
+    const target = tables.find(t => `table-${t.id}` === toKey);
+    if (!fromKey || !toKey || !target) return;
+    const order = openOrders[fromKey];
+    const sentId = sentOrderIds[fromKey];
+    const sentNumber = sentOrderNumbers[fromKey];
+    const rekey = <T,>(m: Record<string, T>) => {
+      if (!(fromKey in m)) return m;
+      const { [fromKey]: v, ...rest } = m;
+      return { ...rest, [toKey]: v };
+    };
+    setOpenOrders(prev => rekey({ ...prev, [fromKey]: { ...order, tableId: target.id, tableName: target.name } }));
+    setSentOrderIds(rekey);
+    setSentOrderNumbers(rekey);
+    setActiveKey(toKey);
+    setShowTransfer(false);
+    setTransferTarget(null);
+    if (!sentId) return;
+
+    try {
+      await posApi.post(`/api/orders/${sentId}/move-table`, { table_number: target.name });
+    } catch (err: any) {
+      console.error('[transfer]', err?.message);
+      alert(`The order is on Table ${target.name} here, but the cloud could not be told — its receipt may still say Table ${order.tableName}. Try the transfer again.`);
+    }
+    const withKitchen = cart.filter(it => it.order_item_id);
+    if (branchPrinters.length > 0 && withKitchen.length > 0) {
+      printRoutedStations({
+        cart: withKitchen, branchPrinters, business: business!,
+        orderNumber: sentNumber ?? String(sentId).slice(0, 8),
+        orderType: 'dine_in', cashierName: session?.staffName ?? 'Cashier',
+        total: withKitchen.reduce((s, it) => s + it.lineTotal, 0),
+        tableNumber: target.name, comboItems, categories, kitchenExclusions,
+        posFeatures,   // A543/A551: the kitchen's own font
+        kinds: ['kitchen', 'dispatch'], moved: { from: String(order.tableName ?? '') },
+      }).catch(err => console.error('[KOT moved]', err));
+    }
   }
 
   // Fire a held course to the kitchen for an already-sent order.
@@ -2380,7 +2443,7 @@ export default function CashierScreen() {
         <div style={s.overlay} className="animate-fade-in">
           <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>{pendingPump.name}</h3>
-            <p style={s.modalSubtitle}>Activate pump and select fuel grade from the product grid.</p>
+            <p style={s.modalSubtitle}>This pump has no priced fuel grade. Activate it and pick the grade above the products, or set its grade in Settings → Pumps.</p>
             <div style={s.modalActions}>
               <button style={s.modalCancel} onClick={() => { setShowPumpModal(false); setPendingPump(null); }}>Cancel</button>
               <button style={s.modalConfirm} onClick={confirmPump}>Activate Pump</button>
@@ -2394,10 +2457,10 @@ export default function CashierScreen() {
       {fuelEntry && (
         <div style={s.overlay} className="animate-fade-in">
           <FuelKeypad look={KEYPAD_LOOK} currency={currency}
-            title={(activeKey && openOrders[activeKey]?.pumpName) || fuelEntry.name} grade={fuelEntry.name}
+            title={keypadPump?.name || (activeKey && openOrders[activeKey]?.pumpName) || fuelEntry.name} grade={fuelEntry.name}
             colour={gradeColour(fuelEntry.name, gradeCategoryColour(fuelEntry), Math.max(0, fuelGrades.findIndex((g) => g.id === fuelEntry.id)))}
             price={Number(fuelEntry.base_price) || 0} unit={(fuelEntry as any).fuel_unit ?? 'L'}
-            onAdd={(litres, amount) => addFuelToCart(fuelEntry, litres, amount)} onClose={() => setFuelEntry(null)} />
+            onAdd={(litres, amount) => addPumpFuel(fuelEntry, litres, amount)} onClose={closeFuelKeypad} />
         </div>
       )}
 
@@ -2699,35 +2762,7 @@ export default function CashierScreen() {
               </button>
               <button
                 disabled={!transferTarget}
-                onClick={() => {
-                  if (!transferTarget || !activeKey) return;
-                  const targetTable = tables.find(t => `table-${t.id}` === transferTarget);
-                  if (!targetTable) return;
-                  // Move order to new table key
-                  const currentOrder = openOrders[activeKey];
-                  setOpenOrders(prev => {
-                    const next = { ...prev };
-                    next[transferTarget] = {
-                      ...currentOrder,
-                      tableId: targetTable.id,
-                      tableName: targetTable.name,
-                    };
-                    delete next[activeKey];
-                    return next;
-                  });
-                  // Move sentOrderId if exists
-                  if (sentOrderIds[activeKey]) {
-                    setSentOrderIds(prev => {
-                      const next = { ...prev };
-                      next[transferTarget] = next[activeKey];
-                      delete next[activeKey];
-                      return next;
-                    });
-                  }
-                  setActiveKey(transferTarget);
-                  setShowTransfer(false);
-                  setTransferTarget(null);
-                }}
+                onClick={() => { void transferTable(); }}
                 style={{ flex: 1, padding: '11px 0', background: transferTarget ? 'rgb(var(--act-strong, 59 130 246))' : '#334155', border: 'none', borderRadius: 10, color: 'rgb(var(--act-on, 255 255 255))', fontSize: 13, fontWeight: 700, cursor: transferTarget ? 'pointer' : 'default', opacity: transferTarget ? 1 : 0.5 }}>
                 Transfer →
               </button>

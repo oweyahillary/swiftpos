@@ -946,6 +946,22 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // The order surface back to empty. Internal: after a sale, a hold, or a kitchen void of everything sent.
   const resetOrder = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setDeliveryFee(''); setDeliveryIsFree(false); setDeliveryMsg(''); setOrderNote(''); setBuyer(null); setBillMsg(''); };
 
+  // Transfer table (owner, 2026-11-05): a dine-in order the kitchen has already had tells the kitchen it moved — what it
+  // has of the order, again under MOVED with the table it left (kitchen:move), so the food goes to the right table.
+  const moveTable = async (to: string) => {
+    const from = tableNumber;
+    setTableNumber(to);
+    if (!orderNumber || !from || !anySent(cart)) { setBillMsg(`Moved to Table ${to}.`); return; }
+    try {
+      const r = await posApi.kitchen.move({ order_number: orderNumber, from, to });
+      setBillMsg(!r.printed ? `Moved to Table ${to}.`
+        : r.skipped.length ? `Moved to Table ${to}. The MOVED ticket did not print for: ${r.skipped.join(', ')} — tell the kitchen.`
+        : `Moved to Table ${to}. The kitchen has a MOVED ticket.`);
+    } catch {
+      setBillMsg(`Moved to Table ${to}. The MOVED ticket could not print — tell the kitchen.`);
+    }
+  };
+
   // The Clear button. 0.6.28: an order with items on a kitchen ticket is cleared only by voiding them — Clear was the
   // quiet way to make a sent (and paid-in-cash) order disappear. Hold keeps it instead.
   const clearCart = async () => {
@@ -2364,7 +2380,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       {showTransfer && (
         <Suspense fallback={null}><TransferTableModal tables={tables} heldOrders={heldOrders} current={tableNumber}
           onClose={() => setShowTransfer(false)}
-          onPick={(t) => { setShowTransfer(false); setTableNumber(t.name); setBillMsg(`Moved to Table ${t.name}.`); }} /></Suspense>
+          onPick={(t) => { setShowTransfer(false); void moveTable(t.name); }} /></Suspense>
       )}
 
       {/* 0.6.28: sent items come back only as a recorded kitchen void. */}
