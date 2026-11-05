@@ -20,7 +20,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from '@zaptill/core/delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setThemesPremium, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled, setPlatformPricing } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setThemesPremium, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled, setPlatformPricing, setCategoryLayout } from './deviceConfig';
 import { cleanOwnPrices } from '@zaptill/core/platformPrices';   // A619
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
@@ -2103,6 +2103,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setScaleBarcodes(c.scaleBarcodes);
   // A619: the delivery platforms' prices (the payment screen re-prices with them, offline too). undefined = not said → keep.
   setPlatformPricing(c.platformPrices);
+  // 8n: the branch's category layout (side panel or top bar). undefined = not said → keep.
+  setCategoryLayout(c.posCategoryLayout);
   // 0.6.27: the per-client POS switches. undefined = not said → keep.
   setPosFeatures(c.posFeatures);
   // A599: the 'attendance' flag (premium) — the branch server pulls the attendance devices only while it is on.
@@ -2169,6 +2171,7 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
     noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
     scaleBarcodes: _j.scaleBarcodes && typeof _j.scaleBarcodes === 'object' ? _j.scaleBarcodes : undefined,   // A577
     platformPrices: _j.platformPrices && typeof _j.platformPrices === 'object' ? _j.platformPrices : undefined,   // A619
+    posCategoryLayout: typeof _j.posCategoryLayout === 'string' ? _j.posCategoryLayout : undefined,   // 8n: absent → keep
     posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
     attendanceDevice: typeof _j.attendanceDevice === 'boolean' ? _j.attendanceDevice : undefined,   // A599: absent → keep
     etimsEnabled: typeof _j.etimsEnabled === 'boolean' ? _j.etimsEnabled : undefined,   // A607: absent → keep

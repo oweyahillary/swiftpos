@@ -5,11 +5,12 @@
  * The panel and its pieces (what they draw, what they do, the remembered menu) are @zaptill/ui/CategoryPanel — shared
  * with the desktop POS (docs/SHARED-COMPONENTS-PLAN.md section 8g). This file is the web's look: every element's inline
  * style, on the theme (--act-strong) and the POS's light / dark tokens (--pos-*). On a narrow screen the panel lies over
- * the grid (CashierScreen / MinimartPOS pass `overlay`).
+ * the grid (CashierScreen / MinimartPOS pass `overlay`). 8n: CategoryBar — the categories across the top (the branch's
+ * 'top' layout), 48 px pills in the category's colour when chosen.
  */
 import SharedCategoryPanel, {
-  CategoryChip as SharedCategoryChip, LaterButton as SharedLaterButton, MenuBar as SharedMenuBar, PanelToggle as SharedPanelToggle, withLook,
-  type CategoryChipProps, type CategoryPanelLook, type CategoryPanelProps, type LaterButtonProps, type MenuBarProps, type PanelToggleProps,
+  CategoryBar as SharedCategoryBar, CategoryChip as SharedCategoryChip, LaterButton as SharedLaterButton, MenuBar as SharedMenuBar, PanelToggle as SharedPanelToggle, withLook,
+  type CategoryBarProps, type CategoryChipProps, type CategoryPanelLook, type CategoryPanelProps, type LaterButtonProps, type MenuBarProps, type PanelToggleProps,
 } from '@zaptill/ui/CategoryPanel';
 
 export { useCategoryPanel, type CategoryPanelState } from '@zaptill/ui/CategoryPanel';
@@ -104,6 +105,17 @@ const LOOK: CategoryPanelLook = {
   name: { style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
   count: (on) => ({ style: { fontSize: 11, color: on ? '#fff' : 'var(--pos-text3, #94a3b8)' } }),
   backdrop: { style: { position: 'absolute', inset: 0, zIndex: 30, background: 'rgba(0,0,0,0.35)' } },
+
+  // 8n: the top bar — a slimmer row than the menu tabs above it, so the two read as menu, then category.
+  catBar: { style: { position: 'relative', flexShrink: 0, borderBottom: '1px solid var(--pos-border-l, #1e293b)' } },
+  catRow: { style: { display: 'flex', gap: 8, padding: '6px 12px', overflowX: 'auto', scrollbarWidth: 'none' } },
+  // Chosen: the category's own colour, else the theme (All, a category with none).
+  catPill: (on, colour) => ({
+    style: { flexShrink: 0, minHeight: 48, padding: '0 16px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap',
+             fontSize: 14, fontWeight: on ? 700 : 500, border: `1px solid ${on ? 'transparent' : 'var(--pos-border, #334155)'}`,
+             background: on ? (colour ?? ACT) : 'var(--pos-surface, #1e293b)', color: on ? (colour ? '#0f172a' : '#fff') : 'var(--pos-text, #f1f5f9)' },
+  }),
+  catPillIcon: { style: { marginRight: 4 } },
 };
 
 /** The ☰ button at the left of the search. */
@@ -114,6 +126,9 @@ export const CategoryChip = withLook<CategoryChipProps>(SharedCategoryChip, LOOK
 
 /** A566: the menus across the top of the grid. A573: `label` is the business's word for them (@zaptill/core/businessTerms). */
 export const MenuBar = withLook<MenuBarProps>(SharedMenuBar, LOOK);
+
+/** 8n: the categories across the top of the grid — only with the branch's 'top' layout (useCategoryPanel(layout)). */
+export const CategoryBar = withLook<CategoryBarProps>(SharedCategoryBar, LOOK);
 
 /** A580: "Later" at the end of the menu bar — the closed menus, greyed, view only. */
 export const LaterButton = withLook<LaterButtonProps>(SharedLaterButton, LOOK);

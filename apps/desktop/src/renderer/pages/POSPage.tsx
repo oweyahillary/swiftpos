@@ -57,7 +57,8 @@ import { onGrid } from '@zaptill/core/productDays';
 import { exactFirst } from '@zaptill/core/paginate';   // A472
 import { useGridWindow } from '../hooks/useGridWindow';   // A472
 import { reportBusy } from '../lib/activity';   // A508
-import CategoryPanel, { useCategoryPanel, useNarrowWindow, PanelToggle, CategoryChip, MenuBar, LaterButton } from '../components/CategoryPanel';   // A537; A566; A580
+import CategoryPanel, { useCategoryPanel, useNarrowWindow, PanelToggle, CategoryChip, MenuBar, LaterButton, CategoryBar } from '../components/CategoryPanel';   // A537; A566; A580; 8n
+import { DEFAULT_CATEGORY_LAYOUT, type CategoryLayout } from '@zaptill/core/categoryLayout';   // 8n
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537; A566
 // A566: A564's lookup, from the selling screen. A588: loaded when opened (rarely used; A517's budget).
 const FindInBranches = lazy(() => import('../components/BranchStockTab').then((m) => ({ default: m.FindInBranches })));
@@ -309,6 +310,14 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const [scaleSettings, setScaleSettings] = useState<ScaleSettings | null>(null);
   const [notePicks, setNotePicks] = useState<string[]>([]);
   useEffect(() => { posApi.pos.notePicks().then(setNotePicks).catch(() => setNotePicks([])); }, []);
+  // 8n (owner, 2026-11-05): the branch's category layout — the side panel (the standard) or the top bar. Main keeps the
+  // last value the cloud said (offline too); read at start and after every pull (a manager's change on another POS).
+  const [categoryLayout, setCategoryLayout] = useState<CategoryLayout>(DEFAULT_CATEGORY_LAYOUT);
+  useEffect(() => {
+    const load = () => posApi.pos.categoryLayout().then((r) => { if (r?.layout) setCategoryLayout(r.layout); }).catch(() => {});
+    load();
+    return posApi.pos.onCatalogueChanged(load);
+  }, []);
   // 0.6.27: the client's POS switches (admin portal) — read at start and after every catalogue pull.
   const [posFeatures, setPosFeatures] = useState<PosFeatures>(noPosFeatures());
   useEffect(() => {
@@ -1535,7 +1544,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // collapse, and it should start collapsed by default?"): the category row became a left panel behind ☰ — collapsed at
   // start, pinned open if the cashier pins it (remembered on this till), the business's menus as tabs on top. A menu
   // chosen narrows the panel's list AND the grid to that menu's categories (shared/menuFilter.ts, as the web POS).
-  const catPanel = useCategoryPanel();
+  const catPanel = useCategoryPanel(categoryLayout);   // 8n: 'top' — CategoryBar instead of ☰, the chip and the panel
   const narrowWindow = useNarrowWindow();   // a narrow till window: the panel lies over the grid, not beside it
   const activeMenu = catPanel.prefs.menu;
   // A578 (owner, 2026-10-23: menus by time of day): a menu outside its hours leaves the top tabs, the panel, the grid,
@@ -2011,7 +2020,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
               onChange={e => setSearch(e.target.value)}
               className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 text-sm focus:outline-none focus:border-action-500 transition-colors"
             />
-            <CategoryChip label={gridFilter.categoryName} onClear={clearCatChip} />
+            <CategoryChip label={gridFilter.categoryName} onClear={clearCatChip} panel={catPanel} />
           </div>
 
           {/* A566: the menus as big tabs across the top of the grid (none when the business has no menus). */}
@@ -2032,6 +2041,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                 </button>
               )}
             </>) : undefined} />
+
+          {/* 8n: the branch's 'top' layout — the categories across the top, under the menus (nothing with 'panel'). */}
+          <CategoryBar panel={catPanel} categories={categoriesNow} menus={menusNow} activeMenu={activeMenu}
+            activeCategory={activeCategory} onCategory={setActiveCategory} label={words.categories} />
 
           {/* A566: the search found an item that is out HERE — look at the other branches (inventory.view + online licence). */}
           {outHere.length > 0 && (

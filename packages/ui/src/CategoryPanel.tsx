@@ -20,6 +20,12 @@
  *   of the grid as big tabs (as the categories were before A537) and the panel lists only the chosen menu's categories
  *   (`menuBar` — its own tabs drop out). No menus: no bar, the panel alone as before.
  *
+ *   8n (owner, 2026-11-05: "initially we used to have a horizontal navbar for categories then we introduced the current
+ *   vertical one can we have the option for both which can be toggled per branch by the manager?"): the branch's choice
+ *   (@zaptill/core/categoryLayout) is given to useCategoryPanel. 'panel' — exactly the above. 'top' — CategoryBar puts the
+ *   categories across the top of the grid as pills (under A566's menu bar), and the ☰ toggle, the chip and the panel draw
+ *   nothing. Both list the same categories (the menu chosen, the menus open now — the screens pass what they pass the panel).
+ *
  * Shared components batch G (docs/SHARED-COMPONENTS-PLAN.md section 8g): one structure and one behaviour for both POS.
  * Each app keeps its own look — how every element is painted — in its own CategoryPanel.tsx: the desktop's Tailwind
  * class names (where its Tailwind build finds them; this file holds none, so neither stylesheet changes), the web's
@@ -32,6 +38,7 @@ import {
   panelPrefsText, panelStartsOpen, panelOpenAfterPick, productCounts, resolveMenu,
   type CategoryLike, type MenuLike, type MenuTab, type PanelPrefs, type ProductLike,
 } from '@zaptill/core/menuFilter';
+import { DEFAULT_CATEGORY_LAYOUT, type CategoryLayout } from '@zaptill/core/categoryLayout';
 import { painted, type Paint } from './paint';
 
 function readPrefs(): PanelPrefs {
@@ -41,8 +48,11 @@ function writePrefs(p: PanelPrefs): void {
   try { window.localStorage.setItem(PANEL_PREFS_KEY, panelPrefsText(p)); } catch { /* not remembered — still applied */ }
 }
 
-/** The panel's state: open (collapsed at every start — A554), the pin (this session) and the chosen menu (remembered). */
-export function useCategoryPanel() {
+/**
+ * The panel's state: open (collapsed at every start — A554), the pin (this session) and the chosen menu (remembered).
+ * `layout` is the branch's choice (8n): with 'top' the ☰ toggle, the chip and the panel draw nothing and CategoryBar shows.
+ */
+export function useCategoryPanel(layout: CategoryLayout = DEFAULT_CATEGORY_LAYOUT) {
   const [prefs, setPrefs] = useState<PanelPrefs>(() => readPrefs());
   const [open, setOpen] = useState<boolean>(() => panelStartsOpen());   // A554: collapsed at every start and sign-in
   const save = useCallback((next: PanelPrefs) => { setPrefs(next); writePrefs(next); }, []);
@@ -50,7 +60,7 @@ export function useCategoryPanel() {
   const setMenu = useCallback((menu: string) => save({ ...prefs, menu }), [prefs, save]);
   /** After a category is picked: an unpinned panel closes. */
   const picked = useCallback(() => setOpen(panelOpenAfterPick(prefs)), [prefs]);
-  return { prefs, open, setOpen, setPinned, setMenu, picked };
+  return { prefs, open, setOpen, setPinned, setMenu, picked, layout };
 }
 export type CategoryPanelState = ReturnType<typeof useCategoryPanel>;
 
@@ -105,23 +115,36 @@ export interface CategoryPanelLook {
   count: (on: boolean) => Paint;
   /** Behind a panel that lies over the grid: a tap closes it. */
   backdrop: Paint;
+  /** 8n: the category bar across the top — the whole bar, the row of pills, a pill (chosen: the category's own colour, or
+   *  the app's accent for "All" and a category with none), its icon. Its scrolling part and ‹ › arrows are the menu bar's
+   *  (barScroller, barArrow). */
+  catBar: Paint;
+  catRow: Paint;
+  catPill: (on: boolean, colour: string | null | undefined) => Paint;
+  catPillIcon: Paint;
 }
 
 export interface PanelToggleProps { panel: CategoryPanelState }
 
 /** The ☰ button at the left of the search. */
 export function PanelToggle({ panel, look }: PanelToggleProps & { look: CategoryPanelLook }) {
+  if (panel.layout === 'top') return null;   // 8n: the categories are across the top — nothing to open
   return (
     <button type="button" data-testid="category-panel-toggle" aria-label={panel.open ? 'Close the categories' : 'Open the categories'}
       aria-expanded={panel.open} onClick={() => panel.setOpen(!panel.open)} {...painted(look.toggle(panel.open))}>☰</button>
   );
 }
 
-export interface CategoryChipProps { label: string | null; onClear: () => void }
+export interface CategoryChipProps {
+  label: string | null;
+  onClear: () => void;
+  /** 8n: the panel's state — with the top bar the chosen pill already shows the category, so no chip. */
+  panel?: CategoryPanelState;
+}
 
 /** "Burgers ✕" by the search — the chosen category (or menu), one tap back to everything. */
-export function CategoryChip({ label, onClear, look }: CategoryChipProps & { look: CategoryPanelLook }) {
-  if (!label) return null;
+export function CategoryChip({ label, onClear, panel, look }: CategoryChipProps & { look: CategoryPanelLook }) {
+  if (!label || panel?.layout === 'top') return null;
   return (
     <button type="button" data-testid="category-chip" onClick={onClear} aria-label={`Show every category (now ${label})`} {...painted(look.chip)}>
       <span {...painted(look.chipText)}>{label}</span><span aria-hidden {...painted(look.chipClear)}>✕</span>
@@ -144,11 +167,11 @@ export interface MenuBarProps {
 }
 
 /**
- * A566: the menus across the top of the grid — "All", "Food", "Drinks" … — big tabs as the categories were before A537.
- * Many menus: the row scrolls sideways (a swipe, the wheel, or the ‹ › arrows that show, with a fade, on the side that
- * hides more); the chosen tab is kept in view. Nothing when the business has no menus.
+ * A row that scrolls sideways (A566's menu bar, 8n's category bar): which ends hide more (an arrow and a fade show there —
+ * menuBarEdges), measured on scroll, on resize and when the row's items change; a nudge for the ‹ › arrows; and the chosen
+ * item kept in view (a remembered one far along the row). One copy, so both bars scroll the same way.
  */
-export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing, greyed, look }: MenuBarProps & { look: CategoryPanelLook }) {
+function useSideScroll(items: unknown, chosen: string) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   const measure = useCallback(() => {
@@ -161,17 +184,27 @@ export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [measure, tabs]);
-  const shown = resolveMenu(active, tabs);
-  useEffect(() => {   // the chosen menu stays in view (a remembered one far along the row)
+  }, [measure, items]);
+  useEffect(() => {
     try { (rowRef.current?.querySelector('[aria-selected="true"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); } catch { /* fine */ }
-  }, [shown]);
-  if (tabs.length === 0 && !trailing) return null;
-  const word = label.toLowerCase();
+  }, [chosen]);
   const nudge = (dir: 1 | -1) => {
     const el = rowRef.current;
     if (el) el.scrollBy({ left: dir * Math.max(160, el.clientWidth * 0.6), behavior: 'smooth' });
   };
+  return { rowRef, edges, measure, nudge };
+}
+
+/**
+ * A566: the menus across the top of the grid — "All", "Food", "Drinks" … — big tabs as the categories were before A537.
+ * Many menus: the row scrolls sideways (a swipe, the wheel, or the ‹ › arrows that show, with a fade, on the side that
+ * hides more); the chosen tab is kept in view. Nothing when the business has no menus.
+ */
+export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing, greyed, look }: MenuBarProps & { look: CategoryPanelLook }) {
+  const shown = resolveMenu(active, tabs);
+  const { rowRef, edges, measure, nudge } = useSideScroll(tabs, shown);
+  if (tabs.length === 0 && !trailing) return null;
+  const word = label.toLowerCase();
   return (
     <div data-testid="menu-bar" {...painted(look.bar)}>
       <div {...painted(look.barScroller)}>
@@ -217,6 +250,56 @@ export function LaterButton({ on, onToggle, label = 'Menus', look }: LaterButton
 /** A category as the panel shows it. */
 export interface PanelCategory extends CategoryLike { name: string; color?: string | null; icon?: string | null }
 
+/** The "All" row / pill: "All" for every menu, else "All Food" (the menu chosen) — the panel and the bar say the same. */
+function allLabel(tabs: readonly MenuTab[], shownMenu: string): string {
+  return shownMenu !== ALL_MENUS ? `All ${tabs.find((t) => t.id === shownMenu)?.name ?? ''}` : 'All';
+}
+
+export interface CategoryBarProps {
+  panel: CategoryPanelState;
+  categories: readonly PanelCategory[];
+  menus: readonly MenuLike[];
+  activeMenu: string;
+  activeCategory: string;
+  onCategory: (id: string) => void;
+  /** A573: the business's word for categories (@zaptill/core/businessTerms) — the row's name and its arrows' words. */
+  label?: string;
+}
+
+/**
+ * 8n: the categories across the top of the grid — "All" and each category as a pill, the category's own colour when
+ * chosen (as the row before A537), touch-sized, scrolling sideways with the menu bar's ‹ › arrows. Only with the branch's
+ * 'top' layout. It lists what the panel would (categoryGroups: the menu chosen, in the owner's order, the menus open now
+ * as the screen passes them) in one row with no headings; the grid's own rules (search, sold out, hidden, Later) are the
+ * screen's, unchanged.
+ */
+export function CategoryBar({ panel, categories, menus, activeMenu, activeCategory, onCategory, label = 'Categories', look }: CategoryBarProps & { look: CategoryPanelLook }) {
+  const tabs = useMemo(() => menuTabs(menus, categories), [menus, categories]);
+  const shownMenu = resolveMenu(activeMenu, tabs);
+  const list = useMemo(() => categoryGroups(categories, menus, shownMenu).flatMap((g) => g.categories), [categories, menus, shownMenu]);
+  const { rowRef, edges, measure, nudge } = useSideScroll(list, activeCategory);
+  if (panel.layout !== 'top') return null;
+  const word = label.toLowerCase();
+  const pill = (id: string, text: string, colour: string | null | undefined, icon?: string | null) => (
+    <button key={id} type="button" role="tab" aria-selected={activeCategory === id} data-testid={id === ALL_CATEGORIES ? 'category-bar-all' : 'category-bar-pill'}
+      onClick={() => onCategory(id)} {...painted(look.catPill(activeCategory === id, colour))}>
+      {icon && <span aria-hidden {...painted(look.catPillIcon)}>{icon}</span>}{text}
+    </button>
+  );
+  return (
+    <div data-testid="category-bar" {...painted(look.catBar)}>
+      <div {...painted(look.barScroller)}>
+        <div ref={rowRef} role="tablist" aria-label={label} onScroll={measure} {...painted(look.catRow)}>
+          {pill(ALL_CATEGORIES, allLabel(tabs, shownMenu), null)}
+          {list.map((c) => pill(c.id, c.name, c.color, c.icon))}
+        </div>
+        {edges.left && <button type="button" data-testid="category-bar-left" aria-label={`More ${word} to the left`} onClick={() => nudge(-1)} {...painted(look.barArrow('left'))}>‹</button>}
+        {edges.right && <button type="button" data-testid="category-bar-right" aria-label={`More ${word} to the right`} onClick={() => nudge(1)} {...painted(look.barArrow('right'))}>›</button>}
+      </div>
+    </div>
+  );
+}
+
 export interface CategoryPanelProps {
   panel: CategoryPanelState;
   categories: readonly PanelCategory[];
@@ -240,7 +323,7 @@ export default function CategoryPanel({ panel, categories, menus, products, acti
   const tabs = useMemo(() => menuTabs(menus, categories), [menus, categories]);
   const groups = useMemo(() => categoryGroups(categories, menus, activeMenu), [categories, menus, activeMenu]);
   const counts = useMemo(() => productCounts(products.filter((p) => p.status === 'active')), [products]);
-  if (!panel.open) return null;
+  if (!panel.open || panel.layout === 'top') return null;   // 8n: with the top bar the panel never shows
 
   const pick = (id: string) => { onCategory(id); panel.picked(); };
   const shownMenu = tabs.some((t) => t.id === activeMenu) ? activeMenu : ALL_MENUS;
@@ -269,7 +352,7 @@ export default function CategoryPanel({ panel, categories, menus, products, acti
 
       <div {...painted(look.list)}>
         <button type="button" data-testid="category-all" onClick={() => pick(ALL_CATEGORIES)} {...painted(look.row(activeCategory === ALL_CATEGORIES))}>
-          <span {...painted(look.rowLabel)}>{shownMenu !== ALL_MENUS ? `All ${tabs.find((t) => t.id === shownMenu)?.name ?? ''}` : 'All'}</span>
+          <span {...painted(look.rowLabel)}>{allLabel(tabs, shownMenu)}</span>
         </button>
         {groups.map((g) => (
           <div key={g.menu?.id ?? 'plain'}>

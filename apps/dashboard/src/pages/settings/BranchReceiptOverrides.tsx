@@ -8,6 +8,40 @@ import { PlatformPricesEditor } from './PlatformPrices';   // A619
 import { enabledFromSetting } from '@zaptill/core/paymentCatalogue';
 import { cleanRounding } from '@zaptill/core/platformPrices';
 import { mpesaDescribe, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
+import { CATEGORY_LAYOUT_KEY, CATEGORY_LAYOUT_PERMISSIONS, CATEGORY_LAYOUT_WORDS, categoryLayoutOf } from '@zaptill/core/categoryLayout';   // 8n
+import { usePermissions } from '../../context/PermissionsContext';
+
+/**
+ * 8n (owner, 2026-11-05: categories in the side panel or across the top, "toggled per branch by the manager"): this
+ * branch's POS — the desktop POS and the web POS — show the categories one way or the other. Two choices, the same words
+ * as the desktop's Manager › Settings; no choice saved = the side panel. Changed with settings.pos_layout or
+ * settings.branches (the cloud checks again); anyone else sees the choice, greyed.
+ */
+function BranchCategoryLayout({ value, onSave }: { value: string | undefined; onSave: (v: string) => void }) {
+  const { can } = usePermissions();
+  const mayChange = CATEGORY_LAYOUT_PERMISSIONS.some((k) => can(k));
+  const layout = categoryLayoutOf(value);
+  return (
+    <div className="border-t border-gray-800 pt-4" data-testid="branch-category-layout">
+      <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{CATEGORY_LAYOUT_WORDS.title}</div>
+      <div className="text-xs text-gray-600 mt-0.5">{CATEGORY_LAYOUT_WORDS.explain}</div>
+      <div role="radiogroup" aria-label={CATEGORY_LAYOUT_WORDS.title} className="grid gap-2 sm:grid-cols-2 mt-3">
+        {CATEGORY_LAYOUT_WORDS.options.map((o) => {
+          const on = layout === o.value;
+          return (
+            <button key={o.value} type="button" role="radio" aria-checked={on} data-testid={`category-layout-${o.value}`}
+              disabled={!mayChange} onClick={() => { if (!on && mayChange) onSave(o.value); }}
+              className={`min-h-[48px] rounded-lg border px-3.5 py-2 text-left transition-colors disabled:opacity-60 ${
+                on ? 'border-swift bg-swift/10 text-white' : 'border-gray-800 text-gray-300 hover:border-gray-600'}`}>
+              <span className="block text-sm font-semibold">{o.label}</span>
+              <span className="block text-xs text-gray-500 mt-0.5">{o.hint}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /** A492: what this branch's customers pay to by M-Pesa — read-only on the web; set on the branch's till by its manager. */
 function BranchMpesaLine({ branchId }: { branchId: string }) {
@@ -249,6 +283,9 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
           </div>
         </div>
       </div>
+
+      {/* 8n: how this branch's POS shows its categories — the side panel or the top bar. */}
+      <BranchCategoryLayout value={overrides[CATEGORY_LAYOUT_KEY]} onSave={(v) => save(CATEGORY_LAYOUT_KEY, v)} />
 
       {/* 0.6.37 (A387): this branch's own choice of what cashiers see in History. */}
       <div className="border-t border-gray-800 pt-4">

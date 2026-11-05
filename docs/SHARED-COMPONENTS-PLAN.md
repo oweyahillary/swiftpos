@@ -1290,6 +1290,57 @@ selling, ungated. **No new cloud migration and no local schema change** (below, 
   SQLite); root `forecourt-shared` 14 → 19 (T). Updated pin: `pump-activate`. Each mutant listed in its file's header was
   made and seen to fail. `build-escpos-renderer --check`: reproducible.
 
+## 8n. Category layout per branch (owner, 2026-11-05) — on dev, not committed
+
+Owner, 2026-11-05: "initially we used to have a horizontal navbar for categories then we introduced the current vertical
+one can we have the option for both which can be toggled per branch by the manager? in the desktop app?" — and "yes we are
+unifying them so no change hits one without the other being affected". So: one branch setting, read by the desktop POS
+and the web POS (the Android Shop POS runs the web POS's screens, so it follows).
+
+- **The rule, once** — `@zaptill/core/categoryLayout`: the `branch_settings` key `pos_category_layout`, `'panel'` (the side
+  panel behind ☰, A537) or `'top'` (the categories across the top). Absent or unknown = `'panel'`, so nobody's screen
+  changes until a manager chooses. The reader (`categoryLayoutOf`), the cloud's check (`categoryLayoutSettingValue`) and the
+  words both settings screens show (`CATEGORY_LAYOUT_WORDS`). The setting itself needs no migration (a key/value row);
+  the right to change it does (migration 190, below). Not premium.
+- **The top bar** — `CategoryBar` in `@zaptill/ui/CategoryPanel`, beside the panel: "All" and each category as a 48 px
+  pill, the category's own colour when chosen (as the row before A537), scrolling sideways with the menu bar's ‹ › arrows
+  (one `useSideScroll` for both bars). It sits under A566's menu bar and lists what the panel would (`categoryGroups`: the
+  menu chosen, the menus open now — A578 / A580 — as the screen passes them); the grid's rules (search, sold out, hidden,
+  Later) are untouched. `useCategoryPanel(layout)` carries the branch's value: with `'top'` the ☰ toggle, the chip and the
+  panel draw nothing; with `'panel'` exactly as before. Each app's look: `catBar`, `catRow`, `catPill`, `catPillIcon` in
+  its own `CategoryPanel.tsx`.
+- **Who changes it** — owner, 2026-11-05: "lets go with your recommendations since in future we might get more items
+  under POS layout": its own right, **`settings.pos_layout`** ("POS layout", Settings, both POS, a Manager's by default),
+  or `settings.branches` as before (one list, `CATEGORY_LAYOUT_PERMISSIONS`; the broad `settings.manage` brings both),
+  for their own branch (the owner any branch): `POST /api/branches/:id/settings` (an `OVERRIDABLE_KEYS` entry,
+  `branchSettingKeys` → the list, panel / top only, `assertBranchAccess`). Migration 190 registers the key and gives it,
+  once, to the owner roles and every business's BUILT-IN Manager and General Manager (a custom role so named is left
+  alone; an owner's later un-tick stays) — docs/PERMISSIONS-AUDIT.md section 8. Desktop:
+  Manager › Settings › Categories on the POS (`CategoryLayoutPanel`, `manage:setCategoryLayout` — the desktop's existing
+  PIN-sign-in write to that route; the Settings tab opens for either key). Web: Settings › Branches › the branch
+  (`BranchReceiptOverrides`; greyed without either key; the Business section opens for `settings.pos_layout`). Same words
+  on both.
+- **How it reaches each POS** — `pos/init` sends `posCategoryLayout` (the branch's own value). The desktop keeps it in
+  `maintenance_state` (works offline; no local schema change), re-reads it after every pull; a change on the cloud rides
+  the change log (`branch_settings` → `config`, topic `setup` by its key, `CONFIG_KEYS.setup` has `posCategoryLayout`), so
+  the branch's other desktop POS switch when no drawer is open, at a shift opening or closing, or within 30 minutes (the
+  setup topic's rule — liveSync); the POS
+  where the manager changed it switches at once; a branch server relays it to its POS. The web POS takes it on its next
+  load of `pos/init`.
+
+### Proof
+
+- New: root `category-layout-8n` 34 (the real `CategoryBar` / panel / toggle / chip rendered in both looks; the right:
+  a plain Manager's built-in keys pass, a Cashier's do not; in `ci.yml`); desktop `category-layout-8n` 17 (the real
+  compiled main on SQLite: the pull, the change log, the relay, the IPC with a Manager's and a Cashier's built-in keys; in
+  `ci.yml`); `scripts/test-migration-190.mjs` 8 (PGlite, every migration; picked up by `run-migration-tests.mjs`).
+  Updated pins: root `business-day`, `menus-a537`, `menus-top-a566`, `permissions-split-a595` (110 keys); desktop
+  `menus-a537`, `menus-top-a566`, `manager-nav`, `catalogue-refresh-signal`, `a490-permissions` (two gate rows). Each
+  mutant listed in the new files' headers was made and seen to fail.
+- **The owner runs migration 190** (`migrations/190_pos_layout_permission.sql`) — before or after the deploy: until it
+  runs, no existing role holds the key, so `settings.branches` alone opens the option (as before); a business created
+  meanwhile gets it on its Manager anyway (the role seeding registers a key it does not find — lib/defaultRolePermissions.ts).
+
 ## 9. Rollback
 
 - **Step 1:** revert the step's commit(s) — the copies come back with `check-shared-sync`'s entry; delete

@@ -171,6 +171,9 @@ const GATES = [
   ['manage:updateProduct', { id: 'p-1', patch: { base_price: 60 } }, ['menu.prices'], /menu change/],
   ['manage:createPaymentMethod', { name: 'Voucher', code: 'voucher' }, ['settings.payments'], /payment methods/],
   ['manage:setPaymentMethodsEnabled', ['cash'], ['settings.payments'], /payment methods/],
+  // 8n: the branch's POS layout — settings.pos_layout (a Manager's), or settings.branches as before.
+  ['manage:setCategoryLayout', 'top', ['settings.pos_layout'], /shows its categories/],
+  ['manage:setCategoryLayout', 'top', ['settings.branches'], /shows its categories/],
   ['manage:setReceiptText', { header: 'H', footer: 'F' }, ['receipt.manage'], /receipt text/],
   ['manage:setContinuousOperation', true, ['settings.business'], /business settings/],
   ['manage:setCashierHistoryMethods', ['cash'], ['settings.business'], /business settings/],

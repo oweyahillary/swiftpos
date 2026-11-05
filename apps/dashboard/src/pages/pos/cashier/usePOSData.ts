@@ -11,6 +11,7 @@
 import { gateDisplayContent, slidesFromWire, type DisplayContent } from '@zaptill/core/customerScreen';   // A606
 import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
 import { cleanPricing, type PlatformPricing } from '@zaptill/core/platformPrices';   // A619
+import { categoryLayoutOf, DEFAULT_CATEGORY_LAYOUT, type CategoryLayout } from '@zaptill/core/categoryLayout';   // 8n
 import { parseNotePicks } from '@zaptill/core/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';
 import { scaleSettingsOrDefault, type ScaleSettings } from '@zaptill/core/scaleBarcode';   // A577
@@ -83,6 +84,8 @@ export interface POSData {
   platformPricing: PlatformPricing;
   /** A577: how the business's weighing scales print their labels (the default until pos/init says). */
   scaleSettings: ScaleSettings;
+  /** 8n: how this branch's POS shows its categories — the side panel (until pos/init says) or the top bar. */
+  categoryLayout: CategoryLayout;
   orderMode:         'pay_first' | 'order_first';
   loading:           boolean;
   error:             string | null;
@@ -100,6 +103,7 @@ export function usePOSData(): POSData {
   const [offers, setOffers] = useState<Offer[]>([]);   // A445
   const [platformPricing, setPlatformPricing] = useState<PlatformPricing>(() => cleanPricing(null));   // A619
   const [scaleSettings, setScaleSettings] = useState<ScaleSettings>(() => scaleSettingsOrDefault(null));   // A577
+  const [categoryLayout, setCategoryLayout] = useState<CategoryLayout>(DEFAULT_CATEGORY_LAYOUT);   // 8n
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
   const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
@@ -153,6 +157,7 @@ export function usePOSData(): POSData {
       setKitchenExclusions(init.kitchenExclusions ?? []);
       setNotePicks(parseNotePicks(init.noteQuickPicks ?? null));   // A367 (an older cloud sends none → the defaults)
       setScaleSettings(scaleSettingsOrDefault((init as any).scaleBarcodes ?? null));   // A577 (an older cloud: the default)
+      setCategoryLayout(categoryLayoutOf(init.posCategoryLayout));   // 8n (an older cloud sends none: the side panel)
       setPosFeatures(parsePosFeatures(init.posFeatures ?? null));   // 0.6.27 (an older cloud sends none → all off)
       setAttendanceDevice((init as any).attendanceDevice === true);   // A599 (an older cloud sends none → the PIN clock-in stays)
       setEtimsEnabled((init as any).etimsEnabled === true);   // A607 (an older cloud sends none → no PIN asked)
@@ -276,6 +281,7 @@ export function usePOSData(): POSData {
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
     platformPricing,   // A619
     scaleSettings,   // A577
+    categoryLayout,  // 8n
     loading, error,
     reload: () => setTick(t => t + 1),
   };

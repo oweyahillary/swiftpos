@@ -155,7 +155,7 @@ console.log('\nThe wiring\n');
   // account with the number (tests/mpesa-branch.test.mjs runs it).
   ok('the cloud sends the M-Pesa line, the branch\'s own winning', /receiptPayNumber: mpesaReceiptNumber\(mpesa\)/.test(pos)
     && /const mpesa = branchMpesa \?\? businessMpesa;/.test(pos)
-    && /'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'\]/.test(pos));
+    && /'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',\s*CATEGORY_LAYOUT_KEY\]/.test(pos));   // 8n: the branch read now ends with the category-layout key
   const br = read('apps/server/src/routes/branches.ts'), bz = read('apps/server/src/routes/business.ts');
   // A492 (owner, 2026-10-15): set on the TILL by the branch's manager — the web's routes refuse it, the branch keeps it.
   ok('…set on the till for its branch (PUT /branches/:id/mpesa); the web\'s settings routes refuse it', /router\.put\('\/:id\/mpesa'/.test(br)

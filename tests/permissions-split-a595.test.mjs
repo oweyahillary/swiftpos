@@ -164,7 +164,7 @@ await ok('36 new rights, every part a catalogue key with exactly one entry, no p
     assert.ok(P.isPermissionKey(parent), parent);
     for (const c of parts) { assert.ok(P.isPermissionKey(c), c); assert.ok(!P.SPLITS[c], `${c} is also a parent`); }
   }
-  assert.equal(P.PERMISSION_KEYS.length, 109);   // A599: + attendance.view / edit / devices
+  assert.equal(P.PERMISSION_KEYS.length, 110);   // A599: + attendance.view / edit / devices; 8n: + settings.pos_layout
 });
 await ok('personal data: the badge keys; the built-in Auditor (VIEW_KEYS) holds none of them, and no write key', () => {
   assert.deepEqual([...P.PERSONAL_KEYS].sort(), ['attendance.view', 'customers.contacts', 'customers.history', 'staff.contacts', 'staff.pay', 'staff.pins']);   // A599: attendance is personal data

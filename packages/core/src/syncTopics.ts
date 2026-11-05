@@ -124,7 +124,8 @@ export const CONFIG_KEYS = {
     'cloudBackup'],   // A601: the desktop-only cut-off (the cloud_backup flag is a feature_flags row: a money change)
   look: ['receiptHeader', 'receiptFooter', 'businessName'],
   setup: ['kitchenExclusions', 'noteQuickPicks', 'businessType', 'support', 'branchId', 'pricingBranchId', 'scaleBarcodes',
-    'customerScreen'],   // A606: the customer screen's slideshow (business_settings customer_screen)
+    'customerScreen',   // A606: the customer screen's slideshow (business_settings customer_screen)
+    'posCategoryLayout'],   // 8n: the branch's category layout (branch_settings pos_category_layout: setup by its key)
 } as const;
 
 /** One entry of GET /api/pos/changes. `row` is absent on a delete (and on an upsert whose row is no longer the till's). */

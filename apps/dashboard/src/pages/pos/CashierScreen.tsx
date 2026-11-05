@@ -30,7 +30,7 @@ import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
 import { noteLines } from '@zaptill/core/orderNotes';
 import MinimartPOS from './MinimartPOS';
-import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton } from './cashier/CategoryPanel';   // A537; A566; A580
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton, CategoryBar } from './cashier/CategoryPanel';   // A537; A566; A580; 8n
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '@zaptill/core/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
@@ -228,6 +228,7 @@ export default function CashierScreen() {
     offers: branchOffers,    // A445
     platformPricing,         // A619
     scaleSettings,           // A577
+    categoryLayout,          // 8n: the branch's side panel or top bar
     loading,
     error:         posDataError,
     reload:        reloadPOSData,
@@ -924,7 +925,8 @@ export default function CashierScreen() {
   // A537 (owner, 2026-10-20: "the menu categories at the top, can we add them to the left like a hamburger, which can
   // collapse, and it should start collapsed by default?"): the category bar (and A464's fade at its right edge) became a
   // left panel behind ☰ — collapsed at start, pinned open if the cashier pins it, the business's menus as tabs on top.
-  const catPanel = useCategoryPanel();
+  // 8n (owner, 2026-11-05): the branch's choice — with 'top', CategoryBar instead of ☰, the chip and the panel.
+  const catPanel = useCategoryPanel(categoryLayout);
   const activeMenu = catPanel.prefs.menu;
   const menuCats = useMemo(() => categoriesForMenu(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
   const menuFilterScope = useMemo(() => menuScope(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
@@ -1558,6 +1560,7 @@ export default function CashierScreen() {
             menuHints={hours.hints}
             menuBarTrailing={menuBarTrailing}   // A580: Later + Show all
             menuLater={hours.later}
+            categoryLayout={categoryLayout}   // 8n
             peekLater={(p: Product, scope: { menu: string; category: string; search: string }) => laterPeek(p as any, hours, scope)}
             outOfHours={(p: Product) => hoursRefusal(p as any, hours)}
             cart={cart}
@@ -1825,11 +1828,14 @@ export default function CashierScreen() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
-                <CategoryChip label={catChip} onClear={clearCatChip} />
+                <CategoryChip label={catChip} onClear={clearCatChip} panel={catPanel} />
               </div>
 
               {/* A566: the menus as big tabs across the top of the grid (none when the business has no menus). */}
               <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={words.menus} hints={hours.hints} trailing={menuBarTrailing} greyed={hours.later} />
+              {/* 8n: the branch's 'top' layout — the categories across the top, under the menus (nothing with 'panel'). */}
+              <CategoryBar panel={catPanel} categories={categoriesNow} menus={menusNow} activeMenu={activeMenu}
+                activeCategory={activeCategory} onCategory={setActiveCategory} label={words.categories} />
 
               {/* A537: the category panel (collapsed at start) beside — or, on a phone, over — the product grid. */}
               <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>

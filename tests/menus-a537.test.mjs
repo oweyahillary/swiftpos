@@ -272,7 +272,7 @@ try {
       assert.match(s, /inMenuScope\(p, gridMenuScope\(menuFilterScope, (?:search|catalogueSearch)\)\)/, n);
       assert.match(s, /<PanelToggle panel=\{catPanel\} \/>/, n);
       assert.match(s, /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{isPhone\} menuBar=\{menuBar\.length > 0\} \/>/, n);
-      assert.match(s, /<CategoryChip label=\{catChip\} onClear=\{clearCatChip\} \/>/, n);
+      assert.match(s, /<CategoryChip label=\{catChip\} onClear=\{clearCatChip\} panel=\{catPanel\} \/>/, n);   // 8n: told the layout
       assert.doesNotMatch(s, /s\.catRow|s\.catBtn/, `${n}: the old category row is gone`);
     }
     assert.match(cashier, /menus=\{menus(?:Now)?\}/);   // A578: the menus open now

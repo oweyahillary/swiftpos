@@ -1,5 +1,5 @@
 // IPC: branch settings set from the till — receipt text, continuous operation, reversal rules, offers, payment
-// methods, M-Pesa, cashier history. Registered from ipcHandlers.ts (D10).
+// methods, M-Pesa, cashier history, the category layout (8n). Registered from ipcHandlers.ts (D10).
 import { offeredVersion, shareDir, shareProgress, tillVersions } from '../updateShare';   // A443, A496
 import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
 import { app } from 'electron';
@@ -12,7 +12,8 @@ import { tillBranchId } from '../deviceConfig';   // A446
 import { signedIn as sessionPerson, personKeys, hasMarker, isOwnerRole } from '../tillAccess';
 import { maySetMpesa } from '@zaptill/core/permissions';   // A492
 import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
-import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getCashierHistoryMethods, setCashierHistoryMethods, getPaymentMethodsEnabled, setPaymentMethodsEnabled, getPlatformPricing } from '../deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getCashierHistoryMethods, setCashierHistoryMethods, getPaymentMethodsEnabled, setPaymentMethodsEnabled, getPlatformPricing, getCategoryLayout, setCategoryLayout } from '../deviceConfig';
+import { CATEGORY_LAYOUT_KEY, CATEGORY_LAYOUT_PERMISSIONS, categoryLayoutSettingValue } from '@zaptill/core/categoryLayout';   // 8n
 import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
 import { type IpcShared } from './shared';
 
@@ -122,6 +123,22 @@ export function registerBranchSettingsHandlers(ctx: IpcShared) {
     if (!branchId) throw new Error('This POS does not know its branch yet — sign in once with a staff PIN, then try again.');
     const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });
     setPaymentMethodsEnabled(list);
+    return out;
+  });
+  // 8n (owner, 2026-11-05: "can we have the option for both which can be toggled per branch by the manager? in the desktop
+  // app?"): how this branch's POS shows its categories. Anyone signed in reads it (the POS screen, offline too — the cached
+  // value); a manager with settings.pos_layout or settings.branches (the owner: everything) changes it for THIS branch — the cloud checks the
+  // value, the permission and the branch again. This POS switches at once; the branch's other POS take it from the change
+  // log, the web POS on its next load.
+  handle('pos:categoryLayout', async () => ({ layout: getCategoryLayout() }));
+  handle('manage:setCategoryLayout', async (_e, raw) => {
+    requireKey([...CATEGORY_LAYOUT_PERMISSIONS], "Your role does not change how this branch's POS shows its categories.");
+    const layout = categoryLayoutSettingValue(raw);
+    if (layout === null) throw new Error('Choose the side panel or the top bar.');
+    const branchId = tillBranchId();
+    if (!branchId) throw new Error('This POS does not know its branch yet — sign in once with a staff PIN, then try again.');
+    const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: CATEGORY_LAYOUT_KEY, value: layout });
+    setCategoryLayout(layout);
     return out;
   });
   // A492: the branch's M-Pesa number (Buy Goods till number, or Paybill + account) — set HERE, on the till, by its manager

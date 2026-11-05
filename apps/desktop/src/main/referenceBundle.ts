@@ -101,6 +101,8 @@ export interface ReferenceBundle {
     scaleBarcodes?: unknown;
     /** A619: the delivery platforms' prices ({ rounding, rules }); null = the node has not been told. */
     platformPrices?: unknown;
+    /** 8n: the branch's category layout ('panel' | 'top'); null = the node has not been told. */
+    posCategoryLayout?: string | null;
     /** 0.6.27: the per-client POS switches; null = the node has not been told. */
     posFeatures?: Record<string, boolean> | null;
     /** 0.6.30: the owner's void window and offline void/refund rules; null = the node has not been told. */
@@ -178,6 +180,7 @@ export interface ReferenceRows {
     noteQuickPicks?: string[] | null; // A367
     scaleBarcodes?: unknown;          // A577
     platformPrices?: unknown;         // A619
+    posCategoryLayout?: string | null; // 8n
     posFeatures?: Record<string, boolean> | null; // 0.6.27
     reversalRules?: ReversalRules | null;         // 0.6.30
     businessName?: string | null;                 // A450
@@ -314,6 +317,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       scaleBarcodes: rows.config.scaleBarcodes ?? null,   // A577: relayed so a peer reads the same scale labels
       platformPrices: rows.config.platformPrices ?? null,   // A619: relayed so a peer charges the same platform prices offline
+      posCategoryLayout: rows.config.posCategoryLayout ?? null,   // 8n: relayed so a peer shows the categories as the branch chose
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
       reversalRules: rows.config.reversalRules ?? null,   // 0.6.30: relayed so a peer applies the owner's rules offline
       // A450: the business's name and currency, and the receipt's Buy Goods / Paybill line — relayed so a peer prints them.
@@ -490,6 +494,13 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
           return typeof raw === 'string' && raw ? JSON.parse(raw) : null;
         } catch { return null; }   // a database before local schema 79
       })(),
+      // 8n: null until the node itself has heard from the cloud (a peer then keeps its own value).
+      posCategoryLayout: (() => {
+        try {
+          const raw = all(`SELECT value FROM maintenance_state WHERE key = 'pos_category_layout'`)[0]?.value;
+          return typeof raw === 'string' && raw ? raw : null;
+        } catch { return null; }
+      })(),
       // 0.6.27: null until the node itself has heard from the cloud (a peer then keeps its own value).
       posFeatures: typeof cfg?.pos_features === 'string' ? parsePosFeatures(cfg.pos_features) : null,
       // 0.6.30: likewise null until the node has heard the owner's rules from the cloud.
@@ -573,6 +584,8 @@ export interface AcquiredReference {
     scaleBarcodes?: unknown;
     /** A619: the delivery platforms' prices. undefined = not said (older cloud / older node) → keep. */
     platformPrices?: unknown;
+    /** 8n: the branch's category layout ('panel' | 'top'). undefined = not said (older cloud / older node) → keep. */
+    posCategoryLayout?: string;
     /** 0.6.27: the per-client POS switches. undefined = not said (older cloud / older node) → keep. */
     posFeatures?: Record<string, boolean>;
     /** A601: the desktop-only cut-off (cloudBackup.ts). undefined = not said (older cloud / older node) → keep. */
@@ -647,6 +660,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
       scaleBarcodes: pi.scaleBarcodes && typeof pi.scaleBarcodes === 'object' ? pi.scaleBarcodes : undefined,   // A577
       platformPrices: pi.platformPrices && typeof pi.platformPrices === 'object' ? pi.platformPrices : undefined,   // A619
+      posCategoryLayout: typeof pi.posCategoryLayout === 'string' ? pi.posCategoryLayout : undefined,   // 8n: a node that has not heard says nothing
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27
       reversalRules: pi.reversalRules && typeof pi.reversalRules === 'object' ? rulesFromWire(pi.reversalRules) : undefined,   // 0.6.30
       ...identityFromWire(pi),   // A450 + A381

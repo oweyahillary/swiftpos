@@ -61,7 +61,8 @@ const NAMES = ['General Manager', 'Operations Manager', 'Finance Manager', 'Audi
 // there, test-migration-175.mjs); 159 is applied in production and is not changed, so it is compared without them.
 // A595: and the 36 narrower rights 176 registers and carries over (test-migration-176.mjs).
 // A599: and the attendance rights 180 registers and gives (test-migration-180.mjs).
-const LATER_KEYS = ['shifts.cash_out', 'expenses.record', ...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices'];
+const LATER_KEYS = ['shifts.cash_out', 'expenses.record', ...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices',
+  'settings.pos_layout'];   // 8n: registered and given to the built-in Manager / GM by migration 190, not 159
 const ROLES = NAMES.map((n) => P.BUILT_IN_ROLES.find((r) => r.name === n))
   .map((r) => r && ({ ...r, keys: r.keys.filter((k) => !LATER_KEYS.includes(k)) }));
 
