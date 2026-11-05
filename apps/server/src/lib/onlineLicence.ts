@@ -8,14 +8,16 @@
  */
 import type { Request } from 'express';
 import { getWebAccess } from './webAccess';
+import { isPosDeviceSurface } from './posSurface';
 
 export const ONLINE_LICENCE_REFUSAL = {
   error: 'This is part of the ZapTill online licence — contact ZapTill to enable it.',
   code: 'ONLINE_LICENCE_REQUIRED',
 } as const;
 
-/** True when the request comes from a desktop POS of a business without the online licence (refuse it). */
+/** True when the request comes from a desktop POS of a business without the online licence (refuse it). Till stage 1:
+ *  an Android Shop POS the same (lib/posSurface.ts). */
 export async function desktopWithoutLicence(req: Request): Promise<boolean> {
-  if (req.surface !== 'desktop') return false;
+  if (!isPosDeviceSurface(req.surface)) return false;
   try { return (await getWebAccess(req.businessId)).fullAccess !== true; } catch { return true; }
 }

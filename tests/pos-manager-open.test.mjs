@@ -29,7 +29,8 @@ ok('routing: a manager resolves to /manager (why the old guard bounced them)', (
 
 ok('cashier guard: only the OWNER is redirected (managers may ring sales)', () => {
   // A608: … and not even the owner when they opened the POS from the dashboard (Open POS — they sell as themselves).
-  assert.match(cashier, /if \(dest === '\/' && !session\.fromDashboard\) navigate\(dest, \{ replace: true \}\);/,
+  // Till stage 1: and not on the Android Shop POS, where an owner sells with their PIN as at a desktop POS.
+  assert.match(cashier, /if \(dest === '\/' && !session\.fromDashboard && !ownTerminal\(\)\) navigate\(dest, \{ replace: true \}\);/,
     "the guard must redirect only dest === '/' (owner), and not an owner who opened the POS from the dashboard");
   assert.doesNotMatch(cashier, /if \(dest !== '\/pos\/cashier'\) navigate/,
     'the old over-broad guard (bounces managers) must be gone');

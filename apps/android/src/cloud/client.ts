@@ -15,8 +15,9 @@ export class CloudError extends Error {
 /** The cloud's /api URL of a path ("/app-update/android/status" → https://…/api/app-update/android/status). */
 export function apiUrl(path: string): string { return `${API_URL}/api${path.startsWith('/') ? path : `/${path}`}`; }
 
-async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown, token?: string | null): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown, token?: string | null,
+  extra: Record<string, string> = {}): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json', ...extra };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;
@@ -31,5 +32,6 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown, 
   throw new CloudError(err.error || `ZapTill answered ${res.status}.`, res.status, err.code ?? null);
 }
 
-export const cloudGet = <T>(path: string, token?: string | null) => request<T>('GET', path, undefined, token);
-export const cloudPost = <T>(path: string, body: unknown, token?: string | null) => request<T>('POST', path, body, token);
+/** extra: headers of the caller's own — Till stage 1: the Shop POS names itself (x-device-id) on its own session's calls. */
+export const cloudGet = <T>(path: string, token?: string | null, extra?: Record<string, string>) => request<T>('GET', path, undefined, token, extra);
+export const cloudPost = <T>(path: string, body: unknown, token?: string | null, extra?: Record<string, string>) => request<T>('POST', path, body, token, extra);

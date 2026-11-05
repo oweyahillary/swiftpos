@@ -24,9 +24,19 @@ export interface CoveredTerminal {
 
 export interface TillOpenShift { id: string; opened_at: string; opened_by: string | null; opened_by_name: string | null }
 
+/**
+ * Till stage 1: the POS this page IS — the Android Shop POS sets it once at start (lib/shopPos.ts setShopPosHost) — or
+ * null in a browser. Kept here, with no imports, because the tests load this file as it is.
+ */
+let own: CoveredTerminal | null = null;
+export function setOwnTerminal(t: CoveredTerminal | null): void { own = t; }
+export function ownTerminal(): CoveredTerminal | null { return own; }
+
 const KEY = 'swiftpos_pos_terminal';
 
 export function getCoveredTerminal(): CoveredTerminal | null {
+  const own = ownTerminal();
+  if (own) return own;   // Till stage 1: a Shop POS covers no other POS — it is its own (lib/shopPos.ts)
   try {
     const raw = sessionStorage.getItem(KEY);
     if (!raw) return null;
@@ -38,6 +48,7 @@ export function getCoveredTerminal(): CoveredTerminal | null {
 }
 
 export function setCoveredTerminal(t: CoveredTerminal | null): void {
+  if (ownTerminal()) return;   // Till stage 1: a Shop POS's drawer is always its own
   try {
     if (t && t.device_id) sessionStorage.setItem(KEY, JSON.stringify(t));
     else sessionStorage.removeItem(KEY);

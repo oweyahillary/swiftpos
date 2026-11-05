@@ -25,6 +25,7 @@ import { pointsEarned } from '@zaptill/core/tender';
 import { QUICK_CASH_LOOK, TIP_LOOK, DISCOUNT_LOOK } from './paymentLooks';
 import { printReceipt } from '../../lib/printReceipt';
 import { printBytesToServer, getQZStatus } from '../../lib/localPrintServer';
+import { shopPosHost, serverPrintOrder } from '../../lib/shopPos';   // Till stage 1: the Android Shop POS
 import { renderEscPos } from '../../lib/escposRenderer';
 import { buildReceiptOrder, buildReceiptBusinessConfig } from '../../lib/buildReceiptOrder';
 import { usePOSAuth } from '../../context/POSAuthContext';
@@ -594,7 +595,24 @@ export default function PaymentModal({
 
   // Silent thermal via the bridge when connected + a receipt printer is paired.
   // Returns true if it printed, false if the bridge path isn't available/failed.
+  // Till stage 1 (lib/shopPos.ts): a Shop POS joined to a branch server prints the receipt there, on the server's receipt
+  // station. null = no server to print through (none, or not reachable) — the receipt then prints directly, below.
+  const receiptThroughBranchServer = async (): Promise<boolean | null> => {
+    const host = shopPosHost();
+    if (!host || !completedOrder) return null;
+    const r = await host.printOrder('receipt', serverPrintOrder({
+      orderNumber: completedOrder.orderNumber, orderType, cashierName: session?.staffName ?? 'Cashier',
+      cart, total: chargedTotal, discount: allDiscount, offers: offerOff > 0 ? offers : undefined, tip: tipAmount,
+      deliveryFee, deliveryFree: free, change: completedOrder.change,
+      payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
+      tableNumber, orderNote, buyerPin: buyer?.sale.buyer_kra_pin,
+    })).catch(() => null);
+    return r ? r.printed > 0 : null;
+  };
+
   const printViaBridge = async (): Promise<boolean> => {
+    const viaServer = await receiptThroughBranchServer();
+    if (viaServer !== null) return viaServer;
     const printerName = printerSettings.receiptPrinterName;
     if (!(completedOrder && printerName && resolvedBusiness && getQZStatus() === 'connected')) return false;
     try {

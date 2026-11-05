@@ -30,9 +30,10 @@ body {
 }
 .screen.centre { min-height: 100vh; justify-content: center; align-items: center; }
 
-h1 { font-size: 28px; line-height: 1.2; margin: 8px 0 0; }
-h2 { font-size: 18px; margin: 0 0 8px; }
-p { margin: 0 0 8px; }
+/* Scoped to .screen: on a Shop POS the web POS screens' Tailwind reset loads after this file (Till stage 1). */
+.screen h1 { font-size: 28px; line-height: 1.2; margin: 8px 0 0; font-weight: 700; }
+.screen h2 { font-size: 18px; margin: 0 0 8px; font-weight: 700; }
+.screen p { margin: 0 0 8px; }
 .lead { font-size: 19px; }
 .note { color: var(--muted); font-size: 15px; }
 .problem { color: var(--danger); }
@@ -70,3 +71,40 @@ button:disabled { opacity: 0.5; }
   body { font-size: 18px; }
   .choices { grid-template-columns: 1fr 1fr; }
 }
+
+/* Till stage 1 — the Shop POS's own screens (joining, the PIN pad, this device) and what covers the web POS screens. */
+.field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
+.field span { color: var(--muted); font-size: 15px; }
+.field input {
+  font: inherit; color: var(--text); background: var(--bg); border: 1.5px solid var(--border); border-radius: 10px;
+  min-height: 48px; padding: 0 12px;
+}
+.field input:focus { outline: none; border-color: var(--brand); }
+.code { font-family: 'JetBrains Mono', monospace; letter-spacing: 1px; }
+.text-button { background: none; border: none; color: var(--brand-light); padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+.link-button { display: inline-flex; align-items: center; text-decoration: none; }
+
+.pin-screen { max-width: 420px; align-items: stretch; }
+.pin-dots { display: flex; gap: 14px; justify-content: center; margin: 8px 0; }
+.pin-dots span { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--muted); }
+.pin-dots span.on { background: var(--brand); border-color: var(--brand); }
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.pin-key {
+  min-height: 72px; border-radius: 14px; background: var(--panel); border: 1.5px solid var(--border); color: var(--text);
+  font-size: 26px; font-weight: 600;
+}
+.pin-key:active { border-color: var(--brand); }
+
+.cover {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(5, 13, 18, 0.88); display: grid; place-items: center; padding: 20px;
+  color: var(--text); font-size: 18px;
+}
+.cover .card { max-width: 520px; }
+.cover h2 { font-size: 24px; margin: 0 0 8px; font-weight: 700; }
+.cover p { margin: 0 0 8px; }
+.print-notice {
+  position: fixed; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 16px); z-index: 1001;
+  display: flex; gap: 12px; align-items: center; justify-content: space-between;
+  background: #3b1d0a; border: 1.5px solid #f59e0b; color: #fde68a; border-radius: 12px; padding: 12px 16px; font-size: 17px;
+}
+.print-notice .ghost { color: #fde68a; border-color: #f59e0b; min-height: 40px; }

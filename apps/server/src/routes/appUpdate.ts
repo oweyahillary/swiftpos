@@ -26,9 +26,10 @@ import { readAndroidApprovals } from '../lib/androidApproval';
 const router = safeRouter();
 
 
-/** The surface a session stands for: a POS's own session sells (Shop POS); a person's session is the owner mode. */
-export function surfaceOfSession(req: { isTill?: boolean }): AndroidSurface {
-  return req.isTill ? 'android-till' : 'mobile';
+/** The surface a session stands for: a POS's own session sells (Shop POS); a person's session is the owner mode.
+ *  Till stage 1: a person's PIN sign-in on a Shop POS (surface 'android-till') asks for the Shop POS too. */
+export function surfaceOfSession(req: { isTill?: boolean; surface?: string | null }): AndroidSurface {
+  return req.isTill || req.surface === 'android-till' ? 'android-till' : 'mobile';
 }
 
 async function releasesOrWarning(): Promise<{ releases: AndroidRelease[]; warning: string | null }> {

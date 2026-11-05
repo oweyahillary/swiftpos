@@ -66,7 +66,8 @@ ok('redeem rejects EXPIRED codes', /\.gt\('expires_at',/.test(redeem));
 ok('redeem is scoped to the business (no cross-tenant redeem)', /\.eq\('business_id',\s*businessId\)/.test(redeem));
 ok('redeem flips the code to redeemed (single-use)', /status:\s*'redeemed'/.test(redeem));
 // A415: the session is the till's own (buildDeviceTokenPayload: surface 'desktop', the till, no person).
-ok('redeem mints the TILL\'s own session (desktop surface, no person)', /buildDeviceTokenPayload\(\{ deviceId, businessId, branchId, sessionId: newSessionId\(\) \}\)/.test(redeem));
+// Till stage 1: + the surface the POS names (a desktop names none → 'desktop'; the Android Shop POS 'android-till').
+ok('redeem mints the TILL\'s own session (desktop surface, no person)', /buildDeviceTokenPayload\(\{ deviceId, businessId, branchId, sessionId: newSessionId\(\),\s+surface: deviceSurfaceOf\(req\.body\?\.surface\) \}\)/.test(redeem));
 ok('redeem returns a single 401 ENROL_INVALID for any failure (no oracle)',
    /status\(401\)[\s\S]{0,120}ENROL_INVALID/.test(redeem) &&
    (redeem.match(/ENROL_INVALID/g) || []).length === 1);

@@ -90,8 +90,13 @@ ok('it does not mint web — this is the bug that hid four features', () => {
     'the desktop licence gate and requireWebSurface, all silently');
 });
 
-ok('it mints desktop', () => {
-  assert.equal(mintedSurface(AUTH, '/enrol/redeem'), "'desktop'");
+// Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): the builder takes the surface the joining POS names — a desktop names none
+// and gets 'desktop'; only the Android Shop POS gets 'android-till' (lib/posSurface.ts deviceSurfaceOf).
+ok('it mints desktop (a desktop names no surface; deviceSurfaceOf gives it the desktop)', () => {
+  assert.equal(mintedSurface(AUTH, '/enrol/redeem'), 'deviceSurfaceOf(c.surface)');
+  assert.match(routeBody(AUTH, '/enrol/redeem'), /surface: deviceSurfaceOf\(req\.body\?\.surface\)/);
+  const SURF = fs.readFileSync(path.join(ROOT, 'apps/server/src/lib/posSurface.ts'), 'utf8');
+  assert.match(SURF, /return claimed === 'android-till' \? 'android-till' : 'desktop';/);
 });
 
 ok('owner login on a till is gone (A158; A415 removed the route itself)', () => {
@@ -104,8 +109,9 @@ ok('the file header and the code agree', () => {
   const header = AUTH.slice(0, AUTH.indexOf('*/'));
   const claimed = /enrol\/redeem[^\n]*surface='(\w+)'/.exec(header);
   assert.ok(claimed, 'the header no longer documents the desktop entry\'s surface');
-  assert.equal(`'${claimed[1]}'`, mintedSurface(AUTH, '/enrol/redeem'),
-    'the header and the payload disagree — that is exactly how this bug survived');
+  // Till stage 1: the payload names the surface through deviceSurfaceOf, whose default is the desktop the header names.
+  assert.equal(claimed[1], 'desktop', 'the header and the payload disagree — that is exactly how this bug survived');
+  assert.equal(mintedSurface(AUTH, '/enrol/redeem'), 'deviceSurfaceOf(c.surface)');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,21 +139,22 @@ ok('offlineAuth is gated on the desktop surface (D16)', () => {
 
 ok('desktop terminal registration is gated on it (D14)', () => {
   const body = routeBody(AUTH, '/verify-pin');
-  assert.match(body, /req\.surface === 'desktop'/);
-  assert.match(body, /registerDesktopTerminal\(/);
+  // Till stage 1: either POS (lib/posSurface.ts) — the desktop as before.
+  assert.match(body, /if \(isPosDeviceSurface\(req\.surface\)\) \{[^\n]*\n\s+await registerDesktopTerminal\(/);
 });
 
 ok('the desktop licence gate is gated on it', () => {
   // D11 rewrote the gate to resolve the operating branch (boundBranch ?? mainBranch)
   // as opBranch, so match the surface key + a desktop_licensed check rather than
   // the old `branch && !branch.desktop_licensed` exact shape.
-  assert.match(POS, /req\.surface === 'desktop' &&[^\n]*desktop_licensed/);
+  // Till stage 1: a Shop POS takes a POS seat too.
+  assert.match(POS, /\(req\.surface === 'desktop' \|\| req\.surface === 'android-till'\) &&[^\n]*desktop_licensed/);
 });
 
 ok('requireWebSurface still exempts owners', () => {
   // Owners must keep web access from a till, or the owner loses the manager
   // screens the moment surface is corrected.
-  assert.match(MW, /req\.isOwner \|\| req\.surface !== 'desktop'/);
+  assert.match(MW, /req\.isOwner \|\| !isPosDeviceSurface\(req\.surface\)/);   // Till stage 1: either POS
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

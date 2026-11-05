@@ -1,6 +1,7 @@
 /**
- * App — the first-launch question until the device has a mode, then that mode's screen (Stage 0: a placeholder that
- * says what comes next, updates, and Reset app). docs/ANDROID-APP-DESIGN.md §2 and "Stage 0 — built".
+ * App — the first-launch question until the device has a mode, then that mode's screen: a Shop POS joins and sells (Till
+ * stage 1, docs/ANDROID-APP-DESIGN.md §11); an owner's phone shows Stage 0's placeholder (updates, Reset app) until Owner
+ * stage A. docs/ANDROID-APP-DESIGN.md §2 and "Stage 0 — built".
  */
 import { useEffect, useState } from 'react';
 import { App as NativeApp } from '@capacitor/app';
@@ -10,6 +11,7 @@ import { startReporting } from './errors/reporter';
 import { forgetDownloads } from './updates/updater';
 import ChooseMode from './screens/ChooseMode';
 import ModeHome from './screens/ModeHome';
+import ShopPos from './screens/shop/ShopPos';
 
 /** The installed APK's version (its versionName); the build's own in a browser preview. */
 async function installedVersion(): Promise<string> {
@@ -42,8 +44,12 @@ export default function App() {
       void startReporting(surfaceOf(mode), version);
     }} />;
   }
-  return <ModeHome mode={state.mode} version={state.version} onReset={async () => {
+  const onReset = async () => {
     await resetApp();
+    window.history.replaceState(null, '', '/');
     setState({ kind: 'choose', version: state.version });
-  }} />;
+  };
+  // Till stage 1: a Shop POS joins, takes PINs and sells (screens/shop); the owner's phone is still Stage 0's placeholder.
+  if (state.mode === 'shop-pos') return <ShopPos version={state.version} onReset={onReset} />;
+  return <ModeHome mode={state.mode} version={state.version} onReset={onReset} />;
 }

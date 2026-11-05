@@ -19,6 +19,7 @@ import { supabase } from './supabase';
 
 import { API_URL } from './config';
 import { posError } from './posError';   // A506
+import { ownTerminal } from './posTerminal';   // Till stage 1: the Android Shop POS (lib/shopPos.ts)
 const BASE_URL = API_URL;
 
 // ── Storage keys (single source of truth) ────────────────────────────────────
@@ -202,6 +203,15 @@ function activeBranchHeader(): Record<string, string> {
 
 // ── Core request ──────────────────────────────────────────────────────────────
 
+/**
+ * Till stage 1 (lib/shopPos.ts): on a Shop POS every request names the POS it comes from, as the POS screens' own client
+ * does (POSAuthContext) — a payment then lands on this POS's drawer. Nothing in a browser.
+ */
+function shopPosDeviceHeader(): Record<string, string> {
+  const id = ownTerminal()?.device_id;
+  return id ? { 'x-device-id': id } : {};
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -212,7 +222,7 @@ async function request<T>(
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', ...authHeader, ...activeBranchHeader() },
+    headers: { 'Content-Type': 'application/json', ...authHeader, ...activeBranchHeader(), ...shopPosDeviceHeader() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 

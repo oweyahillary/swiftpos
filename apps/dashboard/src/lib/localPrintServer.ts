@@ -21,6 +21,12 @@
 // deployed dashboard at the dev API port and silently broke printing (A241). The
 // bridge's own port is configurable on the bridge side (PRINT_BRIDGE_PORT env on
 // the .exe); the dashboard always talks to the default 9911.
+// Till stage 1 (lib/shopPos.ts): inside the Android Shop POS there is no bridge on the PC — the app sends the bytes to the
+// network printer itself. Set once by setShopPosHost; kept here with no imports (the tests load this file as it is).
+type DirectPrinter = (target: string, bytes: Uint8Array) => Promise<void>;
+let directPrinter: DirectPrinter | null = null;
+export function setDirectPrinter(p: DirectPrinter | null): void { directPrinter = p; }
+
 const SERVER_URL  = 'http://127.0.0.1:9911';
 const HEALTH_PATH = `${SERVER_URL}/health`;
 const PRINT_PATH  = `${SERVER_URL}/print`;
@@ -59,7 +65,9 @@ function setStatus(s: QZStatus) {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function getQZStatus(): QZStatus { return status; }
+/** Till stage 1: inside the Android Shop POS the app sends the bytes to the network printer itself (printBytesToServer) —
+ *  always 'connected'; the printer's name is its address ("192.168.1.50" or "192.168.1.50:9100"). */
+export function getQZStatus(): QZStatus { return directPrinter ? 'connected' : status; }
 
 export function onQZStatusChange(fn: (s: QZStatus) => void): () => void {
   statusListeners.push(fn);
@@ -70,6 +78,7 @@ export function onQZStatusChange(fn: (s: QZStatus) => void): () => void {
 // ─── Connect / health check ───────────────────────────────────────────────────
 
 export async function connectQZ(): Promise<boolean> {
+  if (directPrinter) return true;   // Till stage 1: no bridge to look for on a Shop POS
   if (!SERVER_URL) { setStatus('unavailable'); return false; }  // feature off — don't poll the API port
   if (status === 'connecting') return false;
   setStatus('connecting');
@@ -176,6 +185,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 export async function printBytesToServer(target: string, bytes: Uint8Array): Promise<void> {
+  if (directPrinter) { await directPrinter(target, bytes); return; }   // Till stage 1: the Shop POS prints directly
   if (!SERVER_URL) throw new Error('Print server not configured');
   const res = await fetch(PRINT_PATH, {
     method:  'POST',

@@ -21,7 +21,7 @@ import type { DiscountState, LoyaltyState } from './cashier/types';
 import ZReportModal from './ZReportModal';
 import ShiftModal from './ShiftModal';
 import type { Shift, ShiftModalMode } from './ShiftModal';
-import { setCoveredTerminal, loadTills, loadWebTill, ownOpenDrawer, mayEnterSilently, markJoined, currentShiftPath } from '../../lib/posTerminal';
+import { setCoveredTerminal, loadTills, loadWebTill, ownOpenDrawer, mayEnterSilently, markJoined, currentShiftPath, ownTerminal } from '../../lib/posTerminal';
 import PrinterSettingsModal from './PrinterSettingsModal';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 import { type BranchPrinter } from '../../lib/printKOT';
@@ -188,7 +188,9 @@ export default function CashierScreen() {
   useEffect(() => {
     if (!session) return;
     const dest = resolveRoute(session.permissions, session.role);
-    if (dest === '/' && !session.fromDashboard) navigate(dest, { replace: true });   // A608: the owner sells from the dashboard
+    // A608: the owner sells from the dashboard. Till stage 1: not on a Shop POS — there an owner sells with their PIN, as at
+    // a desktop POS (docs/ANDROID-APP-DESIGN.md §2).
+    if (dest === '/' && !session.fromDashboard && !ownTerminal()) navigate(dest, { replace: true });
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Data (usePOSData hook) ────────────────────────────────────────────────
@@ -532,7 +534,9 @@ export default function CashierScreen() {
       .then(async (shift) => {
         // A343 (owner, 2026-09-27): the cashier who OPENED the running shift — or already chose to join it on this
         // browser — goes straight in. Anyone else is asked: join it, or start their own shift on the web till.
-        if (shift && mayEnterSilently(shift as any, session.staffId)) {
+        // Till stage 1: on a Shop POS (its own POS, lib/shopPos.ts) whoever signs in sells into its running shift, as on the
+        // desktop — there is no web till to choose instead.
+        if (shift && (ownTerminal() || mayEnterSilently(shift as any, session.staffId))) {
           setCurrentShift(shift);
           return;
         }

@@ -80,7 +80,8 @@ const src = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/pos.ts'), 'u
 ok('licence gate resolves the operating branch (bound ?? main)',
    /const\s+opBranch\s*=\s*boundBranch\s*\?\?\s*mainBranch/.test(src));
 ok('licence gate keys off the operating branch, not the main branch',
-   /req\.surface\s*===\s*'desktop'\s*&&\s*!opBranch\?\.desktop_licensed/.test(src));
+   // Till stage 1: the Android Shop POS takes a POS seat too.
+   /\(req\.surface\s*===\s*'desktop'\s*\|\|\s*req\.surface\s*===\s*'android-till'\)\s*&&\s*!opBranch\?\.desktop_licensed/.test(src));
 ok('a bound branch is resolved from the caller\'s branch_id',
    /\.eq\('id',\s*requestedBranchId\)/.test(src));
 ok('the bound-branch lookup carries desktop_licensed',

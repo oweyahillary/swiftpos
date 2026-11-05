@@ -1,6 +1,6 @@
 # ZapTill — Android App and Owner Mobile Design
 
-Status: **design approved in outline (2026-10-10); Q1, Q3, Q5, Q6 decided (2026-10-11); Stage 0 built 2026-11-04 on the `android` branch (§10).** Register item **A354**.
+Status: **design approved in outline (2026-10-10); Q1, Q3, Q5, Q6 decided (2026-10-11); Stage 0 built 2026-11-04 on the `android` branch (§10); Q2 decided and Till stage 1 built 2026-11-05 (§11).** Register item **A354**.
 Revision 2: rewritten with the owner on 2026-10-10. Supersedes the 2026-09-28 proposal: bill-number ranges are
 gone, discovery is the A427 broadcast, a till signs in as itself (A415), an owner mode is added, and the work is split
 into stages. Companion to `DESKTOP_DESIGN.md`, `BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` and `PHASE5-NODE-AUTHORITY.md`.
@@ -262,20 +262,28 @@ a re-point, not a rewrite (pinch point 11).
 
 ### 4.3 Joining and discovery
 
-Discovery is automatic and reuses **A427** exactly as the desktop installer does:
+**Joining is done by a technician** (owner, 2026-11-05: "joining should be done by a tech"). ZapTill recommends a
+dedicated branch server (backups, and printing set up once), but many clients have none, so a tablet joins either way
+("build both in the meantime"). The broadcast reuses **A427** exactly as the desktop installer does:
 
 ```
-first launch (Till mode)
+first launch (Till mode) — the technician names the POS ("Front counter")
   → listen for the branch server's broadcast (UDP 4199, "ZAPTILL-SERVER/1") for a few seconds
-     ├─ found → "Join <branch> server at <address>?" → POST /node/join
+     ├─ found → "Join the <name> server at <address>?" → the server's certificate and SECURITY CODE (A489), compared
+     │           with the server's screen → POST /node/join over TLS pinned to that certificate
      │           someone at the server presses Allow → the server gets ONE enrolment code from the cloud
      │           (POST /api/pos/join-code) → the tablet collects it once (/node/join/status) and enrols itself
-     └─ none  → the technician enters a terminal (enrolment) code, as on desktop
-  → the till now has its OWN session (A415) for that business and branch
+     └─ none  → "Enter the enrolment code from ZapTill": the business ID and the one-time code a ZapTill technician
+                issues in the admin portal (A69, the branch's Enrol POS)
+  → the POS now has its OWN session (A415) for that business and branch
 ```
 
 - Till codes and the branch code are set exactly as today; joining never changes them.
-- The tablet takes a **till seat** and reports its role (`role='till'`), so the cloud counts it (D4, Q2).
+- The tablet takes a **POS seat** and reports its role (`role='till'`), so the cloud counts it (D4, Q2 — decided).
+- A branch server too old to have a certificate is not joined through (nothing secret crosses the shop network in
+  plain HTTP); the technician enters the code instead.
+- In Till stage 1 the tablet **sells through the cloud** either way; joined through a branch server it also **prints
+  through it** (§11.4). Selling through the server is Till stage 3.
 - At every start the tablet tries the configured branch server first, then the cloud, then its buffer. It falls back
   **only when an authority could not be reached, never when one answered no** — a 401 is final wherever it comes from.
 
@@ -452,13 +460,17 @@ turning an alert off stops it; iPhone push on iOS 16.4+ after Add to Home Screen
 
 ### Till stage 1 — Online tablet till
 
-- Joining (§4.3): A427 broadcast + Allow, or a terminal code; the till's own session (A415); a till seat.
+- Joining (§4.3), by a technician: A427 broadcast + Allow at the branch server, or the enrolment code from the admin
+  portal; the POS's own session (A415); a POS seat.
 - Selling with the web POS screens on a tablet layout: categories, sizes and add-ons, notes, discounts, held orders,
   delivery and rider, payment methods, split payments, the after-payment screen; staff PINs (online); shifts with
   declared amounts and blind close; kitchen voids.
-- Printing: `shared/printing` bytes over the native TCP plugin; station routing; a printer that is off gives a clear
+- Printing: joined through a branch server → the whole ticket to the server (`POST /node/print`), printed with the
+  server's stations, printers and spool (owner, 2026-11-05: "so that printing can be easier"); no server, or it does not
+  answer → `shared/printing` bytes over the native TCP plugin with station routing; a printer that is off gives a clear
   error and the sale is kept.
 - Without internet: a clear "No connection — can't sell".
+- Built 2026-11-05: §11.
 
 **Tests on hardware:** two tablets printing to one printer at once — both print, nothing garbled; every sale reaches
 the cloud exactly once.
@@ -565,7 +577,10 @@ subtle bugs live.
   (Q6, 2026-10-11)
 - **The tablet is a leaf peer.** Never a node, never promoted, never holds data for another device.
 - **Two setups, one build:** with a branch server (recommended) or with the cloud. No steady state without either.
-- **Discovery is automatic** (A427 broadcast + Allow), with a terminal code as the fallback.
+- **Discovery is automatic** (A427 broadcast + Allow), with a terminal code as the fallback. **A technician joins the
+  tablet** either way; ZapTill recommends a dedicated branch server, but a tablet works without one. (2026-11-05)
+- **A tablet takes a POS seat** (`role='till'`), like a desktop POS. (Q2, Till stage 1)
+- **The cloud's gates treat a Shop POS (`android-till`) as a desktop POS.** (Till stage 1, §11.2)
 - **No bill-number ranges;** order numbers are per device (A181/A183).
 - **Setup-2 offline is Tier 1** (store-and-forward), not a full offline till.
 - **Printing:** one renderer; the branch server's spool in Setup 1, direct + local spool in Setup 2, Bluetooth as a
@@ -583,7 +598,7 @@ subtle bugs live.
 | # | Question | Needed before | Recommendation |
 |---|---|---|---|
 | Q1 | ~~Screen base~~ | — | **Decided:** Capacitor + web screens; iPhone PWA |
-| Q2 | Does a tablet take a **till seat** or a web POS licence? | Till 1 | A till seat (`role='till'`), same as desktop |
+| Q2 | ~~Till seat or web POS licence~~ | — | **Decided (owner-approved, Till stage 1):** a POS seat (`role='till'`), same as desktop (§11) |
 | Q3 | ~~Play Store or direct APK~~ | — | **Decided 2026-10-11:** direct APK (§1.4) |
 | Q4 | **Hardware:** which tablet models, the oldest Android version, which printers? | Till 1 | Android 10+; pick two tablet models and two printer models to certify |
 | Q5 | ~~Every owner or cloud licence only~~ | — | **Decided 2026-10-11:** cloud licence (web access) only (§3.1) |
@@ -748,11 +763,157 @@ first version is ready (batch releases).
 
 ### 10.8 Open items and decisions for later stages
 
-- **Till stage 1: the gates for an `android-till` session.** The cloud's A159 terminal-write guard and the A581 / A601
-  plan gates key on the surface `desktop`; a Shop POS session will carry `android-till`. Decide before Till 1 which of
-  them apply to it (the safe default: the same as a desktop POS, each check extended to both surfaces).
+- ~~**Till stage 1: the gates for an `android-till` session.**~~ Decided and built: the same as a desktop POS, each
+  check extended to both surfaces — every place listed in §11.2.
 - **A Stage 0 install never updates itself** (10.2 item 4): fine for test devices; say so to anyone given the APK.
 - **A download link on our website** (§1.4) is not built; the admin portal's link is.
 - **The release step** in CI (10.6).
 - **Play Protect** may warn on the first install; the guide says what to tap. A Play Store listing for owner mode stays
   open (§1.4).
+
+---
+
+## 11. Till stage 1 — built (2026-11-05, branch `android`)
+
+The online Shop POS (§5 "Till stage 1"): a technician joins the tablet — through the branch server or with the
+enrolment code — staff sign in with their PINs, and they sell with **the web POS screens themselves** (one POS design,
+the desktop as its base — owner, 2026-11-04), online only. Tickets print through the branch server when the tablet
+joined one, else straight to the network printers. No migration.
+
+### 11.1 What was built, and where
+
+| Part | Where | What it does |
+|---|---|---|
+| Shop POS screens | `apps/android/src/screens/shop/` | **ShopPos** (not joined → joining; joined → the router on the web POS's own paths: `/pos` the PIN pad, `/pos/cashier` the web POS, `/pos/device` this tablet), **JoinScreen** (for the technician: name the POS; the branch server found on the network with its security code, or "Enter the enrolment code from ZapTill"), **PinScreen** (PIN pad; arriving there removes the last person's tokens), **ShopDevice** (business, branch, branch server, the receipt printer saved and test-printed, updates, Join again, Reset app), **NoConnection** ("No connection — can't sell", a cover that closes nothing: an order on screen survives a blip), **PrintNotice** (what did not print, in words). |
+| The POS's own session | `src/shop/tillSession.ts` | `POST /api/auth/enrol/redeem` naming `surface: 'android-till'`, `device_role: 'till'`; the token pair, business and branch in the Keystore (`pos.session`), the device secret (`device.secret`); renewal a minute before expiry with the A477 ack; a refused session signs back in with the device secret (`/device-token`), else "a technician joins it again". One renewal at a time. |
+| Joining through the branch server | `src/shop/branchServer.ts`, `BranchServerPlugin.java`, `PinnedTls.java` | The A427 beacon (UDP 4199, with Android's multicast lock), the server's certificate from `/node/tls` (a plain socket: the certificate is public), its **security code**, then `/node/join` and `/node/join/status` over TLS trusting that certificate **byte for byte** (A489). The grant's code enrols at **this app's cloud only** (a grant naming another cloud is refused — the desktop's A494 check). The server address, its certificate, the branch access code and this POS's device key there are kept in the Keystore (`branch.server`). A server without a certificate is not joined. |
+| Staff PINs | `src/shop/pinSignIn.ts` | `POST /api/auth/verify-pin` with the POS's own session → the person's session (`pinSignIn`, surface `android-till`), handed to the web POS screens (`storeCashierSession`). Owners and managers use their PIN too, as at a desktop POS (§2). |
+| The web POS screens, not copied | `apps/dashboard/src/shopPos/ShopPosScreens.tsx` (the ONE way in), `apps/android/vite.config.ts` | The app's bundle includes the dashboard's own CashierScreen and everything it opens. Their packages resolve from the app's `node_modules` (one React); the dashboard's Supabase client is swapped for a stub (`src/shop/supabaseStub.ts`: no Supabase address or key in the APK). Tailwind with the dashboard's own theme (`tailwind.config.cjs`). The app's strict type-check never reaches the dashboard's files: `src/env.d.ts` declares the three exports it uses. Capacitor's `CapacitorHttp` sends the screens' `fetch` through the native HTTP stack (no CORS entry). |
+| The seam in the web POS | `apps/dashboard/src/lib/shopPos.ts`, `posTerminal.ts`, `localPrintServer.ts`, `printRouted.ts`, `api.ts`; `CashierScreen`, `ShiftModal`, `PaymentModal` | Set once by the app (`setShopPosHost`); in a browser nothing is set and nothing changes. On a Shop POS: the POS is **its own drawer** (no "Which POS are you selling on?", it covers no other POS, every request names it — `x-device-id`); whoever signs in sells into its running shift and an owner stays on the POS (as at a desktop POS); tickets go to the branch server first (`printOrder`), else as bytes to the network printer (`printBytes`). |
+| Printing on the tablet | `src/shop/printing.ts`, `RawPrinterPlugin.java`, `RawPrinterSpool.java` | 11.4. |
+| Print relay on the branch server | `apps/desktop/src/main/nodePrintRelay.ts`, `nodeServer.ts` (`POST /node/print`), `ipcHandlers.ts` (registers the server's own `queueThermal`) | 11.4. |
+| Updates | `src/updates/updater.ts` | The update feed asked with the POS's own session (so the business's approval for `android-till` applies); a Shop POS updates only when its drawer is closed — asked of the cloud; when it cannot be told, it waits. |
+| Cloud gates | `apps/server/src/lib/posSurface.ts` and the places in 11.2 | 11.2. |
+
+### 11.2 The cloud's gates for an `android-till` session (decision taken: as a desktop POS)
+
+`lib/posSurface.ts` says once which surfaces are a POS device's: `desktop` and `android-till`. Every place that keyed on
+`desktop` was decided explicitly:
+
+**Extended to the Shop POS (a gate):**
+
+| Place | Gate | Now |
+|---|---|---|
+| `lib/terminalWrites.ts` | A159 terminal-write guard | Both surfaces. The POS's own session: the till's writes only. A person's PIN sign-in: + the manager screens' writes, + on a Shop POS only **`SHOP_POS_WRITES`** — the writes the web POS screens make live that a desktop sends through its sync push (open shift, a float or pay-out, clock in, parking sessions, the M-Pesa prompt, matching a C2B payment, a low-stock level). A desktop PIN sign-in is still refused those. `tests/android-till-stage1.test.mjs` reads every write in the web POS screens and fails when one is not covered. |
+| `lib/cloudPlan.ts` `lapseGateApplies` | A581 lapsed plan | Both. |
+| `lib/cloudPlan.ts` `backupGateApplies` | A601 desktop-only cut-off | Both — so a Shop POS of a business without the online licence cannot sell from the cut-off (it keeps nothing offline in stage 1); see the licence door below. |
+| `lib/cloudPlan.ts` `accessRefusal` | A612 paused branch | Both. |
+| `lib/cloudPlan.ts` `webGateApplies` | A584 web pause | Neither POS (each has the gates above). |
+| `middleware/auth.ts` `branchPauseBlocked` | A612 branch narrowing | Neither POS (refused whole by `accessRefusal`). |
+| `middleware/auth.ts` `requireWebSurface` | the web portal's features (reports, analytics, exports, attendance, loss alerts) | Both kept off — **except** a Shop POS's `GET /api/reports/eod` (`shopPosOwnRead`): the drawer's Z report at close, which the web POS screens read from the cloud (a desktop prints its own). |
+| `lib/onlineLicence.ts` `desktopWithoutLicence` | premium features (activate a pump, loyalty points) | Both. |
+| `routes/auth.ts` `/verify-pin` | the branch's POS licence (`desktop_licensed`) | Both — a tablet takes a POS seat (Q2). |
+| `routes/auth.ts` `/verify-pin` | recording the POS (`registerDesktopTerminal`, role `till`) | Both. |
+| `routes/auth.ts` `/verify-pin` | `pinSignIn` on the person's token (A159 tells a person from the device) | Both. |
+| `routes/pos.ts` `/pos/init` | the branch's POS licence | Both. |
+| `lib/tillSessions.ts` `sessionKind` | an owner's revoke never ends a POS's own session | Both are `device`. |
+| `lib/webPosSignIn.ts` `dashboardSessionKind` | A608: never exchanged for a web POS session | Neither POS. |
+| `lib/deviceGrant.ts` `buildDeviceTokenPayload` | the POS's own token | Takes the surface (`deviceSurfaceOf`: anything but `android-till` is `desktop`, so every desktop build is unchanged); `/enrol/redeem`, `/device-token` and the renewal carry it. |
+| `routes/appUpdate.ts` `surfaceOfSession` | the update feed | A person's PIN sign-in on a Shop POS asks for `android-till` (never `mobile`). |
+
+**New on the Shop POS's door:** `/verify-pin` from a Shop POS refuses a business without the online licence (403
+`ONLINE_LICENCE_REQUIRED`, "A Shop POS tablet sells through the ZapTill cloud, which needs the ZapTill online licence") —
+it would otherwise sign in and then have every sale refused from the A601 cut-off. Owner decision (11.6).
+
+**Kept the desktop's (its protocol, not a gate)** — the Shop POS sells live through the web POS screens, so these answer
+it as they answer the web POS:
+
+| Place | Why it stays `desktop` |
+|---|---|
+| `routes/auth.ts` `offlineAuth` (the person's PIN hash) | Offline sign-in is Till stage 2; no PIN hash goes to a tablet now. |
+| `lib/deviceGrant.ts` `isOwnerEraTillPayload` | Pre-A415 desktop sessions only. |
+| `routes/orders.ts` `tillMadeSale`, the sale's own time (`created_at`, `soldAt`) | A desktop's offline replays; a Shop POS's sale is live, timed by the cloud. |
+| `routes/orders.ts` SHIFT_CLOSED (a sale into a closed drawer) | A desktop sale may have been rung offline; a Shop POS is online, so it is refused and asked for a new shift, as the web. |
+| `routes/orders.ts` the rider's fee paid from the drawer | The web POS has the cloud pay it; a desktop records its own pay-out. |
+| `routes/orders.ts` credit sale source | `web` for a Shop POS (it sells through the web POS's routes). |
+| `routes/shifts.ts` (close / confirm replays with their own times, the till's count, siblings' cash) | A desktop's replays; a Shop POS closes live, as the web POS (blind close, declared amounts, reasons). |
+| `routes/sync.ts`, `routes/backfill.ts` | The desktop's sync push; Till stage 2. |
+| `routes/modifiers.ts`, `routes/variants.ts` (the whole-menu shortcut) | A desktop's menu pull; the web POS screens ask per product. |
+| `routes/reports-monthly.ts` (a desktop manager's monthly pack) | The desktop's manager screens; a Shop POS falls to `requireWebSurface` (refused). |
+| `routes/wastage.ts` `fromTill` | The desktop's offline record fields. |
+| `lib/drawerBell.ts` `webOnly` | A desktop's own writes reach its branch server; a Shop POS's people's writes ring the drawers like the web's. |
+| `lib/liveHub.ts`, `lib/branchDrawers.ts`, `routes/pos.ts` (`/branch-staff`, `/join-code`, `/credit-customers`) | The desktop POS's and the branch server's own channels. |
+
+### 11.3 Joining (by a technician)
+
+The joining screen is worded for the technician. **Through the branch server** (recommended where there is one): the
+tablet lists the servers it hears; the technician taps **Join the <name> server at <address>?**, compares the **security
+code** with the server's screen, taps **Ask to join**, and someone at the server presses **Allow** — the desktop's A427
+flow and its checks as they are (a request lives 10 minutes; a device already holding a key there is refused unless it
+proves it; the notices are rate-limited). **Server side: nothing changed for joining** — a tablet's request is a POS's
+request. **With the enrolment code**: the technician issues it in the admin portal (client › Branches › the branch ›
+**Enrol POS**) and types the business ID and the code.
+
+### 11.4 Printing — and two tablets on one printer
+
+- **Through the branch server** (`POST /node/print`, behind the branch access code checked for every `/node/*` route and
+  a **proven device key**, like `/node/verify-pin`): the tablet sends the whole ticket — the order as the desktop's own
+  sale screen prints it — with a job (`receipt`, `kitchen`, `proforma` = Print bill, `void` = a kitchen void). The server
+  prints it with **its own** stations, category routing, printer assignments (a USB printer on the server PC too) and
+  spool: `nodePrintRelay.relayPrint` → `queueThermal` → `escposBridge.printSale` → `printWorker`, one queue per printer.
+  The answer names any station with no printer, in words the tablet shows. The desktop's own sales are byte-for-byte
+  unchanged (`queueThermal` is not touched; `apps/desktop/test/node-print-relay.test.mjs` compares the tickets).
+- **Directly** (no server, or it did not print): the web POS screens render the ESC/POS bytes with `shared/printing` and
+  route them by station from the branch's printers, exactly as on the web; the tablet sends them over TCP 9100. A
+  printer's address is its name in the web dashboard's **Settings › Printers** ("192.168.1.50" or "192.168.1.50:9100");
+  the receipt printer is set on the tablet (**This device › Receipt printer**).
+- **Two tablets, one printer (pinch point 2):** on one tablet, a fair lock per printer sends one ticket at a time, in
+  order; each ticket goes on **a connection of its own**, written whole and closed — nothing of another ticket ever
+  shares it, so tickets cannot interleave on the paper. A second tablet finds the printer busy (refused or timing out) and
+  waits a random **50–500 ms** before each of up to 6 tries. A ticket cut off half-way is never re-sent by itself (a
+  second partial copy is worse). Through a branch server, the server's own spool serialises every tablet.
+- A printer that is off is said in words ("The printer at 192.168.1.50 is not answering…"); the sale was saved in the
+  cloud before anything printed — the cashier reprints from History.
+
+### 11.5 How to test on hardware (the owner, or a technician)
+
+1. Build and install the debug APK (§10.4; `VITE_API_URL=<dev cloud>` for dev). Choose **Shop POS**.
+2. **Join with the code:** in the admin portal (dev), Enrol POS on a branch with a POS licence; on the tablet name it,
+   type the business ID and code → the PIN pad shows the business and branch. The admin portal lists the POS.
+3. **Join through a branch server:** reset the app, run a desktop in branch-server mode on the same Wi-Fi; the tablet
+   lists it; compare the security codes; Allow at the server → joined. Check the server lists the tablet under its
+   points of sale.
+4. **Sell:** a cashier's PIN → open a shift with a float; ring a restaurant order with sizes, add-ons and a note; hold it;
+   send to kitchen; take a split payment (cash + M-Pesa KES 1 only — the STK sandbox takes real money); see the
+   after-payment screen; a kitchen void; close the shift blind with declared amounts. Repeat on a retail and a
+   petrol-station business.
+5. **Print:** (a) with the server: kitchen and receipt print on the server's printers; switch the server off → the next
+   ticket prints straight to the network printer and the notice says so. (b) without: set the kitchen printer's name to
+   its address in Settings › Printers and the receipt printer on This device; switch a printer off → the notice; the sale
+   is in History.
+6. **Two tablets, one printer:** ring and pay on both at the same moment, ten times — every ticket prints whole, none
+   garbled; every sale reaches the cloud exactly once (the dashboard's Orders).
+7. **No connection:** pull the router's internet → "No connection — can't sell" covers the screen; plug it back → the
+   order on screen is still there.
+
+### 11.6 What the owner checks, open items and decisions
+
+- **No migration.** Run CI; build the APK (`.github/workflows/android.yml` now also runs `RawPrinterSpoolTest` and
+  `PinnedTlsTest`); the hardware tests in 11.5. A branch server must run a desktop build with `/node/print` to print for
+  tablets — an older one answers 404 and the tablet prints directly.
+- **Decision — the online licence at the Shop POS's door** (built: refused without it). The tablet sells only through
+  the cloud, and A601 refuses a desktop-only business's POS sales from the cut-off. Recommendation: keep it until Till
+  stage 3 lets a tablet sell through a branch server.
+- **Decision — printer addresses.** Directly, a printer's *name* in Settings › Printers is its network address; a branch
+  that also prints from the web POS on a PC (the print bridge needs the OS printer name) cannot share one printer entry.
+  Recommendation: a branch server for mixed branches now; a separate "network address" field on branch printers (a
+  migration) when the first mixed client needs it.
+- **Decision — the drawer's Reports tab** (`/api/reports/sales`) stays refused on a Shop POS like on a desktop
+  (web-portal reports); only the Z report reads. Recommendation: keep.
+- **Open:** the tablet sends no machine identity (A477 guid / serial), so its session is not bound to the hardware — Till
+  stage 2 should send a hash of Android's device id. The web POS's **? Help** opens nothing useful in the app, and the
+  customer display (A606) is not offered on a tablet. A web POS covering a POS skips the open-bill sold-out re-check
+  (`routes/orders.ts`, a request naming a device) — a Shop POS does too. **Q4 (hardware)** stays open: Android 10+ tablets
+  and generic network ESC/POS printers, nothing certified yet.
+- **Not in stage 1:** offline selling (Till stage 2), selling through the branch server (Till stage 3), Bluetooth and the
+  foreground print service (Till stage 4).

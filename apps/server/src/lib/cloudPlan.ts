@@ -50,6 +50,7 @@
  * Pure rules first (the tests run them), storage after.
  */
 import { supabase } from './supabase';
+import { isPosDeviceSurface } from './posSurface';   // Till stage 1: the desktop POS and the Android Shop POS alike
 import { memoEnabled, writeGen } from './writeActivity';   // A593
 import { CLOUD_TRIAL_KEY, TRIAL_REPORTS_ONLY_DAYS, cleanTrial, type CloudTrial } from './cloudTrial';
 import {
@@ -502,7 +503,7 @@ const cleanPath = (path: string) => String(path || '').split('?')[0].replace(/\/
 
 /** Does the lapse gate apply to this request? Only a till's (desktop surface) writes, never a web or KDS one, never a read. */
 export function lapseGateApplies(surface: string | null | undefined, method: string, path: string): boolean {
-  if (surface !== 'desktop') return false;
+  if (!isPosDeviceSurface(surface)) return false;   // Till stage 1: a Shop POS's writes wait like a desktop POS's
   if (!WRITES.has(String(method).toUpperCase())) return false;
   const p = cleanPath(path);
   return !OPEN_WHILE_LAPSED.some((re) => re.test(p));
@@ -526,7 +527,7 @@ export const BACKUP_WRITES: RegExp[] = [
 ];
 /** A601: is this one of a POS's backup writes? Only a desktop surface's writes, never a read. */
 export function backupGateApplies(surface: string | null | undefined, method: string, path: string): boolean {
-  if (surface !== 'desktop') return false;
+  if (!isPosDeviceSurface(surface)) return false;   // Till stage 1: a Shop POS too (it then cannot sell: §11.6)
   if (!WRITES.has(String(method).toUpperCase())) return false;
   const p = cleanPath(path);
   return BACKUP_WRITES.some((re) => re.test(p));
@@ -547,7 +548,7 @@ export function backupRefusalBody(s: Pick<CloudStanding, 'desktopOnly'>): { erro
 
 /** A584: the web pause covers every web request (reads too) but sign-in housekeeping (/api/auth/* — sign out, renew). */
 export function webGateApplies(surface: string | null | undefined, path: string): boolean {
-  if (surface === 'desktop' || surface === 'kds') return false;
+  if (isPosDeviceSurface(surface) || surface === 'kds') return false;   // a POS has its own gates above (Till stage 1: both)
   return !/^\/api\/auth\//.test(cleanPath(path));
 }
 
@@ -991,7 +992,7 @@ export async function accessRefusal(businessId: string | null | undefined, surfa
   if (!businessId) return null;
   // A612: a POS (or a person on it) of a PAUSED branch — every request but the open ones, reads included: nothing goes up,
   // nothing comes down (not even a price changed on the web). 503 as a lapsed business's, so every POS version keeps it queued.
-  if (surface === 'desktop' && branchId && !OPEN_WHILE_LAPSED.some((re) => re.test(cleanPath(path)))) {
+  if (isPosDeviceSurface(surface) && branchId && !OPEN_WHILE_LAPSED.some((re) => re.test(cleanPath(path)))) {
     const p = await branchPauseFor(businessId);
     const st = p?.paused.has(branchId) ? p.standings.get(branchId) : undefined;
     if (st) return { status: 503, body: syncRefusalBody(st) };

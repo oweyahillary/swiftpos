@@ -11,6 +11,12 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
     webContentsDebuggingEnabled: false,
   },
+  plugins: {
+    // Till stage 1 (docs/ANDROID-APP-DESIGN.md §11.1): the web POS screens call the cloud with fetch(); with this, Capacitor
+    // sends every fetch / XMLHttpRequest through the same native HTTP stack as src/cloud/client.ts — so the screens, as they
+    // are, need no CORS entry for the app either.
+    CapacitorHttp: { enabled: true },
+  },
 };
 
 export default config;

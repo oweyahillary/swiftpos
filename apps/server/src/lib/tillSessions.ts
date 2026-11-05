@@ -16,6 +16,7 @@
  * is till-safe.
  */
 import { supabase } from './supabase';
+import { isPosDeviceSurface } from './posSurface';
 
 export type SessionKind = 'device' | 'pin' | 'web';
 
@@ -23,7 +24,7 @@ export type SessionKind = 'device' | 'pin' | 'web';
  *  A415: the till's own session names no person (refresh_tokens.user_id is null), so a revoke by person never finds it. */
 export function sessionKind(p: { surface?: string | null; pinSignIn?: boolean | null } | null | undefined): SessionKind {
   if (p?.pinSignIn) return 'pin';
-  if (p?.surface === 'desktop') return 'device';
+  if (isPosDeviceSurface(p?.surface)) return 'device';   // Till stage 1: a Shop POS's own session is a device's too
   return 'web';
 }
 

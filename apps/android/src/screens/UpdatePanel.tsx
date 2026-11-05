@@ -30,7 +30,7 @@ export default function UpdatePanel({ mode, version }: { mode: DeviceMode; versi
   const update = async () => {
     if (check?.verdict.kind !== 'ready') return;
     setBusy(true); setProblem('');
-    try { await installUpdate(check.verdict.offer, setStep); }
+    try { await installUpdate(mode, check.verdict.offer, setStep); }
     catch (e) { setStep(null); setProblem(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };

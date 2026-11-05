@@ -362,7 +362,7 @@ router.get('/init', async (req, res) => {
   // Desktop-licence gate applies to the DESKTOP surface only. The web POS is
   // gated by web access at login (businesses.web_access_expires_at), NOT by a
   // per-branch desktop licence — so web tokens must not be blocked here.
-  if (req.surface === 'desktop' && !opBranch?.desktop_licensed) {
+  if ((req.surface === 'desktop' || req.surface === 'android-till') && !opBranch?.desktop_licensed) {   // Till stage 1: a Shop POS takes a POS seat (Q2)
     res.status(403).json({
       error: 'This branch does not have a desktop licence. Please contact ZapTill to activate.',
       code:  'BRANCH_NOT_LICENSED',

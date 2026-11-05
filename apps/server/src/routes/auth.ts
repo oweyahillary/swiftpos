@@ -24,7 +24,7 @@
  *
  * Routes:
  *   POST /api/auth/login           — email + password → token pair (web dashboard)
- *   POST /api/auth/enrol/redeem    — business_id + one-time code → the till's own session, surface='desktop' (A415: no person in it)
+ *   POST /api/auth/enrol/redeem    — business_id + one-time code → the till's own session, surface='desktop' (A415: no person in it; Till stage 1: 'android-till' when an Android Shop POS names it)
  *   POST /api/auth/device-token    — a till signs itself back in with its device secret
  *   POST /api/auth/refresh         — refresh token → new token pair (rotation)
  *   POST /api/auth/logout          — revoke refresh token (server-side)
@@ -68,6 +68,7 @@ import { resolvePartnerSignIn, checkPartner, writePartners, readPartners, partne
 import { refusesWebPosPin, webPosPinRefusal, dashboardSessionKind, SELL_KEY } from '../lib/webPosSignIn';   // A608
 import { hasPermission } from '@zaptill/core/permissions';   // A608
 import { enrolRefusal } from '../lib/cloudPlan';   // A581: no till joins a lapsed business
+import { deviceSurfaceOf, isPosDeviceSurface } from '../lib/posSurface';   // Till stage 1: the desktop POS and the Android Shop POS
 
 const router = safeRouter();
 
@@ -997,7 +998,9 @@ router.post('/enrol/redeem', async (req, res) => {
   forgetTill(businessId, deviceId);   // A528: joined again (perhaps at another branch) — the sign-in check reads it afresh
   if (joinErr) { sendError(res, joinErr); return; }
 
-  const payload: TokenPayload = buildDeviceTokenPayload({ deviceId, businessId, branchId, sessionId: newSessionId() });
+  // Till stage 1: an Android Shop POS names its surface ('android-till'); a desktop sends none and stays 'desktop'.
+  const payload: TokenPayload = buildDeviceTokenPayload({ deviceId, businessId, branchId, sessionId: newSessionId(),
+    surface: deviceSurfaceOf(req.body?.surface) });
   const { accessToken, refreshToken } = issueTokenPair(payload);
   await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
   await clearTillSessionLost(businessId, deviceId);   // A407: joined again — the alert clears
@@ -1081,7 +1084,10 @@ router.post('/device-token', async (req, res) => {
   }
 
   const branchId = (dev as any).branch_id ?? null;
-  const payload: TokenPayload = buildDeviceTokenPayload({ deviceId, businessId, branchId, sessionId: newSessionId() });
+  // Till stage 1: a Shop POS signs back in as what it is (it names 'android-till', as when it joined). Both surfaces pass
+  // the same gates (lib/posSurface.ts), so the claim widens nothing.
+  const payload: TokenPayload = buildDeviceTokenPayload({ deviceId, businessId, branchId, sessionId: newSessionId(),
+    surface: deviceSurfaceOf(req.body?.surface) });
   const { accessToken, refreshToken } = issueTokenPair(payload);
   await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
 
@@ -1179,6 +1185,7 @@ router.post('/refresh', async (req, res) => {
     newPayload = buildDeviceTokenPayload({
       deviceId: row.device_id, businessId: cleanPayload.businessId,
       branchId: tillBranch(null, row.branch_id, cleanPayload.branchId), sessionId: cleanPayload.sessionId,
+      surface: deviceSurfaceOf(cleanPayload.surface),   // Till stage 1: a Shop POS's session renews as the Shop POS's
     });
     if (!isTillPayload(cleanPayload)) console.log(`[refresh] till ${row.device_id}: owner-era session replaced by the till's own`);
   } else if (cleanPayload.webPartner === true) {
@@ -1884,10 +1891,22 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   // verify-pin runs behind requireAuth; the owner opening the web POS carries
   // surface='web'. The desktop-licence gate is for desktop tills only — web POS
   // access is already granted by web access at owner login.
-  if (req.surface === 'desktop' && !(branch as any).desktop_licensed) {
+  // Till stage 1: a Shop POS takes a POS seat like a desktop POS (Q2) — the same branch licence.
+  if (isPosDeviceSurface(req.surface) && !(branch as any).desktop_licensed) {
     res.status(403).json({
       error: `This branch (${(branch as any).name}) does not have a desktop licence. Please contact ZapTill to activate.`,
       code:  'BRANCH_NOT_LICENSED',
+    });
+    return;
+  }
+
+  // Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): a Shop POS sells through the cloud only — it keeps nothing offline until
+  // Till stage 2 — and a business without the online licence has its POS's sales refused from the A601 cut-off. So the
+  // tablet needs the online licence, said here at the door instead of at the first payment. Owner decision pending (§11.6).
+  if (req.surface === 'android-till' && !(await getWebAccess(req.businessId).catch(() => null))?.fullAccess) {
+    res.status(403).json({
+      error: 'A Shop POS tablet sells through the ZapTill cloud, which needs the ZapTill online licence. Contact ZapTill to enable it.',
+      code:  'ONLINE_LICENCE_REQUIRED',
     });
     return;
   }
@@ -2015,7 +2034,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   // and is untouched; this records the terminal regardless, and only for
   // desktop. Between this and enrolment every till gets a row on its first
   // sign-in without anybody enabling anything.
-  if (req.surface === 'desktop') {
+  if (isPosDeviceSurface(req.surface)) {   // Till stage 1: a Shop POS is recorded as a POS (role 'till') the same way
     await registerDesktopTerminal(req.businessId as string, {
       deviceId:     String(req.body?.device_id ?? ''),
       appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
@@ -2039,7 +2058,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     permissionsVersion: pv,
     sessionId,
     surface:            req.surface ?? 'web',
-    ...(req.surface === 'desktop' ? { pinSignIn: true } : {}),   // A159: a person, not the till's device token
+    ...(isPosDeviceSurface(req.surface) ? { pinSignIn: true } : {}),   // A159: a person, not the till's device token (Till stage 1: either POS)
   };
 
   const { accessToken, refreshToken } = issueTokenPair(tokenPayload);

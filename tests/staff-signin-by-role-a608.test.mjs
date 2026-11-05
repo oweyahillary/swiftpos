@@ -463,7 +463,7 @@ try {
     assert.equal((cs.match(/navigate\(exitTo\)/g) ?? []).length, 3);
     assert.doesNotMatch(cs, /hasManagerPortal|navigate\('\/manager'\)|Manager portal/, 'A608 part 3: the web manager portal is retired');
     assert.match(cs, /← Dashboard/);
-    assert.match(cs, /if \(dest === '\/' && !session\.fromDashboard\) navigate/);
+    assert.match(cs, /if \(dest === '\/' && !session\.fromDashboard && !ownTerminal\(\)\) navigate/);   // Till stage 1: not on a Shop POS
     const ctx = read('apps/dashboard/src/context/POSAuthContext.tsx');
     assert.match(ctx, /if \(session\?\.fromDashboard && session\.branchId\) headers\['X-Branch-Id'\] = session\.branchId;/);
     const login = read('apps/dashboard/src/pages/pos/POSLoginScreen.tsx');

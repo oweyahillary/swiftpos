@@ -5,6 +5,10 @@
  *   ApkUpdater    download the approved APK, check its SHA-256 while it streams, hand it to Android's installer
  *   CrashReports  the last native crash (kept on disk by the crash handler until the app reports it) and the device's
  *                 Android version and model, for error reports
+ *   RawPrinter    Till stage 1: a ticket's ESC/POS bytes to a network printer (TCP 9100), one connection per ticket and one
+ *                 ticket at a time per printer (RawPrinterSpool.java)
+ *   BranchServer  Till stage 1: the branch server on the shop network — its beacon (UDP 4199), its public certificate, and
+ *                 requests over TLS trusting only that certificate (PinnedTls.java)
  */
 import { registerPlugin } from '@capacitor/core';
 
@@ -32,5 +36,22 @@ export interface CrashReportsPlugin {
   deviceSummary(): Promise<{ summary: string }>;
 }
 
+export interface RawPrinterPlugin {
+  /** Rejects with code PRINTER_UNREACHABLE (off, or busy past the retries), PRINTER_FAILED (cut off while printing) or
+   *  PRINTER_ADDRESS (not a network address), each with words for the screen. */
+  send(options: { host: string; port: number; data: string }): Promise<{ bytes: number }>;
+}
+
+export interface BranchServerPlugin {
+  /** Every UDP packet heard on the beacon port for ms milliseconds — the app keeps only real beacons (shop/branchServer.ts). */
+  listen(options: { ms: number }): Promise<{ heard: Array<{ ip: string; text: string }> }>;
+  /** The server's certificate (public) and its security code; old: a server too old to have one (not joined). */
+  readCert(options: { url: string }): Promise<{ cert?: string; code?: string; old?: boolean }>;
+  /** One request over TLS trusting only cert. Rejects with UNREACHABLE, or IDENTITY_CHANGED for any other certificate. */
+  request(options: { url: string; method: 'GET' | 'POST'; headers?: Record<string, string>; body?: string; cert: string; timeoutMs?: number }): Promise<{ status: number; body: string }>;
+}
+
 export const ApkUpdater = registerPlugin<ApkUpdaterPlugin>('ApkUpdater');
 export const CrashReports = registerPlugin<CrashReportsPlugin>('CrashReports');
+export const RawPrinter = registerPlugin<RawPrinterPlugin>('RawPrinter');
+export const BranchServer = registerPlugin<BranchServerPlugin>('BranchServer');

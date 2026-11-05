@@ -146,7 +146,8 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.WEB_TILL_TS) {
   // ── 3. The screens (source — React not run here) ──
   await ok('the web sign-in asks first: only mayEnterSilently(current, me) goes straight in; choosing marks it', () => {
     const c = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-    assert.match(c, /if \(shift && mayEnterSilently\(shift as any, session\.staffId\)\) \{\s*setCurrentShift\(shift\);\s*return;\s*\}/);
+    // Till stage 1: on the Android Shop POS (ownTerminal) whoever signs in sells into its running shift, as on the desktop.
+    assert.match(c, /if \(shift && \(ownTerminal\(\) \|\| mayEnterSilently\(shift as any, session\.staffId\)\)\) \{\s*setCurrentShift\(shift\);\s*return;\s*\}/);
     assert.match(c, /onShiftOpened=\{\(shift\) => \{ markJoined\(shift\.id, session\?\.staffId\);/);
   });
   await ok('the picker offers the web till first and spells out "join it, or start your own"', () => {

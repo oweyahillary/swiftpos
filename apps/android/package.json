@@ -19,14 +19,19 @@
     "@capacitor/preferences": "8.0.1",
     "@fontsource-variable/source-sans-3": "^5.3.1",
     "@zaptill/core": "file:../../packages/core",
+    "@zaptill/ui": "file:../../packages/ui",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.0",
     "@types/react": "^18.3.29",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.31",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.8.3",
     "vite": "^6.4.5"
   },

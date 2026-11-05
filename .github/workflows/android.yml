@@ -25,7 +25,12 @@ on:
   pull_request:
     paths:
       - 'apps/android/**'
-      - 'packages/core/src/androidApp.ts'
+      # Till stage 1: the Shop POS bundles the web POS screens (apps/dashboard/src, through one entry —
+      # shopPos/ShopPosScreens.tsx), the shared pieces and the receipt renderer.
+      - 'apps/dashboard/src/**'
+      - 'apps/dashboard/tailwind.config.js'
+      - 'packages/**'
+      - 'shared/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
@@ -65,8 +70,10 @@ jobs:
       - name: Type-check and build the screens, copy them into the Android project
         run: npm run sync
 
-      # chmod: a commit from Windows may not carry gradlew's executable bit.
-      - name: Native unit tests (the updater's checks)
+      # chmod: a commit from Windows may not carry gradlew's executable bit. Till stage 1 adds RawPrinterSpoolTest (one
+      # ticket at a time per printer, the jittered retry, nothing sent twice) and PinnedTlsTest (the branch server's
+      # certificate, byte for byte).
+      - name: Native unit tests (the updater's checks; printing and the branch server's certificate)
         working-directory: apps/android/android
         run: |
           chmod +x gradlew
