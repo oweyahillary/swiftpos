@@ -54,7 +54,7 @@ ok('A273: opening a shift adopts the till identity BEFORE the /open call', () =>
 ok('A273: an already-open till drawer is adopted (409 → /current), not errored', () => {
   const s = r(MOD);
   const h = /const handleOpen = async[\s\S]*?\n  \};/.exec(s)[0];
-  assert.match(h, /const existing = await posApi\.get<Shift \| null>\('\/api\/shifts\/current'\)/);
+  assert.match(h, /const existing = await posApi\.get<Shift \| null>\(currentShiftPath\(branchId\)\)/);
   assert.match(h, /if \(existing\) \{ onShiftOpened\?\.\(existing\); return; \}/);
 });
 
