@@ -38,6 +38,8 @@ export interface WebStation {
   proforma?: boolean;
   /** 0.6.28: a kitchen void — the ticket prints under a VOID banner. */
   voided?: { by?: string; reason?: string };
+  /** 2026-11-05: Transfer table — the ticket prints under a MOVED banner with the table the order left. */
+  moved?: { from: string };
 }
 export function renderStationEscPos(order: ReceiptOrder, business: ReceiptBusinessConfig, station: WebStation): Uint8Array;
 // true if this routed station has any printable line for the order (A254: skip blank tickets).

@@ -255,4 +255,7 @@ export interface PrintContext {
   proforma?: boolean;
   /** Set when the order was voided. Drives the VOID layout. */
   voided?: { at: Date; by: string; reason?: string };
+  /** Owner, 2026-11-05: Transfer table — the items the kitchen already has, again under MOVED, with the table they left
+   *  (the order's tableNumber is the new one). Production tickets only. */
+  moved?: { from: string };
 }

@@ -321,6 +321,8 @@ export function createIpcShared(handle: IpcHandle) {
           voided:         payload.kitchen_void
             ? { at: new Date(), by: String(payload.kitchen_void.by ?? ''), reason: String(payload.kitchen_void.reason ?? '') }
             : undefined,
+          // 2026-11-05: Transfer table — what the kitchen has, again under MOVED with the table it left (kitchen:move).
+          moved:          payload.kitchen_moved ? { from: String(payload.kitchen_moved.from ?? '') } : undefined,
           kotCount:       effective.filter(
             st => st.kind !== 'receipt' && assignedIds.has(st.id)).length,
           reprint,

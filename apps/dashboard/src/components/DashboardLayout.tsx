@@ -245,7 +245,8 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/settings/devices':      ['devices.view', 'devices.approve', 'stations.manage'],   // A595: seeing the POS devices
   '/dashboard/settings/business':     ['settings.business', 'settings.branches', 'settings.payments', 'settings.reversals',
     'settings.integrations', 'settings.pos', 'receipt.manage', 'tables.manage', 'etims.manage',
-    'settings.tax', 'settings.sales_rules', 'settings.webhooks', 'settings.report_emails'],   // A595: the parts
+    'settings.tax', 'settings.sales_rules', 'settings.webhooks', 'settings.report_emails',   // A595: the parts
+    'settings.pos_layout'],   // 8n: a Manager reaches Business › Branches for the branch's POS layout
 };
 
 const TYPE_ICON: Record<string, string> = {

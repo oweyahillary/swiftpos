@@ -11,10 +11,12 @@ const withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.s
 // A254 FIX: pass the station's cut/feed/drawer through to toEscPos. Without this
 // the paper never cut (continuous receipts) and never fed clear of the head (no
 // bottom margin) — the opts were being dropped on every render.
-function emit(station, order, business, reprint, proforma, voided) {
+function emit(station, order, business, reprint, proforma, voided, moved) {
   // 0.6.28: `voided` — a kitchen void: the kitchen/dispatch ticket prints under the VOID banner so the cook stops.
+  // 2026-11-05: `moved` — Transfer table: what the kitchen has, again under MOVED, with the table it left.
   const doc = renderTicket({ order: withDate(order), business, station, reprint, proforma,
-    voided: voided ? { at: new Date(), by: String(voided.by ?? ''), reason: voided.reason } : undefined });
+    voided: voided ? { at: new Date(), by: String(voided.by ?? ''), reason: voided.reason } : undefined,
+    moved: moved ? { from: String(moved.from ?? '') } : undefined });
   return toEscPos(doc, {
     cut:           station.cutPaper,
     feedBeforeCut: station.feedBeforeCut,
@@ -58,8 +60,9 @@ function stationConfigForType(type, id, paperWidthMm) {
     showFooterCount: true, attributeStyle: 'always-sublines', openCashDrawer: false };
 }
 
-export function renderStationEscPos(order, business, station) {   // station = { id, type, paperWidthMm, proforma?, voided? }
-  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business, undefined, station.proforma, station.voided);
+export function renderStationEscPos(order, business, station) {   // station = { id, type, paperWidthMm, proforma?, voided?, moved? }
+  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business, undefined, station.proforma,
+    station.voided, station.moved);
 }
 
 // Lets printRouted skip a routed station that has nothing routed to it (no blank

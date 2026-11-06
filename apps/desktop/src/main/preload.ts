@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     activatePump: (pumpId: string)    => ipcRenderer.invoke('pos:activatePump', pumpId),   // online licence: the pump dispensing
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
     paymentMethodsEnabled: ()         => ipcRenderer.invoke('pos:paymentMethodsEnabled'),   // A429
+    categoryLayout: ()                => ipcRenderer.invoke('pos:categoryLayout'),   // 8n: side panel or top bar
     offers: ()                        => ipcRenderer.invoke('pos:offers'),   // A445
     // A278: main pushes 'catalogue:changed' after a background pull applied a web edit, so the
     // running POS reloads products/prices without a restart. Returns its own unsubscribe.
@@ -351,6 +352,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   kitchen: {
     sent:  (p: unknown) => ipcRenderer.invoke('kitchen:sent', p),
     void:  (p: unknown) => ipcRenderer.invoke('kitchen:void', p),
+    move:  (p: unknown) => ipcRenderer.invoke('kitchen:move', p),
     open:  ()           => ipcRenderer.invoke('kitchen:open'),
   },
 
@@ -455,6 +457,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
     setReversalRule: (key: string, value: unknown)       => ipcRenderer.invoke('manage:setReversalRule', { key, value }),   // 0.6.30
     setPaymentMethodsEnabled: (codes: string[])          => ipcRenderer.invoke('manage:setPaymentMethodsEnabled', codes),   // A429
+    setCategoryLayout: (layout: string)                  => ipcRenderer.invoke('manage:setCategoryLayout', layout),   // 8n
     getMpesa:                 ()                         => ipcRenderer.invoke('manage:getMpesa'),                          // A492
     setMpesa:                 (v: { kind?: string; number?: string; account?: string; clear?: boolean }) => ipcRenderer.invoke('manage:setMpesa', v),   // A492
     offers: ()                                           => ipcRenderer.invoke('manage:offers'),   // A445

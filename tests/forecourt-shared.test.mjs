@@ -15,6 +15,10 @@
  *   - FuelKeypad's Add without `disabled={!ready}`                          → K "Add to sale off"
  *   - CashierScreen keeping its own Amount / Litres inputs (fuelAmountStr)   → O "no app keeps a keypad"
  *   - the web's dispenser grid at minmax(200px, …)                          → P "two to a phone's width"
+ *   - addPumpFuel opening a new sale even when the pump has one             → T "only when it has none"
+ *
+ *   T  a pump tapped on the web (owner, 2026-11-05): the keypad for its grade straight away, as on the desktop; the pump's
+ *      sale opens and the pump is activated only when fuel is added; closing the keypad leaves nothing behind.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -73,6 +77,18 @@ export { renderToStaticMarkup } from 'react-dom/server';`);
     cs.includes("gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))'") && cs.includes("gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))'"));
   ok('the keypad\'s card fits a phone (92 % of the width, scrolls when short)', /card: \{ className: 'animate-pop-in', style: \{ width: '92vw', maxWidth: 420, maxHeight: '94vh', overflowY: 'auto'/.test(web));
   ok('the web\'s product tile and its fuel nozzles stay as they are', cs.includes('<FuelStrip grades={fuelGrades.map') && cs.includes('data-testid="product-card"'));
+
+  console.log('\nT. A pump tapped (owner, 2026-11-05: the desktop\'s way on the web)');
+  const fn = (name) => { const i = cs.indexOf(`function ${name}(`); return i < 0 ? '' : cs.slice(i, cs.indexOf('\n  }\n', i)); };
+  const tap = fn('onPumpTap'), add = fn('addPumpFuel'), shut = fn('closeFuelKeypad');
+  ok('a pump with a priced grade opens the keypad for that grade — no Activate question first',
+    /if \(grade && Number\(grade\.base_price\) > 0\) \{\s*setKeypadPump\(pump\);\s*setFuelEntry\(grade\);\s*return;/.test(tap)
+      && tap.indexOf('setFuelEntry(grade)') < tap.indexOf('setShowPumpModal(true)'), tap);
+  ok('a pump already on a sale switches to that sale before the keypad opens', tap.indexOf('setActiveKey(key)') > -1 && tap.indexOf('setActiveKey(key)') < tap.indexOf('setFuelEntry(grade)'), tap);
+  ok('the pump\'s sale opens (and the pump is activated) only when fuel is added, and only when it has none',
+    /if \(keypadPump && !saleOfPump\(keypadPump\.id\)\) openPumpSale\(keypadPump\);\s*addFuelToCart\(grade, litres, amount\);/.test(add), add);
+  ok('closing the keypad leaves no sale and no activated pump', shut.includes('setKeypadPump(null)') && !/openPumpSale|activate/.test(shut), shut);
+  ok('the keypad adds through the pump\'s path', cs.includes('onAdd={(litres, amount) => addPumpFuel(fuelEntry, litres, amount)} onClose={closeFuelKeypad}'));
 } catch (e) {
   ok('the test ran to its end', false, e?.stack ?? String(e));
 } finally {

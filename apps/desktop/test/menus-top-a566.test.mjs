@@ -133,7 +133,7 @@ try {
   const pos = src('renderer/pages/POSPage.tsx');
   ok('the sale screen: the bar under the search, before the grid, fed by menuBarTabs; the panel told the bar is there',
     /const menuBar = useMemo\(\(\) => menuBarTabs\(menusNow, categoriesNow\), \[menusNow, categoriesNow\]\);/.test(pos)   // A578: the menus open now
-    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} label=\{words\.menus\} hints=\{hours\.hints\}[\s\S]*?\) : undefined\} \/>/.test(pos)   // A578: + hints and Show all
+    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} panel=\{catPanel\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} label=\{words\.menus\} hints=\{hours\.hints\}[\s\S]*?\) : undefined\} \/>/.test(pos)   // A578: + hints and Show all
     && /overlay=\{narrowWindow\} menuBar=\{menuBar\.length > 0\} \/>/.test(pos));
   ok('…a tap on a menu shows its items: the menu remembered (A554), its category and any search start again',
     /const pickMenu = \(id: string\) => \{ catPanel\.setMenu\(id\); setActiveCategory\('all'\); setSearch\(''\); \};/.test(pos));

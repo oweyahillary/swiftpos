@@ -107,11 +107,11 @@ await ok('paths: every kitchen print path hands the switch to the renderer (till
   const pw = read('apps/desktop/src/main/print/printWorker.ts');
   assert.match(pw, /kitchenFontB = kitchenFontBFrom\(getPosFeatures\(\)\);/);
   assert.match(pw, /\.\.\.\(kitchenFontB \? \{ kitchenFontB \} : \{\}\)/);
-  // The web POS's kitchen tickets: Send to kitchen, the kitchen VOID, pay-first (and Print Bill already had them).
+  // The web POS's kitchen tickets: Send to kitchen, the kitchen VOID, pay-first, the MOVED ticket of Transfer table (2026-11-05) (and Print Bill already had them).
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   const calls = cs.split('printRoutedStations({').slice(1).map((c) => c.slice(0, c.indexOf('})')));
   const kitchenCalls = calls.filter((c) => /kinds: \['kitchen', 'dispatch'\]/.test(c));
-  assert.equal(kitchenCalls.length, 3, 'three kitchen print calls');
+  assert.equal(kitchenCalls.length, 4, 'four kitchen print calls');
   for (const c of kitchenCalls) assert.match(c, /\bposFeatures,/, c.slice(0, 120));
   assert.match(read('apps/dashboard/src/lib/printRouted.ts'), /posFeatures: a\.posFeatures \}\);/);
   assert.match(read('apps/dashboard/src/lib/buildReceiptOrder.ts'), /kitchenFontB:\s+extra\.posFeatures\?\.kitchen_font_b === true,/);

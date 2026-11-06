@@ -201,7 +201,7 @@ try {
     /min-h-\[48px\]/.test(look) && (look.match(/min-h-\[40px\]/g) || []).length >= 3 && /bg-action-500/.test(look) && !/onMouseEnter|onMouseOver/.test(panel));
   ok('the sale screen: ☰ before the search, the chip after it; the old category row is gone',
     /<PanelToggle panel=\{catPanel\} \/>\s*<input\s+type="text"\s+placeholder="Search products…"/.test(pos)
-    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} \/>/.test(pos)
+    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} panel=\{catPanel\} \/>/.test(pos)
     && !/border-b border-gray-800 overflow-x-auto/.test(pos) && !/categories\.map\(\(cat: any\) => \(/.test(pos));
   // A566: the panel is told when the menus are across the top (menuBar) and the menu does not narrow a search
   // (gridMenuScope) — apps/desktop/test/menus-top-a566.test.mjs pins the rest.

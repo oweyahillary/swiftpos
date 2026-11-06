@@ -287,6 +287,11 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Discount limit and selling rules', description: 'The discount limit, continuous operation and how the sales history is shown to cashiers' },
   { key: 'settings.branches',    group: 'settings', surface: 'web',
     label: 'Branches', description: 'Branch details and each branch\'s own settings' },
+  // 8n (owner, 2026-11-05: "lets go with your recommendations since in future we might get more items under POS layout"):
+  // how a branch's POS screen is laid out — its own key, a Manager's by default (settings.branches still allows it, so the
+  // owner, a General Manager and the holders of settings.manage keep it). Registered and granted by migration 190.
+  { key: 'settings.pos_layout',  group: 'settings', surface: 'both', manager: true,
+    label: 'POS layout', description: 'How the POS screen is laid out at a branch (the categories in a side panel or across the top, for now)' },
   { key: 'settings.payments',    group: 'settings', surface: 'both',
     label: 'Payment methods', description: 'Which payment methods each branch takes, and the business\'s own methods' },
   { key: 'settings.mpesa',       group: 'settings', surface: 'till', /* A595 D9: not a new Manager's */
@@ -417,7 +422,8 @@ export const LEGACY: Readonly<Record<string, readonly string[]>> = {
   'settings.manage':   ['settings.business', 'settings.branches', 'settings.payments', 'settings.integrations',
                         'receipt.manage', 'stations.manage', 'tables.manage', 'devices.approve', 'etims.manage',
                         'changes.approve', 'shifts.force_close', 'shifts.close_day', 'shifts.confirm', 'sales.reprint',
-                        'settings.mpesa', 'shifts.close_branch'],   // A520: settings.manage closed the branch before
+                        'settings.mpesa', 'shifts.close_branch',   // A520: settings.manage closed the branch before
+                        'settings.pos_layout'],   // 8n: it held settings.branches, which allows the POS layout
 };
 
 /** Keys that, before A490, EVERY signed-in person could use (no check existed). Migration 134 grants them to the

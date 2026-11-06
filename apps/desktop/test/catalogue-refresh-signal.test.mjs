@@ -97,7 +97,8 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      setPaymentMethodsEnabled: () => {},   // A429
                      setScaleBarcodes: () => {},   // A577
                      setThemesPremium: () => {},   // A617
-                     setPlatformPricing: () => {} };   // A619`);
+                     setPlatformPricing: () => {},   // A619
+                     setCategoryLayout: () => {} };   // 8n`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

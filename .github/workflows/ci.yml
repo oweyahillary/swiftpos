@@ -867,6 +867,24 @@ jobs:
       - name: One forecourt for both POS
         run: node --no-warnings tests/forecourt-shared.test.mjs
 
+      # Owner, 2026-11-05: Transfer table tells the kitchen — what it has of the order again under MOVED, with the new table
+      # and the one it left (shared/printing, through the web bundle); the web order moves on the cloud too
+      # (POST /api/orders/:id/move-table). The desktop's kitchen:move is in the desktop job (print-bill-transfer).
+      - name: Transfer table tells the kitchen (MOVED ticket)
+        run: node --no-warnings tests/table-move-kitchen.test.mjs
+
+      # Owner, 2026-11-05 ("both"): Reports › M-Pesa statement — the Org Portal's Excel/CSV or the business app's PDF, read
+      # in the browser (a real PDF made in the test, read by the dashboard's pdf.js), matched with @zaptill/core/mpesaStatement
+      # against the POS's M-Pesa sales (GET /api/payments/mpesa-statement/sales).
+      - name: M-Pesa statement check (Excel, CSV and PDF)
+        run: node --no-warnings tests/mpesa-statement.test.mjs
+
+      # Owner, 2026-11-05: the categories in the side panel or across the top, chosen per branch by its manager, on both POS
+      # (docs/SHARED-COMPONENTS-PLAN.md 8n) — the real @zaptill/ui CategoryBar / panel rendered in each app's look, the
+      # rule in @zaptill/core/categoryLayout, the cloud's check and pos/init. The desktop's cache is in the desktop job.
+      - name: Category layout per branch (side panel or top bar)
+        run: node --no-warnings tests/category-layout-8n.test.mjs
+
       # A622 — the cloud keeps a till's install_error (the updater's reason an install did not take) and the admin
       # portal's Desktop updates line shows it.
       - name: Why an install did not take, on the admin portal (A622)
@@ -1917,6 +1935,13 @@ jobs:
         env:
           TZ: UTC
         run: node --no-warnings test/branch-branding-a544.test.mjs
+
+      # 8n (owner, 2026-11-05) — the branch's category layout on the desktop POS: pulled with pos/init and kept offline
+      # (maintenance_state), carried by the change log's setup topic, relayed by the branch server; Manager › Settings
+      # changes it with settings.branches (refused without, panel / top only) and this POS switches at once.
+      - name: Desktop category layout per branch (8n)
+        working-directory: apps/desktop
+        run: node --no-warnings test/category-layout-8n.test.mjs
 
       # A597 — the owner's brand colours on the till: pulled with the branding (no schema bump), an older cloud leaves them,
       # none with themes off or under a branch's own theme, a database without the columns reads as none, the branch

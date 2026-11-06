@@ -26,6 +26,7 @@ import { parseStockCountFreeze, freezeExpired, NO_FREEZE, type StockCountFreeze 
 import { logLine } from './logFile';   // A521
 import { cleanScaleSettings, scaleSettingsOrDefault, type ScaleSettings } from '@zaptill/core/scaleBarcode';   // A577
 import { cleanPricing, type PlatformPricing } from '@zaptill/core/platformPrices';   // A619
+import { categoryLayoutOf, categoryLayoutSettingValue, type CategoryLayout } from '@zaptill/core/categoryLayout';   // 8n
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -401,6 +402,26 @@ export function getThemesPremium(): boolean | null {
     const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(THEMES_PREMIUM_KEY) as { value?: string } | undefined;
     return row?.value === '1' ? true : row?.value === '0' ? false : null;
   } catch { return null; }
+}
+
+/**
+ * 8n (owner, 2026-11-05): how this branch's POS shows its categories — the side panel or the top bar (pos/init
+ * posCategoryLayout; the change log's 'setup' topic; a branch server's bundle). Kept in maintenance_state like the eTIMS
+ * flag (no local schema change), so the POS keeps the last value offline. undefined or anything unknown = not said → keep.
+ * The getter: 'panel' (the standard) until the cloud has said.
+ */
+export const CATEGORY_LAYOUT_STATE_KEY = 'pos_category_layout';
+export function setCategoryLayout(raw: unknown): void {
+  const v = categoryLayoutSettingValue(raw);
+  if (v === null) return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(CATEGORY_LAYOUT_STATE_KEY, v, new Date().toISOString());
+}
+export function getCategoryLayout(): CategoryLayout {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(CATEGORY_LAYOUT_STATE_KEY) as { value?: string } | undefined;
+    return categoryLayoutOf(row?.value);
+  } catch { return categoryLayoutOf(null); }
 }
 
 /** 0.6.27: the switches as the till last heard them (all off until told). */

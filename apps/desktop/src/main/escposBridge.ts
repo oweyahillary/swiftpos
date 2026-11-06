@@ -276,6 +276,8 @@ export interface SaleForPrint {
   reprint?: { at: Date; count: number };
   /** 0.6.28: a KITCHEN VOID — the production ticket prints under a VOID banner so the kitchen stops that dish. */
   voided?: { at: Date; by: string; reason?: string };
+  /** 2026-11-05: Transfer table — the production ticket prints under MOVED with the table the order left. */
+  moved?: { from: string };
   /** A552: a sale on account — the customer, and what they owe after it (the receipt's payment block). */
   account?: { customer: string; balanceOwed: number };
   /** Owner, 2026-11-04: Print bill — the bill before payment under "BILL - NOT A RECEIPT" (shared/printing proforma). */
@@ -414,6 +416,7 @@ export function printSale(
       business,
       reprint: sale.reprint,
       voided:  sale.voided,   // 0.6.28: kitchen void
+      moved:   sale.moved,    // 2026-11-05: Transfer table
       ...(sale.proforma ? { proforma: true } : {}),   // owner 2026-11-04: Print bill (a sale's receipt has no such key)
       order: {
         billNumber:     sale.billNumber,

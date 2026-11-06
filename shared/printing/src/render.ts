@@ -255,6 +255,10 @@ function renderProduction(ctx: PrintContext): Document {
     d.line('VOID', { align: 'center', size: 'large', bold: true });
     d.line(rule(cols));
   }
+  if (ctx.moved) {
+    d.line('MOVED', { align: 'center', size: 'large', bold: true });
+    d.line(rule(cols));
+  }
 
   d.line(`* * ${station.name.toUpperCase()} * *`, { align: 'center', size: 'tall', bold: true });
   d.blank();
@@ -262,8 +266,9 @@ function renderProduction(ctx: PrintContext): Document {
   d.lines(pairOrStack(cols, `Order  ${order.billNumber}`, TYPE_CAPS[order.orderType]));
   d.lines(pairOrStack(cols, shortStamp(order.soldAt), `Cashier  ${order.cashierName}`));
   if (order.orderType === 'dine_in' && order.tableNumber) {
-    d.line(`Table  ${order.tableNumber}`);
+    d.line(`Table  ${order.tableNumber}`, ctx.moved ? { bold: true } : undefined);
   }
+  if (ctx.moved) d.line(`From table  ${ctx.moved.from}`);
   if (order.orderType === 'delivery' && order.deliveryPerson) {
     d.line(`Rider  ${order.deliveryPerson}`);
   }

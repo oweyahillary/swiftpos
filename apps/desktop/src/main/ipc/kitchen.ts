@@ -5,10 +5,17 @@ import { logLine } from '../logFile';
 import { getOpenShift } from '../syncEngine';
 import { signedIn as sessionPerson } from '../tillAccess';
 import { getPosFeatures } from '../deviceConfig';
-import { recordKitchenSend, recordKitchenVoid, openKitchenOrders } from '../kitchenService';
+import { recordKitchenSend, recordKitchenVoid, openKitchenOrders, moveKitchenOrder } from '../kitchenService';
 import { voidReasonLabel } from '@zaptill/core/kitchenLines';
 import { sellRefusal, isOpenBill } from '../sellGate';
 import { openBills, type IpcShared } from './shared';
+
+/** A kitchen line as a ticket item: the cart line it was (at this quantity), else a bare product line. */
+type TicketLine = { item?: unknown; qty: number; unit_price: number; product_id?: string | null; product_name: string };
+const ticketItems = (lines: TicketLine[]) => lines.map((l) => (l.item && typeof l.item === 'object')
+  ? { ...(l.item as object), quantity: l.qty, lineTotal: l.unit_price * l.qty }
+  : { product: { id: l.product_id, name: l.product_name }, quantity: l.qty, unitPrice: l.unit_price,
+      lineTotal: l.unit_price * l.qty, selectedVariants: [], selectedModifiers: [] });
 
 /** 0.6.28: sends to the kitchen, and kitchen voids. */
 export function registerKitchenHandlers(ctx: IpcShared) {
@@ -49,10 +56,7 @@ export function registerKitchenHandlers(ctx: IpcShared) {
     // The VOID ticket: the same stations the items went to, under a VOID banner, so the kitchen stops cooking them.
     const printed = queueThermal({
       order_number: p.order_number, order_type: p.order_type ?? 'retail', table_number: p.table_number,
-      items: v.lines.map((l) => (l.item && typeof l.item === 'object')
-        ? { ...(l.item as object), quantity: l.qty, lineTotal: l.unit_price * l.qty }
-        : { product: { id: l.product_id, name: l.product_name }, quantity: l.qty, unitPrice: l.unit_price,
-            lineTotal: l.unit_price * l.qty, selectedVariants: [], selectedModifiers: [] }),
+      items: ticketItems(v.lines),
       kitchen_void: { by: approver?.name ?? '', reason: voidReasonLabel(v.reason) },
     }, ['kitchen', 'dispatch']);
     logLine('sale', `kitchen void #${p.order_number} ${v.lines.map((l) => `${l.qty}x ${l.product_name}`).join(', ')} ` +
@@ -60,6 +64,25 @@ export function registerKitchenHandlers(ctx: IpcShared) {
     pushNow();
     return { ok: true, total: v.total, approvedBy: approver?.name ?? null,
              skipped: [...printed.skipped, ...printed.failed.map((f) => `${f} (could not be produced)`)] };
+  });
+
+  /**
+   * Transfer table (owner, 2026-11-05): the order's kitchen lines take the new table, and the kitchen gets what it already
+   * has of the order again under MOVED ("From table <old>") — the same stations the items went to — so the food goes to
+   * the right table. Nothing with the kitchen: nothing prints.
+   */
+  handle('kitchen:move', async (_event, payload) => {
+    const p = assertPayload<{ order_number: string; from: string; to: string }>({
+      order_number: { t: 'string', min: 1 }, from: { t: 'string', min: 1 }, to: { t: 'string', min: 1 },
+    }, payload);
+    const order = moveKitchenOrder(p.order_number, p.to);
+    if (!order) return { printed: false, skipped: [] as string[] };
+    const printed = queueThermal({
+      order_number: p.order_number, order_type: 'dine_in', table_number: p.to,
+      items: ticketItems(order.lines), kitchen_moved: { from: p.from },
+    }, ['kitchen', 'dispatch']);
+    logLine('sale', `table move #${p.order_number} ${p.from} → ${p.to}`);
+    return { printed: true, skipped: [...printed.skipped, ...printed.failed.map((f) => `${f} (could not be produced)`)] };
   });
 
   /** Sent orders not yet paid: `shift` — this shift's (End Shift lists them); `all` — every one (recovery). */

@@ -97,7 +97,8 @@ const TAKEN_LATER = { Cashier: ['shifts.cash_movements', 'sales.discount'], Mana
 // A595: the 36 narrower rights are registered (and carried over to every holder of their parent) by 176 — not 142's
 // (test-migration-176.mjs proves who gets them).
 // A599: the attendance rights are registered and given by 180 (test-migration-180.mjs).
-const A595 = new Set([...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices']);
+// 8n: settings.pos_layout is registered and given to the built-in Manager / GM by migration 190, not 142.
+const A595 = new Set([...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices', 'settings.pos_layout']);
 const keys142 = (r) => [...new Set([...r.keys, ...(TAKEN_LATER[r.name] ?? [])])].filter((k) => !(LATER[r.name] ?? []).includes(k) && !A595.has(k));
 // A550: the roles migration 159 adds later (General Manager, Operations Manager, …) are not 142's — 142 is compared with the
 // built-in roles it made, in their order (scripts/test-migration-159.mjs compares the rest).

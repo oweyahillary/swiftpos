@@ -113,6 +113,8 @@ export interface POSInitResponse {
   offers?: unknown[];
   /** A619: the delivery platforms' prices ({ rounding, rules }). Absent from an older cloud = normal prices. */
   platformPrices?: unknown;
+  /** 8n: the branch's category layout ('panel' | 'top'). Absent from an older cloud = the side panel. */
+  posCategoryLayout?: string;
 }
 
 export type { CartItem, Product, Category, VariantGroup, VariantOption };

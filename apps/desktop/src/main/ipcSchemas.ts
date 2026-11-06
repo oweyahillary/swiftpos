@@ -35,6 +35,7 @@
  * carries a one-order confirmation the others don't.
  */
 import type { Schema } from './ipcValidate';
+import { CATEGORY_LAYOUTS } from '@zaptill/core/categoryLayout';   // 8n
 
 export const NO_PAYLOAD = Symbol('NO_PAYLOAD');
 
@@ -148,6 +149,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── 0.6.28: kitchen ledger and kitchen voids ──────────────────────────────
   'kitchen:sent': { order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true } },
   'kitchen:void': { order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, reason: { t: 'string', min: 1 }, note: { t: 'string', optional: true }, cooked: { t: 'boolean', optional: true }, pin: { t: 'string', optional: true }, order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true } },
+  'kitchen:move': { order_number: { t: 'string', min: 1 }, from: { t: 'string', min: 1 }, to: { t: 'string', min: 1 } },
   'kitchen:open': NO_PAYLOAD,
 
   // ── idle ──────────────────────────────────────────────────────────────────
@@ -330,6 +332,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:getMpesa':                 NO_PAYLOAD,                                            // A492
   'manage:setMpesa':                 { kind: { t: 'string', optional: true }, number: { t: 'string', optional: true },
                                        account: { t: 'string', optional: true }, clear: { t: 'boolean', optional: true } },   // A492
+  'pos:categoryLayout':             NO_PAYLOAD,                                            // 8n
+  'manage:setCategoryLayout':       { kind: 'enum', values: CATEGORY_LAYOUTS },              // 8n: 'panel' | 'top'
   'manage:getCashierHistoryMethods': NO_PAYLOAD,                                            // 0.6.37 (A387)
   'manage:setCashierHistoryMethods': { kind: 'stringArray' },
 

@@ -7,10 +7,12 @@
  * desktop's look: the dark styling and the `action-*` colours, as class names, kept here where this app's Tailwind build
  * finds them. Touch first: 48 px rows and menu tabs, 40+ px pin / close / panel tabs, nothing on hover only.
  * useNarrowWindow (the panel lies over the grid in a narrow window) is lib/useNarrowWindow.ts, re-exported here.
+ * 8n: CategoryBar — the categories across the top (the branch's 'top' layout), 48 px pills in the category's colour when
+ * chosen, as the row before A537.
  */
 import SharedCategoryPanel, {
-  CategoryChip as SharedCategoryChip, LaterButton as SharedLaterButton, MenuBar as SharedMenuBar, PanelToggle as SharedPanelToggle, withLook,
-  type CategoryChipProps, type CategoryPanelLook, type CategoryPanelProps, type LaterButtonProps, type MenuBarProps, type PanelToggleProps,
+  CategoryBar as SharedCategoryBar, CategoryChip as SharedCategoryChip, LaterButton as SharedLaterButton, MenuBar as SharedMenuBar, PanelToggle as SharedPanelToggle, withLook,
+  type CategoryBarProps, type CategoryChipProps, type CategoryPanelLook, type CategoryPanelProps, type LaterButtonProps, type MenuBarProps, type PanelToggleProps,
 } from '@zaptill/ui/CategoryPanel';
 
 export { useCategoryPanel, type CategoryPanelState } from '@zaptill/ui/CategoryPanel';
@@ -68,6 +70,17 @@ const LOOK: CategoryPanelLook = {
   name: 'flex-1 truncate',
   count: (on) => `text-[11px] ${on ? 'text-gray-900' : 'text-gray-400'}`,
   backdrop: 'absolute inset-0 z-20 bg-black/40',
+
+  // 8n: the top bar — a slimmer row than the menu tabs above it, so the two read as menu, then category.
+  catBar: 'relative flex-shrink-0 border-b border-gray-800',
+  catRow: 'flex gap-2 px-4 py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+  // Chosen: the category's own colour (the inline style), else the action colour (All, a category with none).
+  catPill: (on, colour) => ({
+    className: `flex-shrink-0 min-h-[48px] px-4 rounded-lg text-sm whitespace-nowrap border transition-colors ${
+      on ? `text-gray-950 font-semibold border-transparent ${colour ? '' : 'bg-action-500'}` : 'bg-gray-800 border-gray-700 text-gray-200 font-medium hover:text-white'}`,
+    style: on && colour ? { backgroundColor: colour } : undefined,
+  }),
+  catPillIcon: 'mr-1',
 };
 
 /** The ☰ button at the left of the search. */
@@ -78,6 +91,9 @@ export const CategoryChip = withLook<CategoryChipProps>(SharedCategoryChip, LOOK
 
 /** A566: the menus across the top of the grid. A573: `label` is the business's word for them (@zaptill/core/businessTerms). */
 export const MenuBar = withLook<MenuBarProps>(SharedMenuBar, LOOK);
+
+/** 8n: the categories across the top of the grid — only with the branch's 'top' layout (useCategoryPanel(layout)). */
+export const CategoryBar = withLook<CategoryBarProps>(SharedCategoryBar, LOOK);
 
 /** A580: "Later" at the end of the menu bar — the closed menus, greyed, view only. Not the manager's amber "Show all". */
 export const LaterButton = withLook<LaterButtonProps>(SharedLaterButton, LOOK);

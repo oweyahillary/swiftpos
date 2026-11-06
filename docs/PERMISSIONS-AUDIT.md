@@ -834,3 +834,11 @@ These are the only places where an **existing** role changes. They are not part 
 **Screens.** Roles and permissions and a person's own rights: See / Do / Approve per area, parts nested under their parent, a **Personal data** mark. Staff cards: PIN, own rights and pay shown by their parts; contacts read-only when masked. Credit Accounts: Credit settings and By branch (D4). The desktop POS: **+ Customer** (lazy-loaded), On account refused at a branch without credit, owed here / owed in total. Main chunk: 439.9 KiB of 450 (the void dialog now loads on demand).
 
 **Tests.** `tests/permissions-split-a595.test.mjs`, `tests/owner-decisions-a595.test.mjs`, `tests/owner-alerts.test.mjs` (D3's e-mails), `apps/desktop/test/credit-branch-a595.test.mjs`, `scripts/test-migration-176.mjs`, `177`, `178`.
+
+## 8. Keys added later
+
+| Key | Group | Surface | Label | Built-in defaults | Since |
+|---|---|---|---|---|---|
+| `settings.pos_layout` | settings | both | POS layout — how the POS screen is laid out at a branch (the categories in a side panel or across the top, for now) | Owner, Mgr, GM (new businesses: the catalogue; existing businesses: migration 190 — the owner roles and the BUILT-IN Manager and General Manager, once) | 8n, 2026-11-05 |
+
+- **`settings.pos_layout`** (owner, 2026-11-05: "lets go with your recommendations since in future we might get more items under POS layout"). Checked by `POST /api/branches/:id/settings` for `pos_category_layout` (`branchSettingKeys`, the own-branch rule unchanged), the desktop's `manage:setCategoryLayout` and Manager › Settings, and the web's Settings › Branches › the branch. `settings.branches` is still accepted (one list: `@zaptill/core/categoryLayout` `CATEGORY_LAYOUT_PERMISSIONS`), so the owner, a General Manager and the holders of the broad `settings.manage` (whose `LEGACY` list now names it) lose nothing. Not a view key; not personal data. Tests: `tests/category-layout-8n.test.mjs`, `apps/desktop/test/category-layout-8n.test.mjs`, `apps/desktop/test/a490-permissions.test.mjs`, `scripts/test-migration-190.mjs`.

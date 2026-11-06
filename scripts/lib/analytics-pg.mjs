@@ -156,9 +156,12 @@ export async function seedAnalytics(pg) {
   await put('business_days', { business_id: A, branch_id: W, business_date: '2026-10-17', status: 'closed', cash_variance: -450 });
   await put('business_days', { business_id: A, branch_id: K, business_date: '2026-10-17', status: 'closed', cash_variance: 50 });
 
-  // ── credit (as of 2026-10-21 09:00Z) ──
+  // ── credit ──
   const AS_OF = '2026-10-21T09:00:00Z';
-  const daysAgo = (d) => new Date(Date.parse(AS_OF) - d * 86_400_000).toISOString();
+  const daysAgo = (d) => new Date(Date.parse(AS_OF) - d * 86_400_000).toISOString();   // the fixed period (sales orders)
+  // The credit LEDGER is aged against the REAL current date (the SQL's now()), so its ages must track today — anchoring
+  // them to the fixed AS_OF drifts the charges across the 30/60/90-day buckets as the clock advances (seen 2026-11-06).
+  const aged = (d) => new Date(Date.now() - d * 86_400_000).toISOString();
   const C1 = (await put('customers', { business_id: A, name: 'Acme Ltd', phone: '0700', credit_limit: 5000, credit_balance: 700 })).id;
   const C2 = (await put('customers', { business_id: A, name: 'Old Account', credit_limit: 5000, credit_balance: 1000 })).id;
   const C3 = (await put('customers', { business_id: A, name: 'Paid Up', credit_limit: 5000, credit_balance: 0 })).id;
@@ -166,13 +169,13 @@ export async function seedAnalytics(pg) {
   const line = (cust, biz, branch, amount, at, type) => put('customer_credit_transactions', { business_id: biz, customer_id: cust, branch_id: branch, type, amount, balance_after: 0, created_at: at });
   // Acme: 500 (100 days ago, W) + 300 (45 days, W) − 400 paid (10 days) + 300 (5 days, Kilimani) = 700 owed.
   // FIFO: the 400 paid clears the oldest first → open: 300 (5 d, K) + 300 (45 d, W) + 100 of the 500 (100 d, W).
-  await line(C1, A, W, 500, daysAgo(100), 'charge');
-  await line(C1, A, W, 300, daysAgo(45), 'charge');
-  await line(C1, A, W, -400, daysAgo(10), 'payment');
-  await line(C1, A, K, 300, daysAgo(5), 'charge');
+  await line(C1, A, W, 500, aged(100), 'charge');
+  await line(C1, A, W, 300, aged(45), 'charge');
+  await line(C1, A, W, -400, aged(10), 'payment');
+  await line(C1, A, K, 300, aged(5), 'charge');
   // Old Account: balance 1000, the ledger holds a 600 sale 10 days ago only → 400 is older than the ledger (unaged, 90+).
-  await line(C2, A, W, 600, daysAgo(10), 'charge');
-  await line(CB, B, BB, 900, daysAgo(200), 'charge');
+  await line(C2, A, W, 600, aged(10), 'charge');
+  await line(CB, B, BB, 900, aged(200), 'charge');
   // a disputed sale on Paid Up (balance 0) and one awaiting on Acme (not counted)
   const D1 = await order({ cashier_id: CATE, total: 350, customer_id: C3, created_at: daysAgo(3) });
   const D2 = await order({ cashier_id: CATE, total: 120, customer_id: C1, created_at: daysAgo(3) });

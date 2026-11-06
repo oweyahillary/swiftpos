@@ -3037,6 +3037,27 @@ router.post('/:id/fire-course', sells, async (req, res) => {
   res.json({ fired: fired?.length ?? 0 });
 });
 
+// POST /api/orders/:id/move-table   Body: { table_number }
+// Transfer table (owner, 2026-11-05): an open dine-in order sent to the kitchen moves to another table — the order keeps
+// its number and lines, and its table is the new one (the receipt, the turnover and the tables screen read it). The web
+// POS prints the kitchen's MOVED ticket itself, as it prints every ticket.
+router.post('/:id/move-table', sells, async (req, res) => {
+  const table = typeof req.body?.table_number === 'string' ? req.body.table_number.trim().slice(0, 50) : '';
+  if (!table) { res.status(400).json({ error: 'Choose the table to move to.' }); return; }
+  const { data: order, error } = await supabase
+    .from('orders').select('id, branch_id, status, order_type').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+  if (!assertBranchAccess(req, order.branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  if (order.status !== 'open' || order.order_type !== 'dine_in') {
+    res.status(409).json({ error: 'Only an open table order can be moved.', code: 'ORDER_NOT_OPEN' }); return;
+  }
+  const { error: uErr } = await supabase
+    .from('orders').update({ table_number: table }).eq('id', order.id).eq('business_id', req.businessId).eq('status', 'open');
+  if (uErr) { sendError(res, uErr); return; }
+  res.json({ ok: true, table_number: table });
+});
+
 // A8: PATCH /api/orders/:id/split was RETIRED. It wrote order_items.sub_bill for a
 // by-item split, but sub_bill was read nowhere (dead column) and its only caller,
 // SplitBillModal, was never mounted. Bill splitting is handled at payment time by

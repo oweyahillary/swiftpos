@@ -201,7 +201,7 @@ try {
     assert.match(f, /if \(onlineLicence\) void posApi\.pos\.activatePump\(pump\.id\)\.catch\(\(\) => \{\}\);/);
   });
   await ok('the web POS calls the same route (now open to a cashier who sells)', async () => {
-    assert.match(read('apps/dashboard/src/pages/pos/CashierScreen.tsx'), /posApi\.patch\(`\/api\/pumps\/\$\{pendingPump\.id\}\/activate`, \{\}\)/);
+    assert.match(read('apps/dashboard/src/pages/pos/CashierScreen.tsx'), /posApi\.patch\(`\/api\/pumps\/\$\{pump\.id\}\/activate`, \{\}\)/);
   });
 } finally {
   server.close();

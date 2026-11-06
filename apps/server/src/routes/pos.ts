@@ -43,6 +43,7 @@ import { maskPhone, seesCustomerContacts } from '../lib/personalData';          
 import { branchCreditEnabled, branchLimitsAt, owedByCustomerAt } from '../lib/branchCredit';   // A595 D4
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
 import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '@zaptill/core/customerScreen';   // A606
+import { CATEGORY_LAYOUT_KEY, categoryLayoutOf } from '@zaptill/core/categoryLayout';   // 8n
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
 import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601
@@ -465,7 +466,8 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
           .select('key, value')
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
-          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'])
+          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
+            CATEGORY_LAYOUT_KEY])   // 8n: the branch's own only — there is no business-wide value
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
@@ -657,6 +659,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A619: the delivery platforms' prices — the business's rounding and this branch's rule per platform (its own, else
     // the business's); { rounding: 'exact', rules: {} } = normal prices. Always sent; older POSs ignore it.
     platformPrices: await loadPlatformPricing(req.businessId, (opBranch as { id?: string } | null)?.id ?? null),
+    // 8n (owner, 2026-11-05): how this branch's POS shows its categories — 'panel' (☰, the standard; also when the branch
+    // never chose) or 'top' (pills across the top). Always sent; older POSs ignore it.
+    posCategoryLayout: categoryLayoutOf(branchText[CATEGORY_LAYOUT_KEY]),
     // 0.6.35 (A384): the tech allocated to this client (admin portal) — their name and number on the till's Help.
     // Always sent: null = no tech → the Help shows SwiftPOS support's numbers (shared/support.ts). Older tills ignore it.
     support: await getSupportContact(req.businessId),

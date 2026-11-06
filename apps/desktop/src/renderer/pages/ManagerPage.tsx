@@ -37,6 +37,7 @@ import PrintersScreen from '../screens/PrintersScreen';
 import TillWastage from '../components/TillWastage';   // A414
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '@zaptill/core/paginate';
+import { CATEGORY_LAYOUT_PERMISSIONS } from '@zaptill/core/categoryLayout';   // 8n: who changes the POS layout
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
 // A PRINTER is a machine and belongs to ONE terminal — which is why the
@@ -2056,7 +2057,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     isBranchServer,   // A520: Close Branch alone on the branch server
     canMenu: hasAny('menu.edit', 'menu.prices'),
     canOffers: has('menu.offers'),
-    canSettings: hasAny('settings.business', 'settings.payments') || mayMpesa(staff),   // A492: the branch's M-Pesa number
+    canSettings: hasAny('settings.business', 'settings.payments', 'settings.pos_layout', 'settings.branches') || mayMpesa(staff),   // A492: the branch's M-Pesa number; 8n: its POS layout
     canPrinting: has('stations.manage') || canManageReceipt,
     canStaff: hasAny('staff.view', 'staff.edit'),
     canBackup: hasAny('settings.business', 'shifts.close_branch'),   // A600: the owner or a manager
@@ -2124,7 +2125,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'staff':   return <StaffTab   branchId={staff.branchId} canEdit={has('staff.edit')} />;   // A490
       case 'backup':  return <><BackupPanel /><HistoryUploadPanel /></>;   // A600: the nightly backup on this PC, the folder and restore; A602: the history upload
       case 'settings': return <><SettingsPanel canBusiness={has('settings.business')} canPayments={has('settings.payments')}
-                                             canMpesa={mayMpesa(staff)} isOwner={isOwnerSession(staff)} />{/* 0.6.30; A490: each panel by its key */}
+                                             canMpesa={mayMpesa(staff)} canPosLayout={hasAny(...CATEGORY_LAYOUT_PERMISSIONS)} isOwner={isOwnerSession(staff)} />{/* 0.6.30; A490: each panel by its key */}
         {has('settings.business') && <CustomerScreenPanel className="max-w-xl mt-6" />}{/* A606: this PC's customer screen */}</>;
       // PrintersScreen (A83/A90): sub-tabs under one "Printing" nav item —
       // Stations, Printers, Exclusions (all stations.manage) and Receipt
