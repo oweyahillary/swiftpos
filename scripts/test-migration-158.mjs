@@ -91,8 +91,12 @@ await ok('the day cut-off: a sale at 01:30 EAT is the night before with the day 
   assert.equal(at2.find((r) => !r.by_cashier && r.day === '2026-10-21'), undefined);
   assert.equal(at2.find((r) => !r.by_cashier && r.day === '2026-10-20')?.orders, 1);
 });
+// The ledger charges are seeded against the REAL current date (analytics-pg.mjs `aged`), because the production route
+// ages against new Date() (analytics.ts) — so age against today here too, not the frozen S.AS_OF, or the charges drift
+// across the 30/60/90-day buckets as the clock moves past AS_OF (migration 158 failed on dev 2026-11-06 this way).
+const asOf = new Date().toISOString();
 await ok('credit ageing: the ledger balance, repayments oldest first (FIFO); older than the ledger = 90+; disputed; never business B', async () => {
-  const { data, error } = await rpc('analytics_credit_ageing', { p_business: S.A, p_branch: null, p_as_of: S.AS_OF });
+  const { data, error } = await rpc('analytics_credit_ageing', { p_business: S.A, p_branch: null, p_as_of: asOf });
   assert.equal(error, null, error?.message);
   const c = Object.fromEntries(data.map((r) => [r.customer_name, r]));
   assert.deepEqual(Object.keys(c).sort(), ['Acme Ltd', 'Old Account', 'Paid Up']);
@@ -102,10 +106,10 @@ await ok('credit ageing: the ledger balance, repayments oldest first (FIFO); old
   assert.equal(c['Acme Ltd'].disputed_count, 0, 'an awaiting sale is not disputed');
 });
 await ok('credit ageing for one branch: only the open parts of that branch\'s debits (the unaged rest has no branch)', async () => {
-  const w = Object.fromEntries((await rpc('analytics_credit_ageing', { p_business: S.A, p_branch: S.W, p_as_of: S.AS_OF })).data.map((r) => [r.customer_name, r]));
+  const w = Object.fromEntries((await rpc('analytics_credit_ageing', { p_business: S.A, p_branch: S.W, p_as_of: asOf })).data.map((r) => [r.customer_name, r]));
   assert.deepEqual([w['Acme Ltd'].owed, w['Acme Ltd'].d0_30, w['Acme Ltd'].d31_60, w['Acme Ltd'].d90_plus], [400, 0, 300, 100]);
   assert.deepEqual([w['Old Account'].owed, w['Old Account'].d90_plus], [600, 0]);
-  const k = Object.fromEntries((await rpc('analytics_credit_ageing', { p_business: S.A, p_branch: S.K, p_as_of: S.AS_OF })).data.map((r) => [r.customer_name, r]));
+  const k = Object.fromEntries((await rpc('analytics_credit_ageing', { p_business: S.A, p_branch: S.K, p_as_of: asOf })).data.map((r) => [r.customer_name, r]));
   assert.deepEqual(Object.keys(k), ['Acme Ltd']);
   assert.equal(k['Acme Ltd'].d0_30, 300);
 });
