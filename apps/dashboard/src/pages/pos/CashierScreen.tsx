@@ -1396,14 +1396,14 @@ export default function CashierScreen() {
           --pos-text: #0f172a; --pos-text2: #334155; --pos-text3: #64748b; --pos-text4: #94a3b8;
           --pos-input: #ffffff; --pos-input-border: #d5dae3;
           --pos-card: #ffffff; --pos-modal: #ffffff;
-          --pos-free-bg: linear-gradient(160deg,#dcfce7 0%,#d1fae5 100%);
-          --pos-free-border: rgba(34,197,94,0.55);
-          --pos-free-shadow: 0 4px 0 rgba(21,128,61,0.2),0 8px 20px rgba(21,128,61,0.1),inset 0 1px 0 rgba(255,255,255,0.9);
-          --pos-free-name: #14532d; --pos-free-sub: #4ade80;
-          --pos-occ-bg: linear-gradient(160deg,#fef9c3 0%,#fef3c7 100%);
-          --pos-occ-border: rgba(245,158,11,0.65);
-          --pos-occ-shadow: 0 4px 0 rgba(180,83,9,0.2),0 8px 20px rgba(180,83,9,0.1),inset 0 1px 0 rgba(255,255,255,0.9);
-          --pos-occ-name: #78350f; --pos-occ-label: #d97706;
+          --pos-free-bg: linear-gradient(160deg,#e7fbf0 0%,#bbf3d5 100%);
+          --pos-free-border: rgba(16,185,129,0.45);
+          --pos-free-shadow: 0 1px 2px rgba(6,95,70,0.10),0 8px 18px rgba(6,95,70,0.12),inset 0 1px 0 rgba(255,255,255,0.75);
+          --pos-free-name: #065f46; --pos-free-sub: #059669;
+          --pos-occ-bg: linear-gradient(160deg,#fef3c7 0%,#fde4a6 100%);
+          --pos-occ-border: rgba(217,119,6,0.5);
+          --pos-occ-shadow: 0 1px 2px rgba(146,64,14,0.10),0 8px 18px rgba(146,64,14,0.12),inset 0 1px 0 rgba(255,255,255,0.75);
+          --pos-occ-name: #78350f; --pos-occ-label: #b45309;
         }
       ` : `
         [data-pos-theme="dark"] {
