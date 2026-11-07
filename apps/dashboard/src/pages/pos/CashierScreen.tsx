@@ -1396,14 +1396,15 @@ export default function CashierScreen() {
           --pos-text: #0f172a; --pos-text2: #334155; --pos-text3: #64748b; --pos-text4: #94a3b8;
           --pos-input: #ffffff; --pos-input-border: #d5dae3;
           --pos-card: #ffffff; --pos-modal: #ffffff;
-          --pos-free-bg: linear-gradient(160deg,#e7fbf0 0%,#bbf3d5 100%);
-          --pos-free-border: rgba(16,185,129,0.45);
-          --pos-free-shadow: 0 1px 2px rgba(6,95,70,0.10),0 8px 18px rgba(6,95,70,0.12),inset 0 1px 0 rgba(255,255,255,0.75);
-          --pos-free-name: #065f46; --pos-free-sub: #059669;
-          --pos-occ-bg: linear-gradient(160deg,#fef3c7 0%,#fde4a6 100%);
-          --pos-occ-border: rgba(217,119,6,0.5);
-          --pos-occ-shadow: 0 1px 2px rgba(146,64,14,0.10),0 8px 18px rgba(146,64,14,0.12),inset 0 1px 0 rgba(255,255,255,0.75);
-          --pos-occ-name: #78350f; --pos-occ-label: #b45309;
+          /* Neutral cards; status is read from the corner dot (green = free, amber = occupied), not the whole card. */
+          --pos-free-bg: #ffffff;
+          --pos-free-border: #e3e8ef;
+          --pos-free-shadow: 0 1px 2px rgba(15,23,42,0.06),0 6px 16px rgba(15,23,42,0.08);
+          --pos-free-name: #0f172a; --pos-free-sub: #64748b;
+          --pos-occ-bg: #fffaf0;
+          --pos-occ-border: #f3cd8e;
+          --pos-occ-shadow: 0 1px 2px rgba(146,64,14,0.06),0 6px 16px rgba(146,64,14,0.10);
+          --pos-occ-name: #0f172a; --pos-occ-label: #b45309;
         }
       ` : `
         [data-pos-theme="dark"] {
@@ -1678,6 +1679,7 @@ export default function CashierScreen() {
                         onMouseDown={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(3px)'; }}
                         onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}>
+                        <span aria-hidden style={{ ...s.slotDot, background: status === 'occupied' ? '#f59e0b' : '#22c55e' }} />
                         <div style={s.slotName}>{table.name}</div>
                         <div style={s.slotSub}>👥 {table.capacity}</div>
                         {order && order.cart.length > 0 ? (
@@ -1718,6 +1720,7 @@ export default function CashierScreen() {
                         style={{ ...s.slotCard, ...(status === 'occupied' ? s.slotOccupied : s.slotFree) }}
                         onClick={() => onBayTap(bay)}
                       >
+                        <span aria-hidden style={{ ...s.slotDot, background: status === 'occupied' ? '#f59e0b' : '#22c55e' }} />
                         <div style={s.slotName}>{bay.name}</div>
                         <div style={s.slotSub}>🅿️ Bay</div>
                         {session ? (
@@ -3083,6 +3086,7 @@ const s: Record<string, React.CSSProperties> = {
   legendDot: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 4 },
   slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 },
   slotCard: {
+    position: 'relative' as const,
     height: 130,
     padding: '14px 10px 12px',
     borderRadius: 12,
@@ -3092,6 +3096,9 @@ const s: Record<string, React.CSSProperties> = {
     transition: 'transform 0.1s ease, box-shadow 0.1s ease',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
     userSelect: 'none' as const,
+  },
+  slotDot: {
+    position: 'absolute' as const, top: 10, right: 10, width: 10, height: 10, borderRadius: '50%',
   },
   slotFree: {
     background: 'var(--pos-free-bg)',

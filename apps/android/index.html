@@ -2,10 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- user-scalable=no + maximum-scale=1: a counter POS must not pinch-zoom or double-tap-zoom the till out of shape. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <!-- Only the app's own bundled files. script-src allows inline: on a WebView without document-start scripts Capacitor
          injects its bridge as an inline <script>. Nothing here talks to the network (cloud calls are native: src/cloud). -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'" />
+    <!-- img-src allows https: so the client's product photos and logo (remote, over https) load; without it the WebView
+         blocked every remote image and the POS showed a cardboard-box placeholder on every product. Scripts stay 'self'. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'" />
     <title>ZapTill</title>
   </head>
   <body>
