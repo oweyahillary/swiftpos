@@ -917,3 +917,26 @@ request. **With the enrolment code**: the technician issues it in the admin port
   and generic network ESC/POS printers, nothing certified yet.
 - **Not in stage 1:** offline selling (Till stage 2), selling through the branch server (Till stage 3), Bluetooth and the
   foreground print service (Till stage 4).
+
+## 12. Till stage 2 — keeps selling offline (built 2026-11-06, branch `android-till-2`)
+
+The store-and-forward layer of §4.7 and §4.8. The rules live once in `@zaptill/core` (the one-POS rule) and the app wraps
+them; the server side is reused as-is (the desktop already stores-and-forwards through `/api/orders` idempotent by
+`idempotency_key`, `/api/sync/push`, `/api/sync/backfill`). All on the `dev` cloud (the app is pinned to `dev-api`).
+
+| Piece | Where | What it does |
+|---|---|---|
+| The rules (pure, shared) | `@zaptill/core/tillBuffer` (`packages/core/src/tillBuffer.ts`) | Which writes may go offline (`bufferableKind`); the order uuid / idempotency key a write carries; the replay batch in creation order that keeps an order and its void/refund together and never before the order; applying the cloud's acks (a sale is a fact — ok/retry/failed, a conflicted sale is kept); the two §4.8 retention clocks; the status-bar numbers. 37 unit tests (`tests/till-buffer-stage2.test.mjs`). |
+| The buffer | `apps/android/src/shop/buffer.ts` | An IndexedDB store on the tablet (survives a kill or reboot) and an in-memory one for tests; `enqueue` a captured write, `recordAcks`, the §4.8 `sweepRetention`, the `status`. |
+| Replay | `apps/android/src/shop/replay.ts` | Drains the buffer when the connection returns: pushes `nextBatch` in order through an injected sender, applies the acks, surfaces table-taken questions; `ackFromStatus` maps HTTP (2xx ok; 0/401/5xx retry — a sale is never dropped; other 4xx a permanent refusal, parked and surfaced); `cloudSender` re-issues the captured call via CapacitorHttp. |
+| Offline PIN | `apps/android/src/shop/offlinePin.ts` | The desktop model (A345): a provisional sign-in for a cached roster person, the PIN held and the sign-in confirmed at `/api/auth/verify-pin` on reconnect — a PIN changed on the web is refused then. A `verifyLocally` seam (default: defer) is where a cached `pin_hash` check slots in once `bcryptjs` is added. |
+| The offline-writes seam | `apps/android/src/shop/offlineWrites.ts` | Decides read / buffer / refuse offline and hands the screens a provisional answer so the sale prints. OPT-IN: `installOfflineWrites` wraps `window.fetch` only when the ShopPos entry calls it, so stage 1 and the web/desktop are untouched. |
+| The status bar | `apps/android/src/screens/shop/SyncStatusBar.tsx` + `styles.css` | Online / offline / syncing, sales waiting, last synced, and a "need attention" count for parked rows. |
+
+Checked: `tests/till-buffer-stage2.test.mjs` (37) and `tests/android-till-stage2.test.mjs` (33, bundled with esbuild, Capacitor external) run the real rules and the app layer; the app type-checks (`tsc --noEmit`).
+
+**Remaining before the Stage 2 hardware test (§5 "done when"):** wire `installOfflineWrites` + `SyncStatusBar` + the roster
+cache + the replay driver into the ShopPos entry (a supervised session — the provisional-response shape per screen is
+settled on real hardware); add `bcryptjs` to the app (needs a `package-lock.json` update, `npm ci`) so offline PIN also
+checks the cached verifier, not only the reconnect upgrade; send a device-id hash to bind the session (§11 open item). Then
+the hardware test: unplug the router mid-shift, sell 50, reconnect — exactly 50 arrive; kill the app offline — nothing lost.

@@ -964,6 +964,16 @@ jobs:
       - name: ZapTill for Android, Till stage 1 (the online Shop POS)
         run: node --no-warnings tests/android-till-stage1.test.mjs
 
+      # Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7, §4.8, §12) — keeps selling offline: the shared store-and-forward
+      # rules in @zaptill/core/tillBuffer (which writes may go offline, in-order idempotent replay that keeps an order
+      # with its void, the ack handling that never loses a sale, the two retention clocks) and the app's offline layer
+      # (buffer, replay, offline PIN, the opt-in offline-writes seam, the status bar — bundled with esbuild, Capacitor
+      # external). Pure; in the loop too.
+      - name: Offline store-and-forward rules (@zaptill/core/tillBuffer)
+        run: node --no-warnings tests/till-buffer-stage2.test.mjs
+      - name: ZapTill for Android, Till stage 2 (keeps selling offline)
+        run: node --no-warnings tests/android-till-stage2.test.mjs
+
   # 2026-11-02 (owner: "11 min is a lot of time"): the server job ran its named steps, every migration test and the
   # loop over every tests/*.test.mjs one after the other (~10.5 minutes). The migration tests (two halves) and the loop
   # now run as jobs of their own, at the same time as the named steps — the same tests, about half the wait.
