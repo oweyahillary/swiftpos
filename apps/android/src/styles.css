@@ -84,11 +84,14 @@ button:disabled { opacity: 0.5; }
 .text-button { background: none; border: none; color: var(--brand-light); padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
 .link-button { display: inline-flex; align-items: center; text-decoration: none; }
 
-.pin-screen { max-width: 420px; align-items: stretch; }
+.pin-screen { max-width: 420px; align-items: center; text-align: center; }
+.pin-screen .brand { justify-content: center; }
+.pin-screen h1 { margin-top: 4px; }
+.pin-screen .primary, .pin-screen .text-button { width: 100%; max-width: 320px; }
 .pin-dots { display: flex; gap: 14px; justify-content: center; margin: 8px 0; }
 .pin-dots span { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--muted); }
 .pin-dots span.on { background: var(--brand); border-color: var(--brand); }
-.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 320px; }
 .pin-key {
   min-height: 72px; border-radius: 14px; background: var(--panel); border: 1.5px solid var(--border); color: var(--text);
   font-size: 26px; font-weight: 600;
