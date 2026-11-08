@@ -56,7 +56,7 @@ const put = async (table, row) => {
 
 
 const { pathToFileURL } = await import('node:url');
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 
 console.log('\nMigration 143 (payables.view) — PGlite, every migration\n');
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;

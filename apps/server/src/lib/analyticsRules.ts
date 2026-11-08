@@ -37,7 +37,7 @@
  *     selling (lib/analyticsTerms.ts togetherAdvice: a combo, the same shelf, at the pumps) — never a price, no KES. And
  *     the business type's words on the cards (a shop's "cost of sales", never its "food cost").
  */
-import { togetherAdvice, analyticsWords, type TogetherAdvice } from './analyticsTerms';
+import { togetherAdvice, analyticsWords, type TogetherAdvice } from '@zaptill/core/analyticsTerms';
 
 export const ANALYTICS_FLAG = 'analytics';
 export const ANALYTICS_OFF_MESSAGE = 'Analytics is part of ZapTill Premium — contact ZapTill to enable it.';

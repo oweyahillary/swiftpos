@@ -2,6 +2,8 @@
 //
 //   customer:saleInfo            the POS: is KRA eTIMS on (ask for the buyer's KRA PIN)? may this person see customers'
 //                                phone numbers in full (customers.contacts — lib/personalData.ts masking)?
+//   customer:loyaltyPoints       the POS (owner 2026-11-04): the sale's customer's points before the sale, their tier and the
+//                                earn rate — with the online licence, online; null otherwise (the POS then shows nothing)
 //   customerDisplay:askable      the POS: may the customer type on the customer screen now? (premium — the online licence;
 //                                the PC's "touch screen" setting; the screen showing — customerDetails.ts secondScreenAsk)
 //   customerDisplay:ask          the POS: show "Add your details" (or the M-Pesa number) on the customer screen
@@ -19,7 +21,7 @@ import { getEtimsFlag } from '../deviceConfig';
 import { liveCloudGet, liveCloudPost } from '../syncEngine';
 import { logLine } from '../logFile';
 import { customerDisplay, customerScreenTouch, setCustomerScreenTouch, licensed } from '../customerDisplayWire';
-import { secondScreenAsk } from '../customerDetails';
+import { secondScreenAsk } from '@zaptill/core/customerDetails';
 import { createStkPrompt, type StkPrompt } from '../mpesaStk';
 import { DISPLAY_SETUP_REFUSED } from './customerDisplay';
 import { type IpcShared } from './shared';
@@ -46,11 +48,25 @@ function stk(): StkPrompt {
 }
 
 export function registerCustomerDetailsHandlers(ctx: IpcShared) {
-  const { handle } = ctx;
+  const { handle, manageFetch } = ctx;
   const maySetUp = () => { if (!getActiveSession() && !signedInCan('settings.business')) throw new Error(DISPLAY_SETUP_REFUSED); };
   const gate = () => ({ touch: customerScreenTouch(), licensed: licensed() });
 
   handle('customer:saleInfo', async () => ({ etimsEnabled: getEtimsFlag(), seesContacts: signedInCan('customers.contacts') }));
+  // Owner, 2026-11-04: loyalty points on the desktop POS — premium (the online licence) and online only. Never in the sale's
+  // way: no licence, loyalty off, offline or refused → null.
+  handle('customer:loyaltyPoints', async (_e, customerId: string) => {
+    if (!licensed()) return null;
+    try {
+      const r = await manageFetch(`/api/loyalty/customer/${encodeURIComponent(customerId)}/points`, 'GET') as
+        { enabled?: boolean; points?: number; tier?: { name?: string; multiplier?: number }; earn_rate?: number } | null;
+      if (r?.enabled !== true) return null;
+      return { points: Number(r.points) || 0, tier: String(r.tier?.name ?? ''), multiplier: Number(r.tier?.multiplier) || 1,
+        earnRate: Number(r.earn_rate) || 1 };
+    } catch {
+      return null;
+    }
+  });
   handle('customerDisplay:askable', async () => {
     const g = gate();
     return { ...secondScreenAsk({ ...g, open: customerDisplay().isOpen() }), touch: g.touch, licensed: g.licensed };

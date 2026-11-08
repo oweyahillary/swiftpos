@@ -1,6 +1,6 @@
 # ZapTill — Android App and Owner Mobile Design
 
-Status: **design approved in outline (2026-10-10); Q1, Q3, Q5, Q6 decided (2026-10-11); build not started.** Register item **A354**.
+Status: **design approved in outline (2026-10-10); Q1, Q3, Q5, Q6 decided (2026-10-11); Stage 0 built 2026-11-04 on the `android` branch (§10); Q2 decided and Till stage 1 built 2026-11-05 (§11).** Register item **A354**.
 Revision 2: rewritten with the owner on 2026-10-10. Supersedes the 2026-09-28 proposal: bill-number ranges are
 gone, discovery is the A427 broadcast, a till signs in as itself (A415), an owner mode is added, and the work is split
 into stages. Companion to `DESKTOP_DESIGN.md`, `BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` and `PHASE5-NODE-AUTHORITY.md`.
@@ -97,7 +97,8 @@ Store.
 
 ## 2. One app, two modes
 
-On first launch the app asks **"What is this device?"** — **Shop till** or **Owner / manager phone**.
+On first launch the app asks **"What is this device?"** — **Shop POS** or **Owner / manager phone** (the person reads
+"POS", never "till"; the cloud calls the two surfaces `android-till` and `mobile`).
 
 | | Till mode | Owner mode |
 |---|---|---|
@@ -261,20 +262,28 @@ a re-point, not a rewrite (pinch point 11).
 
 ### 4.3 Joining and discovery
 
-Discovery is automatic and reuses **A427** exactly as the desktop installer does:
+**Joining is done by a technician** (owner, 2026-11-05: "joining should be done by a tech"). ZapTill recommends a
+dedicated branch server (backups, and printing set up once), but many clients have none, so a tablet joins either way
+("build both in the meantime"). The broadcast reuses **A427** exactly as the desktop installer does:
 
 ```
-first launch (Till mode)
+first launch (Till mode) — the technician names the POS ("Front counter")
   → listen for the branch server's broadcast (UDP 4199, "ZAPTILL-SERVER/1") for a few seconds
-     ├─ found → "Join <branch> server at <address>?" → POST /node/join
+     ├─ found → "Join the <name> server at <address>?" → the server's certificate and SECURITY CODE (A489), compared
+     │           with the server's screen → POST /node/join over TLS pinned to that certificate
      │           someone at the server presses Allow → the server gets ONE enrolment code from the cloud
      │           (POST /api/pos/join-code) → the tablet collects it once (/node/join/status) and enrols itself
-     └─ none  → the technician enters a terminal (enrolment) code, as on desktop
-  → the till now has its OWN session (A415) for that business and branch
+     └─ none  → "Enter the enrolment code from ZapTill": the business ID and the one-time code a ZapTill technician
+                issues in the admin portal (A69, the branch's Enrol POS)
+  → the POS now has its OWN session (A415) for that business and branch
 ```
 
 - Till codes and the branch code are set exactly as today; joining never changes them.
-- The tablet takes a **till seat** and reports its role (`role='till'`), so the cloud counts it (D4, Q2).
+- The tablet takes a **POS seat** and reports its role (`role='till'`), so the cloud counts it (D4, Q2 — decided).
+- A branch server too old to have a certificate is not joined through (nothing secret crosses the shop network in
+  plain HTTP); the technician enters the code instead.
+- In Till stage 1 the tablet **sells through the cloud** either way; joined through a branch server it also **prints
+  through it** (§11.4). Selling through the server is Till stage 3.
 - At every start the tablet tries the configured branch server first, then the cloud, then its buffer. It falls back
   **only when an authority could not be reached, never when one answered no** — a 401 is final wherever it comes from.
 
@@ -451,13 +460,17 @@ turning an alert off stops it; iPhone push on iOS 16.4+ after Add to Home Screen
 
 ### Till stage 1 — Online tablet till
 
-- Joining (§4.3): A427 broadcast + Allow, or a terminal code; the till's own session (A415); a till seat.
+- Joining (§4.3), by a technician: A427 broadcast + Allow at the branch server, or the enrolment code from the admin
+  portal; the POS's own session (A415); a POS seat.
 - Selling with the web POS screens on a tablet layout: categories, sizes and add-ons, notes, discounts, held orders,
   delivery and rider, payment methods, split payments, the after-payment screen; staff PINs (online); shifts with
   declared amounts and blind close; kitchen voids.
-- Printing: `shared/printing` bytes over the native TCP plugin; station routing; a printer that is off gives a clear
+- Printing: joined through a branch server → the whole ticket to the server (`POST /node/print`), printed with the
+  server's stations, printers and spool (owner, 2026-11-05: "so that printing can be easier"); no server, or it does not
+  answer → `shared/printing` bytes over the native TCP plugin with station routing; a printer that is off gives a clear
   error and the sale is kept.
 - Without internet: a clear "No connection — can't sell".
+- Built 2026-11-05: §11.
 
 **Tests on hardware:** two tablets printing to one printer at once — both print, nothing garbled; every sale reaches
 the cloud exactly once.
@@ -564,7 +577,10 @@ subtle bugs live.
   (Q6, 2026-10-11)
 - **The tablet is a leaf peer.** Never a node, never promoted, never holds data for another device.
 - **Two setups, one build:** with a branch server (recommended) or with the cloud. No steady state without either.
-- **Discovery is automatic** (A427 broadcast + Allow), with a terminal code as the fallback.
+- **Discovery is automatic** (A427 broadcast + Allow), with a terminal code as the fallback. **A technician joins the
+  tablet** either way; ZapTill recommends a dedicated branch server, but a tablet works without one. (2026-11-05)
+- **A tablet takes a POS seat** (`role='till'`), like a desktop POS. (Q2, Till stage 1)
+- **The cloud's gates treat a Shop POS (`android-till`) as a desktop POS.** (Till stage 1, §11.2)
 - **No bill-number ranges;** order numbers are per device (A181/A183).
 - **Setup-2 offline is Tier 1** (store-and-forward), not a full offline till.
 - **Printing:** one renderer; the branch server's spool in Setup 1, direct + local spool in Setup 2, Bluetooth as a
@@ -582,7 +598,7 @@ subtle bugs live.
 | # | Question | Needed before | Recommendation |
 |---|---|---|---|
 | Q1 | ~~Screen base~~ | — | **Decided:** Capacitor + web screens; iPhone PWA |
-| Q2 | Does a tablet take a **till seat** or a web POS licence? | Till 1 | A till seat (`role='till'`), same as desktop |
+| Q2 | ~~Till seat or web POS licence~~ | — | **Decided (owner-approved, Till stage 1):** a POS seat (`role='till'`), same as desktop (§11) |
 | Q3 | ~~Play Store or direct APK~~ | — | **Decided 2026-10-11:** direct APK (§1.4) |
 | Q4 | **Hardware:** which tablet models, the oldest Android version, which printers? | Till 1 | Android 10+; pick two tablet models and two printer models to certify |
 | Q5 | ~~Every owner or cloud licence only~~ | — | **Decided 2026-10-11:** cloud licence (web access) only (§3.1) |
@@ -591,3 +607,336 @@ subtle bugs live.
 | Q8 | **Foreground service** always on, or only while the app is open? | Till 4 | Always on while a shift is open |
 | Q9 | Branch server = existing desktop, or a dedicated office machine? | Till 3 | Support both; it is the same desktop app in server mode (A427) |
 | Q10 | Retention window default — 30 days? | Till 2 | 30 days unless a client reviews more on the tablet |
+
+---
+
+## 10. Stage 0 — built (2026-11-04, branch `android`)
+
+Everything in §5 "Stage 0 — Foundation", on the `android` branch (from `dev` at c5048fc0). No owner screens and no selling
+yet: each mode lands on a screen that says what comes next.
+
+### 10.1 What was built, and where
+
+| Part | Where | What it does |
+|---|---|---|
+| Shared rules | `packages/core/src/androidApp.ts` (`@zaptill/core/androidApp`) | The two surfaces (`android-till` = Shop POS, `mobile` = owner / manager phone) and their words; x.y.z versions; the release layout (tag `android-v<x.y.z>`, asset `ZapTill-<x.y.z>.apk`); the cloud's answer (`AndroidUpdateStatus`); **`updateVerdict`**, the one rule for the updater (never past the approved version, never "down"; a Shop POS only with no shift open; an owner's phone whenever the owner taps Update); the error-report shape. Used by the cloud, the admin portal and the app. |
+| The app | `apps/android` (Capacitor 8.6, app id `com.zaptill.app`, name **ZapTill**, Android 10+ = minSdk 29, target / compile SDK 36) | `src/`: the app's own screens (React + Vite, bundled into the APK): **What is this device?** (Shop POS / Owner or manager phone, then a confirm step), each mode's placeholder, **Updates**, **Reset app**. `android/`: the native project. |
+| Mode and Reset app | `src/device/mode.ts`, `src/device/reset.ts` | The mode in the app's preferences (not a secret). Reset app clears every preference, every secret and every downloaded update, then asks the question again. `resetBlocker()` is Till stage 2's hook (unsent sales); Stage 0 has none. |
+| Secure storage | `src/device/secrets.ts` over `@aparajita/capacitor-secure-storage` 8.0.1 | See 10.2. Stage 0 stores no secret yet; the names a later stage may use are listed there, so Reset app and a reader see them all. |
+| Cloud client | `src/cloud/client.ts`, `src/config.ts` | Every call through **CapacitorHttp** (the native HTTP stack): no web origin, so the cloud's CORS list needs no entry for the app. The base is `VITE_API_URL` at build time, else `https://api.zaptill.co.ke`: the one "authority target" seam (pinch point 10). |
+| Update feed | `apps/server/src/routes/appUpdate.ts`, `lib/androidReleases.ts`, `lib/androidApproval.ts`, migration **189** | `GET /api/app-update/android/status?surface=`: the approved version (null = held), the newest release, and the **offer** (version, file name, **SHA-256**, size, download path) when the approved APK can be handed out. Signed in, the business and the surface come from the **session** (a POS's own session → `android-till`, a person's → `mobile`), never from the query. Signed out (Stage 0): held, the newest release named. `GET /api/app-update/android/v/:version/apk` (signed in): only the version approved for this business and surface → 302 to the APK's short-lived GitHub link; otherwise 403. |
+| Approval per client | `apps/server/src/routes/adminAndroid.ts`, `apps/admin/src/AndroidAppCard.tsx`, `androidVersions.ts` | The admin portal's client page, tab **Updates** (renamed from "Desktop updates"; it now holds both apps), card **ZapTill for Android**: each surface approved or held on its own (super admin only, audited `android_update.approve` / `.hold`; only a complete, published release); **Get download link**: the APK's short-lived link and its SHA-256 for installing a new device (any admin for the newest or the client's approved version; a super admin any; audited `android.apk.download`). |
+| In-app updater | `src/updates/updater.ts`, `ApkUpdaterPlugin.java`, `ApkDownloader.java` | Asks the cloud, applies `updateVerdict`, downloads the offer natively into the app's private `cache/updates/`, hashing while it streams; a mismatch keeps nothing ("does not match its SHA-256 — it was not installed"). The session header goes **only** to the cloud's own host, never to the host it redirects to; every redirect must be https. Then Android's installer through the app's FileProvider, which shares only that folder. Without "Install unknown apps" for ZapTill the app opens that setting first. `shiftIsOpen()` is the Shop POS hook (Stage 0: no shifts). |
+| Crash and error reports | `src/errors/reporter.ts`, `CrashReporter.java`, `CrashReportsPlugin.java`, `apps/server/src/routes/appErrors.ts`, `lib/appErrors.ts` | See 10.3. |
+| Version | `apps/android/package.json` → `app/build.gradle` | One place: `versionName` = the package version, `versionCode` = x·1,000,000 + y·1,000 + z. |
+| CI | `.github/workflows/android.yml`; `ci.yml` step "ZapTill for Android, cloud side" | 10.5. |
+| Install guide | `docs/Manuals/ANDROID-INSTALL.md` (+ `.docx`, `.html`) | For owners and technicians: download, "Install unknown apps", Play Protect, first launch, checking the SHA-256, updates, Reset app, troubleshooting. |
+
+### 10.2 Decisions made while building
+
+1. **Secure storage: `@aparajita/capacitor-secure-storage` (8.0.1, Sept 2026, Capacitor 8), not a plugin of our own.**
+   Read before choosing: each value is encrypted with **AES-256-GCM** under its own key generated in the
+   **AndroidKeyStore** (the key never leaves it); only the ciphertext is stored, in the app's private preferences; `clear()`
+   serves Reset app. Rejected: `capacitor-secure-storage-plugin` (0.13, slower to follow Capacitor); AndroidX
+   `EncryptedSharedPreferences` (deprecated by Google in 2025); our own plugin (the same Keystore code to own and review,
+   for no gain). Its npm package lists `@capacitor/ios` and `@capacitor/keyboard` as dependencies; they are installed but
+   not built into the APK (Capacitor builds only the app's own direct plugins; the build lists three). With it, the
+   manifest opts out of Android backups and device-to-device transfer (`allowBackup="false"`,
+   `xml/data_extraction_rules.xml`): a copied session would break A415, and Keystore keys do not travel anyway.
+2. **Two approval columns** (`businesses.android_till_approved_version`, `mobile_approved_version`, migration 189), not
+   one: a client's shop tablets can stay on a version that works while the owner's phone takes a newer one. NULL = hold,
+   the default, as A348.
+3. **Releases live on GitHub Releases** beside the desktop's, tagged `android-v<x.y.z>` (never mixed with `v<x.y.z>`),
+   one asset `ZapTill-<x.y.z>.apk`. **The SHA-256 is GitHub's own record of the asset** (its `digest`), not a file next to
+   the APK that anyone with upload rights could replace along with it; a release without a digest is incomplete and
+   cannot be approved. `ANDROID_RELEASES_REPO` can point elsewhere (default: the desktop's repository). The Android list
+   reads the newest 100 releases (the desktop's pre-releases share the repository). When the files move to the VPS
+   (platform move), this follows A570's next step: the feed resolves through our own download server.
+4. **A signed-out device asks with `?surface=` and gets "held"** plus the newest release. This is what Stage 0's "gets a
+   version answer" means: there is no sign-in yet, so no business, so nothing can be approved for it. **Consequence:** a
+   Stage 0 install does not update itself; the next version (Owner A / Till 1) is installed from a new link, like the
+   first. From the first signed-in version on, the app updates itself.
+5. **Crash reports: a new route, `POST /api/app-errors`.** There was no client error route to reuse: the desktop keeps its
+   errors in its own log (A299) and sends the log only when support asks (A519, A533). The Android app has no technician
+   beside it, so it reports by itself, into the existing admin alerts (A589's bell) under a new category **`app_errors`**
+   ("Android app crashes and errors", client group: the bell and the Alerts page, never an email per crash). 10.3.
+6. **Install through `ACTION_VIEW` + FileProvider**, not the `PackageInstaller` session API: the same Android prompt, a
+   tenth of the code. Revisit if a later Android refuses it.
+7. **The app's screens are its own small Vite bundle** for Stage 0 (the mode question and the placeholders exist nowhere
+   else). Owner A loads the dashboard's owner screens and Till 1 the web POS screens: shared, not copied.
+
+### 10.3 Crash and error reports
+
+- **What is sent:** a native crash (the handler installed first thing in `MainActivity` writes `files/crash/pending.txt`
+  — a crashing process cannot be trusted with the network — and the app sends it at its next start), and the app's own
+  script errors and uncaught promise rejections. `{ surface, kind: crash|error, appVersion, message, stack, device }`,
+  where `device` is "Android 14 (API 34), samsung SM-T220": make and model only, no serial number, no name.
+- **App side:** at most 5 reports a run, each message once; reports wait until the mode is known; one that cannot be sent
+  is dropped (no retry loop).
+- **Cloud side:** no session needed (Stage 0 has none, and a crash before sign-in matters most), so: the global limiter
+  plus 30 reports per address per 10 minutes; every field trimmed and passed through the log redactor
+  (`@zaptill/core/logRedact`: tokens, keys, PINs, phone numbers); **one bell row per crash per 6 hours** however many
+  devices send it (fingerprint: surface, version, kind, the first lines of the message and the stack; never the device);
+  every report also in the cloud's log. With a session, the bell row names the business.
+
+### 10.4 Tools installed on the build PC (2026-11-04)
+
+| Tool | Where |
+|---|---|
+| Microsoft Build of OpenJDK 21.0.13 (winget `Microsoft.OpenJDK.21`) | `C:\Program Files\Microsoft\jdk-21.0.13.21-hotspot`; `JAVA_HOME` (user) |
+| Android command-line tools 16111833 (SHA-1 checked against Google's index) | `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest`; `ANDROID_HOME` (user) = `%LOCALAPPDATA%\Android\Sdk` |
+| Android SDK: platform-tools 37.0.1, platforms;android-36, build-tools;36.0.0 | `%LOCALAPPDATA%\Android\Sdk` (`sdkmanager` now hands over to Google's new `android` CLI: `android sdk install …`) |
+| Gradle 8.14.3 (the wrapper's, downloaded on the first build) | `%USERPROFILE%\.gradle` |
+
+No emulator (too heavy for this PC); the APK is tested on a real phone. Build it locally:
+
+```
+cd apps/android
+npm ci
+npm run apk:debug        # type-check, build the screens, cap sync, gradlew assembleDebug
+# → apps/android/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Built here on 2026-11-04: `app-debug.apk`, 9.1 MB, `com.zaptill.app` 0.1.0 (versionCode 1000), minSdk 29, target 36,
+permissions INTERNET and REQUEST_INSTALL_PACKAGES; `ApkDownloaderTest` 6/6 (a mismatch kept → its test fails, checked).
+The first build took ~14 minutes (Gradle's downloads); later ones about 30 seconds.
+
+### 10.5 CI, signing and the release key
+
+`.github/workflows/android.yml` runs on every push to `android`, on pull requests that touch the app, and on demand:
+type-check and build the screens, the native unit tests (`ApkDownloaderTest`: the SHA-256 check, a mismatch keeping
+nothing, the session never crossing hosts, only `ZapTill-x.y.z.apk` names), the **debug APK** always, and the **release
+APK signed with ZapTill's key** when the key is in the repository's secrets (its certificate printed by
+`apksigner verify --print-certs`, its SHA-256 beside it). The artifact is `zaptill-android` (kept 14 days). Nothing is
+published yet: not in `release.yml`, no `android-v` tag (10.6). The cloud side runs in `ci.yml` (step "ZapTill for
+Android, cloud side (Android Stage 0) and migration 189") and in the loop over every `tests/*.test.mjs`.
+
+**The release key is the owner's alone.** It is never in the repository (`*.jks` and `*.keystore` are ignored under
+`apps/android/android`), never printed, and reaches CI only as secrets, decoded into the runner's temporary folder for
+the build and deleted after it. Losing it means every device must uninstall and reinstall (§1.4): keep it like the
+Ed25519 technician key, two offline copies and the passwords in the password manager.
+
+**One-time, by the owner** (on a PC with JDK 21 — the build PC has it; `keytool` asks for the passwords, so they never
+appear in the command line or its history):
+
+```
+keytool -genkeypair -v -keystore zaptill-release.jks -alias zaptill -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=ZapTill, O=ZapTill, C=KE"
+keytool -list -v -keystore zaptill-release.jks -alias zaptill
+```
+
+Note the second command's **SHA-256 certificate fingerprint**: CI prints the same one for every release APK. Then add
+the four secrets (GitHub › the repository › Settings › Secrets and variables › Actions › New repository secret), or with
+the GitHub CLI from Git Bash in the folder holding the key (`gh secret set NAME` without `--body` asks for the value, so
+it stays out of the shell history):
+
+| Secret | Value | With the GitHub CLI |
+|---|---|---|
+| `ANDROID_KEYSTORE_BASE64` | the .jks file, base64 | `base64 -w0 zaptill-release.jks \| gh secret set ANDROID_KEYSTORE_BASE64` |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore password | `gh secret set ANDROID_KEYSTORE_PASSWORD` |
+| `ANDROID_KEY_ALIAS` | `zaptill` | `gh secret set ANDROID_KEY_ALIAS` |
+| `ANDROID_KEY_PASSWORD` | the key password | `gh secret set ANDROID_KEY_PASSWORD` |
+
+A device with the **debug** APK cannot take the **release** APK as an update (different signatures): uninstall it first.
+
+### 10.6 Publishing a version (by hand until the release step is added)
+
+1. Set the version in `apps/android/package.json` (higher than the last one).
+2. Run the **Android** workflow (with the secrets in place) and download `ZapTill-<version>.apk` from its artifact.
+3. `gh release create android-v<version> ZapTill-<version>.apk --prerelease --title "ZapTill for Android <version>" --notes "…"`.
+   GitHub records the SHA-256; the admin portal shows the release as complete within 5 minutes (or at once with **Refresh**).
+4. Approve it per client in the admin portal (Updates › ZapTill for Android).
+
+The release step (tag and upload from the workflow, like the desktop's `release.yml`) is added when the owner says the
+first version is ready (batch releases).
+
+### 10.7 What the owner checks (Stage 0's "done when")
+
+1. Run migration **189** on dev (`migrations/189_android_approved_versions.sql`; additive, every client held). Until it
+   runs the cloud answers "held" with a warning naming it, and the admin card says so.
+2. Install the APK on a test phone or tablet (`docs/Manuals/ANDROID-INSTALL.md`): it shows **What is this device?**;
+   after a choice, **Updates** says "ZapTill answered. Updates start once this device is joined to your business": the
+   version answer. A build talks to `https://api.zaptill.co.ke` unless built with `VITE_API_URL` (for dev:
+   `VITE_API_URL=<dev cloud> npm run apk:debug`).
+3. **Reset app** brings the question back.
+4. In the admin portal, a client's **Updates** tab shows the **ZapTill for Android** card (held on both surfaces; no
+   release yet until 10.6 is done once).
+
+### 10.8 Open items and decisions for later stages
+
+- ~~**Till stage 1: the gates for an `android-till` session.**~~ Decided and built: the same as a desktop POS, each
+  check extended to both surfaces — every place listed in §11.2.
+- **A Stage 0 install never updates itself** (10.2 item 4): fine for test devices; say so to anyone given the APK.
+- **A download link on our website** (§1.4) is not built; the admin portal's link is.
+- **The release step** in CI (10.6).
+- **Play Protect** may warn on the first install; the guide says what to tap. A Play Store listing for owner mode stays
+  open (§1.4).
+
+---
+
+## 11. Till stage 1 — built (2026-11-05, branch `android`)
+
+The online Shop POS (§5 "Till stage 1"): a technician joins the tablet — through the branch server or with the
+enrolment code — staff sign in with their PINs, and they sell with **the web POS screens themselves** (one POS design,
+the desktop as its base — owner, 2026-11-04), online only. Tickets print through the branch server when the tablet
+joined one, else straight to the network printers. No migration.
+
+### 11.1 What was built, and where
+
+| Part | Where | What it does |
+|---|---|---|
+| Shop POS screens | `apps/android/src/screens/shop/` | **ShopPos** (not joined → joining; joined → the router on the web POS's own paths: `/pos` the PIN pad, `/pos/cashier` the web POS, `/pos/device` this tablet), **JoinScreen** (for the technician: name the POS; the branch server found on the network with its security code, or "Enter the enrolment code from ZapTill"), **PinScreen** (PIN pad; arriving there removes the last person's tokens), **ShopDevice** (business, branch, branch server, the receipt printer saved and test-printed, updates, Join again, Reset app), **NoConnection** ("No connection — can't sell", a cover that closes nothing: an order on screen survives a blip), **PrintNotice** (what did not print, in words). |
+| The POS's own session | `src/shop/tillSession.ts` | `POST /api/auth/enrol/redeem` naming `surface: 'android-till'`, `device_role: 'till'`; the token pair, business and branch in the Keystore (`pos.session`), the device secret (`device.secret`); renewal a minute before expiry with the A477 ack; a refused session signs back in with the device secret (`/device-token`), else "a technician joins it again". One renewal at a time. |
+| Joining through the branch server | `src/shop/branchServer.ts`, `BranchServerPlugin.java`, `PinnedTls.java` | The A427 beacon (UDP 4199, with Android's multicast lock), the server's certificate from `/node/tls` (a plain socket: the certificate is public), its **security code**, then `/node/join` and `/node/join/status` over TLS trusting that certificate **byte for byte** (A489). The grant's code enrols at **this app's cloud only** (a grant naming another cloud is refused — the desktop's A494 check). The server address, its certificate, the branch access code and this POS's device key there are kept in the Keystore (`branch.server`). A server without a certificate is not joined. |
+| Staff PINs | `src/shop/pinSignIn.ts` | `POST /api/auth/verify-pin` with the POS's own session → the person's session (`pinSignIn`, surface `android-till`), handed to the web POS screens (`storeCashierSession`). Owners and managers use their PIN too, as at a desktop POS (§2). |
+| The web POS screens, not copied | `apps/dashboard/src/shopPos/ShopPosScreens.tsx` (the ONE way in), `apps/android/vite.config.ts` | The app's bundle includes the dashboard's own CashierScreen and everything it opens. Their packages resolve from the app's `node_modules` (one React); the dashboard's Supabase client is swapped for a stub (`src/shop/supabaseStub.ts`: no Supabase address or key in the APK). Tailwind with the dashboard's own theme (`tailwind.config.cjs`). The app's strict type-check never reaches the dashboard's files: `src/env.d.ts` declares the three exports it uses. Capacitor's `CapacitorHttp` sends the screens' `fetch` through the native HTTP stack (no CORS entry). |
+| The seam in the web POS | `apps/dashboard/src/lib/shopPos.ts`, `posTerminal.ts`, `localPrintServer.ts`, `printRouted.ts`, `api.ts`; `CashierScreen`, `ShiftModal`, `PaymentModal` | Set once by the app (`setShopPosHost`); in a browser nothing is set and nothing changes. On a Shop POS: the POS is **its own drawer** (no "Which POS are you selling on?", it covers no other POS, every request names it — `x-device-id`); whoever signs in sells into its running shift and an owner stays on the POS (as at a desktop POS); tickets go to the branch server first (`printOrder`), else as bytes to the network printer (`printBytes`). |
+| Printing on the tablet | `src/shop/printing.ts`, `RawPrinterPlugin.java`, `RawPrinterSpool.java` | 11.4. |
+| Print relay on the branch server | `apps/desktop/src/main/nodePrintRelay.ts`, `nodeServer.ts` (`POST /node/print`), `ipcHandlers.ts` (registers the server's own `queueThermal`) | 11.4. |
+| Updates | `src/updates/updater.ts` | The update feed asked with the POS's own session (so the business's approval for `android-till` applies); a Shop POS updates only when its drawer is closed — asked of the cloud; when it cannot be told, it waits. |
+| Cloud gates | `apps/server/src/lib/posSurface.ts` and the places in 11.2 | 11.2. |
+
+### 11.2 The cloud's gates for an `android-till` session (decision taken: as a desktop POS)
+
+`lib/posSurface.ts` says once which surfaces are a POS device's: `desktop` and `android-till`. Every place that keyed on
+`desktop` was decided explicitly:
+
+**Extended to the Shop POS (a gate):**
+
+| Place | Gate | Now |
+|---|---|---|
+| `lib/terminalWrites.ts` | A159 terminal-write guard | Both surfaces. The POS's own session: the till's writes only. A person's PIN sign-in: + the manager screens' writes, + on a Shop POS only **`SHOP_POS_WRITES`** — the writes the web POS screens make live that a desktop sends through its sync push (open shift, a float or pay-out, clock in, parking sessions, the M-Pesa prompt, matching a C2B payment, a low-stock level). A desktop PIN sign-in is still refused those. `tests/android-till-stage1.test.mjs` reads every write in the web POS screens and fails when one is not covered. |
+| `lib/cloudPlan.ts` `lapseGateApplies` | A581 lapsed plan | Both. |
+| `lib/cloudPlan.ts` `backupGateApplies` | A601 desktop-only cut-off | Both — so a Shop POS of a business without the online licence cannot sell from the cut-off (it keeps nothing offline in stage 1); see the licence door below. |
+| `lib/cloudPlan.ts` `accessRefusal` | A612 paused branch | Both. |
+| `lib/cloudPlan.ts` `webGateApplies` | A584 web pause | Neither POS (each has the gates above). |
+| `middleware/auth.ts` `branchPauseBlocked` | A612 branch narrowing | Neither POS (refused whole by `accessRefusal`). |
+| `middleware/auth.ts` `requireWebSurface` | the web portal's features (reports, analytics, exports, attendance, loss alerts) | Both kept off — **except** a Shop POS's `GET /api/reports/eod` (`shopPosOwnRead`): the drawer's Z report at close, which the web POS screens read from the cloud (a desktop prints its own). |
+| `lib/onlineLicence.ts` `desktopWithoutLicence` | premium features (activate a pump, loyalty points) | Both. |
+| `routes/auth.ts` `/verify-pin` | the branch's POS licence (`desktop_licensed`) | Both — a tablet takes a POS seat (Q2). |
+| `routes/auth.ts` `/verify-pin` | recording the POS (`registerDesktopTerminal`, role `till`) | Both. |
+| `routes/auth.ts` `/verify-pin` | `pinSignIn` on the person's token (A159 tells a person from the device) | Both. |
+| `routes/pos.ts` `/pos/init` | the branch's POS licence | Both. |
+| `lib/tillSessions.ts` `sessionKind` | an owner's revoke never ends a POS's own session | Both are `device`. |
+| `lib/webPosSignIn.ts` `dashboardSessionKind` | A608: never exchanged for a web POS session | Neither POS. |
+| `lib/deviceGrant.ts` `buildDeviceTokenPayload` | the POS's own token | Takes the surface (`deviceSurfaceOf`: anything but `android-till` is `desktop`, so every desktop build is unchanged); `/enrol/redeem`, `/device-token` and the renewal carry it. |
+| `routes/appUpdate.ts` `surfaceOfSession` | the update feed | A person's PIN sign-in on a Shop POS asks for `android-till` (never `mobile`). |
+
+**New on the Shop POS's door:** `/verify-pin` from a Shop POS refuses a business without the online licence (403
+`ONLINE_LICENCE_REQUIRED`, "A Shop POS tablet sells through the ZapTill cloud, which needs the ZapTill online licence") —
+it would otherwise sign in and then have every sale refused from the A601 cut-off. Owner decision (11.6).
+
+**Kept the desktop's (its protocol, not a gate)** — the Shop POS sells live through the web POS screens, so these answer
+it as they answer the web POS:
+
+| Place | Why it stays `desktop` |
+|---|---|
+| `routes/auth.ts` `offlineAuth` (the person's PIN hash) | Offline sign-in is Till stage 2; no PIN hash goes to a tablet now. |
+| `lib/deviceGrant.ts` `isOwnerEraTillPayload` | Pre-A415 desktop sessions only. |
+| `routes/orders.ts` `tillMadeSale`, the sale's own time (`created_at`, `soldAt`) | A desktop's offline replays; a Shop POS's sale is live, timed by the cloud. |
+| `routes/orders.ts` SHIFT_CLOSED (a sale into a closed drawer) | A desktop sale may have been rung offline; a Shop POS is online, so it is refused and asked for a new shift, as the web. |
+| `routes/orders.ts` the rider's fee paid from the drawer | The web POS has the cloud pay it; a desktop records its own pay-out. |
+| `routes/orders.ts` credit sale source | `web` for a Shop POS (it sells through the web POS's routes). |
+| `routes/shifts.ts` (close / confirm replays with their own times, the till's count, siblings' cash) | A desktop's replays; a Shop POS closes live, as the web POS (blind close, declared amounts, reasons). |
+| `routes/sync.ts`, `routes/backfill.ts` | The desktop's sync push; Till stage 2. |
+| `routes/modifiers.ts`, `routes/variants.ts` (the whole-menu shortcut) | A desktop's menu pull; the web POS screens ask per product. |
+| `routes/reports-monthly.ts` (a desktop manager's monthly pack) | The desktop's manager screens; a Shop POS falls to `requireWebSurface` (refused). |
+| `routes/wastage.ts` `fromTill` | The desktop's offline record fields. |
+| `lib/drawerBell.ts` `webOnly` | A desktop's own writes reach its branch server; a Shop POS's people's writes ring the drawers like the web's. |
+| `lib/liveHub.ts`, `lib/branchDrawers.ts`, `routes/pos.ts` (`/branch-staff`, `/join-code`, `/credit-customers`) | The desktop POS's and the branch server's own channels. |
+
+### 11.3 Joining (by a technician)
+
+The joining screen is worded for the technician. **Through the branch server** (recommended where there is one): the
+tablet lists the servers it hears; the technician taps **Join the <name> server at <address>?**, compares the **security
+code** with the server's screen, taps **Ask to join**, and someone at the server presses **Allow** — the desktop's A427
+flow and its checks as they are (a request lives 10 minutes; a device already holding a key there is refused unless it
+proves it; the notices are rate-limited). **Server side: nothing changed for joining** — a tablet's request is a POS's
+request. **With the enrolment code**: the technician issues it in the admin portal (client › Branches › the branch ›
+**Enrol POS**) and types the business ID and the code.
+
+### 11.4 Printing — and two tablets on one printer
+
+- **Through the branch server** (`POST /node/print`, behind the branch access code checked for every `/node/*` route and
+  a **proven device key**, like `/node/verify-pin`): the tablet sends the whole ticket — the order as the desktop's own
+  sale screen prints it — with a job (`receipt`, `kitchen`, `proforma` = Print bill, `void` = a kitchen void). The server
+  prints it with **its own** stations, category routing, printer assignments (a USB printer on the server PC too) and
+  spool: `nodePrintRelay.relayPrint` → `queueThermal` → `escposBridge.printSale` → `printWorker`, one queue per printer.
+  The answer names any station with no printer, in words the tablet shows. The desktop's own sales are byte-for-byte
+  unchanged (`queueThermal` is not touched; `apps/desktop/test/node-print-relay.test.mjs` compares the tickets).
+- **Directly** (no server, or it did not print): the web POS screens render the ESC/POS bytes with `shared/printing` and
+  route them by station from the branch's printers, exactly as on the web; the tablet sends them over TCP 9100. A
+  printer's address is its name in the web dashboard's **Settings › Printers** ("192.168.1.50" or "192.168.1.50:9100");
+  the receipt printer is set on the tablet (**This device › Receipt printer**).
+- **Two tablets, one printer (pinch point 2):** on one tablet, a fair lock per printer sends one ticket at a time, in
+  order; each ticket goes on **a connection of its own**, written whole and closed — nothing of another ticket ever
+  shares it, so tickets cannot interleave on the paper. A second tablet finds the printer busy (refused or timing out) and
+  waits a random **50–500 ms** before each of up to 6 tries. A ticket cut off half-way is never re-sent by itself (a
+  second partial copy is worse). Through a branch server, the server's own spool serialises every tablet.
+- A printer that is off is said in words ("The printer at 192.168.1.50 is not answering…"); the sale was saved in the
+  cloud before anything printed — the cashier reprints from History.
+
+### 11.5 How to test on hardware (the owner, or a technician)
+
+1. Build and install the debug APK (§10.4; `VITE_API_URL=<dev cloud>` for dev). Choose **Shop POS**.
+2. **Join with the code:** in the admin portal (dev), Enrol POS on a branch with a POS licence; on the tablet name it,
+   type the business ID and code → the PIN pad shows the business and branch. The admin portal lists the POS.
+3. **Join through a branch server:** reset the app, run a desktop in branch-server mode on the same Wi-Fi; the tablet
+   lists it; compare the security codes; Allow at the server → joined. Check the server lists the tablet under its
+   points of sale.
+4. **Sell:** a cashier's PIN → open a shift with a float; ring a restaurant order with sizes, add-ons and a note; hold it;
+   send to kitchen; take a split payment (cash + M-Pesa KES 1 only — the STK sandbox takes real money); see the
+   after-payment screen; a kitchen void; close the shift blind with declared amounts. Repeat on a retail and a
+   petrol-station business.
+5. **Print:** (a) with the server: kitchen and receipt print on the server's printers; switch the server off → the next
+   ticket prints straight to the network printer and the notice says so. (b) without: set the kitchen printer's name to
+   its address in Settings › Printers and the receipt printer on This device; switch a printer off → the notice; the sale
+   is in History.
+6. **Two tablets, one printer:** ring and pay on both at the same moment, ten times — every ticket prints whole, none
+   garbled; every sale reaches the cloud exactly once (the dashboard's Orders).
+7. **No connection:** pull the router's internet → "No connection — can't sell" covers the screen; plug it back → the
+   order on screen is still there.
+
+### 11.6 What the owner checks, open items and decisions
+
+- **No migration.** Run CI; build the APK (`.github/workflows/android.yml` now also runs `RawPrinterSpoolTest` and
+  `PinnedTlsTest`); the hardware tests in 11.5. A branch server must run a desktop build with `/node/print` to print for
+  tablets — an older one answers 404 and the tablet prints directly.
+- **Decision — the online licence at the Shop POS's door** (built: refused without it). The tablet sells only through
+  the cloud, and A601 refuses a desktop-only business's POS sales from the cut-off. Recommendation: keep it until Till
+  stage 3 lets a tablet sell through a branch server.
+- **Decision — printer addresses.** Directly, a printer's *name* in Settings › Printers is its network address; a branch
+  that also prints from the web POS on a PC (the print bridge needs the OS printer name) cannot share one printer entry.
+  Recommendation: a branch server for mixed branches now; a separate "network address" field on branch printers (a
+  migration) when the first mixed client needs it.
+- **Decision — the drawer's Reports tab** (`/api/reports/sales`) stays refused on a Shop POS like on a desktop
+  (web-portal reports); only the Z report reads. Recommendation: keep.
+- **Open:** the tablet sends no machine identity (A477 guid / serial), so its session is not bound to the hardware — Till
+  stage 2 should send a hash of Android's device id. The web POS's **? Help** opens nothing useful in the app, and the
+  customer display (A606) is not offered on a tablet. A web POS covering a POS skips the open-bill sold-out re-check
+  (`routes/orders.ts`, a request naming a device) — a Shop POS does too. **Q4 (hardware)** stays open: Android 10+ tablets
+  and generic network ESC/POS printers, nothing certified yet.
+- **Not in stage 1:** offline selling (Till stage 2), selling through the branch server (Till stage 3), Bluetooth and the
+  foreground print service (Till stage 4).
+
+## 12. Till stage 2 — keeps selling offline (built 2026-11-06, branch `android-till-2`)
+
+The store-and-forward layer of §4.7 and §4.8. The rules live once in `@zaptill/core` (the one-POS rule) and the app wraps
+them; the server side is reused as-is (the desktop already stores-and-forwards through `/api/orders` idempotent by
+`idempotency_key`, `/api/sync/push`, `/api/sync/backfill`). All on the `dev` cloud (the app is pinned to `dev-api`).
+
+| Piece | Where | What it does |
+|---|---|---|
+| The rules (pure, shared) | `@zaptill/core/tillBuffer` (`packages/core/src/tillBuffer.ts`) | Which writes may go offline (`bufferableKind`); the order uuid / idempotency key a write carries; the replay batch in creation order that keeps an order and its void/refund together and never before the order; applying the cloud's acks (a sale is a fact — ok/retry/failed, a conflicted sale is kept); the two §4.8 retention clocks; the status-bar numbers. 37 unit tests (`tests/till-buffer-stage2.test.mjs`). |
+| The buffer | `apps/android/src/shop/buffer.ts` | An IndexedDB store on the tablet (survives a kill or reboot) and an in-memory one for tests; `enqueue` a captured write, `recordAcks`, the §4.8 `sweepRetention`, the `status`. |
+| Replay | `apps/android/src/shop/replay.ts` | Drains the buffer when the connection returns: pushes `nextBatch` in order through an injected sender, applies the acks, surfaces table-taken questions; `ackFromStatus` maps HTTP (2xx ok; 0/401/5xx retry — a sale is never dropped; other 4xx a permanent refusal, parked and surfaced); `cloudSender` re-issues the captured call via CapacitorHttp. |
+| Offline PIN | `apps/android/src/shop/offlinePin.ts` | The desktop model (A345): a provisional sign-in for a cached roster person, the PIN held and the sign-in confirmed at `/api/auth/verify-pin` on reconnect — a PIN changed on the web is refused then. A `verifyLocally` seam (default: defer) is where a cached `pin_hash` check slots in once `bcryptjs` is added. |
+| The offline-writes seam | `apps/android/src/shop/offlineWrites.ts` | Decides read / buffer / refuse offline and hands the screens a provisional answer so the sale prints. OPT-IN: `installOfflineWrites` wraps `window.fetch` only when the ShopPos entry calls it, so stage 1 and the web/desktop are untouched. |
+| The status bar | `apps/android/src/screens/shop/SyncStatusBar.tsx` + `styles.css` | Online / offline / syncing, sales waiting, last synced, and a "need attention" count for parked rows. |
+
+Checked: `tests/till-buffer-stage2.test.mjs` (37) and `tests/android-till-stage2.test.mjs` (33, bundled with esbuild, Capacitor external) run the real rules and the app layer; the app type-checks (`tsc --noEmit`).
+
+**Remaining before the Stage 2 hardware test (§5 "done when"):** wire `installOfflineWrites` + `SyncStatusBar` + the roster
+cache + the replay driver into the ShopPos entry (a supervised session — the provisional-response shape per screen is
+settled on real hardware); add `bcryptjs` to the app (needs a `package-lock.json` update, `npm ci`) so offline PIN also
+checks the cached verifier, not only the reconnect upgrade; send a device-id hash to bind the session (§11 open item). Then
+the hardware test: unplug the router mid-shift, sell 50, reconnect — exactly 50 arrive; kill the app offline — nothing lost.

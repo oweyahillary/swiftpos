@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { deviceLabelShown } from '../../lib/posTerminal';   // 0.6.37: old "SwiftPOS till" reads ZapTill
 import { api } from '../../lib/api';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Toast from '../../components/Toast';
 import { useToast } from '../../hooks/useToast';

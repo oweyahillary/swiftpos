@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { getDayCutoff, primeDayCutoffs } from '../lib/dayCutoff';   // A593: primeDayCutoffs
 import { memoEnabled } from '../lib/writeActivity';   // A593
 import { opsEventsGen } from '../lib/opsEvents';     // A593
-import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 import { notifyRendered, alertChannels, alertLinks } from '../lib/alertNotify';   // A592: laid out by lib/alertFormat.ts
 import { recentErrors, digestCounters, recentSignInFailures, recentSyncAttempts, syncQueueReports, requestLoad } from '../lib/watchdogCounters';

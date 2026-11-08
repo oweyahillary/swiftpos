@@ -32,6 +32,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const coreRequire = createRequire(path.join(ROOT, 'apps/server/package.json'));   // @zaptill/core, as the cloud loads it
 const DIST = process.env.SERVER_DIST || path.join(ROOT, 'apps/server/dist');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.stack?.split('\n').slice(0, 3).join('\n      ') ?? e.message}`); } };
@@ -47,12 +48,12 @@ process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const jwt = require('jsonwebtoken');
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
-const P = require(path.join(DIST, 'lib/permissions.js'));
+const P = coreRequire('@zaptill/core/permissions');
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
 const PD = require(path.join(DIST, 'lib/personalData.js'));
 const SC = require(path.join(DIST, 'lib/shiftConfirm.js'));
 const RK = require(path.join(DIST, 'lib/roleKeys.js'));
-const BT = require(path.join(DIST, 'lib/businessTerms.js'));
+const BT = coreRequire('@zaptill/core/businessTerms');
 state._setPermissionsMigrated(true);
 state._setSplitsMigrated(true);
 
@@ -163,7 +164,7 @@ await ok('36 new rights, every part a catalogue key with exactly one entry, no p
     assert.ok(P.isPermissionKey(parent), parent);
     for (const c of parts) { assert.ok(P.isPermissionKey(c), c); assert.ok(!P.SPLITS[c], `${c} is also a parent`); }
   }
-  assert.equal(P.PERMISSION_KEYS.length, 109);   // A599: + attendance.view / edit / devices
+  assert.equal(P.PERMISSION_KEYS.length, 110);   // A599: + attendance.view / edit / devices; 8n: + settings.pos_layout
 });
 await ok('personal data: the badge keys; the built-in Auditor (VIEW_KEYS) holds none of them, and no write key', () => {
   assert.deepEqual([...P.PERSONAL_KEYS].sort(), ['attendance.view', 'customers.contacts', 'customers.history', 'staff.contacts', 'staff.pay', 'staff.pins']);   // A599: attendance is personal data

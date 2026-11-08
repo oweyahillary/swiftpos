@@ -26,6 +26,7 @@ import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess, allBranchAccess, branchFilter, byBranch, rowInBranches } from '../middleware/rbac';   // A550: allBranchAccess
 import { branchOfBusiness, idsOfBusiness } from '../lib/branchGuard';   // A494
+import { desktopWithoutLicence, ONLINE_LICENCE_REFUSAL } from '../lib/onlineLicence';
 import type { Request, Response } from 'express';
 
 // A490: setting up pumps and tanks, deliveries and pump state are fuel.manage (everyone held it before migration 134 —
@@ -36,6 +37,10 @@ const canManageFuel = requirePermission('fuel.manage');
 const canSetUpFuel = requirePermission('fuel.setup');
 const canRecordDelivery = requirePermission('fuel.deliveries');
 const canReadFuel = requireAnyPermission('fuel.manage', 'reports.fuel', 'orders.create');
+// Owner, 2026-11-04: marking a pump as dispensing is part of selling fuel — whoever may sell (orders.create) at the
+// pump's branch may do it, on the web POS and on the desktop POS (with the online licence). It needed fuel.manage, which a
+// cashier rarely holds: the web's call then failed quietly and only that screen showed the pump busy.
+const canActivatePump = requireAnyPermission('fuel.manage', 'orders.create');
 
 // ── A494: branches and ids ────────────────────────────────────────────────────
 // A tank or pump either belongs to one branch or (branch_id null) to the whole business — the POS lists the branch's
@@ -361,10 +366,12 @@ pumpsRouter.delete('/:id', canSetUpFuel, async (req, res) => {
 });
 
 // PATCH /api/pumps/:id/activate
-// Called by CashierScreen when a cashier starts a fuel sale on a pump.
+// Called by the web POS and the desktop POS when a cashier starts a fuel sale on a pump.
 // Sets status to 'dispensing'. Records which order is using this pump.
-pumpsRouter.patch('/:id/activate', canManageFuel, async (req, res) => {
+// The pump must be the caller's branch's (or the whole business's — ownRow); a desktop POS needs the online licence.
+pumpsRouter.patch('/:id/activate', canActivatePump, async (req, res) => {
   const { order_id } = req.body;
+  if (await desktopWithoutLicence(req)) { res.status(403).json(ONLINE_LICENCE_REFUSAL); return; }
   if (!(await ownRow(req, res, 'pumps', 'Pump'))) return;   // A494
 
   const { data, error } = await supabase
@@ -374,7 +381,7 @@ pumpsRouter.patch('/:id/activate', canManageFuel, async (req, res) => {
     .eq('business_id', req.businessId)
     .neq('status', 'inactive')   // can't activate a decommissioned pump
     .select()
-    .single();
+    .maybeSingle();               // no row (inactive) is the 404 below, not an error
 
   if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Pump not found or inactive' }); return; }

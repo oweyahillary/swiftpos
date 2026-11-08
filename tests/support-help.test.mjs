@@ -21,8 +21,8 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const S = await import(pathToFileURL(path.join(ROOT, 'shared/support.ts')).href);
-const H = await import(pathToFileURL(path.join(ROOT, 'shared/helpTopics.ts')).href);
+const S = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/support.ts')).href);
+const H = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/helpTopics.ts')).href);
 
 await ok('SwiftPOS support: the owner\'s two numbers', () => {
   assert.deepStrictEqual([...S.DEFAULT_SUPPORT_PHONES], ['0717675635', '0782972023']);

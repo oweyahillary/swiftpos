@@ -40,7 +40,7 @@ delete process.env.TILL_SCOPE_ENFORCE;
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const jwt = require('jsonwebtoken');
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
-const P = require(path.join(DIST, 'lib/permissions.js'));
+const P = require('@zaptill/core/permissions');
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
 const EP = require(path.join(DIST, 'lib/effectivePermissions.js'));
 const HS = require(path.join(DIST, 'lib/historyScope.js'));
@@ -277,7 +277,7 @@ try {
     const all = await call('GET', '/api/controls', T.owner);
     // A493: no `updates` section — ZapTill approves till updates (admin portal), never the client.
     assert.deepEqual(Object.keys(all.body).sort(), ['loyalty', 'payments', 'pos', 'stock']);   // A563: + stock (when stock reaches zero)
-    assert.deepEqual(Object.keys(all.body.pos).sort(), ['approval_pin', 'delivery_fee', 'login_codes', 'pay_before_kitchen', 'pay_later_tabs']);   // A594: + approval_pin (the owner's now)
+    assert.deepEqual(Object.keys(all.body.pos).sort(), ['approval_pin', 'delivery_fee', 'login_codes', 'pay_before_kitchen', 'pay_later_tabs', 'rooms']);   // A594: + approval_pin (the owner's now); 2026-11-04: + rooms
     assert.deepEqual(Object.keys((await call('GET', '/api/controls', as(['settings.pos']))).body).sort(), ['loyalty', 'pos', 'stock']);
     assert.deepEqual(Object.keys((await call('GET', '/api/controls', as(['settings.payments']))).body), ['payments']);
     assert.deepEqual((await call('GET', '/api/controls', T.cash)).body, {});

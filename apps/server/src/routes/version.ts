@@ -1,7 +1,7 @@
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/adminAuth';
-import { RELEASE } from '../lib/release';
+import { RELEASE } from '@zaptill/core/release';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 
 // ─────────────────────────────────────────────────────────────────────────────

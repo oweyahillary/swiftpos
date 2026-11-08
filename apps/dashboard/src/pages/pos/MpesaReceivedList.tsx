@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { RECEIVED_POLL_MS, paidAtLabel, paymentsForBill, receivedNotice, type ReceivedPayment } from '../../lib/mpesaPayments';
+import { RECEIVED_POLL_MS, paidAtLabel, paymentsForBill, receivedNotice, type ReceivedPayment } from '@zaptill/core/mpesaPayments';
 
 interface RecentAnswer { offered: boolean; payments?: ReceivedPayment[]; unchanged?: boolean; stamp?: number }
 

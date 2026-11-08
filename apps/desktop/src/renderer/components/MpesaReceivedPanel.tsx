@@ -15,7 +15,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { RECEIVED_POLL_MS, claimRefusalText, newSaleRef, paidAtLabel, paymentsForBill, type ReceivedPayment } from '../../shared/mpesaPayments';
+import { RECEIVED_POLL_MS, claimRefusalText, newSaleRef, paidAtLabel, paymentsForBill, type ReceivedPayment } from '@zaptill/core/mpesaPayments';
 
 interface Props {
   /** What this M-Pesa leg is to collect. */

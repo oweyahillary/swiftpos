@@ -9,9 +9,9 @@ import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import BulkProductImport from '../products/BulkProductImport';
 import { money } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { useBusiness } from '../../context/BusinessContext';
-import { businessTerms } from '../../lib/businessTerms';   // A573: the setup tab of every shop (retail, minimart, other)
+import { businessTerms } from '@zaptill/core/businessTerms';   // A573: the setup tab of every shop (retail, minimart, other)
 
 interface Product {
   id: string; name: string; base_price: number;

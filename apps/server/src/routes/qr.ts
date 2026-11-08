@@ -16,7 +16,7 @@ import { supabase }    from '../lib/supabase';
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { showsOnDay } from '../lib/productDays';
+import { showsOnDay } from '@zaptill/core/productDays';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 const router = safeRouter();

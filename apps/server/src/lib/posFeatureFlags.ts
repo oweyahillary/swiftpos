@@ -3,7 +3,7 @@
  * The rules for what each switch means live in the shared lib/posFeatures.ts; this is the one database read.
  */
 import { supabase } from './supabase';
-import { parsePosFeatures, POS_FEATURE_KEYS, type PosFeatures } from './posFeatures';
+import { parsePosFeatures, POS_FEATURE_KEYS, type PosFeatures } from '@zaptill/core/posFeatures';
 
 export async function businessPosFeatures(businessId: string | undefined | null): Promise<PosFeatures> {
   if (!businessId) return parsePosFeatures(null);

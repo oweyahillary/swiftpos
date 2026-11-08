@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
-import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS, STANDARD_POS_FEATURES } from "./lib/posFeatures";   // A538; A543 (A594: the approval PIN is the owner's); A604
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS, STANDARD_POS_FEATURES } from "@zaptill/core/posFeatures";   // A538; A543 (A594: the approval PIN is the owner's); A604
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage,
   OWNER_POS_OPTIONS_HEADING, OWNER_POS_OPTIONS_NOTE, PER_ROLE_NOTE, ALWAYS_ON_NOTE, OWNER_LOYALTY, OTHER_FLAG_LABELS, ownerValueText } from "./ownerSettings";   // A604
-import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
-import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "./lib/tenantHost";   // A378: a client's own sign-in address
-import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
+import { RELEASE, releaseLabel, releasesDiffer } from "@zaptill/core/release";
+import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "@zaptill/core/tenantHost";   // A378: a client's own sign-in address
+import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "@zaptill/core/support";   // 0.6.35 (A384): a shop's own tech
 import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and Account pages
 import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
 import NotificationBell from "./NotificationBell";   // A589: the bell — client problems and billing notices, not an email each
@@ -18,12 +18,13 @@ import TestDataCard from "./TestDataCard";   // A396
 import SupportLogsCard from "./SupportLogsCard";   // A519
 import TillsDaysCard from "./TillsDaysCard";   // A523
 import DownloadZapTill from "./DownloadZapTill";   // A570: the installer, through our own server
+import AndroidAppCard from "./AndroidAppCard";   // Android Stage 0
 import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone, expiryText, desktopOnlyText, cutoffLine, desktopUpdatesLine } from "./cloudPlan";   // A569; A581 expiryText; A601
 import CloudPlanCard from "./CloudPlanCard";   // A581: the cloud payment plan
 import BranchBillingCard from "./BranchBillingCard";   // A612: the cloud per branch
 import BillingDetailsCard from "./BillingDetailsCard";   // A612: ZapTill's billing details and prices
 import AdminPager, { usePageSize } from "./AdminPager";   // A475
-import { paginate } from "./lib/paginate";
+import { paginate } from "@zaptill/core/paginate";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -1227,7 +1228,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
     ["billing",  "Plan & billing"],
     ["features", "Features"],
     ["tills",    "POS & days"],   // A523: support closes a till's day or drawer for the client
-    ["updates",  "Desktop updates"],
+    ["updates",  "Updates"],   // the desktop (A348) and, from Android Stage 0, ZapTill for Android
     ["account",  "Owner & account"],
     ["notes",    `Notes${notes.length ? ` (${notes.length})` : ""}`],
   ];
@@ -1943,6 +1944,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
       {/* A519: the logs this client's tills sent to support (Tech page › Send logs to support) */}
       {/* A570: the installer for this client's new till — the version approved for it first, through our own server */}
       {tab === "updates" && <DownloadZapTill req={req} apiUrl={apiUrl} clientId={client.id} />}
+      {/* Android Stage 0: ZapTill for Android — each mode approved or held on its own, and the APK for a new device */}
+      {tab === "updates" && <AndroidAppCard req={req} clientId={client.id} clientName={detail?.name ?? "this client"} isSuper={isSuper} askConfirm={askConfirm} />}
       {tab === "updates" && <SupportLogsCard clientId={client.id} req={req} />}
       {/* A523: every till's open day and drawers — close them for the client (any admin: super admin or agent) */}
       {tab === "tills" && <TillsDaysCard clientId={client.id} req={req} />}

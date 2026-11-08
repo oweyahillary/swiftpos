@@ -5,7 +5,7 @@
  *
  *   node tests/payment-catalogue.test.mjs
  *
- * RUNS the real shared/paymentCatalogue.ts (the list, the defaults, the setting, the buttons a screen shows) and the
+ * RUNS the real packages/core/src/paymentCatalogue.ts (the list, the defaults, the setting, the buttons a screen shows) and the
  * till's report names; then pins the chain: the cloud stores and sends the branch's choice, the till keeps it (schema
  * 69) and relays it to its peers, both payment screens and both settings screens use it.
  *
@@ -32,7 +32,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g,
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const C = await import(pathToFileURL(path.join(ROOT, 'shared/paymentCatalogue.ts')).href);
+const C = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/paymentCatalogue.ts')).href);
 // The till's daily report names (its file needs Electron): modeLabel lifted into a temp file.
 const dsr = read('apps/desktop/src/main/dailySalesReport.ts');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-a429-'));
@@ -135,7 +135,7 @@ ok('kept on the till (schema 69, the cloud requires it), pulled, relayed to the 
 });
 ok('the payment screen shows the branch\'s methods (not a fixed list), starting on cash where taken', () => {
   const pm = read('apps/desktop/src/renderer/components/PaymentModal.tsx');
-  assert.ok(pm.includes("const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);"));
+  assert.ok(pm.includes("const buttons = useMemo(() => withRoomCharge(paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), rooms),"));
   assert.ok(pm.includes('{methods.map(b => ({ code: b.code, label: b.name, icon: b.icon })).map(m => ('));   // A552: less On account unless offered
   assert.ok(!pm.includes('METHOD_META'));
   assert.ok(pm.includes("{ method: firstMethod, amount: '', tendered: '', reference: '' },"));
@@ -154,7 +154,7 @@ ok('Manager › Settings › Payment methods — a switch per method, saved for 
 console.log('\nThe web');
 ok('the web POS: the branch\'s methods, the rest settling like a card; split payment only what the branch takes', () => {
   const wp = read('apps/dashboard/src/pages/pos/PaymentModal.tsx');
-  assert.ok(wp.includes("const branchButtons = paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web');"));
+  assert.ok(wp.includes("const branchButtons = withRoomCharge(paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web'), posFeatures?.rooms === true);"));
   assert.ok(wp.includes('{builtInMethods.map(m => (') && wp.includes('{extraMethods.map(cm => ('));
   assert.ok(wp.includes('enabledMethods={builtInMethods}'));
   assert.ok(read('apps/dashboard/src/pages/pos/SplitPaymentPanel.tsx').includes('if (enabledMethods && !enabledMethods.includes(m)) return false;'));
@@ -163,9 +163,9 @@ ok('the web POS: the branch\'s methods, the rest settling like a card; split pay
 ok('Settings › Branches › a branch: the same switches', () => {
   assert.ok(read('apps/dashboard/src/pages/settings/BranchReceiptOverrides.tsx').includes("onSave={(v) => save('payment_methods_enabled', v)} />"));
 });
-ok('one catalogue: the till\'s, the web\'s and the cloud\'s copies are the same file', () => {
-  const s = read('shared/paymentCatalogue.ts');
-  for (const p of ['apps/server/src/lib/paymentCatalogue.ts', 'apps/desktop/src/shared/paymentCatalogue.ts', 'apps/dashboard/src/lib/paymentCatalogue.ts']) assert.equal(read(p), s, p);
+ok('one catalogue: the till, the web and the cloud import the one file in packages/core (no copies left)', () => {
+  assert.ok(read('packages/core/src/paymentCatalogue.ts').length > 0);
+  for (const p of ['shared/paymentCatalogue.ts', 'apps/server/src/lib/paymentCatalogue.ts', 'apps/desktop/src/shared/paymentCatalogue.ts', 'apps/dashboard/src/lib/paymentCatalogue.ts']) assert.ok(!fs.existsSync(path.join(ROOT, p)), p);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

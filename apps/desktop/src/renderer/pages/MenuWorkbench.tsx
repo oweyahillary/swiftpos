@@ -30,7 +30,7 @@ import { posApi, type OfflineManage } from '../lib/posApi';
 import ChoicesEditor from '../components/ChoicesEditor';
 import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import Pager, { usePageSize } from '../components/Pager';   // A472
-import { paginate } from '../../shared/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 interface Category { id: string; name: string }
 interface Product {

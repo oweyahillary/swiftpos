@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the app may share with another app: only a downloaded update, handed to Android's package installer
+     (ApkUpdaterPlugin). Nothing else on the device is exposed. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

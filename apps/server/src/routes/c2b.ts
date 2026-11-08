@@ -27,7 +27,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, branchScope, oneBranchOnly, NO_BRANCH } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
-import { businessRangeEAT, businessDateEAT } from '../lib/businessDay';
+import { businessRangeEAT, businessDateEAT } from '@zaptill/core/businessDay';
 import { ringMpesaPayment } from '../lib/liveHub';
 import {
   ACCEPTED, RECENT_MINUTES, amountParam, dayRange, hashC2bToken, holderOf, looksLikeToken, parseConfirmation,

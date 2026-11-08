@@ -1,8 +1,8 @@
-import MethodDot from '../../components/MethodDot';
-import type { AppliedOffer } from '../../lib/offers';   // A445
-import { enabledFromSetting, paymentButtons } from '../../lib/paymentCatalogue';   // A429
-import { methodColour, methodSolid, methodTint } from '../../lib/paymentColours';
-import { isPlatformMethod, needsPlatformConfirm, changesText, type PlatformQuote, type PlatformRecord } from '../../lib/platformPrices';   // A619
+import MethodDot from '@zaptill/ui/MethodDot';
+import type { AppliedOffer } from '@zaptill/core/offers';   // A445
+import { enabledFromSetting, paymentButtons, withRoomCharge } from '@zaptill/core/paymentCatalogue';   // A429
+import { methodColour, methodSolid, methodTint } from '@zaptill/core/paymentColours';
+import { isPlatformMethod, needsPlatformConfirm, changesText, type PlatformQuote, type PlatformRecord } from '@zaptill/core/platformPrices';   // A619
 import type { MonoRaster } from '../../lib/escposRenderer';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { api } from '../../lib/api';
@@ -10,18 +10,22 @@ import { generateOrderNumber, extractTaxes } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
 import { capDiscountPct } from './cashier/types';
 import type { Business, OrderType } from '../../types';
-import type { LoyaltyState } from './LoyaltyPanel';
-import type { DiscountState } from './DiscountPanel';
+import type { DiscountState, LoyaltyState } from './cashier/types';
 import ReceiptView from './ReceiptView';
 import MpesaStkPanel from './MpesaStkPanel';
 import SplitPaymentPanel, { type PaymentLeg } from './SplitPaymentPanel';
 import MpesaReceivedList from './MpesaReceivedList';   // A621: payments to the Till number / Paybill, tapped
 import { useMpesaClaims } from './useMpesaClaims';     // A621
-import type { ReceivedPayment } from '../../lib/mpesaPayments';   // A621
-import EvenSplitPanel from './EvenSplitPanel';
-import ByItemSplitPanel from './ByItemSplitPanel';
+import type { ReceivedPayment } from '@zaptill/core/mpesaPayments';   // A621
+import SplitBillPanel from './SplitBillPanel';   // 2026-11-04: evenly / by item — @zaptill/ui BillSplit, as the desktop POS
+import QuickCash from '@zaptill/ui/QuickCash';
+import TipPicker from '@zaptill/ui/TipPicker';
+import DiscountBox, { type DiscountMode } from '@zaptill/ui/DiscountBox';
+import { pointsEarned } from '@zaptill/core/tender';
+import { QUICK_CASH_LOOK, TIP_LOOK, DISCOUNT_LOOK } from './paymentLooks';
 import { printReceipt } from '../../lib/printReceipt';
 import { printBytesToServer, getQZStatus } from '../../lib/localPrintServer';
+import { shopPosHost, serverPrintOrder } from '../../lib/shopPos';   // Till stage 1: the Android Shop POS
 import { renderEscPos } from '../../lib/escposRenderer';
 import { buildReceiptOrder, buildReceiptBusinessConfig } from '../../lib/buildReceiptOrder';
 import { usePOSAuth } from '../../context/POSAuthContext';
@@ -81,7 +85,7 @@ interface Props {
   enabledMethods?: string[] | null;
   /** If set, the order already exists in DB (order-first model) — use /pay instead of POST /orders */
   existingOrderId?: string;
-  /** Open directly in even-split mode (A151 — the restaurant "Split Bill" entry). */
+  /** Open directly on "Split the bill" (A151 — the restaurant "Split Bill" entry). */
   initialEvenSplit?: boolean;
   /**
    * Pump this sale was dispensed from, for a petrol station (audit B5).
@@ -143,12 +147,13 @@ export default function PaymentModal({
 
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [splitMode, setSplitMode]   = useState(false);
-  const [evenSplitMode, setEvenSplitMode] = useState(!!initialEvenSplit);
-  const [byItemMode, setByItemMode] = useState(false);
+  // 2026-11-04 (one design for both POS): "Split the bill" — evenly per person or by item per guest, one panel.
+  const [billSplitMode, setBillSplitMode] = useState(!!initialEvenSplit);
   // A429: the branch's methods — the four this screen knows by name (cash, M-Pesa, card, on account) where switched on,
   // then the catalogue's other switched-on methods (Glovo, Airtel Money …) and the business's own: those settle at once,
   // like a card.
-  const branchButtons = paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web');
+  // Owner, 2026-11-04: Room charge only for a business with rooms (Settings › Business › POS options).
+  const branchButtons = withRoomCharge(paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web'), posFeatures?.rooms === true);
   const builtInMethods = (['cash', 'mpesa', 'card', 'credit'] as SingleMethod[]).filter(m => branchButtons.some(b => b.code === m));
   const extraMethods = branchButtons.filter(b => !(['cash', 'mpesa', 'card', 'credit'] as string[]).includes(b.code));
   const [method, setMethodRaw]      = useState<string>(() => builtInMethods[0] ?? extraMethods[0]?.code ?? 'cash');
@@ -161,7 +166,7 @@ export default function PaymentModal({
   const [confirmingPlatform, setConfirmingPlatform] = useState(false);
   const [platformRef, setPlatformRef] = useState('');
   const setMethod = (m: string) => { setMethodRaw(m); setConfirmingPlatform(false); };
-  const platform = !splitMode && !evenSplitMode && !byItemMode && isPlatformMethod(method) ? method : null;
+  const platform = !splitMode && !billSplitMode && isPlatformMethod(method) ? method : null;
   const platformName = platform ? (branchButtons.find((b) => b.code === platform)?.name ?? platform) : '';
   const quote = useMemo(() => (platform && platformCart && !existingOrderId ? platformCart(platform) : null),
     [platform, platformCart, existingOrderId]);
@@ -177,6 +182,12 @@ export default function PaymentModal({
 
   // Cash
   const [tendered, setTendered]     = useState('');
+  // 2026-11-04 (the desktop's box, now here too): a reference on a card or other non-cash payment (optional).
+  const [reference, setReference]   = useState('');
+  // 2026-11-04: the cashier's own discount (sales.discount), amount or %, capped with loyalty and a promo code.
+  const [manualInput, setManualInput] = useState('');
+  const [manualMode, setManualMode]   = useState<DiscountMode>('amount');
+  const [showDiscount, setShowDiscount] = useState(false);
 
   // M-Pesa STK — pre-created order waiting for payment confirmation
   const [mpesaPending, setMpesaPending] = useState<{
@@ -248,6 +259,8 @@ export default function PaymentModal({
   // A595 (owner decision D6): a set-up discount or promo code is sales.discount_preset (typing an amount stays sales.discount;
   // this screen applies set-up ones only — the cloud checks the discount named and its amount).
   const mayDiscount = hasPermission('sales.discount') || hasPermission('sales.discount_preset');
+  // Typing an amount is sales.discount (A595 D6) — the desktop's rule for its Discount box.
+  const mayTypeDiscount = hasPermission('sales.discount');
 
   // Double-submit protection. chargingRef blocks a second call synchronously
   // (before React re-renders the button as disabled — a fast touchscreen
@@ -282,7 +295,12 @@ export default function PaymentModal({
   const promo = discountState?.discount;
   const promoOff = quote && rawPromoDiscount > 0 && promo?.type === 'percentage'
     ? Math.round((subtotal - offerOff) * Number(promo.value)) / 100 : rawPromoDiscount;
-  const rawDiscount        = rawLoyaltyDiscount + promoOff;
+  // 2026-11-04: the cashier's own discount, on what offers left (as the desktop POS and the cloud work it out).
+  const manualNum          = mayTypeDiscount ? Math.max(0, parseFloat(manualInput) || 0) : 0;
+  const manualOff          = manualMode === 'percent'
+    ? Math.round((subtotal - offerOff) * Math.min(manualNum, 100)) / 100
+    : Math.min(manualNum, Math.max(0, subtotal - offerOff));
+  const rawDiscount        = rawLoyaltyDiscount + promoOff + manualOff;
 
   // Clamp the combined discount to the server's ceiling BEFORE charging. The
   // server recomputes the order with the same cap and stores the capped total;
@@ -302,7 +320,9 @@ export default function PaymentModal({
   // stored discount_amount and the receipt line items stay consistent. Loyalty
   // is honoured first (points were already reserved), promo takes the remainder.
   const loyaltyDiscount = Math.min(rawLoyaltyDiscount, cappedDiscount);
-  const promoDiscount   = Math.max(0, cappedDiscount - loyaltyDiscount);
+  const promoDiscount   = Math.min(promoOff, Math.max(0, cappedDiscount - loyaltyDiscount));
+  /** 2026-11-04: what is left of the capped discount for the cashier's own (0 without one: as before). */
+  const manualDiscount  = Math.round(Math.max(0, cappedDiscount - loyaltyDiscount - promoDiscount) * 100) / 100;
 
   // The total actually charged: subtotal minus the capped discount. `total` came
   // in reflecting the uncapped discount, so recompute rather than trust it.
@@ -323,9 +343,12 @@ export default function PaymentModal({
   const tenderedNum   = (method === 'cash' && tendered.trim() === '') ? grandTotal : (parseFloat(tendered) || 0);
   const change        = method === 'cash' ? Math.max(0, tenderedNum - grandTotal) : 0;
   const cashValid     = method !== 'cash' || tenderedNum >= grandTotal;
+  // 2026-11-04: a reference on every non-cash payment, as the desktop POS — a card or another method (M-Pesa has its
+  // code on its own screen, On account none, a delivery platform its order # when Charge asks).
+  const takesReference = method !== 'cash' && method !== 'mpesa' && method !== 'credit' && !platform;
   const pointsRedeemed   = loyaltyState?.pointsToRedeem ?? 0;
   const multiplier       = loyaltyState?.tier.multiplier ?? 1;
-  const estimatedPoints  = Math.floor(Math.floor(chargedTotal / 10) * multiplier);
+  const estimatedPoints  = pointsEarned(chargedTotal, multiplier);
 
   // Fetch the attached customer's credit account when 'credit' is selected.
   const customerId = loyaltyState?.customer.id ?? null;
@@ -354,20 +377,6 @@ export default function PaymentModal({
 
   // Credit is valid only when a customer is attached and available credit covers the total.
   const creditValid = method !== 'credit' || (!!customerId && !!creditInfo && creditInfo.available_credit >= grandTotal);
-
-  // Quick-tender presets: Exact, the nearest common notes above the total, and
-  // a round-up to the next 100. These just fill the tendered field — the manual
-  // input remains for odd tenders (mixed notes/coins).
-  const quickTenders = (() => {
-    const base = total + tipAmount + deliveryFee;
-    const notes = [50, 100, 200, 500, 1000];
-    const set = new Set<number>();
-    set.add(Math.ceil(base));                        // exact
-    notes.filter(n => n >= base).slice(0, 2).forEach(n => set.add(n));
-    set.add(Math.ceil(base / 100) * 100);            // round up to next 100
-    if (base > 1000) set.add(Math.ceil(base / 1000) * 1000);
-    return Array.from(set).filter(v => v >= base).sort((a, b) => a - b).slice(0, 4);
-  })();
 
   // ── Build order payload ───────────────────────────────────────────────────
   function buildOrderPayload(payments: object[]) {
@@ -465,7 +474,8 @@ export default function PaymentModal({
         amount:          grandTotal,
         amount_tendered: method === 'cash' ? tenderedNum : (method === 'credit' ? 0 : grandTotal),
         change_given:    method === 'cash' ? change : 0,
-        reference:       platform ? (platformRef.trim() || null) : null,   // A619: the platform's order #
+        // A619: the platform's order #; 2026-11-04: a card's or another non-cash method's reference (optional).
+        reference:       platform ? (platformRef.trim() || null) : takesReference ? (reference.trim() || null) : null,
       }];
       const endpoint = existingOrderId
         ? `/api/orders/${existingOrderId}/pay`
@@ -475,7 +485,7 @@ export default function PaymentModal({
       );
       setCompletedOrder(makeCompletedOrder(
         orderNumber,
-        [{ method, amount: grandTotal, reference: platform ? platformRef.trim() : '' }],
+        [{ method, amount: grandTotal, reference: platform ? platformRef.trim() : takesReference ? reference.trim() : '' }],
         method === 'cash' ? tenderedNum : grandTotal,
         method === 'cash' ? change : 0,
         orderId ?? existingOrderId,
@@ -542,7 +552,8 @@ export default function PaymentModal({
         amount_tendered: l.amount,
         change_given:    0,
         reference:       l.reference ?? null,
-        ...(l.method === 'mpesa' && claims.isTaken(l.reference) ? { status: 'completed' } : {}),
+        // A621: a payment received and taken; 2026-11-04: a part whose M-Pesa prompt the customer paid (as the desktop POS).
+        ...(l.method === 'mpesa' && (claims.isTaken(l.reference) || l.prompted) ? { status: 'completed' } : {}),
       }));
       const endpoint = existingOrderId
         ? `/api/orders/${existingOrderId}/pay`
@@ -584,7 +595,24 @@ export default function PaymentModal({
 
   // Silent thermal via the bridge when connected + a receipt printer is paired.
   // Returns true if it printed, false if the bridge path isn't available/failed.
+  // Till stage 1 (lib/shopPos.ts): a Shop POS joined to a branch server prints the receipt there, on the server's receipt
+  // station. null = no server to print through (none, or not reachable) — the receipt then prints directly, below.
+  const receiptThroughBranchServer = async (): Promise<boolean | null> => {
+    const host = shopPosHost();
+    if (!host || !completedOrder) return null;
+    const r = await host.printOrder('receipt', serverPrintOrder({
+      orderNumber: completedOrder.orderNumber, orderType, cashierName: session?.staffName ?? 'Cashier',
+      cart, total: chargedTotal, discount: allDiscount, offers: offerOff > 0 ? offers : undefined, tip: tipAmount,
+      deliveryFee, deliveryFree: free, change: completedOrder.change,
+      payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
+      tableNumber, orderNote, buyerPin: buyer?.sale.buyer_kra_pin,
+    })).catch(() => null);
+    return r ? r.printed > 0 : null;
+  };
+
   const printViaBridge = async (): Promise<boolean> => {
+    const viaServer = await receiptThroughBranchServer();
+    if (viaServer !== null) return viaServer;
     const printerName = printerSettings.receiptPrinterName;
     if (!(completedOrder && printerName && resolvedBusiness && getQZStatus() === 'connected')) return false;
     try {
@@ -688,6 +716,7 @@ export default function PaymentModal({
               change={completedOrder.change}
               loyaltyDiscount={loyaltyDiscount}
               promoDiscount={promoDiscount}
+              manualDiscount={manualDiscount}
               promoName={discountState?.discount.name}
               customerName={customerName.trim() || loyaltyState?.customer.name}
               buyerPin={buyer?.sale.buyer_kra_pin}   // A607
@@ -795,7 +824,8 @@ export default function PaymentModal({
             ))}
             {loyaltyDiscount > 0 && <p className="text-green-400 text-xs mt-1">⭐ Includes {currency} {fmt(loyaltyDiscount)} loyalty discount</p>}
             {promoDiscount  > 0 && <p className="text-yellow-400 text-xs mt-0.5">🏷️ Includes {currency} {fmt(promoDiscount)} promo discount</p>}
-            {discountWasCapped && (
+            {manualDiscount > 0 && <p className="text-amber-400 text-xs mt-0.5" data-testid="manual-discount">Includes {currency} {fmt(manualDiscount)} discount</p>}
+            {discountWasCapped && manualOff === 0 && (
               <p className="text-orange-400 text-xs mt-0.5">
                 ⚠️ Discount capped at {maxDiscountPct}% — {currency} {fmt(rawDiscount - cappedDiscount)} above the limit was not applied.
               </p>
@@ -819,58 +849,54 @@ export default function PaymentModal({
             </div>
           )}
 
+          {/* 2026-11-04 (the desktop's box): the cashier's own discount, folded — most sales have none. */}
+          {mayTypeDiscount && (
+            <div className="space-y-2">
+              <button type="button" onClick={() => setShowDiscount((v) => !v)} className="text-sm text-gray-300 hover:text-white">
+                {showDiscount ? '▾' : '▸'} Discount
+              </button>
+              {showDiscount && (
+                <DiscountBox value={manualInput} mode={manualMode} onValue={setManualInput} onMode={setManualMode} currency={currency}
+                  capped={discountWasCapped && manualOff > 0 ? `Capped at ${maxDiscountPct}% — ${currency} ${fmt(manualDiscount)} applied. Ask a manager for more.` : null}
+                  look={DISCOUNT_LOOK} />
+              )}
+            </div>
+          )}
+
           {/* Split toggles — A619: not while a delivery platform is chosen (it pays the whole bill) */}
           <div className={splitRow}>
             <p className="text-gray-400 text-sm">Split payment (by method)</p>
             <button
-              onClick={() => { setSplitMode(s => !s); setEvenSplitMode(false); setByItemMode(false); }}
+              onClick={() => { setSplitMode(s => !s); setBillSplitMode(false); }}
               className={`relative w-10 h-5 rounded-full transition-colors ${splitMode ? 'bg-action-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${splitMode ? 'translate-x-5' : ''}`} />
             </button>
           </div>
           <div className={splitRow}>
-            <p className="text-gray-400 text-sm">Split evenly (per person)</p>
-            <button
-              onClick={() => { setEvenSplitMode(s => !s); setSplitMode(false); setByItemMode(false); }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${evenSplitMode ? 'bg-action-500' : 'bg-gray-700'}`}
+            <p className="text-gray-400 text-sm">Split the bill (per person)</p>
+            <button data-testid="split-bill"
+              onClick={() => { setBillSplitMode(s => !s); setSplitMode(false); }}
+              className={`relative w-10 h-5 rounded-full transition-colors ${billSplitMode ? 'bg-action-500' : 'bg-gray-700'}`}
             >
-              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${evenSplitMode ? 'translate-x-5' : ''}`} />
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${billSplitMode ? 'translate-x-5' : ''}`} />
             </button>
           </div>
 
-          {/* ── EVEN SPLIT (per person) ── */}
-          {evenSplitMode && (
-            <EvenSplitPanel
+          {/* ── SPLIT THE BILL: evenly per person, or by item per guest (behind this one choice) ── */}
+          {billSplitMode && (
+            <SplitBillPanel
               total={grandTotal}
+              lines={cart.map(c => ({ name: c.product.name, qty: c.quantity, amount: c.lineTotal }))}
               currency={currency}
+              enabledMethods={builtInMethods}
               onConfirm={handleSplitCharge}
-              onCancel={() => setEvenSplitMode(false)}
-            />
-          )}
-          <div className={splitRow}>
-            <p className="text-gray-400 text-sm">Split by item (per guest)</p>
-            <button
-              onClick={() => { setByItemMode(s => !s); setSplitMode(false); setEvenSplitMode(false); }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${byItemMode ? 'bg-action-500' : 'bg-gray-700'}`}
-            >
-              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${byItemMode ? 'translate-x-5' : ''}`} />
-            </button>
-          </div>
-
-          {/* ── BY-ITEM SPLIT (per guest) ── */}
-          {byItemMode && (
-            <ByItemSplitPanel
-              items={cart.map(c => ({ name: c.product.name, qty: c.quantity, amount: c.lineTotal }))}
-              total={grandTotal}
-              currency={currency}
-              onConfirm={handleSplitCharge}
-              onCancel={() => setByItemMode(false)}
+              onCancel={() => setBillSplitMode(false)}
             />
           )}
 
           {/* ── SPLIT PAYMENT (by method) ── */}
-          {splitMode && !evenSplitMode && !byItemMode && (
+          {splitMode && !billSplitMode && (
             <SplitPaymentPanel
               enabledMethods={builtInMethods}
               total={grandTotal}
@@ -881,7 +907,7 @@ export default function PaymentModal({
           )}
 
           {/* ── SINGLE PAYMENT ── */}
-          {!splitMode && !evenSplitMode && !byItemMode && (
+          {!splitMode && !billSplitMode && (
             <>
               {/* Method tabs */}
               <div className="grid grid-cols-4 gap-2">
@@ -913,42 +939,9 @@ export default function PaymentModal({
                 ))}
               </div>
 
-              {/* Tip / gratuity — adds on top of the total */}
+              {/* Tip — 5 / 10 / 15 %, a typed amount, Clear (@zaptill/ui TipPicker, as the desktop POS); not On account */}
               {method !== 'credit' && (
-                <div className="bg-gray-800/40 rounded-xl p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-400">Add tip</span>
-                    {tipAmount > 0 && (
-                      <span className="text-green-400 text-sm font-medium">+ {currency} {fmt(tipAmount)}</span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {[5, 10, 15].map(pct => {
-                      const amt = Math.round((tipBase * pct) / 100 * 100) / 100;
-                      const active = Math.abs(tipAmount - amt) < 0.005 && tipAmount > 0;
-                      return (
-                        <button key={pct} type="button"
-                          onClick={() => setTipAmount(active ? 0 : amt)}
-                          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                            active ? 'bg-action-500/10 border-action-500 text-action-400'
-                                   : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
-                          }`}>
-                          {pct}%
-                        </button>
-                      );
-                    })}
-                    <input
-                      type="number" min={0} placeholder="Custom"
-                      value={tipAmount > 0 && ![5,10,15].some(p => Math.abs(tipAmount - tipBase*p/100) < 0.005) ? tipAmount : ''}
-                      onChange={e => setTipAmount(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm placeholder-gray-600"
-                    />
-                    {tipAmount > 0 && (
-                      <button type="button" onClick={() => setTipAmount(0)}
-                        className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:text-gray-300">clear</button>
-                    )}
-                  </div>
-                </div>
+                <TipPicker base={tipBase} tip={tipAmount} onTip={setTipAmount} currency={currency} format={(n) => `${currency} ${fmt(n)}`} look={TIP_LOOK} />
               )}
 
               {/* Cash */}
@@ -962,18 +955,9 @@ export default function PaymentModal({
                   )}
                   <div>
                     <label className="block text-sm text-gray-400 mb-1.5">Amount tendered ({currency})</label>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {quickTenders.map(v => (
-                        <button key={v} type="button" onClick={() => setTendered(String(v))}
-                          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                            tenderedNum === v
-                              ? 'bg-action-500/10 border-action-500 text-action-400'
-                              : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
-                          }`}>
-                          {v === Math.ceil(total + tipAmount) ? 'Exact' : fmt(v)}
-                        </button>
-                      ))}
-                    </div>
+                    {/* Exact, the next notes up, the next round 100 / 1,000 (@zaptill/ui QuickCash, as the desktop POS) */}
+                    <QuickCash due={grandTotal} given={tenderedNum} onPick={(v) => setTendered(String(v))}
+                      format={(n) => n.toLocaleString('en-KE')} look={QUICK_CASH_LOOK} />
                     <input
                       type="number" value={tendered}
                       onChange={e => setTendered(e.target.value)}
@@ -1012,6 +996,16 @@ export default function PaymentModal({
                   <div className="text-3xl">💳</div>
                   <p className="text-white font-semibold">Card — {currency} {fmt(grandTotal)}</p>
                   <p className="text-gray-400 text-sm">Process the card on your terminal, then confirm below.</p>
+                </div>
+              )}
+
+              {/* 2026-11-04: the reference of a card or another non-cash payment (optional), as the desktop POS */}
+              {takesReference && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1.5">Reference <span className="text-gray-500">(optional)</span></label>
+                  <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} data-testid="payment-reference"
+                    placeholder={branchButtons.find((b) => b.code === method)?.reference ?? 'Txn ID'}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500" />
                 </div>
               )}
 
@@ -1079,7 +1073,7 @@ export default function PaymentModal({
         </div>
 
         {/* Fixed footer — charge button */}
-        {!splitMode && !evenSplitMode && !byItemMode && (
+        {!splitMode && !billSplitMode && (
           <div className="px-6 pb-6 pt-4 border-t border-gray-800 flex-shrink-0">
             {method === 'mpesa' ? (
               <button

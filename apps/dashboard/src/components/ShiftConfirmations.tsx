@@ -11,8 +11,8 @@
 import { useCallback, useEffect, useState, Fragment } from 'react';
 import { DESK, useRowMore, ViewMore, MoreRow } from './RowMore';   // A464
 import { api } from '../lib/api';
-import { methodName, methodsToCount, readAmounts, confirmationLabel, cashLines, type CashBreakdown } from '../lib/shiftConfirm';
-import { reasonsNeeded, missingReasons, REASON_MAX } from '../lib/confirmReasons';
+import { methodName, methodsToCount, readAmounts, confirmationLabel, cashLines, type CashBreakdown } from '@zaptill/core/shiftConfirm';
+import { reasonsNeeded, missingReasons, REASON_MAX } from '@zaptill/core/confirmReasons';
 import { money, dateTime } from '../lib/format';
 
 interface ClosedShift {

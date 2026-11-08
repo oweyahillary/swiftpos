@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import { recordWriteGuard } from '../lib/watchdogCounters';   // A383
 import { otpDisabled } from '../lib/loginOtp';   // A391
 import { isTillPayload, isOwnerEraTillPayload, tillBlockReason } from '../lib/deviceGrant';   // A415
-import { expandKeys } from '../lib/permissions';                 // A490
+import { expandKeys } from '@zaptill/core/permissions';                 // A490
 import { permissionsOpenBefore, splitsPending } from '../lib/permissionsState'; // A490, A595
 import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
@@ -14,6 +14,7 @@ import { partnerRequestBranch, partnerBranchSet } from '../lib/webPartners';    
 import { NO_BRANCH, PICK_ONE_BRANCH_BODY } from './rbac';        // A582
 import { accessRefusal, branchPauseFor } from '../lib/cloudPlan';   // A581, A584; A612
 import { scopeForPause, BRANCH_PAUSED_BODY, BRANCH_PICKED_PAUSED_BODY } from '../lib/branchPauseScope';   // A612
+import { isPosDeviceSurface } from '../lib/posSurface';   // Till stage 1: the desktop POS and the Android Shop POS
 
 /**
  * A582: in "All my branches" a write is refused before any route — a set of branches is never where a sale, a count, a
@@ -418,11 +419,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
 // ── requireWebSurface ─────────────────────────────────────────────────────────
 export function requireWebSurface(req: Request, res: Response, next: NextFunction) {
-  if (req.isOwner || req.surface !== 'desktop') { next(); return; }
+  if (req.isOwner || !isPosDeviceSurface(req.surface)) { next(); return; }
+  // Till stage 1: a Shop POS is kept off the web portal's features like a desktop POS — but it closes its drawer with the
+  // web POS screens, whose Z report reads the cloud (a desktop POS prints its own from its records).
+  if (shopPosOwnRead(req.surface, req.method, String(req.originalUrl || req.url || ''))) { next(); return; }
   res.status(403).json({
     error: 'This feature requires web portal access. Please contact ZapTill to upgrade.',
     code:  'WEB_SURFACE_REQUIRED',
   });
+}
+
+/** Till stage 1: the web portal reads a Shop POS still makes — only the drawer's own Z report. Pure. */
+export function shopPosOwnRead(surface: string | null | undefined, method: string, url: string): boolean {
+  return surface === 'android-till' && String(method).toUpperCase() === 'GET'
+    && String(url).split('?')[0].replace(/[/]+$/, '') === '/api/reports/eod';
 }
 
 // ── A581 / A584: the cloud plan's gates ───────────────────────────────────────────────────────────────────────────
@@ -455,7 +465,7 @@ async function cloudLapseBlocked(req: Request, res: Response): Promise<boolean> 
 // narrowed here: its branch paused, accessRefusal refused it whole. Sign-in and renewals stay open. A failed read never
 // refuses.
 async function branchPauseBlocked(req: Request, res: Response): Promise<boolean> {
-  if (!req.businessId || req.surface === 'desktop') return false;
+  if (!req.businessId || isPosDeviceSurface(req.surface)) return false;   // Till stage 1: either POS (refused whole above)
   if (/^\/api\/auth\//.test(String(req.originalUrl || req.url || ''))) return false;
   let pause = null;
   try { pause = await branchPauseFor(req.businessId); } catch { return false; }

@@ -5,7 +5,7 @@
  */
 import { useRef } from 'react';
 import { api } from '../../lib/api';
-import { claimRefusalText, newSaleRef, type ReceivedPayment } from '../../lib/mpesaPayments';
+import { claimRefusalText, newSaleRef, type ReceivedPayment } from '@zaptill/core/mpesaPayments';
 
 export function useMpesaClaims() {
   const saleRef = useRef(newSaleRef()).current;

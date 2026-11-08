@@ -7,7 +7,7 @@ import { safeStorage } from 'electron';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { recordChange, pushLocalChanges, changeStates, relayChange, dismissRefused, type RecordInput, type Secrets, type LocalChangeRow } from './localChanges';
-import { type ChangeEntity, type TillChange, changeKeys } from './tillChanges';
+import { type ChangeEntity, type TillChange, changeKeys } from '@zaptill/core/tillChanges';
 import { tillChangesPost, tillChangesState, syncAll } from './syncEngine';
 import { relayChangesToNode, hasNode } from './nodeClient';
 import { refreshStaffRosterNow } from './staffRoster';

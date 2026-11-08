@@ -39,7 +39,7 @@ const web = surfaceOf(tab), pin = surfaceOf(r('apps/desktop/src/renderer/pages/P
   editor = surfaceOf(r('apps/desktop/src/renderer/pages/BrandingEditor.tsx'));
 
 // ── Wiring ──
-ok('the page imports the shared rule from lib/contrast', /import \{[^}]*resolveBranding[^}]*\} from '\.\.\/\.\.\/lib\/contrast'/.test(tab));
+ok('the page imports the shared rule from @zaptill/core/contrast', /import \{[^}]*resolveBranding[^}]*\} from '@zaptill\/core\/contrast'/.test(tab));
 ok('the page\'s verdict IS resolveBranding (no fallback ⇒ legible), and nothing else',
   /const brand = resolveBranding\(accentHex\.trim\(\) \|\| null, LOCK_SURFACE\);/.test(tab)
   && /const legible = accentHex\.trim\(\) === '' \|\| !brand\.usedFallback;/.test(tab)
@@ -50,7 +50,7 @@ ok('the page measures the till\'s lock surface (== PinPage == desktop BrandingEd
   `web ${web} · PinPage ${pin} · BrandingEditor ${editor}`);
 
 // ── The rule itself, run from the dashboard's own copy ──
-const C = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/contrast.ts')).href);
+const C = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/contrast.ts')).href);
 const judge = (hex) => C.resolveBranding(hex, web);
 {
   const b = judge('#F5B800');

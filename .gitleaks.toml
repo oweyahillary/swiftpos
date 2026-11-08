@@ -44,4 +44,5 @@ regexes = [
   '''c2lnbmF0dXJlLXNlY3JldA''',
   '''kilimani-consumer-key-0042''',
   '''abcdef0123456789abcdef0123456789''',
+  '''abcdefghijklmnopqrstuvwxyz012345''',  # A354 Stage 0 (bc3b088): made-up HS256 JWT in tests/android-stage0.test.mjs, fed to cleanErrorReport to prove redaction
 ]

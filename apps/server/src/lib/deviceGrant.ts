@@ -20,6 +20,7 @@
 // brute-force.
 
 import crypto from 'crypto';
+import { deviceSurfaceOf, type PosDeviceSurface } from './posSurface';
 
 /** A versioned, high-entropy per-device secret. Returned to the device once. */
 export function generateDeviceSecret(): string {
@@ -53,6 +54,11 @@ export interface TillClaims {
   businessId: string;
   branchId:   string | null;
   sessionId:  string;
+  /**
+   * Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): which POS device — the desktop POS ('desktop', the default) or the
+   * Android Shop POS ('android-till'). The cloud's gates treat both alike (lib/posSurface.ts).
+   */
+  surface?:   PosDeviceSurface;
 }
 
 /** The token payload for a till's own session. */
@@ -67,7 +73,7 @@ export function buildDeviceTokenPayload(c: TillClaims) {
     permissionKeys:     ['*'] as string[],
     permissionsVersion: 0,
     sessionId:          c.sessionId,
-    surface:            'desktop',
+    surface:            deviceSurfaceOf(c.surface),
   };
 }
 

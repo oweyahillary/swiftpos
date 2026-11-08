@@ -59,7 +59,7 @@ const ST = require(path.join(DIST, 'lib/attendanceStore.js'));
 const R = require(path.join(DIST, 'lib/attendanceRules.js'));
 const bcrypt = require('bcrypt');
 console.warn = () => {}; console.error = () => {};
-const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 
 // The dashboard's helpers, bundled.
 const esbuild = createRequire(path.join(ROOT, 'apps/dashboard/package.json'))('esbuild');

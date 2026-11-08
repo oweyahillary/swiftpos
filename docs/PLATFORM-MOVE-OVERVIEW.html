@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moving ZapTill to our own server — overview for the owner</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+a{color:var(--teal)}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+figure{margin:18px 0;text-align:center}
+figure img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+figcaption{color:var(--quiet);font-size:.85rem;margin-top:6px}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+li input[type=checkbox]{margin-right:8px;transform:scale(1.15)}
+li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
+.toc{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;margin:20px 0}
+.toc ol{margin:6px 0 0}
+@media print{.toc{break-after:page} h2{break-before:page;border-top:none} figure{break-inside:avoid} table{break-inside:auto} a{color:inherit;text-decoration:none}}
+</style></head><body><div class="wrap">
+<h1 id="moving-zaptill-to-our-own-server-overview-for-the-owner">Moving ZapTill to our own server — overview for the owner</h1>
+<p>2026-10-26 · plan only, nothing has been changed yet · the details are in <code>docs/VPS-MIGRATION-PLAN.md</code> and <code>docs/OWN-AUTH-PLAN.md</code></p>
+<p>You asked to leave Supabase&#39;s limits behind, host everything on one server costing KES 2,500 a month or less, and build ZapTill&#39;s own sign-in at the same time. This is the plan in plain words.</p>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#what-changes">What changes</a></li><li><a href="#what-stays-the-same">What stays the same</a></li><li><a href="#costs">Costs</a></li><li><a href="#timeline">Timeline</a></li><li><a href="#what-you-need-to-buy-or-do">What you need to buy or do</a></li><li><a href="#decisions-we-need-from-you">Decisions we need from you</a></li></ol></nav>
+<h2 id="what-changes">What changes</h2>
+<ul>
+<li><strong>One rented server</strong> runs the cloud API, the database, the web dashboard (with the web POS) and the admin portal. Recommended: <strong>Hetzner CX33</strong> in Germany — 4 processors, 8 GB memory, 80 GB fast disk, 20 TB of traffic — about <strong>KES 1,620 a month</strong> with Hetzner&#39;s daily server backups (about KES 1,880 if 16% VAT is added). If it is sold out that day: Hetzner CAX21 (about KES 1,980), or Contabo Cloud VPS 6 (about KES 1,125).</li>
+<li><strong>No more traffic limits between the API and the database.</strong> Today most of the &quot;egress&quot; Supabase counts is our own server asking its own database for data across the internet. On one server that conversation is local and free.</li>
+<li><strong>ZapTill&#39;s own sign-in.</strong> Owners&#39; and partners&#39; email and password move out of Supabase into ZapTill&#39;s own database. ZapTill already makes its own sign-in tokens, second-step codes and reset codes; only the password store and about 35 places in the code that call Supabase change.</li>
+<li><strong>Backups every night</strong> (not weekly), encrypted with your passphrase, into your Cloudflare R2 bucket — free, because the copy no longer leaves Supabase. Plus Hetzner&#39;s daily server backups.</li>
+<li><strong>Supabase, Render and Vercel</strong> are kept untouched for 30 days after the move, then cancelled.</li>
+</ul>
+<h2 id="what-stays-the-same">What stays the same</h2>
+<ul>
+<li><strong>Every address:</strong> <code>api.zaptill.co.ke</code>, <code>app.zaptill.co.ke</code>, <code>admin.zaptill.co.ke</code> and every client&#39;s own address. The website stays on Cloudflare Pages.</li>
+<li><strong>Everyone&#39;s password.</strong> Passwords are carried over as they are stored today (scrambled, never readable), so nobody has to reset. Most people will not even be signed out.</li>
+<li><strong>The tills.</strong> No update is needed. They keep selling offline during the short switch-over and send their sales afterwards.</li>
+<li><strong>M-Pesa.</strong> The callback address does not change, so nothing is re-registered with Safaricom.</li>
+<li><strong>Product photos</strong> stay on Cloudinary; the shared-components work carries on, and is tested on the new server first.</li>
+</ul>
+<h2 id="costs">Costs</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Per month</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Today (Render + Vercel + Supabase Free)</td>
+<td>about KES 900–1,800 — but Supabase restricts us from 20 November, and Render suspended production once in October</td>
+</tr>
+<tr>
+<td>Staying where we are with paid plans (Supabase Pro, Render bandwidth, Vercel Pro for a commercial product)</td>
+<td>about KES 6,700–12,100</td>
+</tr>
+<tr>
+<td><strong>On our own server</strong> (Hetzner CX33 + backups; Cloudflare and R2 free)</td>
+<td><strong>about KES 1,620–1,880</strong></td>
+</tr>
+</tbody></table>
+<p>The price of the saving is looking after the server: automatic security updates, alerts by email and Telegram when something is wrong, and <strong>15 minutes every Monday</strong> with a short checklist (the backup is fresh, the disk is not full, no alerts left unanswered). A technician you trust can do it.</p>
+<h2 id="timeline">Timeline</h2>
+<p>Supabase threatens to restrict the free project from <strong>20 November</strong>, 25 days from today, so the plan moves production on the night of <strong>Sunday 15 → Monday 16 November, at 02:00</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>This week (26 Oct – 1 Nov)</td>
+<td>You order the server and make the Cloudflare key. We secure the server and set it up.</td>
+</tr>
+<tr>
+<td>2 – 8 Nov</td>
+<td>The dev environment runs on the new server (with the shared-components branch); ZapTill&#39;s own sign-in is built and tested there; the test till T1 points at it.</td>
+</tr>
+<tr>
+<td>9 – 15 Nov</td>
+<td>A week of using dev on the new server; a full rehearsal with a copy of production; go or no-go on Friday 13 Nov; the switch on Sunday night (about 30 minutes in which tills sell offline and the web POS waits).</td>
+</tr>
+<tr>
+<td>16 – 22 Nov</td>
+<td>Three days of close watching; the old setup stays ready to switch back.</td>
+</tr>
+<tr>
+<td>December</td>
+<td>Render, Vercel and Supabase cancelled after 30 quiet days.</td>
+</tr>
+</tbody></table>
+<p><strong>If something is late:</strong> we can move on the same night with a small copy of Supabase&#39;s sign-in service on our server (no code change), and switch to ZapTill&#39;s own sign-in a week later. If the whole move slips, one month of Supabase Pro (USD 25) buys time without rushing.</p>
+<h2 id="what-you-need-to-buy-or-do">What you need to buy or do</h2>
+<ol>
+<li><strong>Order the server:</strong> a Hetzner Cloud account (hetzner.com/cloud; Hetzner may ask for ID), project &quot;ZapTill&quot;, server <strong>CX33</strong>, Ubuntu 24.04, location Nuremberg or Falkenstein, <strong>Backups switched on</strong>, IPv4 and IPv6 on. Add the SSH public keys we give you (no password login). Send us the server&#39;s IP address.</li>
+<li><strong>Cloudflare API token</strong> for the certificates: Cloudflare › My Profile › API Tokens › Create token › &quot;Edit zone DNS&quot;, zone <code>zaptill.co.ke</code> only. It goes into the server&#39;s private settings file, never into email or chat.</li>
+<li><strong>DNS records</strong> (we prepare them; you or we switch them on the night): <code>dev-api</code>, <code>app.dev</code>, <code>admin.dev</code>, <code>*.dev</code> now; <code>api</code>, <code>app</code>, <code>admin</code> and <code>*</code> on the night. All &quot;DNS only&quot; (grey cloud).</li>
+<li><strong>Run three short commands in Supabase</strong> when we ask (we never connect to it ourselves): the database size, the password format check, and the exports for the rehearsal and the night itself.</li>
+<li><strong>Keep in your password manager:</strong> the server&#39;s settings file, the backup passphrase, the Hetzner and Cloudflare logins.</li>
+<li><strong>Tell clients who trade at night</strong> about the 30-minute window on 15/16 November.</li>
+</ol>
+<h2 id="decisions-we-need-from-you">Decisions we need from you</h2>
+<ol>
+<li><strong>Server:</strong> Hetzner CX33 (recommended), Hetzner CAX21, or Contabo VPS 6.</li>
+<li><strong>Switch-over night:</strong> Sunday 15 → Monday 16 November (recommended); and whether the &quot;small copy of Supabase sign-in&quot; fallback is acceptable that night if ZapTill&#39;s own sign-in is not ready.</li>
+<li><strong>Dashboards</strong> on the new server (recommended, one place to look after) or on Cloudflare Pages (free, stays up if the server is down).</li>
+<li><strong>Password rule for new passwords:</strong> at least 10 characters (recommended) or 12. Existing passwords keep working.</li>
+<li><strong>Backups:</strong> nightly at midnight (recommended); and whether to add near-continuous backup (at most 5 minutes of data lost instead of up to a day) in December.</li>
+<li><strong>Who looks after the server</strong> each week, and who else may log in to it.</li>
+<li><strong>Supabase Pro for one month</strong> as the safety net if the move slips past 20 November.</li>
+</ol>
+
+</div></body></html>

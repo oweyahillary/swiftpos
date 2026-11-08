@@ -113,6 +113,8 @@ export interface POSInitResponse {
   offers?: unknown[];
   /** A619: the delivery platforms' prices ({ rounding, rules }). Absent from an older cloud = normal prices. */
   platformPrices?: unknown;
+  /** 8n: the branch's category layout ('panel' | 'top'). Absent from an older cloud = the side panel. */
+  posCategoryLayout?: string;
 }
 
 export type { CartItem, Product, Category, VariantGroup, VariantOption };
@@ -170,4 +172,20 @@ export function deriveMode(raw: string): BusinessMode {
   const t = raw.toLowerCase().replace(/\s+/g, '_');
   const valid: BusinessMode[] = ['restaurant', 'cafe', 'retail', 'minimart', 'parking', 'petrol_station', 'other'];
   return valid.includes(t as BusinessMode) ? (t as BusinessMode) : 'other';
+}
+
+/** A set-up discount or promo code on the sale (the cloud checks the discount named and its amount — A595 D6). Moved here
+ *  from DiscountPanel.tsx (no screen showed that panel; removed 2026-11-04). */
+export interface DiscountState {
+  discount: { id: string; name: string; type: 'percentage' | 'fixed'; value: number; promo_code: string | null };
+  discount_amount: number;
+}
+
+/** The loyalty customer on the sale (SaleCustomerPanel attaches one), their tier and the points they redeem. Moved here
+ *  from LoyaltyPanel.tsx (no screen showed that panel; removed 2026-11-04). */
+export interface LoyaltyState {
+  customer: { id: string; name: string; phone: string; loyalty_points: number; total_spent: number; visit_count: number };
+  tier: { name: string; multiplier: number; next: number | null };
+  pointsToRedeem: number;
+  discountAmount: number;
 }

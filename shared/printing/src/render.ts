@@ -229,6 +229,17 @@ function noteRows(note: string | undefined): string[] {
 }
 
 /** ─── Production tickets: kitchen, dispatch, and anything shaped like them ─── */
+/**
+ * Owner, 2026-11-04: the order of a production ticket's dishes. With no course on any line (every order without courses):
+ * the lines as they are. With courses: the dishes with no course first (they go with the order), then each course's
+ * together, in the order the courses first appear — so a dish is never read as part of the course printed above it.
+ */
+function linesByCourse(lines: OrderLine[]): OrderLine[] {
+  if (!lines.some((l) => l.course)) return lines;
+  const courses = [...new Set(lines.filter((l) => l.course).map((l) => l.course))];
+  return [...lines.filter((l) => !l.course), ...courses.flatMap((c) => lines.filter((l) => l.course === c))];
+}
+
 function renderProduction(ctx: PrintContext): Document {
   const { order, station } = ctx;
   // A543 made the KITCHEN ticket Font B (64 / 42 columns, at KITCHEN_FONT_B_LINE_SPACING_DOTS). A551 (owner, 2026-10-21,
@@ -244,6 +255,10 @@ function renderProduction(ctx: PrintContext): Document {
     d.line('VOID', { align: 'center', size: 'large', bold: true });
     d.line(rule(cols));
   }
+  if (ctx.moved) {
+    d.line('MOVED', { align: 'center', size: 'large', bold: true });
+    d.line(rule(cols));
+  }
 
   d.line(`* * ${station.name.toUpperCase()} * *`, { align: 'center', size: 'tall', bold: true });
   d.blank();
@@ -251,8 +266,9 @@ function renderProduction(ctx: PrintContext): Document {
   d.lines(pairOrStack(cols, `Order  ${order.billNumber}`, TYPE_CAPS[order.orderType]));
   d.lines(pairOrStack(cols, shortStamp(order.soldAt), `Cashier  ${order.cashierName}`));
   if (order.orderType === 'dine_in' && order.tableNumber) {
-    d.line(`Table  ${order.tableNumber}`);
+    d.line(`Table  ${order.tableNumber}`, ctx.moved ? { bold: true } : undefined);
   }
+  if (ctx.moved) d.line(`From table  ${ctx.moved.from}`);
   if (order.orderType === 'delivery' && order.deliveryPerson) {
     d.line(`Rider  ${order.deliveryPerson}`);
   }
@@ -265,8 +281,9 @@ function renderProduction(ctx: PrintContext): Document {
 
   let unitRows = 0;
   let printedLines = 0;
+  let courseShown: string | undefined;
 
-  for (const line of order.lines) {
+  for (const line of linesByCourse(order.lines)) {
     const units = visibleUnits(line, ctx);
 
     // A line contributing nothing to this station is omitted entirely rather
@@ -277,6 +294,11 @@ function renderProduction(ctx: PrintContext): Document {
     // A551: a thin gap between two items (ITEM_GAP_DOTS), not a blank line.
     if (printedLines > 0) d.gap(ITEM_GAP_DOTS);
     printedLines++;
+    // Owner, 2026-11-04: a course's heading above its first dish on this ticket — only for a line with a course.
+    if (line.course && line.course !== courseShown) {
+      d.line(`-- ${sanitize(line.course).toUpperCase()} --`, { bold: true });
+      courseShown = line.course;
+    }
     const { name, folded } = lineHeading(line);   // A551: "Chicken Burger - Spicy" on one row
 
     // The hanging indent keeps a wrapped dish name under itself rather than

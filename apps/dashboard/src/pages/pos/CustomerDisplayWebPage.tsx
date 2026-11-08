@@ -7,11 +7,11 @@
  * window before the cashier sees it; and the M-Pesa prompt's progress. It says 'here' every few seconds.
  */
 import { useEffect, useState } from 'react';
-import CustomerScreenView from '../../lib/CustomerScreenView';
-import { idleState, sanitiseDisplayState, gateDisplayContent, type DisplayContent, type DisplayState } from '../../lib/customerScreen';
+import CustomerScreenView from '@zaptill/ui/CustomerScreenView';
+import { idleState, sanitiseDisplayState, gateDisplayContent, type DisplayContent, type DisplayState } from '@zaptill/core/customerScreen';
 import { openChannel, type ChannelMessage } from '../../lib/customerScreenChannel';
-import CustomerAskForm, { StkBanner } from '../../lib/CustomerAskForm';   // A607
-import { sanitiseAsk, sanitiseStk, cleanAnswer, type AskRequest, type StkView } from '../../lib/customerDetails';
+import CustomerAskForm, { StkBanner } from '@zaptill/ui/CustomerAskForm';   // A607
+import { sanitiseAsk, sanitiseStk, cleanAnswer, type AskRequest, type StkView } from '@zaptill/core/customerDetails';
 
 const EMPTY: DisplayContent = gateDisplayContent({ businessName: null, themeId: null, logo: null, primaryHex: null, secondaryHex: null,
   accentHex: null, licensed: false, slides: null, mpesa: null });

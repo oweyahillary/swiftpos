@@ -23,6 +23,7 @@ import { getQZStatus, printBytesToServer } from './localPrintServer';
 import type { BranchPrinter } from './printKOT';
 import type { CartItem } from './cart';
 import type { Business, Category, ComboComponent } from '../types';
+import { shopPosHost, serverPrintOrder, serverJobsOf } from './shopPos';   // Till stage 1: the Android Shop POS
 
 const toCents = (n: number) => Math.round((Number(n) || 0) * 100);
 
@@ -75,11 +76,37 @@ export interface PrintRoutedArgs {
   orderNote?: string | null;
   /** 0.6.28: a kitchen void — `cart` is what was taken back; kitchen/dispatch print it under a VOID banner. */
   voided?: { by?: string; reason?: string };
+  /** 2026-11-05: Transfer table — `cart` is what the kitchen has; kitchen/dispatch print it under MOVED, from this table. */
+  moved?: { from: string };
 }
 
 export interface PrintRoutedResult { printed: number; failed: number; configured: number }
 
+/**
+ * Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): a Shop POS that joined a branch server prints the whole ticket THERE —
+ * the server's stations, printers and spool (owner, 2026-11-05). null = no branch server to print through (none joined,
+ * or not reachable): this page prints directly, below. Never anything in a browser (no Shop POS).
+ */
+async function printThroughBranchServer(a: PrintRoutedArgs): Promise<PrintRoutedResult | null> {
+  const host = shopPosHost();
+  if (!host) return null;
+  const order = serverPrintOrder({
+    orderNumber: a.orderNumber, orderType: a.orderType, cashierName: a.cashierName, total: a.total, cart: a.cart,
+    comboItems: a.comboItems as Record<string, unknown[]> | undefined, discount: a.discount, tip: a.tip, change: a.change,
+    payments: a.payments, tableNumber: a.tableNumber, orderNote: a.orderNote, voided: a.voided,
+  });
+  const sum: PrintRoutedResult = { printed: 0, failed: 0, configured: 0 };
+  for (const job of serverJobsOf(a)) {
+    const r = await host.printOrder(job, order);
+    if (!r) return null;
+    sum.printed += r.printed; sum.failed += r.failed; sum.configured += r.configured;
+  }
+  return sum;
+}
+
 export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRoutedResult> {
+  const relayed = await printThroughBranchServer(a);
+  if (relayed) return relayed;
   const wanted = a.kinds ?? ['receipt', 'kitchen', 'dispatch'];
   const ORDER: Record<Kind, number> = { kitchen: 0, receipt: 1, dispatch: 2 };  // A247 sequence
   const printers = a.branchPrinters
@@ -159,7 +186,7 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
   for (const p of printers) {
     try {
       const spec = { id: p.id, type: p.type, paperWidthMm: p.paper_width, proforma: a.proforma && p.type === 'receipt',
-                     voided: a.voided };
+                     voided: a.voided, moved: a.moved };
       // A254: don't print a blank kitchen/bar ticket when none of its categories
       // are in this order (all-items stations always have content).
       if (isRouted(p.type) && !stationHasContent(order, biz as any, spec)) continue;

@@ -56,7 +56,7 @@ const put = async (table, row) => {
 
 
 console.log('\nMigration 177 (the owner\'s decisions on the default rights, 2026-10-27) — PGlite, every migration\n');
-const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const A = id(0xa), B = id(0xb);
 await put('businesses', { id: A, name: 'Sample Shop', type: 'petrol_station' });

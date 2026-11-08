@@ -32,7 +32,7 @@ import { sendEmail } from '../lib/mailer';
 import { standingFor, primeStandings } from '../lib/cloudPlan';   // A581 (A593: primeStandings)
 import { getDayCutoff, primeDayCutoffs } from '../lib/dayCutoff';   // A593: primeDayCutoffs
 import { pageAll } from '../lib/pgQuery';   // A593
-import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { readReportSchedule, gatherRecipients, readSettingsFor, parseReportSchedule, type SettingsRows } from './dailySummary';   // A593: the tick's reads
 import {
   readAlerts, decideBranchSlot, selectOpenTills, decideNotSyncing, tillTrading, bigReversals, bigVariances,

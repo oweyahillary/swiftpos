@@ -28,7 +28,7 @@ const PATTERNS = [
 ];
 
 // Roots scanned (relative to the repo root) and what is skipped inside them.
-const ROOTS = ['apps', 'shared', 'scripts', 'tests'];
+const ROOTS = ['apps', 'shared', 'packages', 'scripts', 'tests'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-electron', 'test-dist', 'release', 'build', 'coverage', '.vite', 'out-tsc']);
 const EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.html', '.css', '.txt', '.csv', '.md', '.sql', '.go', '.yml', '.yaml']);
 // Files allowed to contain a name ON PURPOSE, each with the reason. Keep this list short.

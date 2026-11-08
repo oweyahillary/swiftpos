@@ -67,7 +67,7 @@ const SCREENS = [
 ok('imports: Pager + usePageSize and the shared paginate, in both files', () => {
   for (const [f, src] of [['ManagerPage', mp], ['ManageTabs', mt]]) {
     assert(src.includes("import Pager, { usePageSize } from '../components/Pager';   // A475"), `${f}: Pager import`);
-    assert(src.includes("import { paginate } from '../../shared/paginate';"), `${f}: paginate import`);
+    assert(src.includes("import { paginate } from '@zaptill/core/paginate';"), `${f}: paginate import`);
   }
 });
 

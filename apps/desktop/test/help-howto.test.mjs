@@ -25,7 +25,7 @@ const read = (p) => fs.readFileSync(path.join(DESKTOP, p), 'utf8').replace(/\r\n
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`  FAIL ${name}`); } };
 
-const T = await import(pathToFileURL(path.join(DESKTOP, 'src/shared/helpTopics.ts')).href);
+const T = await import(pathToFileURL(path.join(DESKTOP, '..', '..', 'packages/core/src/helpTopics.ts')).href);
 const ids = T.HOW_TO.map((t) => t.id);
 ok('every task the owner named: open a shift, close a shift, confirm a shift, close the day (and void / refund)',
   ['howto-open-shift', 'howto-close-shift', 'howto-confirm-shift', 'howto-close-day', 'howto-void-refund'].every((i) => ids.includes(i)));

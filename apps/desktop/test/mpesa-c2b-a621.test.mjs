@@ -4,7 +4,7 @@
 // directly; what the cashier gets is a notification of the payments done, then they match it to the bill." The cashier
 // TAPS the payment; premium (the online licence); offline / not licensed / not switched on: nothing new shows.
 //
-// Drives the REAL compiled dist/main/mpesaC2b.js with a fake cloud, and the REAL shared rules (src/shared/mpesaPayments.ts,
+// Drives the REAL compiled dist/main/mpesaC2b.js with a fake cloud, and the REAL shared rules (packages/core/src/mpesaPayments.ts,
 // bundled with esbuild): what a tapped payment does to the M-Pesa leg, the notice's words. And checks the wiring by source:
 // the push channel's ring reaches the bell, the IPC channels are bridged and validated, the payment screen gives taken
 // payments back and completes the sale the way a paid STK prompt does.
@@ -34,7 +34,7 @@ const ok = async (name, fn) => {
 
 const M = require(path.join(dist, 'mpesaC2b.js'));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a621-'));
-require('esbuild').buildSync({ entryPoints: [path.join(desktop, 'src/shared/mpesaPayments.ts')], bundle: true, format: 'cjs', platform: 'node',
+require('esbuild').buildSync({ entryPoints: [path.join(desktop, '../../packages/core/src/mpesaPayments.ts')], bundle: true, format: 'cjs', platform: 'node',
   outfile: path.join(tmp, 'mpesaPayments.cjs'), logLevel: 'silent' });
 const S = require(path.join(tmp, 'mpesaPayments.cjs'));
 const src = (p) => fs.readFileSync(path.join(desktop, 'src', p), 'utf8');

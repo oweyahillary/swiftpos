@@ -4,7 +4,7 @@
 // Owner: "if a client has larger categories eg drinks, fast foods etc they should appear the way categories used to
 // appear so that cashiers can easily pick the menu". And A564 left FindInBranches ready but not wired into the sale screen.
 //
-// RUNS the shared helper (src/shared/menuFilter.ts — the web POS runs the same file), the till's MenuBar and CategoryPanel
+// RUNS the shared helper (packages/core/src/menuFilter.ts — the web POS runs the same file), the till's MenuBar and CategoryPanel
 // (bundled with esbuild, rendered with react-dom/server), lib/branchCheck.ts and lib/access.ts; pins the sale screen's
 // wiring (POSPage is one 2,400-line component — its filter and gates are read from the source).
 //
@@ -40,12 +40,13 @@ const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } el
 // Bundles land under apps/desktop/node_modules so an external 'react' resolves to the app's own copy (removed at the end).
 const bundleDir = fs.mkdtempSync(path.join(desktop, 'node_modules', '.a566-'));
 const bundle = (entry, out) => {
+  // preserveSymlinks: @zaptill/ui/CategoryPanel (shared components batch G) finds @zaptill/core through this app's node_modules, as Vite does.
   require('esbuild').buildSync({ entryPoints: [path.join(desktop, entry)], bundle: true, format: 'esm', platform: 'node',
-    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', external: ['react', 'react-dom'] });
+    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', preserveSymlinks: true, external: ['react', 'react-dom'] });
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };
 
-const M = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'menuFilter.ts')).href);
+const M = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'menuFilter.ts')).href);
 const BS = await import(pathToFileURL(path.join(desktop, 'src', 'renderer', 'lib', 'branchCheck.ts')).href);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
@@ -121,7 +122,9 @@ try {
   ok('the sideways row: the arrow and fade show on the side that hides more tabs',
     JSON.stringify(M.menuBarEdges(0, 1200, 600)) === '{"left":false,"right":true}' && JSON.stringify(M.menuBarEdges(300, 1200, 600)) === '{"left":true,"right":true}'
     && JSON.stringify(M.menuBarEdges(600, 1200, 600)) === '{"left":true,"right":false}' && JSON.stringify(M.menuBarEdges(0, 500, 600)) === '{"left":false,"right":false}');
-  const panelSrc = src('renderer/components/CategoryPanel.tsx');
+  // Shared components batch G: the bar is @zaptill/ui/CategoryPanel; the desktop's look (its class names) stays in
+  // components/CategoryPanel.tsx. The pin reads both.
+  const panelSrc = fs.readFileSync(path.join(desktop, '..', '..', 'packages', 'ui', 'src', 'CategoryPanel.tsx'), 'utf8') + '\n' + src('renderer/components/CategoryPanel.tsx');
   ok('…it scrolls with a swipe or the wheel, has ‹ › arrows for a mouse (44+ px wide), keeps the chosen tab in view',
     /overflow-x-auto/.test(panelSrc) && /data-testid="menu-bar-left"/.test(panelSrc) && /data-testid="menu-bar-right"/.test(panelSrc)
     && /w-14/.test(panelSrc) && /scrollIntoView/.test(panelSrc) && /onScroll=\{measure\}/.test(panelSrc));
@@ -130,7 +133,7 @@ try {
   const pos = src('renderer/pages/POSPage.tsx');
   ok('the sale screen: the bar under the search, before the grid, fed by menuBarTabs; the panel told the bar is there',
     /const menuBar = useMemo\(\(\) => menuBarTabs\(menusNow, categoriesNow\), \[menusNow, categoriesNow\]\);/.test(pos)   // A578: the menus open now
-    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} label=\{words\.menus\} hints=\{hours\.hints\}[\s\S]*?\) : undefined\} \/>/.test(pos)   // A578: + hints and Show all
+    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} panel=\{catPanel\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} label=\{words\.menus\} hints=\{hours\.hints\}[\s\S]*?\) : undefined\} \/>/.test(pos)   // A578: + hints and Show all
     && /overlay=\{narrowWindow\} menuBar=\{menuBar\.length > 0\} \/>/.test(pos));
   ok('…a tap on a menu shows its items: the menu remembered (A554), its category and any search start again',
     /const pickMenu = \(id: string\) => \{ catPanel\.setMenu\(id\); setActiveCategory\('all'\); setSearch\(''\); \};/.test(pos));

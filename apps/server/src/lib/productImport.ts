@@ -15,7 +15,7 @@
 //
 // PURE: no DB, no request. Category-name -> id resolution and the actual
 // insert/update live in the route; this only decides what to write.
-import { cleanShowDays } from './productDays';
+import { cleanShowDays } from '@zaptill/core/productDays';
 
 const SOLD_BY = ['each', 'weight', 'volume', 'piece'];
 const SOURCE  = ['purchased', 'central_kitchen'];

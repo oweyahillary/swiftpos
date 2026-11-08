@@ -8,7 +8,7 @@
  * `themesOn`); with it off a row is kept but never served, so no till or web POS applies it.
  */
 import { supabase } from './supabase';
-import type { BranchBranding } from './branchBranding';
+import type { BranchBranding } from '@zaptill/core/branchBranding';
 
 export interface BranchBrandingRow {
   branch_id: string;

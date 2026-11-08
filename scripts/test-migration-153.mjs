@@ -13,7 +13,7 @@
  *     writes it once.
  *   - another branch's level: at its branch — sync_changes_since for this branch leaves it out; another business: its own.
  *   - sync_changes_heads_by_branch: per business AND branch.
- *   - CHANGE_TABLES.stock (shared/syncTopics.ts) names the table the trigger sits on.
+ *   - CHANGE_TABLES.stock (packages/core/src/syncTopics.ts) names the table the trigger sits on.
  *   - a trigger that cannot write never fails the stock write.
  *
  * MUTATIONS TO CONFIRM BITE (checked by hand, 2026-10-20):
@@ -29,7 +29,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 let PGlite;
 try { ({ PGlite } = require('@electric-sql/pglite')); } catch { console.error('\n@electric-sql/pglite not installed — cannot run.\n'); process.exit(1); }
-const { CHANGE_TABLES, SYNC_TOPICS, CRITICAL_TOPICS } = await import(pathToFileURL(path.join(ROOT, 'shared/syncTopics.ts')).href);
+const { CHANGE_TABLES, SYNC_TOPICS, CRITICAL_TOPICS } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/syncTopics.ts')).href);
 const MIG = path.join(ROOT, 'migrations');
 const num = (f) => +f.split('_')[0];
 const files = fs.readdirSync(MIG).filter(f => f.endsWith('.sql') && Number.isFinite(num(f))).sort((a, b) => num(a) - num(b) || a.localeCompare(b));

@@ -77,9 +77,9 @@ import { startTrialIfEligible, readTrial, trialPhase, planLabel, planLabelsFor }
 import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds, standingView, type CloudStanding,
   CLOUD_BACKUP_FLAG, DESKTOP_UPDATES_FLAG, desktopOnlyView, desktopOnlyCutoffAt, cutoffPhase } from '../lib/cloudPlan';   // A581, A584, A601
 import { newBranchPremium, themesFreeFor, THEMES_FREE_FLAG } from '../lib/branchBilling';   // A617: a new branch on the free-Themes deal
-import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
+import { cleanSubdomain, subdomainProblem } from '@zaptill/core/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
-import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
+import { cleanPhone } from '@zaptill/core/support';   // 0.6.35 (A384): a tech's number
 import { alertChannels, notifyRendered, alertLinks } from '../lib/alertNotify';   // A383: the watchdog's channels
 import { renderMessage, alertsUrl, eatStamp } from '../lib/alertFormat';            // A592: the test alert laid out
 import { digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';   // A392

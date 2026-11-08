@@ -55,11 +55,12 @@ import type { CartItem } from '../../lib/cart';
 import { cartSubtotal, extractTaxes } from '../../lib/cart';
 import { useBusiness } from '../../context/BusinessContext';
 import type { Product, Category, Menu } from '../../types';
-import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar } from './cashier/CategoryPanel';   // A537; A566
-import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
-import { exactFirst } from '../../lib/paginate';   // A472
-import { parseScaleBarcode, findScaleProduct, scaleLine, weighedLine, isSoldByWeight, weightUnitOf, formatWeight, scaleSettingsOrDefault, type ScaleSettings, type WeighedLine } from '../../lib/scaleBarcode';   // A577
-import { businessTerms } from '../../lib/businessTerms';   // A573
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, CategoryBar } from './cashier/CategoryPanel';   // A537; A566; 8n
+import type { CategoryLayout } from '@zaptill/core/categoryLayout';   // 8n
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
+import { exactFirst } from '@zaptill/core/paginate';   // A472
+import { parseScaleBarcode, findScaleProduct, scaleLine, weighedLine, isSoldByWeight, weightUnitOf, formatWeight, scaleSettingsOrDefault, type ScaleSettings, type WeighedLine } from '@zaptill/core/scaleBarcode';   // A577
+import { businessTerms } from '@zaptill/core/businessTerms';   // A573
 
 /** A573: this screen is the minimart's (CashierScreen opens it for a minimart only) — Departments, not Menus. */
 const WORDS = businessTerms('minimart');
@@ -95,6 +96,8 @@ interface Props {
   menuLater?: ReadonlySet<string>;
   /** A580: with Later on, a closed department's item shows (greyed, never sold) in its own department — else false. */
   peekLater?: (p: Product, scope: { menu: string; category: string; search: string }) => boolean;
+  /** 8n: the branch's category layout (CashierScreen's, from pos/init) — the side panel, or the top bar. */
+  categoryLayout?: CategoryLayout;
   cart: CartItem[];
   currency: string;
   onAddToCart: (product: Product, qty?: number) => void;
@@ -146,6 +149,7 @@ export default function MinimartPOS({
   outOfHours,
   menuLater,
   peekLater,
+  categoryLayout,
   cart,
   currency,
   onAddToCart,
@@ -166,7 +170,7 @@ export default function MinimartPOS({
   const [activeCategory, setActiveCategory]   = useState('all');
   const [catalogueSearch, setCatalogueSearch] = useState('');
   // A537: the categories in a left panel behind ☰ (collapsed at start, pinned open if pinned), menus as tabs on top.
-  const catPanel = useCategoryPanel();
+  const catPanel = useCategoryPanel(categoryLayout);   // 8n: 'top' — CategoryBar instead of ☰, the chip and the panel
   const activeMenu = catPanel.prefs.menu;
   const menuCats = useMemo(() => categoriesForMenu(categories, menus, activeMenu), [categories, menus, activeMenu]);
   const menuFilterScope = useMemo(() => menuScope(categories, menus, activeMenu), [categories, menus, activeMenu]);
@@ -549,10 +553,13 @@ export default function MinimartPOS({
                 value={catalogueSearch}
                 onChange={e => setCatalogueSearch(e.target.value)}
               />
-              <CategoryChip label={catChip} onClear={clearCatChip} />
+              <CategoryChip label={catChip} onClear={clearCatChip} panel={catPanel} />
             </div>
             {/* A566: the menus as big tabs across the top of the catalogue (none when the business has no menus). */}
             <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={WORDS.menus} hints={menuHints} trailing={menuBarTrailing} greyed={menuLater} />
+            {/* 8n: the branch's 'top' layout — the departments' categories across the top (nothing with 'panel'). */}
+            <CategoryBar panel={catPanel} categories={categories} menus={menus} activeMenu={activeMenu}
+              activeCategory={activeCategory} onCategory={setActiveCategory} label={WORDS.categories} />
 
             <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
             <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}

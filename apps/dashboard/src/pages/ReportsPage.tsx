@@ -4,7 +4,7 @@
  * Tabs: Master/DSR · Hourly Sales · Item Mix · Voids & Exceptions · Tax · Staff
  */
 
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback, Fragment, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';   // A576: the watch list's links open a filtered tab
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { ReportsSkeleton } from './pos/cashier/POSSkeletons';
@@ -12,15 +12,17 @@ import { api, downloadFile } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
 import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
-import { methodColour } from '../lib/paymentColours';   // A439
+import { methodColour } from '@zaptill/core/paymentColours';   // A439
 import MonthlyPackTab from './reports/MonthlyPackTab';   // A455
 import MpesaUnmatchedTab from './reports/MpesaUnmatchedTab';   // A621
+// 2026-11-05: on demand — it brings SheetJS and pdf.js to read the statement.
+const MpesaStatementTab = lazy(() => import('./reports/MpesaStatementTab'));
 import DownloadExcelButton from '../components/DownloadExcelButton';   // A467
 import { localStamp, type ReportColumn, type ReportSheet } from '../lib/reportDownload';   // A467
 import { reportPresets, activePreset } from '../lib/reportPeriods';   // A467; activePreset: one preset lit
 import * as fmt from '../lib/format';   // A471: one money/number/date format ('money' here is the Excel column shorthand)
 import Pager, { usePageSize } from '../components/Pager';   // A475
-import { paginate } from '../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 import { usePermissions } from '../context/PermissionsContext';   // A620: who may set the report e-mails
 import ReportSchedulerTab from './settings/ReportSchedulerTab';   // A620: moved here from Settings › Integrations
 
@@ -167,6 +169,7 @@ const TAB_LIST = [
   { id: 'voids',      label: 'Voids & Exceptions' },
   { id: 'refunds',    label: 'Refunds' },
   { id: 'mpesa_unmatched', label: 'M-Pesa unmatched' },   // A621: payments to the Till number / Paybill no sale used
+  { id: 'mpesa_statement', label: 'M-Pesa statement' },   // 2026-11-05: the statement against the POS's M-Pesa sales
   { id: 'inventory',  label: 'Inventory' },
   { id: 'exports',    label: 'Exports' },
   { id: 'tax',        label: 'Tax Report' },
@@ -2615,6 +2618,9 @@ export default function ReportsPage() {
       {activeTab === 'voids'  && <VoidsTab   {...tabProps} />}
       {activeTab === 'refunds'   && <RefundsTab   {...tabProps} />}
       {activeTab === 'mpesa_unmatched' && <MpesaUnmatchedTab range={tabProps.range} branchId={tabProps.branchId} currency={tabProps.currency} canRelease={isOwner} />}
+      {activeTab === 'mpesa_statement' && (
+        <Suspense fallback={<p className="text-sm text-gray-500">Loading…</p>}><MpesaStatementTab branchId={tabProps.branchId} currency={tabProps.currency} /></Suspense>
+      )}
       {activeTab === 'inventory' && <InventoryTab {...tabProps} />}
       {activeTab === 'exports'   && <ExportsTab   {...tabProps} />}
       {activeTab === 'tax'    && <TaxTab     {...tabProps} />}

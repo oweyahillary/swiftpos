@@ -6,7 +6,7 @@
  * Voiding the sale puts it back while the shift is open. Never fails the sale or the void: a failure is logged.
  */
 import { supabase } from './supabase';
-import { cleanDeliveryFee, riderPayoutReason } from './delivery';
+import { cleanDeliveryFee, riderPayoutReason } from '@zaptill/core/delivery';
 
 export async function payRider(o: { orderId: string; orderNumber: string | null; shiftId: string | null; branchId: string;
                                     cashierId: string | null; fee: unknown; rider: string | null }): Promise<boolean> {

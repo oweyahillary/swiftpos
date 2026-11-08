@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { cleanHistoryMethods } from '../../lib/cashierHistory';
+import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';
 
 // 0.6.37 (A387) — the payment methods a cashier's History shows (shared/cashierHistory.ts). Owner, 2026-10-03: "the
 // manager selects what the cashier sees" — "based on payment method". Every box ticked = every method (saved as [], so

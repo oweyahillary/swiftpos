@@ -96,7 +96,7 @@ const lastReceipt = () => {
   return row ? Buffer.from(row.bytes).toString('latin1') : '';
 };
 const H = global.__handlers;
-const D = require(path.join(dist, 'orderDetail.js'));
+const D = require('@zaptill/core/orderDetail');
 
 console.log('\nThe items inside an order, on the till\n');
 signIn('u-mary', 'Mary', 'manager');

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { sendError } from '../lib/sendError';
 import { partitionByValidId, isUuid } from '../lib/syncPush';
-import { cleanVoidReason, cleanVoidNote } from '../lib/kitchenLines';
+import { cleanVoidReason, cleanVoidNote } from '@zaptill/core/kitchenLines';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -9,7 +9,7 @@ import { normaliseDeviceRole, isNodeRole } from '../lib/deviceRegistry';
 import { confirmServingRole } from '../lib/deviceRole';
 
 import { REQUIRED_DESKTOP_SCHEMA, HARD_MIN_DESKTOP_SCHEMA } from '../lib/desktopSchema';
-import { cleanExpenseMethod } from '../lib/expenseMethod';
+import { cleanExpenseMethod } from '@zaptill/core/expenseMethod';
 import { closesFirst } from '../lib/dayOrder';
 import { chunkIn } from '../lib/pgQuery';
 import { isDataError } from '../lib/orderErrors';

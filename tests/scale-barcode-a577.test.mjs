@@ -7,7 +7,7 @@
  *
  *   cd apps/server && npm run build && cd ../.. && TZ=UTC node --no-warnings tests/scale-barcode-a577.test.mjs
  *
- *   P  the parser (shared/scaleBarcode.ts) for every preset and a hand-set layout: GS1's check digits (the published
+ *   P  the parser (packages/core/src/scaleBarcode.ts) for every preset and a hand-set layout: GS1's check digits (the published
  *      examples), a wrong check digit refused, prefix 20 (ZapTill's own codes) NEVER a scale label, prefixes not chosen
  *      ignored, price vs weight, decimals, the single "2" prefix with a 6-digit code, off = nothing read.
  *   L  the weighed line: kg × price per kg rounded to the cent; a price label's price IS the amount, the weight worked
@@ -46,8 +46,8 @@ const DIST = path.join(ROOT, 'apps/server/dist');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
-if (!fs.existsSync(path.join(DIST, 'lib/scaleBarcode.js'))) { console.log('\nBuild the server first:\n  cd apps/server && npm run build\n'); process.exit(1); }
-const S = await import(pathToFileURL(path.join(ROOT, 'shared/scaleBarcode.ts')).href);
+if (!fs.existsSync(path.join(DIST, 'routes/pos.js'))) { console.log('\nBuild the server first:\n  cd apps/server && npm run build\n'); process.exit(1); }
+const S = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scaleBarcode.ts')).href);
 
 /** An EAN-13 with its check digit — by the published GS1 rule, written out here (not the module's own). */
 const ean = (body12) => {

@@ -4,19 +4,19 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission, can, assertBranchAccess } from '../middleware/rbac';
 import { accentWriteError, themeOverrideError, footerWriteError, cleanFooter, normaliseHex,
-  FOOTER_LINE_MAX, FOOTER_LINE_NARROW, FOOTER_MAX_LINES, FOOTER_MAX_CHARS } from '../lib/branchBranding';   // A544
+  FOOTER_LINE_MAX, FOOTER_LINE_NARROW, FOOTER_MAX_LINES, FOOTER_MAX_CHARS } from '@zaptill/core/branchBranding';   // A544
 import { BRANCH_BRANDING_COLUMNS, type BranchBrandingRow, servedBranchBranding } from '../lib/branchBrandingStore';   // A544, A547
 import { effectiveThemeId } from '../lib/themeRules';   // A547
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 import { themesEnabled, themeWriteError, brandColourWriteError, BRAND_COLOUR_FIELDS, selectBusinessBranding,
   isMissingBrandColourColumn, withoutBrandColourColumns } from '../lib/themeAccess';   // A597: brand colours
-import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules';
-import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
+import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
+import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '@zaptill/core/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
-import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
-import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/paymentCatalogue';   // A429
-import { PLATFORM_PRICES_KEY, PLATFORM_ROUNDING_KEY, rulesSettingValue, roundingSettingValue } from '../lib/platformPrices';   // A619
+import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
+import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';   // A429
+import { PLATFORM_PRICES_KEY, PLATFORM_ROUNDING_KEY, rulesSettingValue, roundingSettingValue } from '@zaptill/core/platformPrices';   // A619
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
@@ -26,8 +26,8 @@ import { LOSS_SETTINGS_KEY } from '../jobs/lossAlerts';               // A576
 import { CREDIT_APPROVERS_KEY } from '../lib/creditApprovers';         // A585
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
-import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
-import { CUSTOMER_SCREEN_KEY, cleanCustomerScreen, slidesFromWire, customerScreenWriteError } from '../lib/customerScreen';   // A606
+import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
+import { CUSTOMER_SCREEN_KEY, cleanCustomerScreen, slidesFromWire, customerScreenWriteError } from '@zaptill/core/customerScreen';   // A606
 import { getWebAccess } from '../lib/webAccess';   // A606: the slideshow is part of the online licence
 
 const router = safeRouter();

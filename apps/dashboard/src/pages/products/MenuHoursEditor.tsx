@@ -11,7 +11,7 @@
  * same lib/menuHours.ts checkAvailability the cloud runs, so the words of a refusal show before saving.
  */
 import { useState } from 'react';
-import { MAX_MENU_WINDOWS, WEEK_MON_FIRST, HOURS_DAY_SHORT, availabilityLabel, checkAvailability, type MenuAvailability, type MenuWindow } from '../../lib/menuHours';
+import { MAX_MENU_WINDOWS, WEEK_MON_FIRST, HOURS_DAY_SHORT, availabilityLabel, checkAvailability, type MenuAvailability, type MenuWindow } from '@zaptill/core/menuHours';
 
 interface Props {
   /** The menu's name ("Breakfast", "Alcohol"). */

@@ -10,11 +10,11 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { PAYMENT_CATALOGUE } from '../../lib/paymentCatalogue';
+import { PAYMENT_CATALOGUE } from '@zaptill/core/paymentCatalogue';
 import {
   PLATFORM_METHODS, PLATFORM_PRICES_KEY, PLATFORM_ROUNDING_KEY, PLATFORM_ROUNDINGS, cleanRules, cleanRounding,
   platformUnitPrice, rulesSettingValue, type PlatformRounding, type PlatformRule, type UpliftKind,
-} from '../../lib/platformPrices';
+} from '@zaptill/core/platformPrices';
 
 type Draft = Record<string, { kind: UpliftKind; value: string }>;
 

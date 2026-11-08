@@ -123,3 +123,8 @@ The same colours the portal drew (pages/manager/ManagerDashboard.tsx, outside th
 | `apps/dashboard/src/components/ParkingLivePanel.tsx:80` | `#22c55e` | status: free bays |
 | `apps/dashboard/src/components/ParkingLivePanel.tsx:81` | `#3b82f6` | data: occupancy figure (red over 80%) |
 | `apps/dashboard/src/components/ParkingLivePanel.tsx:113` | `text-green-400` | money: the amount due for a car in time (amber when over) |
+
+### 2026-11-04 — the payment screen's shared pieces (one design for both POS)
+
+The tip's amount ("+ KES 120.00") moved from `PaymentModal.tsx` into the shared tip picker (`@zaptill/ui/TipPicker`),
+painted white on both POS (the desktop's payment screen has no green there): `PaymentModal.tsx` 5 → 4, total 95 → 94.

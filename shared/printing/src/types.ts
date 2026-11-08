@@ -87,6 +87,12 @@ export interface OrderLine {
    * (a line from before A577, fuel) is still printed as a measure, without a unit.
    */
   measureUnit?: string;
+  /**
+   * Owner, 2026-11-04: a restaurant's course ("Starters", "Mains" …). The kitchen and dispatch tickets print a heading
+   * ("-- MAINS --") above a course's first dish; the receipt ignores it. Omitted (every order without courses): the
+   * tickets print exactly as before.
+   */
+  course?: string;
 }
 
 export type OrderType = 'takeaway' | 'dine_in' | 'delivery' | 'counter';
@@ -249,4 +255,7 @@ export interface PrintContext {
   proforma?: boolean;
   /** Set when the order was voided. Drives the VOID layout. */
   voided?: { at: Date; by: string; reason?: string };
+  /** Owner, 2026-11-05: Transfer table — the items the kitchen already has, again under MOVED, with the table they left
+   *  (the order's tableNumber is the new one). Production tickets only. */
+  moved?: { from: string };
 }

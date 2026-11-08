@@ -58,6 +58,7 @@ import { isNodeRole } from './deviceConfig';
 import crypto from 'crypto';
 import { getLocalDb, applyPulledBranding } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
+import { relayPrint, relayPrinter } from './nodePrintRelay';   // Till stage 1: a Shop POS prints through this server
 import { codesFromBranchDb, normaliseCode, CODE_RE } from './terminalCodes';   // A519
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
 import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents, retryRefusedAfterEvents,
@@ -481,6 +482,21 @@ export function startNodeServer(): void {
         // read its own roster (a transport-like failure the peer may retry).
         const status = verdict.reason === 'unavailable' ? 503 : 401;
         return json(res, status, { ok: false, reason: verdict.reason, error: verdict.message });
+      }
+
+      // Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): a Shop POS tablet that joined this server prints its tickets here —
+      // this server's stations, printers and spool (nodePrintRelay.ts). The branch access code is checked above, as for
+      // every /node/* route; like the PIN check, only a POS that proves which it is (its device key) is answered.
+      if (req.method === 'POST' && url === '/node/print') {
+        const who = whoIsAsking(req);
+        if (!proven(who.verdict)) {
+          return json(res, 403, { ok: false, skipped: [], failed: [], problem: who.verdict === 'absent' ? NOT_JOINED : refusalText(who.verdict) });
+        }
+        const printer = relayPrinter();
+        if (!printer) return json(res, 503, { ok: false, skipped: [], failed: [], problem: 'The branch server is still starting — try again in a moment.' });
+        const out = relayPrint(await readBody(req).catch(() => null), printer);
+        if (out.body.problem) logLine('node', `/node/print from ${(who.device ?? '').slice(0, 8)}: ${out.body.problem}`);
+        return json(res, out.status, out.body);
       }
 
       // A160: broker a token refresh for a peer that can't reach the cloud but can

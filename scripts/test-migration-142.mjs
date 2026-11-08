@@ -1,7 +1,7 @@
 /**
  * test-migration-142.mjs — A514: every business gets the built-in roles it does not have (Supervisor, Waiter, Kitchen,
  * Storekeeper, Accountant; Fuel attendant at a fuel business; Manager / Cashier where missing), with exactly the default
- * keys of shared/permissions.ts BUILT_IN_ROLES, nobody assigned, and never a change to a role of that name the business
+ * keys of packages/core/src/permissions.ts BUILT_IN_ROLES, nobody assigned, and never a change to a role of that name the business
  * already has — run for real against the WHOLE schema (every migration replayed into PGlite).
  *
  * MUTATIONS TO CONFIRM BITE: the NOT EXISTS name check dropped → the run fails on the unique name or "an existing
@@ -58,7 +58,7 @@ const put = async (table, row) => {
 
 
 const { pathToFileURL } = await import('node:url');
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 
 console.log('\nMigration 142 (built-in roles) — PGlite, every migration\n');
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
@@ -97,7 +97,8 @@ const TAKEN_LATER = { Cashier: ['shifts.cash_movements', 'sales.discount'], Mana
 // A595: the 36 narrower rights are registered (and carried over to every holder of their parent) by 176 — not 142's
 // (test-migration-176.mjs proves who gets them).
 // A599: the attendance rights are registered and given by 180 (test-migration-180.mjs).
-const A595 = new Set([...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices']);
+// 8n: settings.pos_layout is registered and given to the built-in Manager / GM by migration 190, not 142.
+const A595 = new Set([...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices', 'settings.pos_layout']);
 const keys142 = (r) => [...new Set([...r.keys, ...(TAKEN_LATER[r.name] ?? [])])].filter((k) => !(LATER[r.name] ?? []).includes(k) && !A595.has(k));
 // A550: the roles migration 159 adds later (General Manager, Operations Manager, …) are not 142's — 142 is compared with the
 // built-in roles it made, in their order (scripts/test-migration-159.mjs compares the rest).

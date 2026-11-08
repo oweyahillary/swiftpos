@@ -17,7 +17,7 @@ import { v4 as uuid } from 'uuid';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
 import { getDeviceConfig, getPosFeatures } from './deviceConfig';
-import { cleanVoidReason, cleanVoidNote, summariseKitchenVoids, type KitchenVoidSummary } from './kitchenLines';
+import { cleanVoidReason, cleanVoidNote, summariseKitchenVoids, type KitchenVoidSummary } from '@zaptill/core/kitchenLines';
 
 const qty = (n: unknown) => Math.max(0, Math.round((Number(n) || 0) * 1000) / 1000);
 const money = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;
@@ -200,6 +200,19 @@ export function openKitchenOrders(shiftId?: string | null): OpenKitchenOrder[] {
     if (r.first_sent_at < o.first_sent_at) o.first_sent_at = r.first_sent_at;
   }
   return [...by.values()];
+}
+
+/**
+ * Transfer table (owner, 2026-11-05): a sent order's lines follow it to its new table. Returns what the kitchen still has
+ * of it (sent − voided) — the MOVED ticket's items; null when this till has nothing of that order with the kitchen.
+ */
+export function moveKitchenOrder(orderNumber: string, table: string): OpenKitchenOrder | null {
+  const num = String(orderNumber ?? '').trim();
+  const to = String(table ?? '').trim();
+  if (!num || !to) return null;
+  getLocalDb().prepare(`UPDATE kitchen_lines SET table_number = ?, updated_at = ? WHERE order_number = ? AND status = 'open'`)
+    .run(to, new Date().toISOString(), num);
+  return openKitchenOrders().find((o) => o.order_number === num) ?? null;
 }
 
 /** End Shift: refused while this shift has a sent order unpaid — unless the client has 'pay_later_tabs' (A461: eat now,

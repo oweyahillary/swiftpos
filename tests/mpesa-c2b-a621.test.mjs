@@ -395,6 +395,9 @@ try {
   });
   await ok('nothing changed since the stamp → "unchanged", without reading the payments', async () => {
     await seed();
+    // A change in the same millisecond as the stamp counts as a change (c2bChangedSince: >=, one read too many at worst);
+    // on a fast runner seed() and the first read share a millisecond — let the clock move so "nothing changed" holds.
+    await new Promise((r) => setTimeout(r, 5));
     const first = await call('GET', '/api/payments/c2b/recent?amount=1080', TILL_1);
     mem.calls = [];
     const again = await call('GET', `/api/payments/c2b/recent?amount=1080&since=${first.body.stamp}`, TILL_1);
@@ -508,7 +511,8 @@ try {
   await ok('the web POS: the list under M-Pesa; a taken payment goes to the cloud as received money; closing gives it back', async () => {
     const pm = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/pos/PaymentModal.tsx'), 'utf8');
     assert.match(pm, /<MpesaReceivedList toPay=\{grandTotal\}/);
-    assert.match(pm, /l\.method === 'mpesa' && claims\.isTaken\(l\.reference\) \? \{ status: 'completed' \} : \{\}/);
+    // 2026-11-04: or a part whose M-Pesa prompt the customer paid (the prompt inside a split payment, as the desktop POS).
+    assert.match(pm, /l\.method === 'mpesa' && \(claims\.isTaken\(l\.reference\) \|\| l\.prompted\) \? \{ status: 'completed' \} : \{\}/);
     assert.match(pm, /function closeModal\(\) \{ claims\.giveBackAll\(\); onClose\(\); \}/);
     // Owner, 2026-11-03: "show payments that match the bill only" — a tap always pays the whole bill.
     assert.match(pm, /function takeReceived\(p: ReceivedPayment\) \{\n\s*void handleSplitCharge\(\[\{ id: 'c2b', method: 'mpesa', amount: grandTotal, reference: p\.trans_id \}\]\);/);

@@ -20,7 +20,7 @@
 //      the last answer kept (with its time) when the cloud cannot answer.
 //   5  the keypad: amount (2 decimals) or litres (3), the other worked out (litres = KES ÷ price; amount = litres × price,
 //      the fuel path's own rule), 500 / 1,000 / 2,000 and Full tank (→ litres); the line goes through addFuelLine as always.
-//   6  the bundle (A517): PumpsView and the branch lookup load when opened — the POS's main chunk ≤ 452 kB (445 until A605).
+//   6  the bundle (A517): PumpsView and the branch lookup load when opened — the POS's main chunk < 460 kB (445 until A605; 452 until the owner's 2026-11-04 budget).
 //
 // MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted — listed in the A588 report):
 //   - POSPage's matchFuel back to `flags.isPetrol ? (p as any).is_fuel === true : !(p as any).is_fuel` → 1 fails
@@ -50,7 +50,7 @@ Module._resolveFilename = function (req, parent, ...rest) { return req === 'elec
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 
-const FC = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'forecourt.ts')).href);
+const FC = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'forecourt.ts')).href);
 const MODE = await import(pathToFileURL(path.join(desktop, 'src', 'renderer', 'lib', 'posMode.ts')).href);
 
 // The REAL PumpsView, bundled for Node and rendered to HTML (no browser): window.swiftpos is a stand-in bridge.
@@ -250,6 +250,7 @@ try {
 
   console.log('\n5. The keypad');
   {
+    const kp = fs.readFileSync(path.join(desktop, '..', '..', 'packages', 'ui', 'src', 'FuelKeypad.tsx'), 'utf8');
     const type = (keys, field) => keys.reduce((s, k) => FC.keyIn(s, k, field), '');
     ok('amount: 2 decimals at most, no leading zero, one point', type(['0', '5', '0', '0', '.', '2', '5', '9'], 'amount') === '500.25'
       && type(['.', '5'], 'amount') === '0.5' && type(['1', '.', '.', '2'], 'amount') === '1.2');
@@ -262,14 +263,15 @@ try {
     ok('12.5 L at 184.50 → KES 2,306.25 (amount = litres × price, the fuel path\'s rule)', l.amount === 2306.25 && l.litres === 12.5 && FC.moneyText(l.amount) === '2,306.25');
     ok('no price → no litres (never a divide by zero)', FC.fuelSale('amount', '500', 0).litres === 0);
     ok('the quick amounts: 500, 1,000, 2,000 — and Full tank (→ litres)', JSON.stringify(FC.QUICK_AMOUNTS) === '[500,1000,2000]'
-      && src('renderer/components/PumpsView.tsx').includes("onClick={() => { setField('litres'); setEntry(''); setFullTank(true); }}"));
+      && kp.includes("onClick={() => { setField('litres'); setEntry(''); setFullTank(true); }}"));   // 2026-11-04: @zaptill/ui FuelKeypad
     const pv = src('renderer/components/PumpsView.tsx'), pos = src('renderer/pages/POSPage.tsx');
     ok('Add to sale hands the litres and the amount to POSPage.addFuelLine — the fuel line as always (quantity = litres, isFuel, pumpId)',
-      pv.includes('onAddFuel(active, sale.litres, sale.amount);') && pos.includes('onAddFuel={addFuelLine}')
+      pv.includes('onAdd={(litres, amount) => { onAddFuel(active, litres, amount); setActive(null); }}') && kp.includes('if (ready) onAdd(sale.litres, sale.amount);')
+      && pos.includes('onAddFuel={addFuelLine}')
       && /const addFuelLine = \(pump: Pump, litres: number, amount: number\) => \{[\s\S]{0,700}quantity: litres,[\s\S]{0,200}lineTotal: amount,\s+isFuel: true,\s+pumpId: pump\.id,/.test(pos)
       && pos.includes("order_type: flags.isPetrol ? 'fuel_sale'"));
-    ok('a USB numpad works the keypad (digits, ., Backspace, Enter, Escape)', pv.includes("window.addEventListener('keydown', onKey);")
-      && pv.includes("else if (e.key === 'Enter') { confirm(); e.preventDefault(); }"));
+    ok('a USB numpad works the keypad (digits, ., Backspace, Enter, Escape)', kp.includes("window.addEventListener('keydown', onKey);")
+      && kp.includes("else if (e.key === 'Enter') { confirm(); e.preventDefault(); }"));
   }
 
   console.log('\n6. The bundle (A517): the forecourt loads when opened');
@@ -292,13 +294,14 @@ try {
       const inMain = (rel) => mods(main).some((m) => m.endsWith(`/src/${rel}`));
       const kb = (main.code.length / 1024).toFixed(1);
       console.log(`  (built: main chunk ${kb} kB; PumpsView ${((chunks.find((c) => c.name === 'PumpsView')?.code.length ?? 0) / 1024).toFixed(1)} kB)`);
-      ok('PumpsView is its own chunk — not in the main one (nor the forecourt rules)', !inMain('renderer/components/PumpsView.tsx') && !inMain('shared/forecourt.ts')
+      ok('PumpsView is its own chunk — not in the main one (nor the forecourt rules)', !inMain('renderer/components/PumpsView.tsx') && !mods(main).some((m) => m.endsWith('/packages/core/src/forecourt.ts'))
         && chunks.some((c) => c.isDynamicEntry && mods(c).some((m) => m.endsWith('/src/renderer/components/PumpsView.tsx'))));
       ok('the branch lookup (BranchStockTab) is not in the main chunk', !inMain('renderer/components/BranchStockTab.tsx'));
       ok('the POS still in the main chunk (POSPage, the payment, the cart)', ['renderer/pages/POSPage.tsx', 'renderer/components/PaymentModal.tsx', 'renderer/lib/cart.ts'].every(inMain));
       // 2026-10-28: 445 → 452 kB. A605's brand palette (shared/themes.ts) must paint the first screen in the brand's colours
       // and A601's cut-off notice sits on the POS page — 448.9 kB with both; the new Manager / Tech panels stay in their lazy pages.
-      ok('the main chunk ≤ 452 kB (449.7 kB before A588; 445 until A605\'s palette)', main.code.length <= 452 * 1024, `${kb} kB`);
+      // Owner, 2026-11-04: 452 → 460 kB, the one budget every suite pins (lazy-load-a517, customer-details-a607, customer-display-a606).
+      ok('the main chunk < 460 kB (449.7 kB before A588; 445 until A605\'s palette)', main.code.length < 460 * 1024, `${kb} kB`);
     }
   }
 } catch (e) {

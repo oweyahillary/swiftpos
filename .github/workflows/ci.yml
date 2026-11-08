@@ -143,6 +143,16 @@ jobs:
           fi
           echo "No tracked .env files."
 
+      # Android Stage 0: ZapTill's Android release key is the owner's alone and reaches CI only as secrets
+      # (.github/workflows/android.yml). A keystore in the repository would hand anyone the power to sign "ZapTill".
+      - name: Assert no committed keystore files
+        run: |
+          found=$(git ls-files | grep -Ei '\.(jks|keystore|p12)$' || true)
+          if [ -n "$found" ]; then
+            echo "::error::Keystore file(s) tracked in git:"; echo "$found"; exit 1
+          fi
+          echo "No tracked keystore files."
+
       # This repo previously leaked a hardcoded Ed25519 signing key to a public
       # remote (see handoffs/handoff-14-07-2026.md §1), and a service-role key in
       # a packaged zip on 2026-08-08 (register A1). This is the guardrail that
@@ -825,6 +835,56 @@ jobs:
       - name: One body font (Source Sans 3)
         run: node --no-warnings tests/font-global.test.mjs
 
+      # One design for both POS (owner decision 2026-11-04), screen 1 — the payment screen: quick cash, the tip buttons,
+      # the Discount box and Split the bill (evenly / by item) built once (@zaptill/ui, @zaptill/core/tender) and used by
+      # both POS; the web's reference on a non-cash payment and the M-Pesa prompt inside a split payment. In the loop too.
+      - name: One payment screen for both POS
+        run: node --no-warnings tests/pos-payment-screen.test.mjs
+
+      # One design for both POS, screens 2 and 3: a cart line's sizes and add-ons as chips and the tile's words (Later,
+      # Sold out, Options) built once (@zaptill/ui LineChips, TileBadges); the desktop's Split bill for a restaurant.
+      - name: One cart line and product tile for both POS
+        run: node --no-warnings tests/pos-cart-and-tile.test.mjs
+
+      # Owner, 2026-11-04 ("1-5 yes only if the web licence is active"): PATCH /api/pumps/:id/activate for whoever may sell
+      # (orders.create or fuel.manage) at the pump's branch; from a desktop POS only as the person signed in (the
+      # terminal-write allowlist) and only with the online licence. Needs the server build. In the loop too.
+      - name: Activate a pump from either POS (online licence on the desktop)
+        run: TZ=UTC node --no-warnings tests/pump-activate.test.mjs
+
+      # Owner, 2026-11-04: the desktop POS shows the points a sale earns and the new balance (GET
+      # /api/loyalty/customer/:id/points — online licence, loyalty on; never in the sale's way). Needs the server build.
+      - name: Loyalty points on the desktop POS (online licence)
+        run: TZ=UTC node --no-warnings tests/loyalty-desktop.test.mjs
+
+      # Owner, 2026-11-04 ("3 yes"): the Rooms switch (Settings › Business › POS options) — Charge to room on the web and
+      # the Room charge payment on both POS only with it (the desktop: with the online licence too, refused in main).
+      - name: Rooms switch - charge to room only for a business with rooms
+        run: node --no-warnings tests/rooms-switch.test.mjs
+
+      # Owner, 2026-11-04 ("6 yes"): the desktop's dispensers, gauges and fuel keypad on the web POS — built once in
+      # @zaptill/ui (FuelKeypad, Pumps), each app's look in its own file, the web's phone layout kept.
+      - name: One forecourt for both POS
+        run: node --no-warnings tests/forecourt-shared.test.mjs
+
+      # Owner, 2026-11-05: Transfer table tells the kitchen — what it has of the order again under MOVED, with the new table
+      # and the one it left (shared/printing, through the web bundle); the web order moves on the cloud too
+      # (POST /api/orders/:id/move-table). The desktop's kitchen:move is in the desktop job (print-bill-transfer).
+      - name: Transfer table tells the kitchen (MOVED ticket)
+        run: node --no-warnings tests/table-move-kitchen.test.mjs
+
+      # Owner, 2026-11-05 ("both"): Reports › M-Pesa statement — the Org Portal's Excel/CSV or the business app's PDF, read
+      # in the browser (a real PDF made in the test, read by the dashboard's pdf.js), matched with @zaptill/core/mpesaStatement
+      # against the POS's M-Pesa sales (GET /api/payments/mpesa-statement/sales).
+      - name: M-Pesa statement check (Excel, CSV and PDF)
+        run: node --no-warnings tests/mpesa-statement.test.mjs
+
+      # Owner, 2026-11-05: the categories in the side panel or across the top, chosen per branch by its manager, on both POS
+      # (docs/SHARED-COMPONENTS-PLAN.md 8n) — the real @zaptill/ui CategoryBar / panel rendered in each app's look, the
+      # rule in @zaptill/core/categoryLayout, the cloud's check and pos/init. The desktop's cache is in the desktop job.
+      - name: Category layout per branch (side panel or top bar)
+        run: node --no-warnings tests/category-layout-8n.test.mjs
+
       # A622 — the cloud keeps a till's install_error (the updater's reason an install did not take) and the admin
       # portal's Desktop updates line shows it.
       - name: Why an install did not take, on the admin portal (A622)
@@ -884,6 +944,35 @@ jobs:
       # build. In the loop too.
       - name: Admin portal POS options (A604)
         run: node --no-warnings tests/admin-pos-options-a604.test.mjs
+
+      # Android Stage 0 (docs/ANDROID-APP-DESIGN.md) — ZapTill for Android's update feed approved per business and per
+      # surface like the desktop's A348 (android-till = the Shop POS, mobile = the owner's phone; nothing approved by
+      # default; a signed-in device's surface from its session, never the query); a release complete only with its APK
+      # and GitHub's SHA-256; the admin portal's approve / hold (super admin, audited) and download link; crash reports
+      # into the admin's alerts (category app_errors, one bell row per crash, redacted); the app's and the card's words.
+      # Migration 189 replayed into PGlite. Needs the server build. The APK itself: .github/workflows/android.yml.
+      - name: ZapTill for Android, cloud side (Android Stage 0) and migration 189
+        run: |
+          node --no-warnings tests/android-stage0.test.mjs
+          node --no-warnings scripts/test-migration-189.mjs
+
+      # Android Till stage 1 (docs/ANDROID-APP-DESIGN.md §11) — the online Shop POS: the cloud's gates for an android-till
+      # session (the A159 write guard, the A581 / A601 / A612 plan gates, the online licence, the POS seat — as a desktop
+      # POS), every write the web POS screens make allowed for a PIN sign-in on a Shop POS only, the web POS screens inside a
+      # Shop POS (its own drawer; tickets to the branch server, else straight to the printer; a browser unchanged), and the
+      # app's own rules. Needs the server build and the dashboard's packages (esbuild). In the loop too.
+      - name: ZapTill for Android, Till stage 1 (the online Shop POS)
+        run: node --no-warnings tests/android-till-stage1.test.mjs
+
+      # Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7, §4.8, §12) — keeps selling offline: the shared store-and-forward
+      # rules in @zaptill/core/tillBuffer (which writes may go offline, in-order idempotent replay that keeps an order
+      # with its void, the ack handling that never loses a sale, the two retention clocks) and the app's offline layer
+      # (buffer, replay, offline PIN, the opt-in offline-writes seam, the status bar — bundled with esbuild, Capacitor
+      # external). Pure; in the loop too.
+      - name: Offline store-and-forward rules (@zaptill/core/tillBuffer)
+        run: node --no-warnings tests/till-buffer-stage2.test.mjs
+      - name: ZapTill for Android, Till stage 2 (keeps selling offline)
+        run: node --no-warnings tests/android-till-stage2.test.mjs
 
   # 2026-11-02 (owner: "11 min is a lot of time"): the server job ran its named steps, every migration test and the
   # loop over every tests/*.test.mjs one after the other (~10.5 minutes). The migration tests (two halves) and the loop
@@ -1110,6 +1199,13 @@ jobs:
 
       - name: Cited documents exist
         run: node scripts/check-doc-refs.mjs
+
+      # Shared components (docs/SHARED-COMPONENTS-PLAN.md): the rules live once in packages/core and the POS screen
+      # pieces once in packages/ui. Fails when a copy of a packaged module grows back in an app, an app imports a package
+      # by a relative path, a look wrapper starts drawing its own elements, or @zaptill/ui reaches the cloud or the
+      # desktop's main process.
+      - name: Shared code lives once (packages/core, packages/ui)
+        run: node scripts/check-shared-sync.mjs
 
       # A45: the Receipt tab was shown on isManagerRole while the cloud demanded
       # settings.manage. Ratcheted, not pass/fail — the ground is not green yet
@@ -1850,6 +1946,13 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/branch-branding-a544.test.mjs
 
+      # 8n (owner, 2026-11-05) — the branch's category layout on the desktop POS: pulled with pos/init and kept offline
+      # (maintenance_state), carried by the change log's setup topic, relayed by the branch server; Manager › Settings
+      # changes it with settings.branches (refused without, panel / top only) and this POS switches at once.
+      - name: Desktop category layout per branch (8n)
+        working-directory: apps/desktop
+        run: node --no-warnings test/category-layout-8n.test.mjs
+
       # A597 — the owner's brand colours on the till: pulled with the branding (no schema bump), an older cloud leaves them,
       # none with themes off or under a branch's own theme, a database without the columns reads as none, the branch
       # server relays them; the screens: a primary's shades on every action colour, the lock screen and the strip.
@@ -1935,6 +2038,26 @@ jobs:
       - name: Desktop petrol POS - shop items, pumps and gauges (A588)
         working-directory: apps/desktop
         run: node --no-warnings test/petrol-pos-a588.test.mjs
+
+      # Owner, 2026-11-04 (online licence, restaurants): courses on the desktop — a course per line, Held / Fires now, Fire
+      # <course>; a held line reaches the kitchen only when fired or paid; the course's heading on the kitchen ticket;
+      # tickets for an order without courses unchanged, the receipt unchanged either way (the real print path).
+      - name: Desktop courses (online licence)
+        working-directory: apps/desktop
+        run: node --no-warnings test/courses-desktop.test.mjs
+
+      # Owner, 2026-11-04 (online licence, restaurants): Print bill ("BILL - NOT A RECEIPT", no number, no payments, the
+      # receipt printer only; a sale's receipt byte-identical) and Transfer (the open dine-in order to a free table).
+      - name: Desktop Print bill and Transfer table (online licence)
+        working-directory: apps/desktop
+        run: node --no-warnings test/print-bill-transfer.test.mjs
+
+      # Android Till stage 1 (owner, 2026-11-05: the branch server "so that printing can be easier"): POST /node/print — a
+      # Shop POS tablet's ticket printed with the server's own stations, printers and spool (queueThermal); the desktop's
+      # own tickets byte-for-byte unchanged; the route behind the branch access code and a proven device key.
+      - name: Branch server prints for a Shop POS tablet (/node/print)
+        working-directory: apps/desktop
+        run: node --no-warnings test/node-print-relay.test.mjs
 
       # A590 (P0) — every arch in the installer loads its SQLite driver: the 32-bit app of every combined installer up to
       # 1.0.20 had none (better-sqlite3 13 ships no win32-ia32 prebuild; its binding.gyp built nothing on the x64 host).

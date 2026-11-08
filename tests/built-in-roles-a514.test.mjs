@@ -1,6 +1,6 @@
 // A514 — the built-in roles. Owner, 2026-10-16: "Supervisor, Waiter, Kitchen, Storekeeper and any other that a good system
 // should have" — with Accountant (reads the books) and Fuel attendant (fuel businesses only). One place defines them
-// (shared/permissions.ts BUILT_IN_ROLES); a NEW business gets them with exactly those keys (both sign-up paths seed
+// (packages/core/src/permissions.ts BUILT_IN_ROLES); a NEW business gets them with exactly those keys (both sign-up paths seed
 // lib/defaultRolePermissions.ts seededRoleRows + seedDefaultRolePermissions); migration 142 adds them to existing businesses
 // (scripts/test-migration-142.mjs).
 //
@@ -26,7 +26,7 @@ process.env.SUPABASE_URL ??= 'http://127.0.0.1:9';
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-only';
 process.env.JWT_SECRET ??= 'test-only-secret-test-only-secret';
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const mem = installMemDb(supabase);
 const seeder = require(path.join(DIST, 'lib/defaultRolePermissions.js'));

@@ -10,7 +10,7 @@ import { syncPush, learnBeforeLock } from '../syncEngine';
 import { signedInCan } from '../tillAccess';
 import { getDeviceConfig } from '../deviceConfig';
 import { currentShiftReport, getStaleShift, blindClose, blindReport, computeZReport } from '../shiftService';
-import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, looksLikeDrawerCount } from '../posFeatures';   // A594
+import { CASH_MOVEMENT_REASON_REQUIRED, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, looksLikeDrawerCount } from '@zaptill/core/posFeatures';   // A594
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, mayCloseDay, mayCloseBranch, getConflictedShifts, retryConflictedShift, businessDateNow } from '../dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from '../branchClose';
 import { executeShiftMoney, createShiftMoneyInstruction, cancelShiftMoneyInstruction, SHIFT_MONEY_CLOSED, type ShiftMoneyPayload } from '../branchClose';   // A465

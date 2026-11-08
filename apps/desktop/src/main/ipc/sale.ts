@@ -1,27 +1,28 @@
 // IPC: a sale (order:create) and its tickets — kitchen exclusions, production tickets, reprints.
 // Registered from ipcHandlers.ts (D10).
-import { cleanOffer, type Offer } from '../offers';   // A445
-import { kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from '../escposBridge';
+import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
+import { kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride, escposEnabled } from '../escposBridge';
 import { expectStringArray } from '../ipcValidate';
 import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
-import { applyOffers } from '../offers';   // A494: the offer discount a sale claims, re-checked on the till's own offers
+import { applyOffers } from '@zaptill/core/offers';   // A494: the offer discount a sale claims, re-checked on the till's own offers
 import { syncPush, createLocalOrder } from '../syncEngine';
-import { tillBranchId, getPlatformPricing } from '../deviceConfig';   // A446; A619
+import { tillBranchId, getPlatformPricing, getDeviceConfig, getPosFeatures } from '../deviceConfig';   // A446; A619; rooms
 import { signedIn as sessionPerson, signedInCan, personCan } from '../tillAccess';
 import { historyScope } from '../shiftService';
 import { markKitchenPaid } from '../kitchenService';
 import { sellRefusal, isOpenBill } from '../sellGate';
-import { receiptPayloadFromDetail } from '../orderDetail';
+import { receiptPayloadFromDetail } from '@zaptill/core/orderDetail';
 import { openBills, type IpcShared } from './shared';
 import { prepareCreditSale, pullCreditCustomers } from '../creditSale';   // A552
 import { saleStockRefusal } from '../stockGateLocal';   // A563
 import { checkPlatformSale } from '../platformSale';   // A619
-import { cleanOwnPrices } from '../platformPrices';
+import { cleanOwnPrices } from '@zaptill/core/platformPrices';
+import { roomChargeRefusal } from '@zaptill/core/paymentCatalogue';
 
 /** A sale and its tickets: kitchen exclusions, reprints and order:create. */
 export function registerSaleHandlers(ctx: IpcShared) {
-  const { handle, queueThermal, STATIONS_REFUSED, readOrderDetail } = ctx;
+  const { handle, queueThermal, STATIONS_REFUSED, readOrderDetail, requireOnlineLicence } = ctx;
 
   // ── Orders ──────────────────────────────────────────────
 
@@ -96,6 +97,21 @@ export function registerSaleHandlers(ctx: IpcShared) {
     const { skipped, failed } = queueThermal(payload, ['kitchen', 'dispatch']);
     // A349: a ticket that could not be produced is named alongside the stations with no printer.
     return { ok: true, skipped: [...skipped, ...failed.map((f) => `${f} (could not be produced)`)] };
+  });
+
+  /**
+   * Owner, 2026-11-04 (online licence, restaurants): Print bill — the open order's bill before payment, on this POS's
+   * receipt printer: the receipt's layout under "BILL - NOT A RECEIPT", no bill number, no payments (shared/printing's
+   * proforma, as the web POS's Print bill). Nothing is saved; a sale's receipt is unchanged.
+   */
+  handle('escpos:printBill', (_e, payload: any) => {
+    requireOnlineLicence();
+    if (!escposEnabled()) return { ok: false, error: 'Printing is off on this POS — turn it on under 🖨 Printer settings.' };
+    const bill = { ...payload, order_number: '', payments: [], change_given: 0, tip_amount: 0, kitchen_void: undefined };
+    const r = queueThermal(bill, ['receipt'], undefined, true);
+    if (r.failed.length) return { ok: false, error: 'The bill could not be produced — see the POS log.' };
+    if (r.skipped.length) return { ok: false, error: `No printer for: ${r.skipped.join(', ')}. Check 🖨 Printer settings.` };
+    return { ok: true };
   });
 
   /**
@@ -200,6 +216,10 @@ export function registerSaleHandlers(ctx: IpcShared) {
     // (the screen's figure is checked here, offline too); the sale then records the rule and what it added.
     const platformCheck = checkPlatformSale(orderPayload, getPlatformPricing(), ownPlatformPrice);
     if (!platformCheck.ok) { logLine('sale', `A619: refused a sale — ${platformCheck.error}`); throw new Error(platformCheck.error); }
+    // Owner, 2026-11-04: a sale charged to a room needs the Rooms switch and the online licence (the payment screen offers
+    // Room charge only then; this is the authority).
+    const roomRefused = roomChargeRefusal(orderPayload?.payments, getPosFeatures().rooms && getDeviceConfig()?.web_pos_enabled === true);
+    if (roomRefused) { logLine('sale', 'refused a sale charged to a room — Rooms off or no online licence'); throw new Error(roomRefused); }
     // A490: a discount given by hand needs sales.discount — the till is the authority here (offline too; the cloud never
     // refuses a till's sale for it). What offers took off is not the person's discount. Nothing else about selling asks.
     // A494: what the offers took is re-checked on THIS till's offers (the same engine the cart and the cloud use) — the

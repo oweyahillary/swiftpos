@@ -35,6 +35,7 @@
  * carries a one-order confirmation the others don't.
  */
 import type { Schema } from './ipcValidate';
+import { CATEGORY_LAYOUTS } from '@zaptill/core/categoryLayout';   // 8n
 
 export const NO_PAYLOAD = Symbol('NO_PAYLOAD');
 
@@ -148,6 +149,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── 0.6.28: kitchen ledger and kitchen voids ──────────────────────────────
   'kitchen:sent': { order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true } },
   'kitchen:void': { order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, reason: { t: 'string', min: 1 }, note: { t: 'string', optional: true }, cooked: { t: 'boolean', optional: true }, pin: { t: 'string', optional: true }, order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true } },
+  'kitchen:move': { order_number: { t: 'string', min: 1 }, from: { t: 'string', min: 1 }, to: { t: 'string', min: 1 } },
   'kitchen:open': NO_PAYLOAD,
 
   // ── idle ──────────────────────────────────────────────────────────────────
@@ -162,6 +164,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:paymentMethods': NO_PAYLOAD,
   'pos:getPumps':       NO_PAYLOAD,
   'pos:forecourt':      NO_PAYLOAD,   // A588
+  'pos:activatePump':   { kind: 'string', min: 1 },   // owner 2026-11-04: the pump's id
   'pos:init':           NO_PAYLOAD,
   'pos:getVariants':    { kind: 'string' },
   'pos:getModifiers':   { kind: 'string' },
@@ -179,6 +182,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'escpos:setKitchenExclusions':   { kind: 'stringArray' },
   'escpos:clearKitchenExclusions': NO_PAYLOAD,
   'escpos:printProduction':        { kind: 'object' },   // production bag
+  'escpos:printBill':              { kind: 'object' },   // owner 2026-11-04: the open order's bill (online licence)
   'escpos:reprintReceipt':         NO_PAYLOAD,
   'escpos:reprintReceiptForOrder': { kind: 'string' },
   'escpos:printShiftReport':       { kind: 'object' },   // shift payload
@@ -328,6 +332,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:getMpesa':                 NO_PAYLOAD,                                            // A492
   'manage:setMpesa':                 { kind: { t: 'string', optional: true }, number: { t: 'string', optional: true },
                                        account: { t: 'string', optional: true }, clear: { t: 'boolean', optional: true } },   // A492
+  'pos:categoryLayout':             NO_PAYLOAD,                                            // 8n
+  'manage:setCategoryLayout':       { kind: 'enum', values: CATEGORY_LAYOUTS },              // 8n: 'panel' | 'top'
   'manage:getCashierHistoryMethods': NO_PAYLOAD,                                            // 0.6.37 (A387)
   'manage:setCashierHistoryMethods': { kind: 'stringArray' },
 
@@ -431,6 +437,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // A607: customer details at the counter (main/ipc/customerDetails.ts) — the request and the answer are cleaned in main
   // (customerDetails.ts sanitiseAsk / cleanAnswer); the answer is accepted only from the customer screen's own page.
   'customer:saleInfo':          NO_PAYLOAD,
+  'customer:loyaltyPoints':     { kind: 'string', min: 1 },   // owner 2026-11-04: the customer's id
   'customerDisplay:askable':    NO_PAYLOAD,
   'customerDisplay:ask':        { id: { t: 'string', min: 4 }, purpose: { t: 'string' } },
   'customerDisplay:cancelAsk':  { id: { t: 'string', optional: true } },

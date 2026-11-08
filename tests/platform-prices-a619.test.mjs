@@ -6,7 +6,7 @@
  *
  *   node tests/platform-prices-a619.test.mjs
  *
- * RUNS the real shared/platformPrices.ts: the settings (rules, rounding, own prices), the price (percentage, a fixed
+ * RUNS the real packages/core/src/platformPrices.ts: the settings (rules, rounding, own prices), the price (percentage, a fixed
  * amount per item, every rounding, an item's own price, add-ons, options, quantity, 0 / blank = normal, to the cent), the
  * cart (re-priced and restored, lines with no product kept, the quote and its uplift) and the payment flow (only a
  * single platform payment prices for the platform, no split, the confirmation only for a platform). Then pins the chain:
@@ -33,8 +33,8 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g,
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/platformPrices.ts')).href);
-const C = await import(pathToFileURL(path.join(ROOT, 'shared/paymentCatalogue.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/platformPrices.ts')).href);
+const C = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/paymentCatalogue.ts')).href);
 const PAY = await import(pathToFileURL(path.join(ROOT, 'apps/desktop/src/renderer/lib/payment.ts')).href);
 
 const pct = (value, rounding = 'exact') => ({ rounding, rules: { glovo: { kind: 'percent', value } } });
@@ -190,11 +190,10 @@ ok('the confirmation only for a platform: Glovo / Uber Eats / Bolt Food ask; Cas
 });
 
 console.log('\nThe chain');
-ok('one file, five identical copies (check-shared-sync)', () => {
-  const base = read('shared/platformPrices.ts');
-  for (const p of ['apps/server/src/lib/platformPrices.ts', 'apps/desktop/src/shared/platformPrices.ts', 'apps/desktop/src/main/platformPrices.ts', 'apps/dashboard/src/lib/platformPrices.ts'])
-    assert.equal(read(p), base, p);
-  assert.match(read('scripts/check-shared-sync.mjs'), /name: 'platformPrices\.ts'/);
+ok('ONE file: packages/core/src/platformPrices.ts, no copy left (every app imports @zaptill/core/platformPrices)', () => {
+  assert.ok(fs.existsSync(path.join(ROOT, 'packages/core/src/platformPrices.ts')));
+  for (const p of ['shared/platformPrices.ts', 'apps/server/src/lib/platformPrices.ts', 'apps/desktop/src/shared/platformPrices.ts', 'apps/desktop/src/main/platformPrices.ts', 'apps/dashboard/src/lib/platformPrices.ts'])
+    assert.ok(!fs.existsSync(path.join(ROOT, p)), p);
 });
 ok('both payment screens price with it and ask before charging a platform', () => {
   const web = read('apps/dashboard/src/pages/pos/PaymentModal.tsx');
@@ -202,9 +201,9 @@ ok('both payment screens price with it and ask before charging a platform', () =
   // the desktop loads the file when the payment screen opens (its first load stays small — lazy-load-a517)
   const desk = read('apps/desktop/src/renderer/components/PaymentModal.tsx'), page = read('apps/desktop/src/renderer/pages/POSPage.tsx');
   assert.match(desk, /platformOfLegs\(legs, isPlatform\)/); assert.match(desk, /Charge to \{platformName\}/);
-  assert.match(page, /import\('\.\.\/\.\.\/shared\/platformPrices'\)/);
-  assert.doesNotMatch(page, /^import \{[^}]*\} from '\.\.\/\.\.\/shared\/platformPrices'/m);
-  assert.doesNotMatch(desk, /^import \{[^}]*\} from '\.\.\/\.\.\/shared\/platformPrices'/m);
+  assert.match(page, /import\('@zaptill\/core\/platformPrices'\)/);
+  assert.doesNotMatch(page, /^import \{[^}]*\} from '@zaptill\/core\/platformPrices'/m);
+  assert.doesNotMatch(desk, /^import \{[^}]*\} from '@zaptill\/core\/platformPrices'/m);
 });
 ok('the till\'s sale (main), the cloud\'s check and the pull use it', () => {
   assert.match(read('apps/desktop/src/main/ipc/sale.ts'), /checkPlatformSale\(/);

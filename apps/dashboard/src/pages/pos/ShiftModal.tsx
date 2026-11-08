@@ -19,10 +19,10 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
-import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '../../lib/shiftConfirm';
-import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
-import { reasonsNeeded, missingReasons, REASON_MAX } from '../../lib/confirmReasons';
-import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, cashInAddsText, cashMovementNeedsApprover } from '../../lib/posFeatures';   // A594
+import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '@zaptill/core/shiftConfirm';
+import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, currentShiftPath, ownTerminal, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
+import { reasonsNeeded, missingReasons, REASON_MAX } from '@zaptill/core/confirmReasons';
+import { CASH_MOVEMENT_REASON_REQUIRED, CASH_MOVEMENT_ASK_MANAGER, EXPENSE_ASK_MANAGER, DRAWER_COUNT_WARNING, DRAWER_COUNT_CODE, cashInAddsText, cashMovementNeedsApprover } from '@zaptill/core/posFeatures';   // A594
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -159,6 +159,14 @@ export default function ShiftModal({
   useEffect(() => {
     if (mode !== 'open' || !branchId) return;
     setTerminalsLoading(true);
+    // Till stage 1: a Shop POS opens (or joins) its OWN drawer — the only row, chosen, no web till (lib/shopPos.ts).
+    const own = ownTerminal();
+    if (own) {
+      loadOpenDrawers((path) => posApi.get(path), branchId)
+        .then((open) => { setWebTill(null); setTerminals(withOpenShifts([own], open)); setSelectedDeviceId(own.device_id); })
+        .finally(() => setTerminalsLoading(false));
+      return;
+    }
     Promise.all([
       posApi.get<CoveredTerminal[]>(`/api/shifts/terminals?branch_id=${encodeURIComponent(branchId)}`),
       loadOpenDrawers((path) => posApi.get(path), branchId),   // A273 follow-up: which drawers are open
@@ -194,7 +202,7 @@ export default function ShiftModal({
     setError('');
     setCoveredTerminal(till);
     try {
-      const existing = await posApi.get<Shift | null>('/api/shifts/current');
+      const existing = await posApi.get<Shift | null>(currentShiftPath(branchId));
       if (existing) { onShiftOpened?.(existing); return; }
       setCoveredTerminal(null);
       setError('That drawer has just been closed. Pick the POS again to open a new shift.');
@@ -230,7 +238,7 @@ export default function ShiftModal({
       // rather than erroring — the web sells into the till's existing session.
       // With the identity now adopted, /current resolves to that till's shift.
       try {
-        const existing = await posApi.get<Shift | null>('/api/shifts/current');
+        const existing = await posApi.get<Shift | null>(currentShiftPath(branchId));
         if (existing) { onShiftOpened?.(existing); return; }
       } catch { /* fall through to the error */ }
       setCoveredTerminal(null); // open failed and no existing shift — don't keep a stale identity
@@ -441,6 +449,7 @@ export default function ShiftModal({
                 {' '}Join it, or start your own shift on <b>{webTill.name}</b>.
               </p>
             )}
+            {!ownTerminal() && (<>
             <label style={s.label}>Which POS are you selling on?</label>
             <select
               style={s.input}
@@ -462,6 +471,7 @@ export default function ShiftModal({
             {!terminalsLoading && terminals.length === 0 && (
               <p style={s.subtitle}>No points of sale are enrolled for this branch yet. Open the desktop POS once to register it.</p>
             )}
+            </>)}
 
             {!joining && (<>
             <label style={s.label}>Opening Float ({currency})</label>

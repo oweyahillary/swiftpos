@@ -8,7 +8,7 @@ import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 import { money } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
-import { paginate } from '../../lib/paginate';
+import { paginate } from '@zaptill/core/paginate';
 
 // A395: what is owed to each supplier (only for someone holding payables.manage — the owner by default).
 interface Position { id: string; balance: number; overdue: number; dueSoon: number; openBills: number }

@@ -1,6 +1,10 @@
 /**
  * terminalWrites.ts — A159: which WRITES a till (surface 'desktop') may make to the cloud.
  *
+ * Till stage 1 (docs/ANDROID-APP-DESIGN.md §11, 2026-11-05): the Android Shop POS (surface 'android-till') is guarded the
+ * same way — its own session to TILL_WRITES, a person's PIN sign-in on it to TILL_WRITES + MANAGER_WRITES — plus the
+ * writes the web POS screens it sells with make live (SHOP_POS_WRITES), for a person's PIN sign-in on a Shop POS only.
+ *
  * A till holds two kinds of token:
  *   • the till's OWN token — its session from an enrolment code (`/enrol/redeem`), A415: the till, the business, the
  *     branch and no person (lib/deviceGrant.ts), kept on the till's disk for sync. Stolen, it must not be able to edit the business — products, prices, staff, settings.
@@ -14,6 +18,13 @@
  * Pure (no env, no database), so the tests run this exact rule — and tests/terminal-write-guard.test.mjs also reads
  * every cloud write in the till's source and fails when one is not covered here.
  */
+
+/**
+ * lib/posSurface.ts's isPosDeviceSurface, written out: this file is loaded as it is by the tests (no imports), and
+ * tests/android-till-stage1.test.mjs checks the two agree.
+ */
+const POS_DEVICE = new Set(['desktop', 'android-till']);
+const isPosDeviceSurface = (s: string | null | undefined): boolean => !!s && POS_DEVICE.has(s);
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -83,6 +94,25 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/products\/labels\/settings$/,                    // A571: Manager › Stock › Labels — the business's label (menu.edit)
   /^\/api\/products\/barcodes\/(generate|settings)$/,       // A574: Labels — generate missing codes before printing, the numbering (menu.edit)
   /^\/api\/loyalty\/customer$/,                              // A595 D1: + Customer on the POS — a person adds a customer (customers.edit / .view)
+  // Owner, 2026-11-04: a cashier starting a fuel sale marks the pump dispensing — the person signed in, never the till's
+  // own token (the route: orders.create or fuel.manage, the pump's branch, the online licence). Only this one pump write.
+  /^\/api\/pumps\/[^/]+\/activate$/,
+];
+
+/**
+ * Till stage 1: the writes the web POS screens make while selling (apps/dashboard/src/pages/pos), which the desktop makes
+ * through its sync push instead — allowed only for a person's PIN sign-in on a Shop POS, never its own session and never
+ * a desktop's. Each route still checks the person's own permissions. tests/android-till-stage1.test.mjs reads every write
+ * in the web POS screens and fails when one is not covered by the lists here.
+ */
+export const SHOP_POS_WRITES: RegExp[] = [
+  /^\/api\/shifts\/open$/,                          // Open shift (a declared float), on this POS's own drawer
+  /^\/api\/shifts\/[^/]+\/(float|expense)$/,         // a float added, a pay-out, during the shift
+  /^\/api\/staff\/clock$/,                           // clock in / out with a PIN
+  /^\/api\/parking-sessions(\/[^/]+\/close)?$/,      // a parking bay's session started / ended
+  /^\/api\/mpesa\/(stk-push|stk-push-pos)$/,         // the customer's M-Pesa prompt (online only, always)
+  /^\/api\/payments\/c2b\/(claim|release)$/,         // A621: a Paybill / Till payment matched to the sale
+  /^\/api\/inventory\/[^/]+\/threshold$/,            // the drawer's Stock tab: a low-stock level (inventory.adjust)
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';
@@ -91,11 +121,12 @@ export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';
 export function terminalWriteVerdict(
   surface: string | null | undefined, method: string, path: string, pinSignIn = false,
 ): TerminalWriteVerdict {
-  if (surface !== 'desktop') return 'not-gated';           // only till tokens are gated
+  if (!isPosDeviceSurface(surface)) return 'not-gated';   // only POS devices' tokens are gated (desktop, Shop POS)
   if (!WRITE_METHODS.has(String(method).toUpperCase())) return 'not-gated';   // reads are always allowed
   const p = String(path || '').split('?')[0].replace(/\/+$/, '') || '/';
   if (TILL_WRITES.some((re) => re.test(p))) return 'till';
   if (MANAGER_WRITES.some((re) => re.test(p))) return pinSignIn ? 'manager' : 'denied';
+  if (surface === 'android-till' && SHOP_POS_WRITES.some((re) => re.test(p))) return pinSignIn ? 'manager' : 'denied';
   return 'denied';
 }
 

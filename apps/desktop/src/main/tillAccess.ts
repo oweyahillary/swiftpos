@@ -28,7 +28,7 @@
 import { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import { getLocalDb } from './localDb';
-import { expandKeys, hasPermission, hasAnyPermission, keysBeyond } from './permissions';
+import { expandKeys, hasPermission, hasAnyPermission, keysBeyond } from '@zaptill/core/permissions';
 import { personKeys, personCan, parseMap } from './personAccess';
 
 export * from './personAccess';

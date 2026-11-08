@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { weighedLine, formatWeight, type WeighedLine } from '../../lib/scaleBarcode';
+import { weighedLine, formatWeight, type WeighedLine } from '@zaptill/core/scaleBarcode';
 
 /**
  * WeightModal (web POS) — A577: an item sold by weight, tapped (or scanned by its own barcode), asks for the weight —

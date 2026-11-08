@@ -5,7 +5,7 @@
 // each line and one on the order; notes are free (anything priced stays a modifier).
 //
 // Drives the REAL compiled dist/main (localDb, syncEngine.createLocalOrder, deviceConfig, referenceBundle, webSales) on a
-// REAL SQLite file, electron shimmed; runs the shared rules (src/shared/orderNotes.ts, type-stripped); pins the screen.
+// REAL SQLite file, electron shimmed; runs the shared rules (packages/core/src/orderNotes.ts, type-stripped); pins the screen.
 //
 //   cd apps/desktop && npx tsc -b tsconfig.main.json && node test/order-notes.test.mjs
 //
@@ -53,7 +53,7 @@ const E = require(path.join(dist, 'syncEngine.js'));
 const C = require(path.join(dist, 'deviceConfig.js'));
 const R = require(path.join(dist, 'referenceBundle.js'));
 const W = require(path.join(dist, 'webSales.js'));
-const N = await import(pathToFileURL(path.join(desktop, 'src/shared/orderNotes.ts')).href);
+const N = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages/core/src/orderNotes.ts')).href);
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
@@ -156,8 +156,9 @@ ok('a tap never joins a line that carries a note ("2 spicy" + a tap is a new lin
 ok('a note changes only a line not yet sent (a sent line is refused — it would be cooked twice)',
   /if \(item && sentQtyOf\(item\) > 0\) \{\s*setKitchenMsg\(/.test(pos)
   && /\{ \.\.\.it, notes: note \}/.test(pos) && /!item\.isFuel && sentQtyOf\(item\) === 0 &&/.test(pos));
+// 2026-11-04: + Print bill (the order's note on the bill too); the sale's line shape is one helper (saleLine).
 ok('the sale sends each line\'s note and the order\'s note',
-  (pos.match(/notes: item\.notes \?\? null/g) ?? []).length === 2 && (pos.match(/notes: orderNote\.trim\(\) \|\| null/g) ?? []).length === 2);
+  (pos.match(/notes: item\.notes \?\? null/g) ?? []).length === 2 && (pos.match(/notes: orderNote\.trim\(\) \|\| null/g) ?? []).length === 3);
 ok('a held order keeps its note, and a recall brings it back',
   /orderNote: orderNote\.trim\(\) \|\| undefined/.test(pos) && (pos.match(/setOrderNote\(held\.orderNote \?\? ''\)/g) ?? []).length === 2);
 ok('the note editor is on every line (not a fuel line) and on the order',

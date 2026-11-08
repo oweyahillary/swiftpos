@@ -10,7 +10,7 @@
  * here — it signs in with /api/auth/verify-pin and the branch server with its own roster — so a manager's PIN keeps
  * working there exactly as before. Pure: the route and its test read it.
  */
-import { isBackOffice } from './permissions';
+import { isBackOffice } from '@zaptill/core/permissions';
 
 export const USE_WEB_DASHBOARD = 'USE_WEB_DASHBOARD';
 
@@ -42,7 +42,7 @@ export const SELL_KEY = 'orders.create';
  */
 export function dashboardSessionKind(p: Record<string, unknown> | null | undefined,
   isOwnerPasswordSession: (p: Record<string, unknown>) => boolean): 'owner' | 'partner' | null {
-  if (!p || p.till === true || p.deviceId || p.pinSignIn === true || p.surface === 'kds' || p.surface === 'desktop') return null;
+  if (!p || p.till === true || p.deviceId || p.pinSignIn === true || p.surface === 'kds' || p.surface === 'desktop' || p.surface === 'android-till') return null;   // Till stage 1: neither POS
   if (p.isOwner === true) return p.webPartner !== true && isOwnerPasswordSession(p) ? 'owner' : null;
   return p.webPartner === true ? 'partner' : null;
 }

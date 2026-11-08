@@ -78,6 +78,7 @@ ok('only a real true turns one on; unknown keys are dropped',
                                                 kitchen_font_b: false,   // A551: kitchen tickets in Font B, opt-in (A543's kitchen_font_a retired)
                                                 approval_pin: false,   // A562: a separate approval PIN, opt-in (admin portal)
                                                 stock_zero_sold_out: false, stock_zero_hide: false,   // A563: when stock reaches zero (owner's choice; off = sell)
+                                                rooms: false,   // owner 2026-11-04: Rooms (charge to a room), off unless the owner sets it
                                                 blind_shift_close: true, confirm_shows_cashier_figures: true, kitchen_void_approval: true }),   // 0.6.29 / A461: standard ones last, always on
   JSON.stringify(C.getPosFeatures()));
 C.setPosFeatures(undefined);

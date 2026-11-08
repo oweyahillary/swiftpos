@@ -33,6 +33,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import MpesaStkPanel from './MpesaStkPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ export interface PaymentLeg {
   method: PaymentMethod;
   amount: number;
   reference?: string;
+  /** 2026-11-04 (as the desktop POS): the customer paid this part's M-Pesa prompt — the leg is recorded as paid. */
+  prompted?: boolean;
 }
 
 interface Props {
@@ -88,6 +91,8 @@ export default function SplitPaymentPanel({
   ]);
 
   const lastInputRef = useRef<HTMLInputElement>(null);
+  // 2026-11-04 (owner: the M-Pesa prompt inside a split payment, as the desktop POS): the leg whose prompt is open.
+  const [promptingId, setPromptingId] = useState<string | null>(null);
 
   const allocated = legs.reduce((s, l) => s + l.amount, 0);
   const remainder = Math.max(0, total - allocated);
@@ -235,17 +240,29 @@ export default function SplitPaymentPanel({
                 </button>
               </div>
 
-              {/* M-Pesa reference field */}
-              {leg.method === 'mpesa' && (
+              {/* M-Pesa: the code, or the M-Pesa prompt for this part (its amount) */}
+              {leg.method === 'mpesa' && promptingId === leg.id && (
+                <div style={s.referenceWrap}>
+                  <MpesaStkPanel total={leg.amount} currency={currency}
+                    onSuccess={(ref, prompted) => { updateLeg(leg.id, { reference: ref, prompted }); setPromptingId(null); }}
+                    onCancel={() => setPromptingId(null)} />
+                </div>
+              )}
+              {leg.method === 'mpesa' && promptingId !== leg.id && (
                 <div style={s.referenceWrap}>
                   <label style={s.refLabel}>M-Pesa reference code</label>
-                  <input
-                    style={s.refInput}
-                    placeholder="e.g. QJK7XT3L5P"
-                    value={leg.reference ?? ''}
-                    onChange={e => updateLeg(leg.id, { reference: e.target.value.toUpperCase() })}
-                    maxLength={12}
-                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      style={s.refInput}
+                      placeholder="e.g. QJK7XT3L5P"
+                      value={leg.reference ?? ''}
+                      onChange={e => updateLeg(leg.id, { reference: e.target.value.toUpperCase(), prompted: false })}
+                      maxLength={12}
+                    />
+                    {!leg.prompted && leg.amount > 0 && (
+                      <button style={s.qfChip} data-testid="split-stk" onClick={() => setPromptingId(leg.id)}>Send prompt</button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -295,7 +312,7 @@ export default function SplitPaymentPanel({
             opacity: canCharge ? 1 : 0.4,
             cursor: canCharge ? 'pointer' : 'not-allowed',
           }}
-          disabled={!canCharge}
+          disabled={!canCharge || promptingId !== null}
           onClick={() => onConfirm(legs)}
         >
           {canCharge

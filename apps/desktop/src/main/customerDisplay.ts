@@ -19,10 +19,10 @@
 import {
   sanitiseDisplayState, idleState, pickScreen, numberScreens, cleanDisplayChoice,
   type DisplayState, type DisplayChoice, type ScreenInfo, type NumberedScreen,
-} from './customerScreen';
+} from '@zaptill/core/customerScreen';
 import {
   sanitiseAsk, cleanAnswer, sanitiseStk, secondScreenAsk, type AskRequest, type CustomerAnswer, type StkView,
-} from './customerDetails';   // A607
+} from '@zaptill/core/customerDetails';   // A607
 
 export const CHOICE_KEY = 'customer_display';
 

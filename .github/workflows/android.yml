@@ -1,0 +1,124 @@
+# ZapTill for Android — build the APK (docs/ANDROID-APP-DESIGN.md, "Stage 0 — built").
+#
+# Every push to the android branch, every pull request that touches the app, and on demand: type-check and build the
+# app's screens, run the native unit tests (the updater's SHA-256 and redirect checks), and build the APK.
+#
+#   - Always: the DEBUG APK (signed with the throwaway debug key Gradle makes on the runner) — for testing on a phone.
+#   - When the release key is in the repository's secrets: the RELEASE APK signed with ZapTill's key, named
+#     ZapTill-<version>.apk, with its SHA-256 beside it. Not published anywhere yet: the release step (a GitHub release
+#     tagged android-v<version>, which the cloud's update feed reads) is added when the owner says the first version
+#     is ready (docs/ANDROID-APP-DESIGN.md says how).
+#
+# The release key is held by the owner only. It reaches this job only as GitHub secrets, is decoded into the runner's
+# temporary folder for the build, and is deleted after it — never printed, never uploaded, never in the repository:
+#   ANDROID_KEYSTORE_BASE64    the .jks file, base64-encoded
+#   ANDROID_KEYSTORE_PASSWORD  the keystore's password
+#   ANDROID_KEY_ALIAS          the key's alias (zaptill)
+#   ANDROID_KEY_PASSWORD       the key's password
+# Without them (a fork's pull request, or before the owner adds them) only the debug APK is built.
+
+name: Android
+
+on:
+  push:
+    branches: [android]
+  pull_request:
+    paths:
+      - 'apps/android/**'
+      # Till stage 1: the Shop POS bundles the web POS screens (apps/dashboard/src, through one entry —
+      # shopPos/ShopPosScreens.tsx), the shared pieces and the receipt renderer.
+      - 'apps/dashboard/src/**'
+      - 'apps/dashboard/tailwind.config.js'
+      - 'packages/**'
+      - 'shared/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Build the APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/android
+    env:
+      HAS_RELEASE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Capacitor 8 builds with JDK 21. The runner's Android SDK has the platform and build tools Gradle needs; any it
+      # lacks are fetched by the Android Gradle plugin (the runner's SDK licences are accepted).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install the app's packages
+        run: npm ci
+
+      - name: Type-check and build the screens, copy them into the Android project
+        run: npm run sync
+
+      # chmod: a commit from Windows may not carry gradlew's executable bit. Till stage 1 adds RawPrinterSpoolTest (one
+      # ticket at a time per printer, the jittered retry, nothing sent twice) and PinnedTlsTest (the branch server's
+      # certificate, byte for byte).
+      - name: Native unit tests (the updater's checks; printing and the branch server's certificate)
+        working-directory: apps/android/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Debug APK
+        working-directory: apps/android/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Name the debug APK
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p ../../out
+          cp android/app/build/outputs/apk/debug/app-debug.apk "../../out/ZapTill-${VERSION}-debug.apk"
+          sha256sum "../../out/ZapTill-${VERSION}-debug.apk"
+
+      - name: Release APK, signed with ZapTill's key
+        if: env.HAS_RELEASE_KEY == 'true'
+        working-directory: apps/android/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ZAPTILL_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ZAPTILL_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ZAPTILL_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export ZAPTILL_KEYSTORE_FILE="$RUNNER_TEMP/zaptill-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ZAPTILL_KEYSTORE_FILE"
+          ./gradlew --no-daemon assembleRelease
+          rm -f "$ZAPTILL_KEYSTORE_FILE"
+          VERSION=$(node -p "require('../package.json').version")
+          APK="../../../out/ZapTill-${VERSION}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          # The signature must verify, and its certificate is printed so the owner can compare it with their key's.
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$APKSIGNER" verify --print-certs "$APK" | grep -E 'Signer #1 certificate (DN|SHA-256)'
+          (cd ../../../out && sha256sum "ZapTill-${VERSION}.apk" > "ZapTill-${VERSION}.apk.sha256" && cat "ZapTill-${VERSION}.apk.sha256")
+
+      - name: Remove the key file, whatever happened
+        if: always()
+        run: rm -f "$RUNNER_TEMP/zaptill-release.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zaptill-android
+          path: out/
+          if-no-files-found: error
+          retention-days: 14

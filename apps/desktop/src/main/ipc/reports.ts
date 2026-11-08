@@ -1,6 +1,6 @@
 // IPC: manager reports, sale history, order detail and branch prices. Registered from ipcHandlers.ts (D10); two
 // register functions so the channels register in the order they always did.
-import { cashierHistoryView } from '../cashierHistory';
+import { cashierHistoryView } from '@zaptill/core/cashierHistory';
 import { readSessionTokens, readStaffTokens } from '../tokenStore';
 import { cloudFetch } from '../cloudGateway';
 import { signedInCan } from '../tillAccess';
@@ -11,7 +11,7 @@ import { branchDay } from '../branchDay';   // A431 / A432
 import { cloudBranchOrders } from '../webSales';
 import { exportReportCsv } from '../reportExport';
 import { exportDailySalesReport } from '../dailySalesReport';
-import { type OrderDetail } from '../orderDetail';
+import { type OrderDetail } from '@zaptill/core/orderDetail';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from '../managerReports';
 import { hasNode, fetchNodeReport } from '../nodeClient';
 import { RangeArg, type IpcShared } from './shared';

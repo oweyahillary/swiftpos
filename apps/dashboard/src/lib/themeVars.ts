@@ -9,7 +9,7 @@
  *    (400) in dark mode, textLight (700) in light mode. An unknown or unchosen theme id resolves to the default.
  *  computeDashboardThemeVars is PURE; applyDashboardThemeVars is the only DOM write.
  */
-import { resolveTheme, isFreeThemeId, themeTokens, resolveBrandLayer, brandPalette, cleanBrandHex, contrast, type Hex, type BrandPalette } from './themes';
+import { resolveTheme, isFreeThemeId, themeTokens, resolveBrandLayer, brandPalette, cleanBrandHex, contrast, type Hex, type BrandPalette } from '@zaptill/core/themes';
 
 /** A597: + the owner's brand colours and the logo (GET /api/business/branding). */
 export interface BrandingForTheme {

@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { posApi, StaffSession } from '../lib/posApi';
-import { resolveBranding } from '../../shared/contrast';
-import { resolveTheme, brandPalette } from '../../shared/themes';
+import { resolveBranding } from '@zaptill/core/contrast';
+import { resolveTheme, brandPalette } from '@zaptill/core/themes';
 
 interface Branch { id: string; name: string; desktop_licensed: boolean; }
 

@@ -17,7 +17,7 @@ import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import PermissionPicker, { usePermissionCatalogue } from '../../components/PermissionPicker';
 import { useBusiness } from '../../context/BusinessContext';   // A573
-import { posWording } from '../../lib/businessTerms';           // A586: a built-in role's stored words say "till"
+import { posWording } from '@zaptill/core/businessTerms';           // A586: a built-in role's stored words say "till"
 
 export interface RoleRow {
   id: string;

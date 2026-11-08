@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission, requireAnyPermission, branchFilter, byBranch } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { maskContacts, seesCustomerContacts, customerSearchFilter, isMasked, cleanKraPin } from '../lib/personalData';   // A595
+import { desktopWithoutLicence, ONLINE_LICENCE_REFUSAL } from '../lib/onlineLicence';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -123,6 +124,25 @@ router.get('/settings', requireLoyalty, async (req, res) => {
 
   const earnRate: number = data?.value ?? 1;
   res.json({ earnRate });
+});
+
+// GET /api/loyalty/customer/:id/points — owner, 2026-11-04: the desktop POS shows "Points earned" and the new balance
+// after a sale to a customer (as the web's payment screen), with the online licence and a connection. Whoever sells
+// (orders.create) or sees customers may ask; only this business's customer; nothing personal — the points, the tier and the
+// earn rate. { enabled: false } when the business has loyalty off (the POS then shows nothing).
+router.get('/customer/:id/points', requireAnyPermission('orders.create', 'customers.view'), async (req, res) => {
+  if (await desktopWithoutLicence(req)) { res.status(403).json(ONLINE_LICENCE_REFUSAL); return; }
+  const { data: flag } = await supabase.from('feature_flags').select('enabled')
+    .eq('business_id', req.businessId).eq('key', 'loyalty_enabled').maybeSingle();
+  if ((flag as { enabled?: boolean } | null)?.enabled !== true) { res.json({ enabled: false }); return; }
+  const [{ data: customer }, { data: rate }] = await Promise.all([
+    supabase.from('customers').select('id, loyalty_points').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle(),
+    supabase.from('business_settings').select('value').eq('business_id', req.businessId).eq('key', 'loyalty_earn_rate').maybeSingle(),
+  ]);
+  if (!customer) { res.status(404).json({ error: 'Customer not found' }); return; }
+  const points = Number((customer as { loyalty_points?: unknown }).loyalty_points) || 0;
+  const earnRate = Number((rate as { value?: unknown } | null)?.value);
+  res.json({ enabled: true, points, tier: getTier(points), earn_rate: Number.isFinite(earnRate) && earnRate > 0 ? earnRate : 1 });
 });
 
 // GET /api/loyalty/customer/:id/transactions

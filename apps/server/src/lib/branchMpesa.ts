@@ -18,7 +18,7 @@
  */
 import { supabase } from './supabase';
 import { decryptSecret } from './crypto';
-import { mpesaLabel, type MpesaKind, type MpesaReceive } from './mpesaReceive';
+import { mpesaLabel, type MpesaKind, type MpesaReceive } from '@zaptill/core/mpesaReceive';
 
 export type MpesaType = 'CustomerPayBillOnline' | 'CustomerBuyGoodsOnline';
 export type MpesaEnvironment = 'sandbox' | 'production';

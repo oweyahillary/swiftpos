@@ -26,6 +26,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const coreRequire = createRequire(path.join(ROOT, 'apps/server/package.json'));   // @zaptill/core, as the cloud loads it
 const DIST = path.join(ROOT, 'apps/server/dist');
 const DASH = path.join(ROOT, 'apps/dashboard');
 let pass = 0, fail = 0;
@@ -42,7 +43,7 @@ process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 require(path.join(DIST, 'lib/permissionsState.js'))._setPermissionsMigrated(true);   // after 134: the role decides
-const F = require(path.join(DIST, 'lib/posFeatures.js'));
+const F = coreRequire('@zaptill/core/posFeatures');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 
@@ -123,7 +124,7 @@ const float = (token, body) => req('POST', `/api/shifts/${SH}/float`, token, bod
 
 try {
   console.log('\nThe catalogue (new businesses)\n');
-  const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+  const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
   await ok('three rights from A453\'s switch — Record cash in (shifts.cash_movements), cash out, expenses — none a cashier default', () => {
     const lab = (k) => P.PERMISSIONS.find((p) => p.key === k)?.label;
     assert.equal(lab('shifts.cash_movements'), 'Record cash in');

@@ -7,7 +7,7 @@
 //
 // Drives the REAL compiled dist/main (localDb, deviceConfig, syncEngine — the catalogue pull from a stand-in cloud,
 // createLocalOrder, the sync queue —, referenceBundle, and the real order:create from ipc/sale.ts on a stand-in `handle`)
-// on a REAL SQLite file; the payment screen's pricing is the till's own copy of shared/platformPrices.ts.
+// on a REAL SQLite file; the payment screen's pricing is @zaptill/core/platformPrices (packages/core/src/platformPrices.ts).
 //
 //   cd apps/desktop && npx tsc -b tsconfig.main.json && node test/platform-prices-a619.test.mjs
 //
@@ -46,7 +46,7 @@ Module._resolveFilename = function (req, parent, ...rest) { return req === 'elec
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 const throwsMsg = async (fn) => { try { await fn(); return null; } catch (e) { return e?.message ?? String(e); } };
-const PP = await import(pathToFileURL(path.join(here, '..', 'src', 'shared', 'platformPrices.ts')).href);
+const PP = await import(pathToFileURL(path.join(here, '..', '..', '..', 'packages', 'core', 'src', 'platformPrices.ts')).href);
 
 // ── The stand-in cloud ───────────────────────────────────────────────────────────────────────────────────────────────
 const BR = 'br-1';
@@ -111,7 +111,7 @@ try {
     ok('a new rule replaces it, cleaned (an unknown platform dropped)', JSON.stringify(DC.getPlatformPricing()) === JSON.stringify({ rounding: 'up10', rules: { glovo: { kind: 'percent', value: 15 } } }));
     cloud.init = initWith({ platformPrices: PRICES });
     await E.pullCatalogueNow();
-    ok('the change log\'s money topic carries them (CONFIG_KEYS.money: platformPrices)', /money: \[[^\]]*'platformPrices'/.test(src('main/syncTopics.ts')));
+    ok('the change log\'s money topic carries them (CONFIG_KEYS.money: platformPrices)', /money: \[[^\]]*'platformPrices'/.test(fs.readFileSync(path.join(here, '..', '..', '..', 'packages', 'core', 'src', 'syncTopics.ts'), 'utf8')));
   }
 
   console.log('\n3. The branch server relays them');

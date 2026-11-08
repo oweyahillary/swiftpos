@@ -6,14 +6,15 @@ import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission, assertBranchAccess, can, outsideReach } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
-import { cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
-import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
-import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/paymentCatalogue';   // A429
-import { PLATFORM_PRICES_KEY, rulesSettingValue } from '../lib/platformPrices';   // A619
+import { cutoffSettingValue } from '@zaptill/core/businessDay';   // 0.6.34
+import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
+import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';   // A429
+import { PLATFORM_PRICES_KEY, rulesSettingValue } from '@zaptill/core/platformPrices';   // A619
+import { CATEGORY_LAYOUT_KEY, CATEGORY_LAYOUT_PERMISSIONS, categoryLayoutSettingValue } from '@zaptill/core/categoryLayout';   // 8n
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { invalidateDayCutoff } from '../lib/dayCutoff';
-import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '../lib/mpesaReceive';   // A492
-import { maySetMpesa } from '../lib/permissions';                 // A492
+import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
+import { maySetMpesa } from '@zaptill/core/permissions';                 // A492
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A492
 import { hiddenWhileCounting } from '../lib/stockTakeAccess';     // A494
 import { maskPhone, maskEmail } from '../lib/personalData';        // A595
@@ -276,12 +277,14 @@ const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operat
   'cashier_history_totals',    // A418: a cashier's History shows the total of what is filtered
   'payment_methods_enabled',   // A429: the payment methods this branch takes
   PLATFORM_PRICES_KEY,         // A619: this branch's delivery platform prices (the rounding stays the business's)
+  CATEGORY_LAYOUT_KEY,         // 8n: the branch's POS shows its categories in the side panel or across the top
   'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'];   // A450 / A492: each branch its own M-Pesa number
 
 /** A490: the keys that may set one branch override (any one of them). */
 export function branchSettingKeys(key: string): string[] {
   if (key === 'payment_methods_enabled' || key === PLATFORM_PRICES_KEY) return ['settings.payments'];   // A429, A619
   if (['receipt_header', 'receipt_footer'].includes(key)) return ['settings.branches', 'receipt.manage'];
+  if (key === CATEGORY_LAYOUT_KEY) return [...CATEGORY_LAYOUT_PERMISSIONS];   // 8n: settings.pos_layout (a Manager's) or settings.branches
   return ['settings.branches'];
 }
 
@@ -314,7 +317,7 @@ router.get('/:id/settings', requireAuth, async (req, res) => {
 // POST /api/branches/:id/settings — set or clear one override.
 //   { key, value }        → upsert the override (branch value wins over default)
 //   { key, value: null }  → delete the override (branch reverts to the default)
-router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branches', 'settings.payments', 'receipt.manage'), async (req, res) => {
+router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branches', 'settings.payments', 'receipt.manage', 'settings.pos_layout'), async (req, res) => {
   const { key, value } = req.body ?? {};
   if (!OVERRIDABLE_KEYS.includes(key)) {
     res.status(400).json({ error: 'That setting cannot be overridden per branch' });
@@ -368,6 +371,13 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branche
   if (key === PLATFORM_PRICES_KEY) {
     const clean = rulesSettingValue(value);
     if (clean === null) { res.status(400).json({ error: 'Each platform takes a percentage (up to 500%) or an amount per item.' }); return; }
+    stored = clean;
+  }
+  // 8n (owner, 2026-11-05): the branch's category layout — 'panel' or 'top' only (settings.pos_layout or settings.branches,
+  // own branch: above).
+  if (key === CATEGORY_LAYOUT_KEY) {
+    const clean = categoryLayoutSettingValue(value);
+    if (clean === null) { res.status(400).json({ error: 'Choose the side panel or the top bar.' }); return; }
     stored = clean;
   }
   // 0.6.37 (A387): a branch's own History methods — a list of method codes ([] = every method).

@@ -57,7 +57,7 @@ const put = async (table, row) => {
   const k = Object.keys(full);
   await db.query(`INSERT INTO public.${table} (${k.join(',')}) VALUES (${k.map((_, i) => `$${i + 1}`).join(',')})`, k.map((x) => full[x]));
 };
-const P = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 
 console.log('\nMigration 169 (A580 shop kitchen roles) — PGlite, every migration\n');
 let n = 0;
@@ -95,7 +95,7 @@ await db.query(`INSERT INTO public.role_permissions (role_id, permission_id) SEL
 const exists = async (key) => !!(await one(`SELECT 1 AS x FROM public.roles WHERE id = $1`, [roles[key]]));
 const sql = fs.readFileSync(path.join(MIG, THIS), 'utf8');
 
-await ok('the SQL names exactly the food-only built-in roles and the food types of shared/permissions.ts', async () => {
+await ok('the SQL names exactly the food-only built-in roles and the food types of packages/core/src/permissions.ts', async () => {
   const food = P.BUILT_IN_ROLES.filter((r) => r.types && r.types.includes('restaurant')).map((r) => r.name.toLowerCase());
   assert.deepEqual(food, ['waiter', 'kitchen', 'kitchen manager']);
   assert.deepEqual([...P.FOOD_BUSINESS_TYPES], ['restaurant', 'cafe']);

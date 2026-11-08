@@ -1,8 +1,8 @@
-import { mpesaFromSettings, mpesaDescribe } from '../../lib/mpesaReceive';   // A492
+import { mpesaFromSettings, mpesaDescribe } from '@zaptill/core/mpesaReceive';   // A492
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
-import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '../../lib/businessDay';   // 0.6.34
+import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '@zaptill/core/businessDay';   // 0.6.34
 import HistoryMethodsPicker from './HistoryMethodsPicker';   // 0.6.37 (A387)
 
 // Settings › Business › Profile (A134). The one vertical-neutral home for

@@ -45,6 +45,8 @@ import { registerHistoryUploadHandlers } from './ipc/historyUpload';   // A602
 import { registerCustomerDisplayHandlers } from './ipc/customerDisplay';   // A606
 import { registerCustomerDetailsHandlers } from './ipc/customerDetails';   // A607
 import { registerMpesaC2bHandlers } from './ipc/mpesaC2b';   // A621
+import { setRelayPrinter } from './nodePrintRelay';   // Till stage 1: /node/print
+import { escposEnabled } from './escposBridge';
 
 export function registerIpcHandlers() {
 
@@ -56,6 +58,8 @@ export function registerIpcHandlers() {
   // need per-channel payload boilerplate.
   const handle = installValidatedHandle(ipcMain);
   const ctx = createIpcShared(handle);
+  // Till stage 1: a Shop POS tablet joined to this branch server prints through this POS's own print path (/node/print).
+  setRelayPrinter({ queueThermal: ctx.queueThermal, escposEnabled, requireOnlineLicence: ctx.requireOnlineLicence });
 
   // The order below is the registration order from before the split — keep it (a module with two register functions
   // is called twice, at the place its channels always registered).

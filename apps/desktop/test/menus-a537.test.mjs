@@ -7,7 +7,7 @@
 //
 // Drives the REAL compiled dist/main (localDb's migration, syncEngine's whole pull and applyChangeEntries, the branch
 // server's reference bundle) on a REAL SQLite file, electron shimmed, against a stand-in cloud on a real port; runs the
-// shared panel helper (src/shared/menuFilter.ts — the web POS runs the same file); pins the sale screen's wiring.
+// shared panel helper (packages/core/src/menuFilter.ts — the web POS runs the same file); pins the sale screen's wiring.
 //
 //   cd apps/desktop && npx tsc -b tsconfig.main.json && node test/menus-a537.test.mjs
 //
@@ -97,7 +97,7 @@ E.configureSyncEngine(CLOUD, 'tok', 'r1');
 const RB = require(path.join(dist, 'referenceBundle.js'));
 const menus = () => db.prepare(`SELECT id, name, sort_order, active, icon FROM menus ORDER BY sort_order`).all();
 const menuOf = (id) => db.prepare(`SELECT menu_id FROM categories WHERE id = ?`).get(id)?.menu_id ?? null;
-const M = await import(pathToFileURL(path.join(here, '..', 'src', 'shared', 'menuFilter.ts')).href);
+const M = await import(pathToFileURL(path.join(here, '..', '..', '..', 'packages', 'core', 'src', 'menuFilter.ts')).href);
 
 console.log('A537 — the category panel and menus on the till\n');
 try {
@@ -186,18 +186,22 @@ try {
     && M.parsePanelPrefs(JSON.stringify({ pinned: 1, menu: 'x'.repeat(200) })).menu === 'all');
 
   // ── 7 ──
-  const panel = src('renderer/components/CategoryPanel.tsx');
+  // Shared components batch G: the panel is @zaptill/ui/CategoryPanel (packages/ui/src/CategoryPanel.tsx); the desktop's
+  // look — its class names — stays in components/CategoryPanel.tsx. The pins read both.
+  const look = src('renderer/components/CategoryPanel.tsx');
+  const panel = fs.readFileSync(path.join(here, '..', '..', '..', 'packages', 'ui', 'src', 'CategoryPanel.tsx'), 'utf8') + '\n' + look;
   const pos = src('renderer/pages/POSPage.tsx');
   ok('the panel starts collapsed (A554: at every start, pinned or not) and remembers the menu on this till — every storage access in try/catch',
     /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/.test(panel)
     && /try \{ return parsePanelPrefs\(window\.localStorage\.getItem\(PANEL_PREFS_KEY\)\); \} catch/.test(panel)
     && /try \{ window\.localStorage\.setItem\(PANEL_PREFS_KEY, panelPrefsText\(p\)\); \} catch/.test(panel)
-    && /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/.test(panel));
+    && /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/.test(panel)
+    && /^import SharedCategoryPanel, \{[^}]*\} from '@zaptill\/ui\/CategoryPanel';$/m.test(look) && /^export default withLook<CategoryPanelProps>\(SharedCategoryPanel, LOOK\);$/m.test(look));
   ok('touch first: 48 px rows, 40+ px pin / close / tabs, nothing on hover only (the panel uses the action colours)',
-    /min-h-\[48px\]/.test(panel) && (panel.match(/min-h-\[40px\]/g) || []).length >= 3 && /bg-action-500/.test(panel) && !/onMouseEnter|onMouseOver/.test(panel));
+    /min-h-\[48px\]/.test(look) && (look.match(/min-h-\[40px\]/g) || []).length >= 3 && /bg-action-500/.test(look) && !/onMouseEnter|onMouseOver/.test(panel));
   ok('the sale screen: ☰ before the search, the chip after it; the old category row is gone',
     /<PanelToggle panel=\{catPanel\} \/>\s*<input\s+type="text"\s+placeholder="Search products…"/.test(pos)
-    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} \/>/.test(pos)
+    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} panel=\{catPanel\} \/>/.test(pos)
     && !/border-b border-gray-800 overflow-x-auto/.test(pos) && !/categories\.map\(\(cat: any\) => \(/.test(pos));
   // A566: the panel is told when the menus are across the top (menuBar) and the menu does not narrow a search
   // (gridMenuScope) — apps/desktop/test/menus-top-a566.test.mjs pins the rest.
@@ -205,12 +209,12 @@ try {
     /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{narrowWindow\} menuBar=\{menuBar\.length > 0\} \/>\s*<div ref=\{grid\.rootRef\} className="flex-1 overflow-y-auto p-4">/.test(pos)
     && /const menuFilterScope = useMemo\(\(\) => menuScope\(categoriesNow, menusNow, activeMenu\)/.test(pos)   // A578: the menus open now
     && /const matchMenu\s+= inMenuScope\(p, gridMenuScope\(menuFilterScope, search\)\);/.test(pos) && /&& matchCat && matchMenu && matchSearch/.test(pos)
-    && /from '\.\.\/\.\.\/shared\/menuFilter'/.test(pos));
+    && /from '@zaptill\/core\/menuFilter'/.test(pos));
   ok('pos:init gives the sale screen the menus (on, in order; none before schema 73)',
     /SELECT id, name, sort_order, color, icon, availability FROM menus WHERE active = 1 ORDER BY sort_order, name/.test(ipcHandlersSource())   // A578: + the hours
     && /menus: mn, businessDayCutoff: bdc, branchId/.test(pos));
   const manage = src('renderer/pages/ManageTabs.tsx');
-  const TC = await import(pathToFileURL(path.join(here, '..', 'src', 'shared', 'tillChanges.ts')).href);
+  const TC = await import(pathToFileURL(path.join(here, '..', '..', '..', 'packages', 'core', 'src', 'tillChanges.ts')).href);
   const good = TC.cleanChange({ id: '11111111-1111-4111-8111-111111111111', entity: 'category', op: 'update', entity_id: '22222222-2222-4222-8222-222222222222',
     data: { menu_id: '33333333-3333-4333-8333-333333333333' } });
   const bad = TC.cleanChange({ id: '11111111-1111-4111-8111-111111111111', entity: 'category', op: 'update', entity_id: '22222222-2222-4222-8222-222222222222',

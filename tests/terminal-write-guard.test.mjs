@@ -153,7 +153,8 @@ ok('the guard runs in requireAuth with the real rule and the token kind', () => 
   assert.ok(!/TILL_WRITE_ALLOWLIST/.test(AUTH), 'a second copy of the list is back in the middleware');
 });
 ok('a PIN sign-in on a till carries pinSignIn (and refresh keeps the payload)', () => {
-  assert.match(ROUTES, /\.\.\.\(req\.surface === 'desktop' \? \{ pinSignIn: true \} : \{\}\),/);
+  // Till stage 1: on either POS (the desktop, the Android Shop POS — lib/posSurface.ts).
+  assert.match(ROUTES, /\.\.\.\(isPosDeviceSurface\(req\.surface\) \? \{ pinSignIn: true \} : \{\}\),/);
   assert.match(ROUTES, /const \{ tokenType, iat, exp, jti, \.\.\.cleanPayload \} = payload;/);
 });
 ok('dry-run is the default (enforce is opt-in via env)', () => {

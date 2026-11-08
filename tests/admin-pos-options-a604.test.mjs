@@ -42,7 +42,7 @@ if (!fs.existsSync(path.join(DIST, 'routes/admin.js'))) {
   process.exit(1);
 }
 const O = await import(pathToFileURL(path.join(ROOT, 'apps/admin/src/ownerSettings.ts')).href);
-const F = await import(pathToFileURL(path.join(ROOT, 'apps/admin/src/lib/posFeatures.ts')).href);
+const F = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/posFeatures.ts')).href);
 const ap = read('apps/admin/src/AdminPortal.tsx');
 const features = (() => {
   const i = ap.indexOf('{tab === "features" && (');

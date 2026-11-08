@@ -29,13 +29,14 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const esbuild = createRequire(path.join(ROOT, 'apps/dashboard/package.json'))('esbuild');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a609-'));
 const load = async (entry, name) => {
-  await esbuild.build({ entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: path.join(tmp, `${name}.cjs`), logLevel: 'silent' });
+  await esbuild.build({ entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: path.join(tmp, `${name}.cjs`), logLevel: 'silent',
+    nodePaths: [path.join(ROOT, 'apps/dashboard/node_modules')] });   // @zaptill/core for a desktop file: CI installs only the dashboard here
   return createRequire(import.meta.url)(path.join(tmp, `${name}.cjs`));
 };
 const boot = path.join(tmp, 'boot-entry.ts');
 fs.writeFileSync(boot, `export * from ${JSON.stringify(path.join(ROOT, 'apps/dashboard/src/lib/themeBoot.ts'))};\n`
   + `export { brandLook, brandColourVars, computeDashboardThemeVars, applyDashboardThemeVars } from ${JSON.stringify(path.join(ROOT, 'apps/dashboard/src/lib/themeVars.ts'))};\n`
-  + `export { brandPalette, contrast } from ${JSON.stringify(path.join(ROOT, 'shared/themes.ts'))};\n`);
+  + `export { brandPalette, contrast } from ${JSON.stringify(path.join(ROOT, 'packages/core/src/themes.ts'))};\n`);
 const W = await load(boot, 'boot');
 const DV = await load(path.join(ROOT, 'apps/desktop/src/renderer/lib/themeVars.ts'), 'tv-pos');
 
@@ -79,7 +80,7 @@ ok('L card edges a step deeper than before on the slate-50 page; field edges dee
   assert.match(css, /:is\(\.rounded-lg, \.rounded-xl, \.rounded-2xl\)\.bg-gray-900\.border:not\(\[class\*="shadow"\]\) \{\s*box-shadow:/);
 });
 ok('L the menu text the brand tint is checked against is the new gray-400 (shared themes.ts SIDEBAR_TEXT)', () => {
-  assert.match(read('shared/themes.ts'), new RegExp(`SIDEBAR_TEXT = \\{ light: '${lightText('text-gray-400')}'`));
+  assert.match(read('packages/core/src/themes.ts'), new RegExp(`SIDEBAR_TEXT = \\{ light: '${lightText('text-gray-400')}'`));
 });
 
 // ── S: the secondary colour ──────────────────────────────────────────────────────────────────────────────────────

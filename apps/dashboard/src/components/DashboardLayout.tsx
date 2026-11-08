@@ -12,7 +12,7 @@ import { usePermissions } from '../context/PermissionsContext';   // A550
 import { relative } from '../lib/format';
 import { whenVisible } from '../lib/visiblePoll';   // A591: the badges are not asked while the tab is hidden
 import CloudTrialNotice from './CloudTrialNotice';   // A569: the owner's notice in the trial's last 7 days
-import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '../lib/businessTerms';   // A573
+import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '@zaptill/core/businessTerms';   // A573
 import { useBrandLook } from './ThemeLayer';   // A597: the shop's logo and colours (themes on)
 import { brandBand } from '../lib/themeVars';
 import { showAttendanceNav } from '../lib/attendanceView';   // A599
@@ -245,7 +245,8 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/settings/devices':      ['devices.view', 'devices.approve', 'stations.manage'],   // A595: seeing the POS devices
   '/dashboard/settings/business':     ['settings.business', 'settings.branches', 'settings.payments', 'settings.reversals',
     'settings.integrations', 'settings.pos', 'receipt.manage', 'tables.manage', 'etims.manage',
-    'settings.tax', 'settings.sales_rules', 'settings.webhooks', 'settings.report_emails'],   // A595: the parts
+    'settings.tax', 'settings.sales_rules', 'settings.webhooks', 'settings.report_emails',   // A595: the parts
+    'settings.pos_layout'],   // 8n: a Manager reaches Business › Branches for the branch's POS layout
 };
 
 const TYPE_ICON: Record<string, string> = {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import {
   defaultReversalRules, windowLabel, MIN_VOID_WINDOW_MINUTES, MAX_VOID_WINDOW_MINUTES, MAX_FREE_DELIVERY_OVER, type ReversalRules,
-} from '../../shared/reversalRules';
+} from '@zaptill/core/reversalRules';
 
 // 0.6.30 (A336 stage 3) — Manager → Settings → Voids & refunds: the owner's rules (shared/reversalRules.ts).
 // Owner, 2026-10-01: "we will let the owner decide the refund method in the managers setting which methods are allow".

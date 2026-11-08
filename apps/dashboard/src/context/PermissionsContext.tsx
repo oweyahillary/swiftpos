@@ -23,7 +23,7 @@ import {
 } from 'react';
 import { useAuth } from './AuthContext';
 import { api } from '../lib/api';
-import { expandMap } from '../lib/permissions';
+import { expandMap } from '@zaptill/core/permissions';
 
 // A490: the role and permission lists this context used to fetch were never read (Settings › Roles and permissions loads
 // its own, on the catalogue API), so they are gone; the PIN-session apps use POSAuthContext.hasPermission (expandMap).

@@ -1,16 +1,23 @@
-import MethodDot from './MethodDot';
-import { methodColour, methodSolid, methodTint } from '../../shared/paymentColours';
+import MethodDot from '@zaptill/ui/MethodDot';
+import { methodColour, methodSolid, methodTint } from '@zaptill/core/paymentColours';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT, platformOfLegs, legsAfterPick } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
-import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
-import { enabledFromSetting, paymentButtons, catalogueMethod } from '../../shared/paymentCatalogue';   // A429
-import type { AppliedOffer } from '../../shared/offers';   // A445
-import type { PlatformQuote, PlatformRecord } from '../../shared/platformPrices';   // A619 (types only: the file loads on demand)
+import { cleanDeliveryFee, amountDue as amountDueWithFee } from '@zaptill/core/delivery';
+import { enabledFromSetting, paymentButtons, catalogueMethod, withRoomCharge } from '@zaptill/core/paymentCatalogue';   // A429
+import type { AppliedOffer } from '@zaptill/core/offers';   // A445
+import type { PlatformQuote, PlatformRecord } from '@zaptill/core/platformPrices';   // A619 (types only: the file loads on demand)
 import type { CartItem } from '../lib/cart';
 import { posApi, type CreditCustomerView } from '../lib/posApi';   // A552
 const MpesaStk = lazy(() => import('./MpesaStkPanel'));   // A607: the M-Pesa prompt, loaded when an M-Pesa leg shows
 const MpesaReceived = lazy(() => import('./MpesaReceivedPanel'));   // A621: payments to the Till number / Paybill, tapped
+// 2026-11-04 (one design for both POS): split the bill evenly / by item — loaded when opened.
+const BillSplitPanel = lazy(() => import('./BillSplitPanel'));
+import QuickCash from '@zaptill/ui/QuickCash';
+import TipPicker from '@zaptill/ui/TipPicker';
+import DiscountBox from '@zaptill/ui/DiscountBox';
+import type { BillLine } from '@zaptill/ui/BillSplit';
+import { QUICK_CASH_LOOK, TIP_LOOK, DISCOUNT_LOOK } from './paymentLooks';
 
 // Payment modal — split tender + discount + tip.
 //
@@ -96,6 +103,12 @@ interface Props {
   stkMasked?: boolean;
   /** A619: the cart at a delivery platform's prices (null: they do not apply). Absent: every method at the rung prices. */
   platformCart?: (platform: string) => PlatformCart | null;
+  /** 2026-11-04: the bill's lines, for "Split the bill" by item (absent / one line: evenly only). */
+  lines?: BillLine[];
+  /** 2026-11-04: opened from the cart's Split bill — "Split the bill" shows at once. */
+  startSplit?: boolean;
+  /** Owner, 2026-11-04: Room charge is offered (the Rooms switch and the online licence). */
+  rooms?: boolean;
 }
 
 // A429: the buttons are the branch's switched-on methods from shared/paymentCatalogue.ts (Cash, M-Pesa, Card, Glovo
@@ -103,8 +116,9 @@ interface Props {
 // business's own methods (A96). Delivery apps (Glovo …) collect from the customer and settle later, so nothing enters
 // the drawer: cash reconciliation filters on method = 'cash' specifically, so no other method can inflate expected cash.
 
-export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers: rungOffers = [], onAccount = null, onConfirm, onClose, onDisplay, stkPhone, stkMasked, platformCart }: Props) {
-  const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);
+export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers: rungOffers = [], onAccount = null, onConfirm, onClose, onDisplay, stkPhone, stkMasked, platformCart, lines = [], startSplit = false, rooms = false }: Props) {
+  const buttons = useMemo(() => withRoomCharge(paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), rooms),
+    [enabledMethods, customMethods, rooms]);
   // A552: On account only where this till offers it (a credit customer held; main/creditSale.ts decides again at the sale).
   const methods = useMemo(() => buttons.filter((b) => b.code !== 'credit' || onAccount?.offered), [buttons, onAccount?.offered]);
   // The first leg starts on cash when the branch takes cash, else on its first method.
@@ -135,15 +149,19 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
   // ── Adjustments ─────────────────────────────────────────
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
-  const [tipInput, setTipInput] = useState('');
+  const [tipChosen, setTipChosen] = useState(0);
   const [showAdjustments, setShowAdjustments] = useState(false);
+  const [showSplit, setShowSplit] = useState(startSplit);
   const [localError, setLocalError] = useState('');
+  // 2026-11-04 (as the web POS): no tip on a sale On account — the tip buttons hide and any tip chosen is not charged.
+  const onAccountChosen = legs.some((l) => l.method === 'credit');
+  const tipRaw = onAccountChosen ? 0 : tipChosen;
 
   const discountRaw = allowDiscount ? (parseFloat(discountInput) || 0) : 0;   // A490: no hand discount without sales.discount
   const offersOff = round2(offers.reduce((s, o) => s + o.amount, 0));
   const { discountAmount, offerDiscount, manualDiscount, tipAmount, vatAmount, ctlAmount, total, amountDue: billAndTip, discountCapped } = useMemo(
-    () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw: parseFloat(tipInput) || 0, vatRate, ctlRate, maxDiscountPct, offerDiscount: offersOff }),
-    [subtotal, discountRaw, discountMode, tipInput, vatRate, ctlRate, maxDiscountPct, offersOff]
+    () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw, vatRate, ctlRate, maxDiscountPct, offerDiscount: offersOff }),
+    [subtotal, discountRaw, discountMode, tipRaw, vatRate, ctlRate, maxDiscountPct, offersOff]
   );
   // 0.6.27: the delivery fee rides on top like the tip — in the legs, not in the bill (total) or its taxes.
   const deliveryFee = cleanDeliveryFee(feeIn);
@@ -206,6 +224,13 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
   };
 
   const removeLeg = (i: number) => setLegs(prev => prev.filter((_, idx) => idx !== i));
+
+  // 2026-11-04 (owner: split evenly per person, split by item per guest): the bill split between people becomes one
+  // payment per person, on the first method — the cashier picks each person's (any method, as a split payment always was).
+  const splitBetween = (shares: Array<{ who: string; amount: number }>) => {
+    setLegs(shares.map((sh) => ({ method: firstMethod, amount: String(sh.amount), tendered: '', reference: '', who: sh.who })));
+    setShowSplit(false);
+  };
 
   // 2026-11-02 (owner: "once prompting is confirmed and paid by the customer it should print direct no need to click
   // charge"): while an M-Pesa prompt is out Charge is not shown; once the customer pays (the receipt fills the leg) the
@@ -305,58 +330,26 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
           </div>
         </div>
 
-        {/* Discount / tip */}
-        <button
-          onClick={() => setShowAdjustments(s => !s)}
-          className="text-xs text-gray-300 hover:text-white transition-colors"
-        >
-          {showAdjustments ? '▾' : '▸'} {allowDiscount ? 'Discount / tip' : 'Tip'}
-        </button>
-        {showAdjustments && (
-          <div className="grid grid-cols-2 gap-3">
-            {allowDiscount && <div>
-              <label className="block text-xs text-gray-400 mb-1">Discount</label>
-              <div className="flex">
-                <input
-                  type="number" min="0" value={discountInput}
-                  onChange={e => setDiscountInput(e.target.value)}
-                  placeholder="0"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-l-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
-                />
-                <button
-                  onClick={() => setDiscountMode(m => (m === 'amount' ? 'percent' : 'amount'))}
-                  className="px-3 bg-gray-700 border border-l-0 border-gray-700 rounded-r-lg text-sm text-gray-300 hover:text-white"
-                  title="Toggle amount / percent"
-                >
-                  {discountMode === 'amount' ? currency : '%'}
-                </button>
-              </div>
-              {/* The server caps this and stores the capped figure. Saying so
-                  here is the difference between a cashier correcting the entry
-                  and a drawer that reads short at close for reasons nobody can
-                  reconstruct the next morning. */}
-              {discountCapped && (
-                <p className="text-xs text-amber-400 mt-1">
-                  Capped at {maxDiscountPct}% — {fmt(manualDiscount)} applied. Ask a manager for more.
-                </p>
-              )}
-            </div>}
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Tip ({currency})</label>
-              <input
-                type="number" min="0" value={tipInput}
-                onChange={e => setTipInput(e.target.value)}
-                placeholder="0"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
-              />
-            </div>
-          </div>
+        {/* Discount (folded: most sales have none). 2026-11-04: one box for both POS (@zaptill/ui DiscountBox). */}
+        {allowDiscount && (
+          <button onClick={() => setShowAdjustments(s => !s)} className="text-xs text-gray-300 hover:text-white transition-colors">
+            {showAdjustments ? '▾' : '▸'} Discount
+          </button>
         )}
+        {allowDiscount && showAdjustments && (
+          <DiscountBox value={discountInput} mode={discountMode} onValue={setDiscountInput} onMode={setDiscountMode} currency={currency}
+            capped={discountCapped ? `Capped at ${maxDiscountPct}% — ${fmt(manualDiscount)} applied. Ask a manager for more.` : null}
+            look={DISCOUNT_LOOK} />
+        )}
+
+        {/* Tip: 5 / 10 / 15 % of the bill, a typed amount, Clear (2026-11-04, as the web POS) — not On account. */}
+        {!onAccountChosen && <TipPicker base={total} tip={tipAmount} onTip={setTipChosen} currency={currency} format={fmt} look={TIP_LOOK} />}
 
         {/* Payment legs */}
         <div className="space-y-3">
           {legView.map((leg, i) => (
             <div key={i} className="bg-gray-800/40 border border-gray-800 rounded-xl p-3 space-y-3">
+              {legs[i].who && <p className="text-xs font-semibold text-gray-300" data-testid="leg-who">{legs[i].who}</p>}
               <div className="flex items-center gap-2">
                 <div className="grid grid-cols-3 gap-1.5 flex-1">
                   {methods.map(b => ({ code: b.code, label: b.name, icon: b.icon })).map(m => (
@@ -415,6 +408,11 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
                   </div>
                 )}
               </div>
+              {/* 2026-11-04 (as the web POS): Exact and the next notes up fill the cash given; the change shows below. */}
+              {leg.method === 'cash' && (
+                <QuickCash due={leg.resolvedAmount} given={leg.resolvedTendered} format={(n) => n.toLocaleString()}
+                  onPick={(v) => setLeg(i, { tendered: String(v) })} look={QUICK_CASH_LOOK} />
+              )}
               {leg.method === 'mpesa' && <Suspense fallback={null}><MpesaStk amount={leg.resolvedAmount} currency={currency} phone={stkPhone} masked={stkMasked} onStage={setStkStage}
                 onPaid={(r, paid) => { stkCompletes.current = paid + EPSILON >= leg.resolvedAmount; setLeg(i, { reference: r }); }} /></Suspense>}
               {leg.method === 'mpesa' && <Suspense fallback={null}><MpesaReceived toPay={leg.resolvedAmount} currency={currency} reference={legs[i].reference} placing={placing}
@@ -487,9 +485,15 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
           <div className="flex items-center justify-between">
             {/* A619: no split while a delivery platform is chosen — it pays the whole bill */}
             {platform ? <span className="text-xs text-gray-400">{platformName} pays the whole bill</span> : (
-            <button onClick={addLeg} className="text-xs text-action-400 hover:text-action-300 transition-colors font-medium">
-              + Split payment
-            </button>
+            <div className="flex items-center gap-4">
+              <button onClick={addLeg} className="text-xs text-action-400 hover:text-action-300 transition-colors font-medium">
+                + Split payment
+              </button>
+              <button onClick={() => setShowSplit((v) => !v)} data-testid="split-bill" aria-expanded={showSplit}
+                className="text-xs text-action-400 hover:text-action-300 transition-colors font-medium">
+                Split the bill
+              </button>
+            </div>
             )}
             {Math.abs(remaining) > EPSILON && (
               <span className={`text-xs font-medium ${remaining > 0 ? 'text-amber-400' : 'text-red-400'}`}>
@@ -498,6 +502,12 @@ export default function PaymentModal({ subtotal: rungSubtotal, vatRate, ctlRate 
             )}
           </div>
         </div>
+
+        {showSplit && !platform && (
+          <Suspense fallback={null}>
+            <BillSplitPanel total={amountDue} lines={lines} format={fmt} onUse={splitBetween} onCancel={() => setShowSplit(false)} />
+          </Suspense>
+        )}
 
         {(error || localError) && <p className="text-red-400 text-sm">{error || localError}</p>}
 

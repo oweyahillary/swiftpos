@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import CustomerTypesIt from './CustomerTypesIt';
-import { phoneError, maskTypedPhone, newAskId, stkWords, type StkStage } from '../../shared/customerDetails';
+import { phoneError, maskTypedPhone, newAskId, stkWords, type StkStage } from '@zaptill/core/customerDetails';
 
 interface Stk { stage: StkStage; amount: number; currency: string; reason: string | null; mpesaRef: string | null }
 

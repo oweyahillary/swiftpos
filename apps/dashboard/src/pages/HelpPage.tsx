@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { API_URL } from '../lib/config';
 import { TOKEN_KEYS } from '../lib/api';
-import { helpTopicsFor, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '../lib/helpTopics';
-import { isFoodService } from '../lib/businessTerms';
-import { supportContact, displayPhone, whatsappNumber, type SupportContact } from '../lib/support';
+import { helpTopicsFor, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '@zaptill/core/helpTopics';
+import { isFoodService } from '@zaptill/core/businessTerms';
+import { supportContact, displayPhone, whatsappNumber, type SupportContact } from '@zaptill/core/support';
 
 /**
  * HelpPage — 0.6.35 (A384): "What to do when", on the web (/help). The same owner-approved words as the till's Help

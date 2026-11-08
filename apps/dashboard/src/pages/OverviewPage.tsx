@@ -22,7 +22,7 @@ import { localDateStr } from '../lib/localDate';
 import { money, litres, time, elapsed } from '../lib/format';
 import { whenVisible, refreshOnShow } from '../lib/visiblePoll';   // A591
 import ParkingLivePanel from '../components/ParkingLivePanel';   // A608
-import { businessTerms } from '../lib/businessTerms';   // A608
+import { businessTerms } from '@zaptill/core/businessTerms';   // A608
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

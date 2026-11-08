@@ -292,7 +292,7 @@ try {
     for (const k of ['X', 'P', 'TR']) assert.deepEqual(await init(k), { on: true, phase: 'none', cutoffAt: null }, k);
   });
   await ok('a settings change (the cloud_backup flag is a feature_flags row: a money change) carries it too', () => {
-    assert.match(read('shared/syncTopics.ts'), /money: \[[^\]]*'cloudBackup'\]/);
+    assert.match(read('packages/core/src/syncTopics.ts'), /money: \[[^\]]*'cloudBackup'\]/);
   });
 
   console.log('\n6. Desktop updates\n');

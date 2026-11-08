@@ -11,7 +11,7 @@
 //     they hold themselves: keysBeyond(caller, those keys) must be empty (shared permissions.ts).
 // A490: this used to match role NAMES (owner, admin, manager, supervisor, branch_manager) — a role called "Shift lead"
 // holding everything passed, and a "Manager" role holding nothing was untouchable. Now the keys decide.
-import { keysBeyond } from './permissions';
+import { keysBeyond } from '@zaptill/core/permissions';
 import { isOwnerRoleName } from './ownerRole';
 
 export interface RoleLike { name?: string | null; keys: Iterable<string> }

@@ -7,8 +7,8 @@
  * Loaded with the panels that open it (never in the POS's main chunk).
  */
 import { useMemo } from 'react';
-import CustomerAskForm from '../../shared/CustomerAskForm';
-import { cleanAnswer, newAskId, type AskPurpose, type CustomerAnswer } from '../../shared/customerDetails';
+import CustomerAskForm from '@zaptill/ui/CustomerAskForm';
+import { cleanAnswer, newAskId, type AskPurpose, type CustomerAnswer } from '@zaptill/core/customerDetails';
 
 export default function CustomerTypesIt({ purpose, needPin, amount, currency, onDone, onBack }: {
   purpose: AskPurpose; needPin: boolean; amount: number; currency: string;

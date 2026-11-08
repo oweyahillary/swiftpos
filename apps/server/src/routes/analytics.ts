@@ -55,7 +55,7 @@ import { maskCustomerContacts } from '../lib/personalData';   // A595
 import { supabase } from '../lib/supabase';
 import { seesCosts } from '../lib/costAccess';
 import { getDayCutoff } from '../lib/dayCutoff';
-import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
+import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { analyticsEnabled } from '../lib/analyticsAccess';
 import { cloudFactsFor } from '../lib/cloudPlan';                   // A612
 import { featureBranches } from '../lib/branchBilling';             // A612: premium per branch

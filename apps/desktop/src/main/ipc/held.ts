@@ -3,10 +3,10 @@ import { getLocalDb } from '../localDb';
 import { noteActivity } from '../activityTracker';
 import { logLine } from '../logFile';
 import { signedIn as sessionPerson } from '../tillAccess';
-import { cleanNote, ORDER_NOTE_MAX } from '../orderNotes';
-import { cleanDeliveryFee } from '../delivery';
+import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
+import { cleanDeliveryFee } from '@zaptill/core/delivery';
 import { openKitchenOrders } from '../kitchenService';
-import { anySent } from '../kitchenLines';
+import { anySent } from '@zaptill/core/kitchenLines';
 import { sellRefusal, isOpenBill } from '../sellGate';
 import { openBills, type IpcShared } from './shared';
 

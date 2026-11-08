@@ -11,7 +11,7 @@
  *
  *  computeThemeVars is PURE (no DOM) so it is tested directly; applyThemeVars is the only DOM write.
  */
-import { resolveTheme, resolveBrandLayer, labelOn, brandPalette, type Hex, type BrandPalette } from '../../shared/themes';
+import { resolveTheme, resolveBrandLayer, labelOn, brandPalette, type Hex, type BrandPalette } from '@zaptill/core/themes';
 
 /** A597: primaryHex / secondaryHex — the owner's brand colours, already resolved (getBranding's `effective`: none while
  *  themes are off or a branch's own theme overrides). Set, the primary's derived shades replace the theme's action shades. */

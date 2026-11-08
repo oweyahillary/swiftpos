@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
-import { cleanOffer, offerRunsAt, offerWhatLabel, offerWhenLabel, type MealPart, type Offer, type OfferKind } from '../lib/offers';
+import { cleanOffer, offerRunsAt, offerWhatLabel, offerWhenLabel, type MealPart, type Offer, type OfferKind } from '@zaptill/core/offers';
 
 export interface OffersClient {
   get: <T>(path: string) => Promise<T>;

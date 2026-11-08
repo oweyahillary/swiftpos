@@ -17,7 +17,7 @@ import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 import type { BranchPrinter } from '../../lib/printKOT';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { useBusiness } from '../../context/BusinessContext';
-import { foodAreas } from '../../lib/businessTerms';
+import { foodAreas } from '@zaptill/core/businessTerms';
 import KitchenTicketSettings from './KitchenTicketSettings';   // A620
 
 interface Category { id: string; name: string; }

@@ -1,7 +1,7 @@
 /**
  * owner-0629.test.mjs — 0.6.29: the owner's points after testing 0.6.27 / 0.6.28 (2026-10-01).
  *   - "cashiers should never see this only the manager should" + the confirm table → blind close and the cashier's
- *     figures at confirm are STANDARD (shared/posFeatures.ts STANDARD_POS_FEATURES), and the confirm screen is one table
+ *     figures at confirm are STANDARD (packages/core/src/posFeatures.ts STANDARD_POS_FEATURES), and the confirm screen is one table
  *     (cashier, shift open–close; per method: cashier, manager, reason) on the till, the web POS and the dashboard;
  *   - "it should show everything of the days sales" → History is today's sales, all of them (till and web);
  *   - D2 "where is the 400 accounted" → History shows what was PAID (bill + tip + delivery fee);
@@ -23,7 +23,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const F = await import(pathToFileURL(path.join(ROOT, 'shared/posFeatures.ts')).href);
+const F = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/posFeatures.ts')).href);
 
 await ok('blind close and the cashier\'s figures are standard: always on, not listed as switches, a stored "off" ignored', () => {
   const f = F.parsePosFeatures([{ key: 'blind_shift_close', enabled: false }, { key: 'confirm_shows_cashier_figures', enabled: false }]);

@@ -8,7 +8,7 @@
  *   - 165 runs twice, recorded once; the menus columns match scripts/schema-index.json (availability included).
  *   - every existing menu is NULL = always (nothing changes for anyone until an owner sets hours).
  *   - the column takes an object or NULL; an array, a string or a number is refused (the CHECK).
- *   - the schedule the cloud stores (shared/menuHours.ts checkAvailability) round-trips as it was written.
+ *   - the schedule the cloud stores (packages/core/src/menuHours.ts checkAvailability) round-trips as it was written.
  *   - sync: setting / changing / clearing the hours is ONE menus entry (155's trigger, topic menu, upsert) and moves the
  *     catalogue version; writing the same hours again writes nothing.
  *   - RLS on menus is unchanged (the owner policy, on).
@@ -53,7 +53,7 @@ const maxSeq = async () => Number((await one(`SELECT COALESCE(max(seq), 0) AS m 
 const since = async (from) => (await q(`SELECT table_name, row_id, topic, op FROM public.sync_changes WHERE seq > $1 ORDER BY seq`, [from]))
   .map((r) => `${r.table_name}:${r.row_id}:${r.topic}:${r.op}`);
 const ver = async (biz) => Number((await one(`SELECT version FROM public.sync_versions WHERE business_id = $1 AND topic = 'catalogue'`, [biz]))?.version ?? -1);
-const H = await import(pathToFileURL(path.join(ROOT, 'shared', 'menuHours.ts')).href);
+const H = await import(pathToFileURL(path.join(ROOT, 'packages', 'core', 'src', 'menuHours.ts')).href);
 
 console.log('\nMigration 165 (menu hours) — PGlite, every migration\n');
 const A = '00000000-0000-0000-0000-00000000000a';

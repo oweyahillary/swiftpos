@@ -14,7 +14,7 @@
  * token on this browser. Every storage access is wrapped — a private window or blocked storage just means today's start.
  */
 import { applyDashboardThemeVars, setBrandLook, DASHBOARD_THEME_VARS, type BrandLook } from './themeVars';
-import { cleanBrandHex } from './themes';
+import { cleanBrandHex } from '@zaptill/core/themes';
 
 export const BRAND_CACHE_PREFIX = 'zaptill-brand:';
 export const BRAND_CACHE_LAST = 'zaptill-brand:last';

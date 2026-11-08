@@ -26,7 +26,7 @@
  * before payment, a table closed unpaid, fuel sold against the pump meters (no meter readings), who let a car out of
  * the park.
  */
-import { businessTypeOf, isFoodService, type BusinessTypeKey } from './businessTerms';
+import { businessTypeOf, isFoodService, type BusinessTypeKey } from '@zaptill/core/businessTerms';
 
 // ── kinds and settings ───────────────────────────────────────────────────────
 

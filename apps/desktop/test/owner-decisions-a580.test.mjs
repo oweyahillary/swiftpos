@@ -47,15 +47,16 @@ Module._resolveFilename = function (req, parent, ...rest) { if (req === 'electro
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 
-const H = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'menuHours.ts')).href);
-const M = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'menuFilter.ts')).href);
-const T = await import(pathToFileURL(path.join(desktop, 'src', 'shared', 'businessTerms.ts')).href);
+const H = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'menuHours.ts')).href);
+const M = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'menuFilter.ts')).href);
+const T = await import(pathToFileURL(path.join(desktop, '..', '..', 'packages', 'core', 'src', 'businessTerms.ts')).href);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const bundleDir = fs.mkdtempSync(path.join(desktop, 'node_modules', '.a580-'));
 const bundle = (entry, out) => {
+  // preserveSymlinks: @zaptill/ui/CategoryPanel (shared components batch G) finds @zaptill/core through this app's node_modules, as Vite does.
   require('esbuild').buildSync({ entryPoints: [path.join(desktop, entry)], bundle: true, format: 'esm', platform: 'node',
-    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', external: ['react', 'react-dom'] });
+    outfile: path.join(bundleDir, out), logLevel: 'silent', jsx: 'automatic', preserveSymlinks: true, external: ['react', 'react-dom'] });
   return import(pathToFileURL(path.join(bundleDir, out)).href);
 };
 const at = (s) => new Date(s);

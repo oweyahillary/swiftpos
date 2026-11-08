@@ -141,17 +141,26 @@ export function describeGitHubFailure(status: number, rateRemaining: string | nu
   return `GitHub releases: HTTP ${status}`;
 }
 
-/** Every desktop release (drafts too when a token is set). Cached 5 min so a fleet of tills costs GitHub one call. */
-export async function listDesktopReleases(opts: { fresh?: boolean } = {}): Promise<DesktopRelease[]> {
-  const repo = releasesRepo();
-  if (!opts.fresh && cache && cache.repo === repo && Date.now() - cache.at < CACHE_MS) return cache.releases;
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=50`, { headers: ghHeaders() });
+/**
+ * GitHub's release list for `repo` as GitHub gives it, newest first (drafts too when the token can see them). Throws the
+ * refusal in words (describeGitHubFailure). Shared with lib/androidReleases.ts: the Android app's releases live in the
+ * same repository under android-v<x.y.z> tags.
+ */
+export async function fetchGitHubReleases(repo: string, perPage = 50): Promise<GhRelease[]> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=${perPage}`, { headers: ghHeaders() });
   if (!res.ok) {
     let bodyMessage = '';
     try { bodyMessage = String(((await res.json()) as any)?.message ?? ''); } catch { /* not JSON */ }
     throw new Error(describeGitHubFailure(res.status, res.headers.get('x-ratelimit-remaining'), bodyMessage, !!token()));
   }
-  const releases = summariseReleases((await res.json()) as GhRelease[]);
+  return (await res.json()) as GhRelease[];
+}
+
+/** Every desktop release (drafts too when a token is set). Cached 5 min so a fleet of tills costs GitHub one call. */
+export async function listDesktopReleases(opts: { fresh?: boolean } = {}): Promise<DesktopRelease[]> {
+  const repo = releasesRepo();
+  if (!opts.fresh && cache && cache.repo === repo && Date.now() - cache.at < CACHE_MS) return cache.releases;
+  const releases = summariseReleases(await fetchGitHubReleases(repo));
   cache = { at: Date.now(), repo, releases };
   return releases;
 }

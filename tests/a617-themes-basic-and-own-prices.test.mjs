@@ -7,7 +7,7 @@
  *
  * RUNS the COMPILED cloud: lib/branchBilling.ts (own prices, the bill), the billing job (jobs/cloudPlanReminders.ts) and
  * routes/cloudPlanAdmin.ts (a branch's own prices saved, checked, and saved without them on a database before 185) on the
- * in-memory database (tests/lib-memdb.mjs); lib/themeRules.ts and lib/customerScreen.ts (the free-theme gates). Pins
+ * in-memory database (tests/lib-memdb.mjs); lib/themeRules.ts and @zaptill/core/customerScreen (the free-theme gates). Pins
  * the Branding page, the admin card and the POS's plumbing (themesPremium) from source.
  *
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted):
@@ -45,7 +45,7 @@ const EM = require(path.join(DIST, 'lib/cloudPlanEmail.js'));
 const CP = require(path.join(DIST, 'lib/cloudPlan.js'));
 const JOB = require(path.join(DIST, 'jobs/cloudPlanReminders.js'));
 const TR = require(path.join(DIST, 'lib/themeRules.js'));
-const CS = require(path.join(DIST, 'lib/customerScreen.js'));
+const CS = require('@zaptill/core/customerScreen');
 const adminAuth = require(path.join(DIST, 'middleware/adminAuth.js'));
 console.warn = () => {}; console.error = () => {};
 const mem = installMemDb(supabase);
@@ -242,7 +242,7 @@ try {
 console.log('\nC. basic themes for everyone, the rest premium\n');
 await ok('one list: Ocean, Teal and Sky free — in the shared registry, used by the cloud\'s rules', () => {
   assert.deepEqual([...TR.FREE_THEME_IDS], ['ocean', 'teal', 'sky']);
-  assert.match(read('shared/themes.ts'), /export const FREE_THEME_IDS: readonly ThemeId\[\] = \['ocean', 'teal', 'sky'\];/);
+  assert.match(read('packages/core/src/themes.ts'), /export const FREE_THEME_IDS: readonly ThemeId\[\] = \['ocean', 'teal', 'sky'\];/);
   assert.match(read('apps/server/src/lib/themeRules.ts'), /import \{ isThemeId, isFreeThemeId,/);
 });
 await ok('a free theme is served without Themes, a premium one never; with Themes, any (nothing chosen → Ocean)', () => {

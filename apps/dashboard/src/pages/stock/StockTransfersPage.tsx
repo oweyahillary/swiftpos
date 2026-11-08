@@ -8,7 +8,7 @@ import { printDocument } from '../../lib/printDocument';
 import { transferDocSpec } from '../../lib/documentSpecs';
 import { dateShort } from '../../lib/format';
 import { receiptSeed, receiptLines } from '../../lib/transferReceipt';   // A608 part 3
-import { businessTerms } from '../../lib/businessTerms';   // A608 part 3
+import { businessTerms } from '@zaptill/core/businessTerms';   // A608 part 3
 
 interface Product { id: string; name: string; }
 interface Branch  { id: string; name: string; }

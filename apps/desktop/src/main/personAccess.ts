@@ -5,7 +5,7 @@
  */
 import {
   expandMap, hasPermission, hasAnyPermission, isBackOffice, keysBeyond, MAP_MARKER, OPEN_BEFORE_A490,
-} from './permissions';
+} from '@zaptill/core/permissions';
 
 /** The owner's role — by name, as the cloud decides it (lib/ownerRole.ts). The only role-name rule on the till. */
 export function isOwnerRole(roleName: string | null | undefined): boolean {
