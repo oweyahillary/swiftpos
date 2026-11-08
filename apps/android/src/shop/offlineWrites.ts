@@ -29,11 +29,17 @@ export function provisionalOrderResponse(path: string, body: unknown, at: string
   const kind = bufferableKind('POST', path) ?? 'order';
   const orderUuid = orderUuidOf(kind, path, body) ?? (globalThis.crypto?.randomUUID?.() ?? `off-${Date.now()}`);
   const b = (body && typeof body === 'object' ? body as Record<string, unknown> : {});
+  const orderNumber = (b.order_number as string | undefined) ?? `OFF-${String(orderUuid).slice(0, 6).toUpperCase()}`;
   return {
     ...b,
+    // The web POS reads camelCase { orderId, orderNumber } (apps/dashboard PaymentModal), exactly as the server returns on
+    // a real save — without these the receipt shows a blank number and the cart never clears. snake fields kept for any
+    // other reader.
+    orderId: orderUuid,
+    orderNumber,
     id: orderUuid,
     uuid: orderUuid,
-    order_number: b.order_number ?? `OFF-${String(orderUuid).slice(0, 6).toUpperCase()}`,
+    order_number: orderNumber,
     status: b.status ?? 'completed',
     created_at: at,
     offline: true,
@@ -83,9 +89,12 @@ export function installOfflineWrites(deps: OfflineWritesDeps): () => void {
     let body: unknown = undefined;
     try { body = init?.body ? JSON.parse(String(init.body)) : undefined; } catch { body = undefined; }
     const at = now();
-    const row = await enqueue(deps.store, { method, path, body }, at);
+    // Stamp the tablet's ring-up time into the body so the REPLAYED call is priced and de-stocked as of WHEN the sale
+    // happened (apps/server orders.ts anchors to created_at), not whenever the queue later drains.
+    const stamped = body && typeof body === 'object' ? { ...(body as Record<string, unknown>), created_at: at } : body;
+    const row = await enqueue(deps.store, { method, path, body: stamped }, at);
     if (!row) return refuseResponse();
-    return okResponse(provisionalOrderResponse(path, body, at));
+    return okResponse(provisionalOrderResponse(path, stamped, at));
   };
 
   globalThis.fetch = wrapped;

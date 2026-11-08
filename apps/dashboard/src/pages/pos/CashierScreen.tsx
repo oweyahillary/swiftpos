@@ -31,6 +31,7 @@ import NoteModal from './NoteModal';
 import { noteLines } from '@zaptill/core/orderNotes';
 import MinimartPOS from './MinimartPOS';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton, CategoryBar } from './cashier/CategoryPanel';   // A537; A566; A580; 8n
+import { shopPosHost } from '../../lib/shopPos';   // Till stage 1: the Android Shop POS (no category pin on the tablet)
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '@zaptill/core/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
@@ -44,6 +45,7 @@ import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreez
 import { useStockView } from '../../lib/useStockView';   // A563
 import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '@zaptill/core/stockGate';   // A563
 import { useToast } from '../../hooks/useToast';
+import { useBackDismiss } from '../../hooks/useBackDismiss';   // Android hardware back closes the topmost overlay
 import { businessTerms, foodAreas } from '@zaptill/core/businessTerms';   // A573
 import { COURSES } from '@zaptill/core/courses';   // owner 2026-11-04: the courses, one list with the desktop POS
 import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '@zaptill/core/menuHours';   // A578: menus by time of day; A580: Later
@@ -419,6 +421,12 @@ export default function CashierScreen() {
   // Petrol modal
   const [showPumpModal, setShowPumpModal] = useState(false);
   const [pendingPump, setPendingPump] = useState<Pump | null>(null);
+  // Android hardware back closes the topmost open overlay (hooks/useBackDismiss.ts); inert on web/desktop. closeFuelKeypad
+  // is a hoisted function declaration below, safe to reference here.
+  useBackDismiss(() => { setShowCoversModal(false); setPendingTable(null); }, showCoversModal);
+  useBackDismiss(() => { setShowParkingModal(false); setPendingBay(null); }, showParkingModal);
+  useBackDismiss(() => { setShowPumpModal(false); setPendingPump(null); }, showPumpModal);
+  useBackDismiss(closeFuelKeypad, !!fuelEntry);
   // Fuel entry state now comes from useCart hook above
 
   const [now, setNow] = useState(Date.now());
@@ -930,7 +938,7 @@ export default function CashierScreen() {
   // collapse, and it should start collapsed by default?"): the category bar (and A464's fade at its right edge) became a
   // left panel behind ☰ — collapsed at start, pinned open if the cashier pins it, the business's menus as tabs on top.
   // 8n (owner, 2026-11-05): the branch's choice — with 'top', CategoryBar instead of ☰, the chip and the panel.
-  const catPanel = useCategoryPanel(categoryLayout);
+  const catPanel = useCategoryPanel(categoryLayout, shopPosHost() === null);   // 8n; no category pin on the Android Shop POS
   const activeMenu = catPanel.prefs.menu;
   const menuCats = useMemo(() => categoriesForMenu(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
   const menuFilterScope = useMemo(() => menuScope(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
@@ -1429,7 +1437,10 @@ export default function CashierScreen() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header style={isPhone ? { ...s.header, padding: '0 8px', gap: 8 } : s.header}>
         <div style={isPhone ? { ...s.headerLeft, minWidth: 0, flexShrink: 1 } : s.headerLeft}>
-          <span style={s.logoMark}>⚡</span>
+          {/* The client's logo on premium (themes) businesses — the same gated raster the customer screen wears; else the ⚡ mark. */}
+          {customerContent?.brand?.logo
+            ? <img src={customerContent.brand.logo} alt="" style={s.headerLogo} />
+            : <span style={s.logoMark}>⚡</span>}
           <div>
             <div style={s.branchLabel}>{session?.branchName}</div>
             <div style={s.staffLabel}>{session?.staffName} · {session?.role}</div>
@@ -3036,6 +3047,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   headerLeft: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 180 },
   logoMark: { fontSize: 20 },
+  headerLogo: { height: 30, maxWidth: 132, objectFit: 'contain' as const, display: 'block' },
   branchLabel: { fontSize: 13, fontWeight: 700, color: '#f1f5f9', lineHeight: 1.2 },
   staffLabel: { fontSize: 11, color: '#94a3b8', lineHeight: 1.2 },
   headerCenter: {

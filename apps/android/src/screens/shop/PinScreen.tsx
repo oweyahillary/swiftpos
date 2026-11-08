@@ -7,7 +7,8 @@
  * a person's sign-in never outlives their turn on a POS (A415).
  */
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useLongPress } from '../../shop/useLongPress';
 import { signInWithPin } from '../../shop/pinSignIn';
 import type { PosSession } from '../../shop/tillSession';
 import { PIN_MAX, PIN_MIN } from '../../shop/rules';
@@ -28,6 +29,9 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back']
 
 export default function PinScreen({ till, version }: { till: PosSession; version: string }) {
   const navigate = useNavigate();
+  // Hidden technician door to This device (printer setup, Reset app, Join again): long-press the header, as the desktop
+  // hides its tech page behind a long-press on the logo. No visible link — a cashier never sees it.
+  const techDoor = useLongPress(() => navigate('/pos/device'));
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
@@ -56,7 +60,7 @@ export default function PinScreen({ till, version }: { till: PosSession; version
 
   return (
     <main className="screen pin-screen">
-      <header className="brand">
+      <header className="brand" {...techDoor}>
         <span className="mark" aria-hidden="true">Z</span>
         <span>{till.businessName}{till.branchName ? ` · ${till.branchName}` : ''}</span>
       </header>
@@ -74,7 +78,6 @@ export default function PinScreen({ till, version }: { till: PosSession; version
       </div>
       {problem && <p className="problem" role="alert">{problem}</p>}
       <button className="primary" disabled={busy || pin.length < PIN_MIN} onClick={() => void signIn()}>{busy ? 'Signing in…' : 'Sign in'}</button>
-      <Link className="text-button" to="/pos/device">This device</Link>
     </main>
   );
 }

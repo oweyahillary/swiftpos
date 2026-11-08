@@ -26,6 +26,7 @@ import { QUICK_CASH_LOOK, TIP_LOOK, DISCOUNT_LOOK } from './paymentLooks';
 import { printReceipt } from '../../lib/printReceipt';
 import { printBytesToServer, getQZStatus } from '../../lib/localPrintServer';
 import { shopPosHost, serverPrintOrder } from '../../lib/shopPos';   // Till stage 1: the Android Shop POS
+import { useBackDismiss } from '../../hooks/useBackDismiss';   // Android hardware back closes this screen
 import { renderEscPos } from '../../lib/escposRenderer';
 import { buildReceiptOrder, buildReceiptBusinessConfig } from '../../lib/buildReceiptOrder';
 import { usePOSAuth } from '../../context/POSAuthContext';
@@ -537,6 +538,8 @@ export default function PaymentModal({
     void handleSplitCharge([{ id: 'c2b', method: 'mpesa', amount: grandTotal, reference: p.trans_id }]);
   }
   function closeModal() { claims.giveBackAll(); onClose(); }
+  // Android hardware back: on the receipt screen behave like "New order"; otherwise like the ✕. Inert on web/desktop.
+  useBackDismiss(completedOrder ? () => onSuccess(completedOrder.orderNumber) : closeModal, true);
 
   // ── Split charge ──────────────────────────────────────────────────────────
   async function handleSplitCharge(legs: PaymentLeg[]) {

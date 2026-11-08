@@ -44,7 +44,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'till2-'));
 fs.writeFileSync(path.join(tmp, 'entry.ts'), `
   export * from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/buffer.ts'))};
   export { runReplay, ackFromStatus } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/replay.ts'))};
-  export { offlineDecision, provisionalOrderResponse } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineWrites.ts'))};
+  export { offlineDecision, provisionalOrderResponse, installOfflineWrites } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineWrites.ts'))};
   export { beginOfflineSignIn, upgradeDecision, deferVerify, OfflinePinRefused } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlinePin.ts'))};
 `);
 // Resolve the shared rule to its source (the app's node_modules does not link @zaptill/core for a node bundle).
@@ -116,8 +116,31 @@ const run = async () => {
   eq('a sale is buffered', M.offlineDecision('POST', '/api/orders'), 'buffer');
   eq('an unknown write is refused offline', M.offlineDecision('POST', '/api/settings/theme'), 'refuse');
   {
-    const r = M.provisionalOrderResponse('/api/orders', { uuid: 'O9', total: 10 }, '2026-11-07T10:00:00Z');
+    const r = M.provisionalOrderResponse('/api/orders', { uuid: 'O9', order_number: 'ORD-9', total: 10 }, '2026-11-07T10:00:00Z');
     ok('the provisional answer carries the uuid and offline flag', r.id === 'O9' && r.uuid === 'O9' && r.offline === true && r.status === 'completed');
+    // The web POS (PaymentModal) reads camelCase { orderId, orderNumber }; without them the receipt shows a blank number.
+    eq('the provisional answer gives the orderId + orderNumber the web POS reads', [r.orderId, r.orderNumber], ['O9', 'ORD-9']);
+    eq('the provisional answer carries the ring-up time (created_at)', r.created_at, '2026-11-07T10:00:00Z');
+  }
+  {
+    // The seam end-to-end: offline, a sale POST is buffered (created_at stamped into the queued body for replay pricing)
+    // and answered provisionally with NO cloud call; online, a call passes straight through.
+    const store = new M.InMemoryBuffer();
+    const realFetch = globalThis.fetch;
+    let passedThrough = 0;
+    const fakeCloud = async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    globalThis.fetch = async (...a) => { passedThrough++; return fakeCloud(...a); };
+    let offline = true;
+    const restore = M.installOfflineWrites({ store, isOffline: () => offline, cloudBase: 'https://dev-api.zaptill.co.ke', now: () => '2026-11-07T11:00:00Z' });
+    const res = await globalThis.fetch('https://dev-api.zaptill.co.ke/api/orders', { method: 'POST', body: JSON.stringify({ uuid: 'Z1', order_number: 'ORD-Z1', total: 50 }) });
+    const ans = await res.json();
+    ok('offline: a sale is answered provisionally with no cloud call', res.status === 200 && ans.orderId === 'Z1' && ans.offline === true && passedThrough === 0);
+    eq('offline: the queued body carries created_at for replay pricing', (await store.all())[0].req.body.created_at, '2026-11-07T11:00:00Z');
+    offline = false;
+    await globalThis.fetch('https://dev-api.zaptill.co.ke/api/pos/init', { method: 'GET' });
+    ok('online: a call passes straight through to the cloud', passedThrough === 1);
+    restore();
+    globalThis.fetch = realFetch;
   }
 
   console.log('\nP. The offline PIN (shop/offlinePin.ts)');
@@ -140,7 +163,9 @@ const run = async () => {
   console.log('\nS. Checked in source');
   ok('the buffer imports the one shared rule (no copy)', read('apps/android/src/shop/buffer.ts').includes("from '@zaptill/core/tillBuffer'"));
   ok('replay imports the one shared rule', read('apps/android/src/shop/replay.ts').includes("from '@zaptill/core/tillBuffer'"));
-  ok('the offline-writes seam is opt-in (returns a restore fn, not auto-installed)', /export function installOfflineWrites/.test(read('apps/android/src/shop/offlineWrites.ts')) && !read('apps/android/src/main.tsx').includes('installOfflineWrites'));
+  ok('the offline-writes seam returns a restore fn and is wired in the Shop POS entry', /export function installOfflineWrites/.test(read('apps/android/src/shop/offlineWrites.ts')) && read('apps/android/src/screens/shop/ShopPos.tsx').includes('installOfflineWrites'));
+  ok('the Shop POS drains the queue on reconnect (runReplay) and mounts the status bar', (() => { const s = read('apps/android/src/screens/shop/ShopPos.tsx'); return s.includes('runReplay') && s.includes('SyncStatusBar'); })());
+  ok('offline selling: the No-connection cover no longer blocks the selling screen', read('apps/android/src/screens/shop/NoConnection.tsx').includes('/pos/cashier'));
   ok('the status bar reads the buffer status and the live online state', (() => { const s = read('apps/android/src/screens/shop/SyncStatusBar.tsx'); return s.includes('bufferStatusOf') && s.includes('useOnline'); })());
   ok('offline PIN upgrades on reconnect (verify-pin), the desktop model', read('apps/android/src/shop/offlinePin.ts').includes('verify-pin') || read('apps/android/src/shop/offlinePin.ts').includes('upgradeDecision'));
   ok('the status bar styles exist', read('apps/android/src/styles.css').includes('.sync-bar'));

@@ -7,16 +7,21 @@
  * is this tablet's page: updates, printers, Reset app. Without a connection "No connection — can't sell" covers the PIN
  * pad and the selling screen — covers, never closes: an order on the screen is still there when the connection is back.
  */
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { readTill, type PosSession } from '../../shop/tillSession';
+import { readTill, tillToken, type PosSession } from '../../shop/tillSession';
 import { shopPosHostFor } from '../../shop/printing';
 import { useOnline } from '../../shop/connection';
+import { makeBuffer, sweepRetention } from '../../shop/buffer';
+import { installOfflineWrites } from '../../shop/offlineWrites';
+import { runReplay, cloudSender } from '../../shop/replay';
+import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
 import PinScreen from './PinScreen';
 import ShopDevice from './ShopDevice';
 import NoConnection from './NoConnection';
 import PrintNotice from './PrintNotice';
+import SyncStatusBar from './SyncStatusBar';
 
 const Selling = lazy(() => import('@zaptill/dashboard-pos').then((m) => ({ default: m.ShopPosSelling })));
 
@@ -31,6 +36,34 @@ type State = { kind: 'loading' } | { kind: 'join' } | { kind: 'ready'; till: Pos
 export default function ShopPos({ version, onReset }: { version: string; onReset: () => Promise<void> }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const online = useOnline();
+
+  // Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7/§4.8): the Shop POS keeps selling offline. One durable buffer for the
+  // tablet; the offline-writes seam queues a sale when there is no connection and hands the screen a provisional answer so
+  // it completes and prints; replay drains the queue when the connection returns; a slow sweep drops long-synced rows.
+  const [buffer] = useState(makeBuffer);
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
+  const replaying = useRef(false);
+
+  // Install the seam ONCE (wraps window.fetch; online or non-cloud calls pass straight through, so Till stage 1 selling is
+  // unchanged). cloudBase is this app's API_URL — the same base the web POS calls, because main.tsx sets the dashboard's
+  // apiUrl to it, so the two cannot drift.
+  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL }), [buffer]);
+
+  // Drain the queue to the cloud on open and whenever the connection returns; never two drains at once.
+  useEffect(() => {
+    if (!online || replaying.current) return;
+    replaying.current = true;
+    void runReplay(buffer, cloudSender(async () => { const { token, till } = await tillToken(); return { token, deviceId: till.deviceId }; }))
+      .catch(() => {})
+      .finally(() => { replaying.current = false; });
+  }, [online, buffer]);
+
+  // §4.8 retention: sweep sent rows older than the window, hourly.
+  useEffect(() => {
+    const t = setInterval(() => { void sweepRetention(buffer); }, 60 * 60_000);
+    return () => clearInterval(t);
+  }, [buffer]);
 
   const open = async (till: PosSession | null) => {
     if (!till) { setState({ kind: 'join' }); return; }
@@ -58,6 +91,7 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
         <Route path="*" element={<Navigate to="/pos" replace />} />
       </Routes>
       <PrintNotice />
+      <SyncStatusBar store={buffer} />
       <NoConnection online={online} />
     </BrowserRouter>
   );
