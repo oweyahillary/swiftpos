@@ -44,6 +44,7 @@ import { branchCreditEnabled, branchLimitsAt, owedByCustomerAt } from '../lib/br
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
 import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '@zaptill/core/customerScreen';   // A606
 import { CATEGORY_LAYOUT_KEY, categoryLayoutOf } from '@zaptill/core/categoryLayout';   // 8n
+import { ONSCREEN_KEYBOARD_KEY, onscreenKeyboardOf } from '@zaptill/core/onscreenKeyboard';   // owner 2026-11-09
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
 import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601
@@ -467,7 +468,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
           .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
-            CATEGORY_LAYOUT_KEY])   // 8n: the branch's own only — there is no business-wide value
+            CATEGORY_LAYOUT_KEY, ONSCREEN_KEYBOARD_KEY])   // 8n + owner 2026-11-09: the branch's own only — there is no business-wide value
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
@@ -662,6 +663,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // 8n (owner, 2026-11-05): how this branch's POS shows its categories — 'panel' (☰, the standard; also when the branch
     // never chose) or 'top' (pills across the top). Always sent; older POSs ignore it.
     posCategoryLayout: categoryLayoutOf(branchText[CATEGORY_LAYOUT_KEY]),
+    // Owner, 2026-11-09: the branch's on-screen keyboard on/off — 'on' (the standard; also when the branch never chose) or
+    // 'off'. Desktop only (the web and Android POS use the native keyboard and ignore it). Always sent; older POSs ignore it.
+    posOnscreenKeyboard: onscreenKeyboardOf(branchText[ONSCREEN_KEYBOARD_KEY]),
     // 0.6.35 (A384): the tech allocated to this client (admin portal) — their name and number on the till's Help.
     // Always sent: null = no tech → the Help shows SwiftPOS support's numbers (shared/support.ts). Older tills ignore it.
     support: await getSupportContact(req.businessId),

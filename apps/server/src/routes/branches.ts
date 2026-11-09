@@ -11,6 +11,7 @@ import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '@zaptil
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';   // A429
 import { PLATFORM_PRICES_KEY, rulesSettingValue } from '@zaptill/core/platformPrices';   // A619
 import { CATEGORY_LAYOUT_KEY, CATEGORY_LAYOUT_PERMISSIONS, categoryLayoutSettingValue } from '@zaptill/core/categoryLayout';   // 8n
+import { ONSCREEN_KEYBOARD_KEY, ONSCREEN_KEYBOARD_PERMISSIONS, onscreenKeyboardSettingValue } from '@zaptill/core/onscreenKeyboard';   // owner 2026-11-09
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
@@ -278,6 +279,7 @@ const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operat
   'payment_methods_enabled',   // A429: the payment methods this branch takes
   PLATFORM_PRICES_KEY,         // A619: this branch's delivery platform prices (the rounding stays the business's)
   CATEGORY_LAYOUT_KEY,         // 8n: the branch's POS shows its categories in the side panel or across the top
+  ONSCREEN_KEYBOARD_KEY,       // owner 2026-11-09: the branch's desktop POS on-screen keyboard on/off
   'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'];   // A450 / A492: each branch its own M-Pesa number
 
 /** A490: the keys that may set one branch override (any one of them). */
@@ -285,6 +287,7 @@ export function branchSettingKeys(key: string): string[] {
   if (key === 'payment_methods_enabled' || key === PLATFORM_PRICES_KEY) return ['settings.payments'];   // A429, A619
   if (['receipt_header', 'receipt_footer'].includes(key)) return ['settings.branches', 'receipt.manage'];
   if (key === CATEGORY_LAYOUT_KEY) return [...CATEGORY_LAYOUT_PERMISSIONS];   // 8n: settings.pos_layout (a Manager's) or settings.branches
+  if (key === ONSCREEN_KEYBOARD_KEY) return [...ONSCREEN_KEYBOARD_PERMISSIONS];   // owner 2026-11-09: same keys as the category layout
   return ['settings.branches'];
 }
 
@@ -378,6 +381,12 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branche
   if (key === CATEGORY_LAYOUT_KEY) {
     const clean = categoryLayoutSettingValue(value);
     if (clean === null) { res.status(400).json({ error: 'Choose the side panel or the top bar.' }); return; }
+    stored = clean;
+  }
+  // Owner, 2026-11-09: the branch's on-screen keyboard — 'on' or 'off' only (settings.pos_layout or settings.branches).
+  if (key === ONSCREEN_KEYBOARD_KEY) {
+    const clean = onscreenKeyboardSettingValue(value);
+    if (clean === null) { res.status(400).json({ error: 'Choose on or off.' }); return; }
     stored = clean;
   }
   // 0.6.37 (A387): a branch's own History methods — a list of method codes ([] = every method).

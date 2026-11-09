@@ -655,6 +655,7 @@ declare global {
         paymentMethodsEnabled: () => Promise<{ enabled: string[] | null; platformPrices?: unknown }>;
         /** 8n: how this branch's POS shows its categories (the cached value; 'panel' until the cloud says). */
         categoryLayout: () => Promise<{ layout: import('@zaptill/core/categoryLayout').CategoryLayout }>;
+        onscreenKeyboard: () => Promise<{ value: import('@zaptill/core/onscreenKeyboard').OnscreenKeyboard }>;   // owner 2026-11-09
         /** A445: the branch's offers as the till holds them, and its branch (an offer may be for chosen branches). */
         offers: () => Promise<{ offers: import('@zaptill/core/offers').Offer[]; branchId: string | null }>;
         onCatalogueChanged: (cb: () => void) => () => void;   // A278
@@ -1071,6 +1072,7 @@ declare global {
         setPaymentMethodsEnabled: (codes: string[]) => Promise<any>;
         /** 8n: the branch's category layout (settings.branches; online — the cloud keeps it for the branch). */
         setCategoryLayout: (layout: import('@zaptill/core/categoryLayout').CategoryLayout) => Promise<any>;
+        setOnscreenKeyboard: (value: import('@zaptill/core/onscreenKeyboard').OnscreenKeyboard) => Promise<any>;   // owner 2026-11-09
         /** A492: the branch's M-Pesa number — its own, the business-wide one an older set-up left, and whether this person may change it. */
         getMpesa: () => Promise<{ own: MpesaReceiveLite | null; inherited: MpesaReceiveLite | null; canEdit: boolean }>;
         setMpesa: (v: { kind?: 'buy_goods' | 'paybill'; number?: string; account?: string; clear?: boolean }) => Promise<any>;

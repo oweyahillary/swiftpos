@@ -144,6 +144,15 @@ console.log('\nWired in\n');
     status.indexOf('node_url: ask.url, node_secret: String(g.node_secret)') > 0 && status.indexOf('node_url: ask.url') < status.indexOf('await joinBusiness('));
   ok('…not marked configured — the technician finishes setup on screen (till code and the rest unchanged)', /configured: false/.test(status) && !/terminal_code/.test(status));
   ok('Allow asks the cloud for the code with the server\'s own sign-in', /tillFetch\('\/api\/pos\/join-code'/.test(ipc));
+  // A490 → owner, 2026-11-09 ("tech only — they are the only one who gets a join request"): a pending join is both SEEN
+  // and ANSWERED only by a technician. node:joinRequests returns nothing without a tech session (so the JoinPrompt never
+  // pops for a cashier or manager), and the manager (devices.approve) fallback on node:answerJoin is gone.
+  // MUTATION TO CONFIRM BITE: drop `&& getActiveSession()` from node:joinRequests → the first pin fails.
+  ok('a join request is shown only while a technician session is open (node:joinRequests gated to the tech session)',
+    /handle\('node:joinRequests',[\s\S]{0,320}isNodeRole\(getDeviceConfig\(\)\?\.device_role\) && getActiveSession\(\)/.test(ipc));
+  ok('only a technician may answer a join — the devices.approve (manager) fallback was dropped',
+    /handle\('node:answerJoin'[\s\S]{0,700}if \(!getActiveSession\(\)\) throw new Error\('Only a technician can answer a POS asking to join\.'\)/.test(ipc)
+    && !/signedInCan\('devices\.approve'\)/.test(ipc));
   const inst = src('src/renderer/pages/InstallPage.tsx');
   ok('setup searches the network first', /useState<Step>\('search'\)/.test(inst) && /posApi\.install\.findServers\(\)/.test(inst));
   // A507: heard nothing → stays on the search step: ask a server by its address (the network may hide it), or set up

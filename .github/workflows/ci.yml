@@ -1953,6 +1953,14 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/category-layout-8n.test.mjs
 
+      # On-screen keyboard on/off per branch (owner, 2026-11-09) — the till's in-app keyboard is a branch setting that
+      # mirrors the 8n category layout end to end: pulled with pos/init, kept offline (maintenance_state), carried by the
+      # change log's setup topic, relayed by the branch server; Manager › Settings toggles it (settings.pos_layout /
+      # settings.branches, on / off only) and the desktop OSK reads it (off → never opens). Web/Android use native keyboards.
+      - name: Desktop on-screen keyboard toggle per branch
+        working-directory: apps/desktop
+        run: node --no-warnings test/onscreen-keyboard-toggle.test.mjs
+
       # A597 — the owner's brand colours on the till: pulled with the branding (no schema bump), an older cloud leaves them,
       # none with themes off or under a branch's own theme, a database without the columns reads as none, the branch
       # server relays them; the screens: a primary's shades on every action colour, the lock screen and the strip.

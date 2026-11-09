@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { oskServes, oskLayout, oskDock, oskHeight, oskApply, TEXT_ROWS, SYMBOL_ROW, NUMERIC_ROWS, type OskKey, type OskLayout } from '../lib/osk';
+import { posApi } from '../lib/posApi';
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
@@ -29,6 +30,10 @@ export default function OnScreenKeyboard() {
   const [dock, setDock] = useState<'bottom' | 'top'>('bottom');
   const [shift, setShift] = useState(false);
   const [symbols, setSymbols] = useState(false);
+  // Owner, 2026-11-09 ("the in app keyboard can we have it as the menu category it can be turned on or off"): the branch
+  // can turn ZapTill's own keyboard off (for a POS with a physical keyboard). Default on, so nothing changes until a
+  // manager turns it off. Off → it never opens, and an open one is closed.
+  const [enabled, setEnabled] = useState(true);
   const lastPointer = useRef<string>('mouse');
   const savedMode = useRef<string | null>(null);
   const height = oskHeight(typeof window === 'undefined' ? 800 : window.innerHeight);
@@ -38,6 +43,16 @@ export default function OnScreenKeyboard() {
     const onPointer = (e: PointerEvent) => { lastPointer.current = e.pointerType || 'mouse'; };
     window.addEventListener('pointerdown', onPointer, true);
     return () => window.removeEventListener('pointerdown', onPointer, true);
+  }, []);
+
+  // The branch's on-screen keyboard setting (owner 2026-11-09). Read on mount, refreshed when a pull lands — a manager may
+  // toggle it from another POS. pos.onscreenKeyboard reads the cached branch value, so it is right offline too.
+  useEffect(() => {
+    let alive = true;
+    const load = () => posApi.pos.onscreenKeyboard().then((r) => { if (alive) setEnabled(r?.value !== 'off'); }).catch(() => { /* keep the last value */ });
+    load();
+    const unsubscribe = posApi.pos.onCatalogueChanged(load);
+    return () => { alive = false; unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -56,6 +71,7 @@ export default function OnScreenKeyboard() {
       const el = e.target as Field | null;
       if (!el || !('tagName' in el)) return;
       if (lastPointer.current !== 'touch' && lastPointer.current !== 'pen') return;
+      if (!enabledRef.current) return;   // owner 2026-11-09: the branch turned the on-screen keyboard off
       if (!oskServes(el)) return;
       open(el);
     };
@@ -74,6 +90,10 @@ export default function OnScreenKeyboard() {
 
   const fieldRef = useRef<Field | null>(null);
   fieldRef.current = field;
+  const enabledRef = useRef(true);
+  enabledRef.current = enabled;
+  // Turned off while it is open (a manager toggled it from another POS): close it now.
+  useEffect(() => { if (!enabled && fieldRef.current) close(); }, [enabled]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   function close() {
     const el = fieldRef.current;

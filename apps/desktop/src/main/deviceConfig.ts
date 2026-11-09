@@ -27,6 +27,7 @@ import { logLine } from './logFile';   // A521
 import { cleanScaleSettings, scaleSettingsOrDefault, type ScaleSettings } from '@zaptill/core/scaleBarcode';   // A577
 import { cleanPricing, type PlatformPricing } from '@zaptill/core/platformPrices';   // A619
 import { categoryLayoutOf, categoryLayoutSettingValue, type CategoryLayout } from '@zaptill/core/categoryLayout';   // 8n
+import { onscreenKeyboardOf, onscreenKeyboardSettingValue, type OnscreenKeyboard } from '@zaptill/core/onscreenKeyboard';   // owner 2026-11-09
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -422,6 +423,26 @@ export function getCategoryLayout(): CategoryLayout {
     const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(CATEGORY_LAYOUT_STATE_KEY) as { value?: string } | undefined;
     return categoryLayoutOf(row?.value);
   } catch { return categoryLayoutOf(null); }
+}
+
+/**
+ * Owner, 2026-11-09 ("the in app keyboard can we have it as the menu category it can be turned on or off"): whether this
+ * branch's desktop POS opens ZapTill's own on-screen keyboard (A417) when a field is tapped. Kept in maintenance_state
+ * like the category layout (no local schema change), so the POS keeps the last value offline. undefined or anything
+ * unknown = not said → keep. The getter: 'on' (today's behaviour) until the cloud has said otherwise.
+ */
+export const ONSCREEN_KEYBOARD_STATE_KEY = 'pos_onscreen_keyboard';
+export function setOnscreenKeyboard(raw: unknown): void {
+  const v = onscreenKeyboardSettingValue(raw);
+  if (v === null) return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(ONSCREEN_KEYBOARD_STATE_KEY, v, new Date().toISOString());
+}
+export function getOnscreenKeyboard(): OnscreenKeyboard {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(ONSCREEN_KEYBOARD_STATE_KEY) as { value?: string } | undefined;
+    return onscreenKeyboardOf(row?.value);
+  } catch { return onscreenKeyboardOf(null); }
 }
 
 /** 0.6.27: the switches as the till last heard them (all off until told). */
