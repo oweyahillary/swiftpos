@@ -146,7 +146,7 @@ export { renderToStaticMarkup } from 'react-dom/server';`);
     && /requireAnyPermission\('settings\.branches', 'settings\.payments', 'receipt\.manage', 'settings\.pos_layout'\)/.test(br)
     && /if \(!assertBranchAccess\(req, req\.params\.id\)\)/.test(br));
   const pos = read('apps/server/src/routes/pos.ts');
-  ok('sent with pos/init: the branch\'s own value, else the side panel', /'receipt_pay_account',\s*CATEGORY_LAYOUT_KEY\]\)/.test(pos)
+  ok('sent with pos/init: the branch\'s own value, else the side panel', /'receipt_pay_account',\s*CATEGORY_LAYOUT_KEY, ONSCREEN_KEYBOARD_KEY\]\)/.test(pos)
     && pos.includes('posCategoryLayout: categoryLayoutOf(branchText[CATEGORY_LAYOUT_KEY]),'));
 
   console.log('\nW. The screens');

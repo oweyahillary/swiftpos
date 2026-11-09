@@ -243,6 +243,7 @@ inline styles) → *action*, not *brand*. The 154 changes were applied by script
 | `pages/TechPage.tsx:314` | `text-green-400` | reviewed: success / online / variance-ok / done state |
 | `pages/TechPage.tsx:397` | `text-green-400` | reviewed: success / online / variance-ok / done state |
 | `pages/TechPage.tsx:411` | `text-green-400` | success/paid/online wording nearby |
+| `pages/TechPage.tsx:572` | `text-green-400` | reviewed: restore succeeded (status) — red on fail / green on success, mirrors the backup-success message on this page (2026-11-09, restore moved to the Tech page) |
 | `pages/UpdateBanner.tsx:69` | `border-green-700/50` | reviewed: success / online / variance-ok / done state |
 | `pages/UpdateBanner.tsx:73` | `text-green-400` | reviewed: success / online / variance-ok / done state |
 | `pages/UpdateBanner.tsx:78` | `text-green-400` | success/paid/online wording nearby |
