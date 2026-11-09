@@ -964,7 +964,7 @@ export default function PaymentModal({
                     <input
                       type="number" value={tendered}
                       onChange={e => setTendered(e.target.value)}
-                      placeholder={fmt(grandTotal)} min={grandTotal} autoFocus
+                      placeholder={fmt(grandTotal)} min={grandTotal} autoFocus={shopPosHost() === null}
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-action-500 transition-colors text-lg font-semibold"
                     />
                   </div>
@@ -1096,7 +1096,7 @@ export default function PaymentModal({
                     {quote ? `${platformName} prices: ${changesText(quote.changes)}` : `${platformName} — normal prices`} · {currency} {fmt(grandTotal)}
                   </p>
                 </div>
-                <input type="text" value={platformRef} onChange={(e) => setPlatformRef(e.target.value)} autoFocus
+                <input type="text" value={platformRef} onChange={(e) => setPlatformRef(e.target.value)} autoFocus={shopPosHost() === null}
                   placeholder={branchButtons.find((b) => b.code === platform)?.reference ?? 'Order #'}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500" />
                 <div className="flex gap-2">

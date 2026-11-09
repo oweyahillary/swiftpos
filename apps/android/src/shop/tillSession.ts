@@ -13,6 +13,7 @@ import { Preferences } from '@capacitor/preferences';
 import { cloudGet, cloudPost, CloudError } from '../cloud/client';
 import { readSecret, removeSecret, saveSecret } from '../device/secrets';
 import { needsRenewal } from './rules';
+import { CrashReports } from '../native/plugins';
 
 /** What the tablet keeps about itself once joined. */
 export interface PosSession {
@@ -33,10 +34,36 @@ const DEVICE_ID_KEY = 'zaptill.deviceId';
 /** This tablet's device id: made once, kept until Reset app (not a secret — the cloud knows it as this POS). */
 export async function deviceId(): Promise<string> {
   const { value } = await Preferences.get({ key: DEVICE_ID_KEY });
-  if (value) return value;
-  const made = `android-${crypto.randomUUID()}`;
+  if (value) return value;   // already set on this install — never change an enrolled device's id
+  // A new install prefers a STABLE hardware id (Settings.Secure.ANDROID_ID), so a clean reinstall is recognised as the
+  // SAME POS (A182 machine identity) instead of enrolling anew; falls back to a random id when the platform withholds it.
+  let made = '';
+  try { const { id } = await CrashReports.hardwareId(); if (id && /^[0-9a-f]{8,}$/i.test(id)) made = `android-${id}`; }
+  catch { /* native method missing or withheld: fall through */ }
+  if (!made) made = `android-${crypto.randomUUID()}`;
   await Preferences.set({ key: DEVICE_ID_KEY, value: made });
   return made;
+}
+
+/**
+ * The client's branding (logo + brand colours) cached the moment the device is registered — a requirement (owner,
+ * 2026-11-09), so the native shell wears the client's look before the first sign-in. Best-effort with the till's own
+ * token; the per-sign-in cache (CashierScreen) backs it up if this cannot run (no connection, or pos/init refuses the
+ * device token). Writes the keys the shell reads: 'swiftpos_shop_logo' and 'swiftpos_shop_brand'.
+ */
+export async function cacheBranding(token: string, id: string, branchId: string): Promise<void> {
+  try {
+    const init = await cloudGet<{ branding?: Record<string, unknown>; logo?: unknown }>(
+      `/pos/init?branch_id=${encodeURIComponent(branchId)}`, token, { 'x-device-id': id });
+    const b = init?.branding ?? {};
+    let logo = typeof b.logoPng === 'string' ? b.logoPng : '';
+    if (!logo && typeof init?.logo === 'string') logo = init.logo;
+    if (logo) localStorage.setItem('swiftpos_shop_logo', logo);
+    const primary = typeof b.primaryHex === 'string' ? b.primaryHex : null;
+    const secondary = typeof b.secondaryHex === 'string' ? b.secondaryHex : null;
+    const accent = typeof b.accentHex === 'string' ? b.accentHex : null;
+    if (primary || secondary || accent) localStorage.setItem('swiftpos_shop_brand', JSON.stringify({ primary, secondary, accent }));
+  } catch { /* best-effort: the first sign-in caches branding anyway */ }
 }
 
 export async function readTill(): Promise<PosSession | null> {
@@ -81,6 +108,7 @@ export async function joinWithCode(a: { businessId: string; code: string; posNam
     currency: r.business.currency ?? 'KES', branchId: r.branchId, branchName: await branchNameOf(r.accessToken, id, r.branchId),
   };
   await saveTill(s);
+  await cacheBranding(s.accessToken, id, r.branchId);   // colours + logo ready before the first sign-in (a requirement)
   return s;
 }
 

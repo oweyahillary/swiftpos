@@ -34,6 +34,9 @@ export interface CrashReportsPlugin {
   takePendingCrash(): Promise<{ crash: { message: string; stack: string } | null }>;
   /** "Android 14 (API 34), samsung SM-T220" — no serial numbers, no names. */
   deviceSummary(): Promise<{ summary: string }>;
+  /** A stable per-device id (Settings.Secure.ANDROID_ID), '' if withheld — survives a clean reinstall so a re-installed POS
+   *  is recognised as the same device (A182), not enrolled anew. Scoped to the app's signing key; not a serial number. */
+  hardwareId(): Promise<{ id: string }>;
 }
 
 export interface RawPrinterPlugin {

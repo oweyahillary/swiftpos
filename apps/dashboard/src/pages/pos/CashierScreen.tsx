@@ -462,6 +462,21 @@ export default function CashierScreen() {
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
   }, []);
+  // Android Shop POS: cache the client's logo AND brand colours (from pos/init) so the native shell — the PIN pad, the
+  // start and setup screens — wears them before the next sign-in, as the desktop lock screen does (A368). Written only on
+  // the tablet; the web/desktop POS never touch these keys.
+  useEffect(() => {
+    if (shopPosHost() === null) return;
+    const b = customerContent?.brand;
+    try {
+      if (b?.logo) localStorage.setItem('swiftpos_shop_logo', b.logo);
+      if (b && (b.primaryHex || b.secondaryHex || b.accentHex)) {
+        localStorage.setItem('swiftpos_shop_brand', JSON.stringify({ primary: b.primaryHex, secondary: b.secondaryHex, accent: b.accentHex }));
+      }
+    } catch { /* storage off: the shell shows the default mark and teal accent */ }
+  }, [customerContent]);
+  // Phone POS: the shared POS text is sized for a desktop monitor; bump the read-at-a-glance sizes a notch on a phone.
+  const big = (base: React.CSSProperties, px: number): React.CSSProperties => (isPhone ? { ...base, fontSize: px } : base);
   const [showPrinterSettings, setShowPrinterSettings] = useState(false);
   const { settings: printerSettings, save: savePrinterSettings, reset: resetPrinterSettings } = usePrinterSettings();
   // branchPrinters comes from usePOSData hook above
@@ -1516,19 +1531,19 @@ export default function CashierScreen() {
           <button
             style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
             onClick={() => setShowBuyer(true)} title="The customer's details for this sale" data-testid="web-sale-customer-btn"
-          >{buyer ? `👤 ${buyer.label}` : '👤 Customer'}</button>
+          >{isPhone ? '👤' : (buyer ? `👤 ${buyer.label}` : '👤 Customer')}</button>
           {/* Menu drawer — shown only if cashier has extra permissions */}
           <button
             style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
             onClick={() => setShowDrawer(true)}
             title="Menu"
-          >☰ Menu</button>
+          >☰{isPhone ? '' : ' Menu'}</button>
           {/* Z-Report — all cashiers need this to reconcile their shift */}
           <button
             style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
             onClick={() => setShowZReport(true)}
             title="Z-Report"
-          >📊 Z-Report</button>
+          >📊{isPhone ? '' : ' Z-Report'}</button>
           {currentShift && (
             <>
               {/* A599: with Attendance on (premium) everyone punches on the attendance device — the PIN clock-in is hidden. */}
@@ -1536,26 +1551,26 @@ export default function CashierScreen() {
                 style={{ ...s.lockBtn, background: 'transparent', color: 'rgb(var(--act-text, 16 185 129))', border: '1px solid rgb(var(--act-fill, 16 185 129))', marginRight: 4 }}
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
-              >⏱ Clock</button>}
+              >⏱{isPhone ? '' : ' Clock'}</button>}
               {/* A594: for everyone on the drawer — without the right, a manager approves on the spot (ShiftModal). */}
               {(<>
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
                 onClick={() => setShiftModal('float')}
                 title="Cash In/Out"
-              >💵 Float</button>
+              >💵{isPhone ? '' : ' Float'}</button>
               {/* A362: petty cash out of this drawer — any cashier on the shift, as at the till */}
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
                 onClick={() => setShiftModal('expense')}
                 title="Record an expense"
-              >🧾 Expense</button>
+              >🧾{isPhone ? '' : ' Expense'}</button>
               </>)}
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', marginRight: 4 }}
                 onClick={() => setShiftModal('close')}
                 title="End Shift"
-              >🔒 End Shift</button>
+              >🔒{isPhone ? '' : ' End Shift'}</button>
             </>
           )}
           {/* 0.6.35 (A384): "What to do when" — a new tab, so the cart in progress is never lost. */}
@@ -1691,15 +1706,15 @@ export default function CashierScreen() {
                         onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}>
                         <span aria-hidden style={{ ...s.slotDot, background: status === 'occupied' ? '#f59e0b' : '#22c55e' }} />
-                        <div style={s.slotName}>{table.name}</div>
-                        <div style={s.slotSub}>👥 {table.capacity}</div>
+                        <div style={big(s.slotName, 24)}>{table.name}</div>
+                        <div style={big(s.slotSub, 16)}>👥 {table.capacity}</div>
                         {order && order.cart.length > 0 ? (
                           <div style={s.slotOrderInfo}>
-                            <span style={s.slotItemCount}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
-                            <span style={s.slotTime}>{timeAgo(order.openedAt)}</span>
+                            <span style={big(s.slotItemCount, 15)}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
+                            <span style={big(s.slotTime, 13)}>{timeAgo(order.openedAt)}</span>
                           </div>
                         ) : (
-                          <div style={s.slotFreeLabel}>{status === 'occupied' ? 'Tap to view' : 'Tap to open'}</div>
+                          <div style={big(s.slotFreeLabel, 14)}>{status === 'occupied' ? 'Tap to view' : 'Tap to open'}</div>
                         )}
                       </button>
                     );
@@ -1783,8 +1798,8 @@ export default function CashierScreen() {
                           state={pumpCardState(pump)} onTap={() => onPumpTap(pump)}
                           extra={order && (
                             <div style={s.slotOrderInfo}>
-                              <span style={s.slotItemCount}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
-                              <span style={s.slotTime}>{timeAgo(order.openedAt)}</span>
+                              <span style={big(s.slotItemCount, 15)}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
+                              <span style={big(s.slotTime, 13)}>{timeAgo(order.openedAt)}</span>
                             </div>
                           )} />
                       );
@@ -1906,8 +1921,8 @@ export default function CashierScreen() {
                             </span>
                           )}
                         </div>
-                        <div style={s.productName}>{product.name}</div>
-                        <div style={s.productPrice}>
+                        <div style={big(s.productName, 15)}>{product.name}</div>
+                        <div style={big(s.productPrice, 14)}>
                           {currency} {Number(product.base_price).toLocaleString()}
                           {(product as any).is_fuel && (
                             <span style={{ fontSize: 9, color: '#64748b' }}>/{(product as any).fuel_unit ?? 'L'}</span>
@@ -2057,10 +2072,10 @@ export default function CashierScreen() {
                 <div key={index} className="animate-line-in" data-testid="cart-line">
                 <div style={s.cartItem}>
                   <div style={s.cartItemInfo}>
-                    <div style={s.cartItemName}>{item.product.name}</div>
+                    <div style={big(s.cartItemName, 16)}>{item.product.name}</div>
                     {/* Sizes and add-ons as chips, as the desktop POS (@zaptill/ui LineChips, owner decision 2026-11-04) */}
                     <LineChips variants={item.selectedVariants} addOns={item.selectedModifiers} look={LINE_CHIPS_LOOK} />
-                    <div style={s.cartItemPrice}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : item.measureUnit ? '/kg' : 'each'}</div>
+                    <div style={big(s.cartItemPrice, 13)}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : item.measureUnit ? '/kg' : 'each'}</div>
                   </div>
                   <div style={s.cartItemControls}>
                     {item.isFuel ? (
@@ -2076,7 +2091,7 @@ export default function CashierScreen() {
                     )}
                     <button style={s.removeBtn} onClick={() => removeLine(index)}>✕</button>
                   </div>
-                  <div style={s.cartItemTotal}>{fmt(item.lineTotal, currency)}</div>
+                  <div style={big(s.cartItemTotal, 15)}>{fmt(item.lineTotal, currency)}</div>
                 </div>
                 {/* A367: the line's note, and the button that edits it */}
                 {!item.isFuel && (

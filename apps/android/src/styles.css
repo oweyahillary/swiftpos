@@ -36,9 +36,11 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
   flex-direction: column;
   gap: 16px;
 }
-.screen.centre { min-height: 100vh; justify-content: center; align-items: center; }
+/* 100dvh (the VISIBLE viewport) + symmetric vertical padding so a centred block sits dead-centre: MainActivity already
+   insets the web view inside the system bars, so the asymmetric env(safe-area) padding on .screen must not bias centring. */
+.screen.centre { min-height: 100dvh; justify-content: center; align-items: center; padding-block: 24px; }
 /* Like .screen, but the content block sits in the vertical middle (kept full-width) — the start screen and the PIN pad. */
-.screen.middle { min-height: 100vh; justify-content: center; }
+.screen.middle { min-height: 100dvh; justify-content: center; padding-block: 24px; }
 
 /* Scoped to .screen: on a Shop POS the web POS screens' Tailwind reset loads after this file (Till stage 1). */
 .screen h1 { font-size: 28px; line-height: 1.2; margin: 8px 0 0; font-weight: 700; }
@@ -53,6 +55,9 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
   width: 34px; height: 34px; border-radius: 9px; display: inline-grid; place-items: center;
   background: var(--bg); border: 1.5px solid var(--brand-light); color: var(--brand); font-weight: 800;
 }
+/* The client's own logo (cached from pos/init after the first sign-in) in place of the Z mark — the PIN pad shows it larger. */
+.brand-logo { height: 36px; max-width: 180px; object-fit: contain; display: block; border-radius: 8px; }
+.pin-screen .brand-logo { height: 56px; max-width: 220px; }
 
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
 
@@ -94,7 +99,7 @@ button:disabled { opacity: 0.5; }
 .text-button { background: none; border: none; color: var(--brand-light); padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
 .link-button { display: inline-flex; align-items: center; text-decoration: none; }
 
-.pin-screen { max-width: 420px; align-items: center; text-align: center; justify-content: center; min-height: 100vh; }
+.pin-screen { max-width: 420px; align-items: center; text-align: center; justify-content: center; min-height: 100dvh; padding-block: 24px; }
 .pin-screen .brand { justify-content: center; }
 .pin-screen h1 { margin-top: 4px; }
 .pin-screen .primary, .pin-screen .text-button { width: 100%; max-width: 320px; }

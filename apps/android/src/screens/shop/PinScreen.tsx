@@ -12,6 +12,7 @@ import { useLongPress } from '../../shop/useLongPress';
 import { signInWithPin } from '../../shop/pinSignIn';
 import type { PosSession } from '../../shop/tillSession';
 import { PIN_MAX, PIN_MIN } from '../../shop/rules';
+import { applyShopBrand } from '../../shop/brandTheme';
 
 /** The web POS screens keep the person's tokens here (apps/dashboard lib/api.ts TOKEN_KEYS). */
 const PERSON_TOKENS = ['swiftpos_pos_token', 'swiftpos_pos_refresh_token', 'swiftpos_access_token', 'swiftpos_refresh_token'];
@@ -25,6 +26,11 @@ function forgetLastPerson(): void {
   } catch { /* storage unavailable: nothing kept either */ }
 }
 
+/** The client's logo, cached by the web POS from pos/init after the first sign-in (localStorage); '' until then → the Z mark. */
+function readShopLogo(): string {
+  try { return localStorage.getItem('swiftpos_shop_logo') || ''; } catch { return ''; }
+}
+
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'] as const;
 
 export default function PinScreen({ till, version }: { till: PosSession; version: string }) {
@@ -35,7 +41,8 @@ export default function PinScreen({ till, version }: { till: PosSession; version
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
-  useEffect(() => { forgetLastPerson(); }, []);
+  const logo = readShopLogo();
+  useEffect(() => { forgetLastPerson(); applyShopBrand(); }, []);
 
   const press = (k: (typeof KEYS)[number]) => {
     setProblem('');
@@ -61,7 +68,9 @@ export default function PinScreen({ till, version }: { till: PosSession; version
   return (
     <main className="screen pin-screen">
       <header className="brand" {...techDoor}>
-        <span className="mark" aria-hidden="true">Z</span>
+        {logo
+          ? <img className="brand-logo" src={logo} alt="" />
+          : <span className="mark" aria-hidden="true">Z</span>}
         <span>{till.businessName}{till.branchName ? ` · ${till.branchName}` : ''}</span>
       </header>
       <p className="note">{till.posName}</p>

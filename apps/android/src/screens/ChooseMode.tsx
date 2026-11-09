@@ -32,7 +32,7 @@ export default function ChooseMode({ onChosen }: { onChosen: (mode: DeviceMode) 
   }
 
   return (
-    <main className="screen">
+    <main className="screen middle">
       <h1>What is this device?</h1>
       <p className="lead">ZapTill sets itself up for how this device will be used.</p>
       <div className="choices">
