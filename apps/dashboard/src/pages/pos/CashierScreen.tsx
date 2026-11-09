@@ -486,6 +486,9 @@ export default function CashierScreen() {
   const { settings: printerSettings, save: savePrinterSettings, reset: resetPrinterSettings } = usePrinterSettings();
   // branchPrinters comes from usePOSData hook above
   const [showDrawer, setShowDrawer] = useState(false);
+  // Owner, 2026-11-09: the phone's "⋯ More" sheet (dark mode, help, and any gated cash actions) from the bottom nav.
+  const [showMore, setShowMore] = useState(false);
+  useBackDismiss(() => setShowMore(false), showMore);   // Android back closes the More sheet
   const [discountState, setDiscountState] = useState<DiscountState | null>(null);
   const [floorMode, setFloorMode]         = useState(true);
   // A188: only use the absolute-positioned floor plan when tables actually carry a
@@ -1507,8 +1510,11 @@ export default function CashierScreen() {
           </span>
         </div>
 
-        <div style={isPhone ? { ...s.headerRight, minWidth: 0, flexShrink: 1, overflowX: 'auto', justifyContent: 'flex-start' } : s.headerRight}>
-          {!isPhone && <span style={s.clock}>{clockStr}</span>}
+        {/* On the phone the action buttons move OFF the top into the bottom nav (owner, 2026-11-09): the top keeps only the
+            logo, the business name and the mode word. On desktop/web the header actions stay. */}
+        {!isPhone && (
+        <div style={s.headerRight}>
+          <span style={s.clock}>{clockStr}</span>
           {/* Theme, the customer screen and Help moved OFF the header into the ☰ menu (owner, 2026-11-09 — the web POS
               header had too much; match the desktop app). */}
           {/* Printer settings — A490: stations.manage */}
@@ -1565,9 +1571,60 @@ export default function CashierScreen() {
             </>
           )}
           {/* Help moved into the ☰ menu (owner, 2026-11-09). Sign out (was "Lock") takes the person back to the PIN pad. */}
-          <button style={s.lockBtn} data-testid="webpos-signout" onClick={() => setShowLockConfirm(true)}>🔒{isPhone ? '' : ' Sign out'}</button>
+          <button style={s.lockBtn} data-testid="webpos-signout" onClick={() => setShowLockConfirm(true)}>🔒 Sign out</button>
         </div>
+        )}
       </header>
+
+      {/* Phone bottom nav (owner, 2026-11-09): the cashier's actions live here, off the top (which keeps only the logo and
+          the business name). Shown on the idle home — no order in progress; the order screen keeps its own bottom actions.
+          Close shift and Lock till wear DISTINCT icons, not the same padlock. */}
+      {isPhone && !isMinimart && !activeKey && cart.length === 0 && !cartSheet && (
+        <nav style={s.bottomNav} data-testid="phone-bottom-nav">
+          <button style={s.bottomNavBtn} onClick={() => setShowBuyer(true)} data-testid="bn-customer">
+            <span style={s.bottomNavIcon}>👤</span>Customer
+          </button>
+          {currentShift && (
+            <button style={s.bottomNavBtn} onClick={() => setShiftModal('close')} data-testid="bn-close-shift">
+              <span style={s.bottomNavIcon}>🧮</span>Close shift
+            </button>
+          )}
+          <button style={s.bottomNavBtn} onClick={() => setShowLockConfirm(true)} data-testid="bn-lock">
+            <span style={s.bottomNavIcon}>🔒</span>Lock
+          </button>
+          <button style={s.bottomNavBtn} onClick={() => setShowMore(true)} data-testid="bn-more">
+            <span style={s.bottomNavIcon}>⋯</span>More
+          </button>
+        </nav>
+      )}
+      {isPhone && showMore && (
+        <div style={s.moreBackdrop} onClick={() => setShowMore(false)} data-testid="more-sheet">
+          <div style={s.moreSheet} onClick={(e) => e.stopPropagation()}>
+            <button style={s.moreItem} onClick={togglePosTheme}>
+              <span style={s.moreIcon}>{posTheme === 'light' ? '🌙' : '☀️'}</span>{posTheme === 'light' ? 'Dark mode' : 'Light mode'}
+            </button>
+            <button style={s.moreItem} onClick={() => { setShowMore(false); window.open('/help', '_blank', 'noopener'); }}>
+              <span style={s.moreIcon}>❔</span>Help
+            </button>
+            {currentShift && (hasPermission('shifts.cash_movements') || hasPermission('shifts.cash_out')) && (
+              <button style={s.moreItem} onClick={() => { setShowMore(false); setShiftModal('float'); }}>
+                <span style={s.moreIcon}>💵</span>Cash in / out
+              </button>
+            )}
+            {currentShift && hasPermission('expenses.record') && (
+              <button style={s.moreItem} onClick={() => { setShowMore(false); setShiftModal('expense'); }}>
+                <span style={s.moreIcon}>🧾</span>Expense
+              </button>
+            )}
+            {canSetPrinters && (
+              <button style={s.moreItem} onClick={() => { setShowMore(false); setShowPrinterSettings(true); }}>
+                <span style={s.moreIcon}>🖨</span>Printer settings
+              </button>
+            )}
+            <button style={{ ...s.moreItem, justifyContent: 'center', color: 'var(--pos-text3)' }} onClick={() => setShowMore(false)}>Close</button>
+          </div>
+        </div>
+      )}
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div style={isPhone && !cartSheet ? { ...s.body, paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))' } : s.body}>
@@ -3100,6 +3157,28 @@ const s: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8,
     color: '#fca5a5', fontSize: 12, cursor: 'pointer', fontWeight: 600,
   },
+  // Phone bottom nav (owner, 2026-11-09) — the cashier's actions, off the top header.
+  bottomNav: {
+    position: 'fixed' as const, bottom: 0, left: 0, right: 0, zIndex: 40,
+    display: 'flex', background: 'var(--pos-surface)', borderTop: '1px solid var(--pos-border)',
+    paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxShadow: '0 -4px 16px rgba(0,0,0,0.18)',
+  },
+  bottomNavBtn: {
+    flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center',
+    gap: 3, padding: '9px 4px', background: 'transparent', border: 'none',
+    color: 'var(--pos-text2)', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+  },
+  bottomNavIcon: { fontSize: 21, lineHeight: 1 },
+  moreBackdrop: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'flex-end' },
+  moreSheet: {
+    width: '100%', background: 'var(--pos-surface)', borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    padding: '10px 10px calc(14px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column' as const, gap: 2,
+  },
+  moreItem: {
+    display: 'flex', alignItems: 'center', gap: 14, padding: '14px 12px', background: 'transparent', border: 'none',
+    borderRadius: 10, color: 'var(--pos-text)', fontSize: 15, fontWeight: 600, cursor: 'pointer', textAlign: 'left' as const,
+  },
+  moreIcon: { fontSize: 20, width: 24, textAlign: 'center' as const },
   // Body
   body: { flex: 1, display: 'flex', overflow: 'hidden' },
   leftPanel: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
