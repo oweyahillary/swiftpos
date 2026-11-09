@@ -98,7 +98,8 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      setScaleBarcodes: () => {},   // A577
                      setThemesPremium: () => {},   // A617
                      setPlatformPricing: () => {},   // A619
-                     setCategoryLayout: () => {} };   // 8n`);
+                     setCategoryLayout: () => {},   // 8n
+                     setOnscreenKeyboard: () => {} };   // owner 2026-11-09: applyReferenceConfig calls it now`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

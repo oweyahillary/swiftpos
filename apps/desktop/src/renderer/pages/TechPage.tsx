@@ -11,7 +11,7 @@ import DrawersCopyPanel from '../components/DrawersCopyPanel';   // A542
 import AttendanceDevicesPanel from '../components/AttendanceDevicesPanel';   // A599
 import HistoryUploadPanel from '../components/HistoryUploadPanel';   // A602
 import CustomerScreenPanel from '../components/CustomerScreenPanel';   // A606
-import type { TechSession, TechStatus } from '../lib/posApi';
+import type { TechSession, TechStatus, BackupCheck } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
 import { TECH_SECTIONS, initialTechSection, rememberTechSection, type TechSection } from '../lib/techMenu';   // A622
 
@@ -25,6 +25,10 @@ function fmtRemaining(ms: number): string {
   const h = Math.floor(m / 60);
   return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
 }
+
+// A600 → owner, 2026-11-09: restore moved here from the Manager panel. Human-sized file size for the restore summary.
+const size = (b: number | null | undefined) => (b == null ? '' : b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+const whenLocal = (iso: string | null | undefined) => { if (!iso) return 'never'; try { return new Date(iso).toLocaleString(); } catch { return iso; } };
 
 export default function TechPage({ onExit }: Props) {
   const [session, setSession] = useState<TechSession | null>(null);
@@ -93,6 +97,12 @@ export default function TechPage({ onExit }: Props) {
     backup_dir: string; last_prune_at: string | null; retention_days: number;
     same_disk?: boolean; custom_dir?: boolean; keep?: number }>(null);
   const [backupMsg, setBackupMsg] = useState('');
+  // A600 → owner, 2026-11-09 ("move restore to tech — a manager should not handle such works, they can mess big time"):
+  // restore lives here now (the Manager Backup panel was removed). A tech session is already allowed to restore
+  // (backupService.assertMayRestore short-circuits on an open tech session), so the backup:* handlers work unchanged.
+  const [restoreCheck, setRestoreCheck] = useState<BackupCheck | null>(null);
+  const [restoreTyped, setRestoreTyped] = useState('');
+  const [restoreMsg, setRestoreMsg] = useState('');
   useEffect(() => { posApi.tech.maintenance().then(setMaint).catch(() => {}); }, []);
   const [roleMsg, setRoleMsg] = useState('');
   const promote = async () => {
@@ -124,6 +134,24 @@ export default function TechPage({ onExit }: Props) {
       setBackupMsg(r.ok ? `Done — ${r.path}` : (r.error ?? 'failed'));
       posApi.tech.maintenance().then(setMaint).catch(() => {});
     } finally { setBusy(''); }
+  };
+
+  // Restore (A600, moved here 2026-11-09). Pick a backup file → main checks it (this business, not damaged, not newer,
+  // not another POS with sales here) → type RESTORE → main takes a safety copy and restarts into the swap.
+  const pickRestore = async () => {
+    setBusy('restore-pick'); setRestoreCheck(null); setRestoreTyped(''); setRestoreMsg('');
+    try { setRestoreCheck(await posApi.backup.chooseRestoreFile()); }
+    catch (e: any) { setRestoreMsg(e?.message ?? 'The file could not be checked.'); }
+    finally { setBusy(''); }
+  };
+  const doRestore = async () => {
+    if (!restoreCheck?.ok || !restoreCheck.token) return;
+    setBusy('restore-go'); setRestoreMsg('');
+    try {
+      const r = await posApi.backup.restore(restoreCheck.token, restoreTyped);
+      if (r.ok) setRestoreMsg('Restoring — ZapTill restarts now. A safety copy of the data from before is kept.');
+      else { setRestoreMsg(r.error ?? 'The backup was not restored.'); setBusy(''); }
+    } catch (e: any) { setRestoreMsg(e?.message ?? 'The backup was not restored.'); setBusy(''); }
   };
 
   const runQuery = async () => {
@@ -500,6 +528,48 @@ export default function TechPage({ onExit }: Props) {
             )}
           </div>
           {backupMsg && <p className={`text-xs mt-2 ${/FAILED|failed/.test(backupMsg) ? 'text-red-400' : 'text-green-400'}`}>{backupMsg}</p>}
+        </section>
+
+        {/* Restore — A600, moved out of the Manager Backup panel on 2026-11-09 (owner: "a manager should not handle such
+            works, they can mess big time"). Replaces this POS's database with a backup, then restarts. The word RESTORE
+            is typed; main checks the file is this business's and takes a safety copy first. */}
+        <section className="bg-[#0d1424] border border-red-900/40 rounded-xl p-4" data-testid="tech-restore">
+          <h2 className="text-sm font-semibold text-gray-300 mb-1">Restore from a backup</h2>
+          <p className="text-[11px] text-gray-400 mb-3">
+            Puts a backup back in place of this POS&apos;s data, then restarts ZapTill. A safety copy of the current data is
+            kept first. Only a backup of this business can be restored.
+          </p>
+          <button onClick={pickRestore} disabled={!!busy} data-testid="tech-restore-pick"
+            className="w-full bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">
+            {busy === 'restore-pick' ? 'Checking the file…' : 'Choose a backup file…'}
+          </button>
+
+          {restoreCheck && !restoreCheck.ok && (
+            <p className="text-xs text-red-400 mt-2" data-testid="tech-restore-refused">{restoreCheck.refusal}</p>
+          )}
+          {restoreCheck && restoreCheck.ok && restoreCheck.backup && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-gray-200">
+                Backup made {whenLocal(restoreCheck.backup.taken_at)} · {size(restoreCheck.backup.bytes)}
+                {restoreCheck.backup.business_name ? ` · ${restoreCheck.backup.business_name}` : ''}
+                {restoreCheck.backup.pos_name ? ` · ${restoreCheck.backup.pos_name}` : ''}
+              </p>
+              <p className="text-[11px] text-gray-400">
+                {restoreCheck.backup.orders} sale{restoreCheck.backup.orders === 1 ? '' : 's'} in it, the last {whenLocal(restoreCheck.backup.last_sale_at)}.
+              </p>
+              {restoreCheck.warnings.map((w) => <p key={w} className="text-[11px] text-amber-300">{w}</p>)}
+              <label className="block text-[11px] text-gray-300">
+                Type RESTORE to confirm
+                <input value={restoreTyped} onChange={(e) => setRestoreTyped(e.target.value)} data-testid="tech-restore-confirm"
+                  className="mt-1 block w-48 bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono" />
+              </label>
+              <button onClick={doRestore} disabled={!!busy || restoreTyped.trim().toUpperCase() !== 'RESTORE'} data-testid="tech-restore-go"
+                className="bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white rounded-lg py-2 px-4 text-sm font-semibold">
+                {busy === 'restore-go' ? 'Restoring…' : 'Restore and restart'}
+              </button>
+            </div>
+          )}
+          {restoreMsg && <p className={`text-xs mt-2 ${/not|fail|refus/i.test(restoreMsg) ? 'text-red-400' : 'text-green-400'}`}>{restoreMsg}</p>}
         </section>
 
         {/* A602: going online later — the sales history's upload, how far back, quiet hours */}

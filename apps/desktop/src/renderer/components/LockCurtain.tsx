@@ -25,6 +25,13 @@ import { posApi } from '../lib/posApi';
  *
  * Only the staff member who is signed in can dismiss it. A different cashier
  * uses "Sign out — another person signs in" (the shift stays open).
+ *
+ * ── CENTRED AND COMPACT ──────────────────────────────────────────────────────
+ * Owner, 2026-11-09 ("exactly like that screenshot but centred — I don't like how
+ * a user has to scroll to key in their PIN"): the single centred column (logo,
+ * time, day, "POS locked", the PIN prompt, then the keypad) is the look; it only
+ * needed to fit and centre. The logo is sized so the whole column — keypad and
+ * sign-out included — sits centred by `m-auto`, reachable without scrolling.
  */
 export default function LockCurtain({
   staffName,
@@ -115,19 +122,19 @@ export default function LockCurtain({
   return (
     // Opaque (0.6.24, owner: "the small wordings are not readable"): the old `bg-gray-950/98` is not a Tailwind opacity
     // step, so no background was generated and the blurred screen showed through the text.
-    // A479: it scrolls when the window is short (the last line was cut off, the logo pressed against the top), and
-    // nothing on it can be selected (a double-tap highlighted a key's digit in blue).
+    // A479: it scrolls when the window is short, and nothing on it can be selected (a double-tap highlighted a key's
+    // digit in blue). The inner block is centred by `m-auto` (both axes) when it fits — owner, 2026-11-09 ("centred").
     <div data-testid="lock-curtain" className="fixed inset-0 z-[9999] bg-gray-950 flex flex-col overflow-y-auto select-none animate-fade-in">
       <div className="m-auto w-full max-w-sm px-6 py-8 text-center">
-        <div className="mb-6">
+        {/* The client's logo on a white card (logos are made for a light background); the padlock only when there is none. */}
+        <div className="flex justify-center mb-5">
           {logo ? (
-            // The client's logo on a white card, as on the PIN screen (logos are made for a light background).
-            <span data-testid="lock-logo" className="inline-flex items-center justify-center bg-white rounded-xl mb-4 shadow-lg shadow-black/30"
-                  style={{ padding: '8px 10px' }}>
-              <img src={logo} alt="" style={{ maxHeight: 150, maxWidth: 240, objectFit: 'contain', display: 'block' }} />
+            <span data-testid="lock-logo" className="inline-flex items-center justify-center bg-white rounded-xl shadow-lg shadow-black/30"
+                  style={{ padding: '8px 12px' }}>
+              <img src={logo} alt="" style={{ maxHeight: 100, maxWidth: 200, objectFit: 'contain', display: 'block' }} />
             </span>
           ) : (
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gray-900 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-gray-900 flex items-center justify-center">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
                    stroke="currentColor" strokeWidth="2" className="text-gray-400">
                 <rect x="3" y="11" width="18" height="11" rx="2" />
@@ -135,19 +142,17 @@ export default function LockCurtain({
               </svg>
             </div>
           )}
-          <p data-testid="lock-clock" className="text-4xl font-light tabular-nums text-white tracking-tight">{clock}</p>
-          <p className="text-sm text-gray-400 mt-0.5 mb-4">{day}</p>
-          <h1 className="text-lg font-semibold text-white">POS locked</h1>
-          {/* Naming who is still signed in matters: it tells the next person
-              whether they can PIN in here or need Lock till, without making
-              them guess and fail twice. */}
-          <p className="text-base text-gray-200 mt-1">
-            Enter {staffName}&apos;s PIN to continue
-          </p>
-          <p className="text-sm text-gray-400 mt-3">
-            Nothing was lost — the screen is exactly as you left it.
-          </p>
         </div>
+
+        {/* A479: the time and day — what a locked screen is glanced at for. */}
+        <p data-testid="lock-clock" className="text-4xl font-light tabular-nums text-white tracking-tight leading-none">{clock}</p>
+        <p className="text-sm text-gray-400 mt-1">{day}</p>
+
+        {/* Naming who is still signed in matters: it tells the next person whether they can PIN in here or need to sign
+            out, without making them guess and fail twice. */}
+        <h1 className="text-lg font-semibold text-white mt-5">POS locked</h1>
+        <p className="text-base text-gray-200 mt-1">Enter {staffName}&apos;s PIN to continue</p>
+        <p className="text-sm text-gray-400 mt-1 mb-5">Nothing was lost — the screen is exactly as you left it.</p>
 
         <input
           id="lock-pin-input"
@@ -167,7 +172,7 @@ export default function LockCurtain({
 
         {/* A479: an empty place is a ring, an entered digit a filled dot; a wrong PIN shakes the row. */}
         <div key={error ? `e-${error}` : 'ok'} data-testid="lock-dots"
-             className={`flex justify-center gap-3 mb-6 h-4 items-center ${error ? 'animate-shake' : ''}`}>
+             className={`flex justify-center gap-3 mb-5 h-4 items-center ${error ? 'animate-shake' : ''}`}>
           {[0, 1, 2, 3, 4, 5].map(i => (
             <div key={i}
                  className={`w-3.5 h-3.5 rounded-full transition-colors ${
@@ -199,8 +204,8 @@ export default function LockCurtain({
             ⌫
           </button>
         </div>
-        {/* A446: the way out the old message pointed at ("Use Lock till") — a different cashier, a forgotten PIN, or a PIN
-            that cannot be checked: sign out to the PIN screen. The shift stays open; an unpaid order on screen is cleared (it says so). */}
+        {/* A446: the way out — a different cashier, a forgotten PIN, or a PIN that cannot be checked: sign out to the PIN
+            screen. The shift stays open; an unpaid order on screen is cleared (it says so). */}
         {onSignOut && (
           <div className="mt-6 pt-5 border-t border-gray-800">
             <button data-testid="lock-sign-out" onClick={onSignOut} disabled={busy}

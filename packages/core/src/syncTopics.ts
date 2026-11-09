@@ -125,7 +125,8 @@ export const CONFIG_KEYS = {
   look: ['receiptHeader', 'receiptFooter', 'businessName'],
   setup: ['kitchenExclusions', 'noteQuickPicks', 'businessType', 'support', 'branchId', 'pricingBranchId', 'scaleBarcodes',
     'customerScreen',   // A606: the customer screen's slideshow (business_settings customer_screen)
-    'posCategoryLayout'],   // 8n: the branch's category layout (branch_settings pos_category_layout: setup by its key)
+    'posCategoryLayout',   // 8n: the branch's category layout (branch_settings pos_category_layout: setup by its key)
+    'posOnscreenKeyboard'],   // owner 2026-11-09: the branch's on-screen keyboard on/off (branch_settings pos_onscreen_keyboard)
 } as const;
 
 /** One entry of GET /api/pos/changes. `row` is absent on a delete (and on an upsert whose row is no longer the till's). */
