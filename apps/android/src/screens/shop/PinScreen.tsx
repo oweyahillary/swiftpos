@@ -67,13 +67,15 @@ export default function PinScreen({ till, version }: { till: PosSession; version
 
   return (
     <main className="screen pin-screen">
+      {/* A vertical stack, like the desktop PinPage / lock screen (owner, 2026-11-09 — "Logo, branch, enter PIN, keypad"):
+          the client logo on top, then the business · branch, then the prompt and the pad. The till name is not shown — the
+          branch already says where this is, and a cashier needs the name, not the terminal id. */}
       <header className="brand" {...techDoor}>
         {logo
           ? <img className="brand-logo" src={logo} alt="" />
           : <span className="mark" aria-hidden="true">Z</span>}
         <span>{till.businessName}{till.branchName ? ` · ${till.branchName}` : ''}</span>
       </header>
-      <p className="note">{till.posName}</p>
       <h1>Enter your PIN</h1>
       <div className="pin-dots" aria-label={`${pin.length} digits entered`}>
         {Array.from({ length: Math.max(PIN_MIN, pin.length) }, (_, i) => <span key={i} className={i < pin.length ? 'on' : ''} />)}

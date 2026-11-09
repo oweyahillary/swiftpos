@@ -155,12 +155,16 @@ await ok('void and refund: sales.void and sales.refund, each on its own', () => 
   const op = read('pages/OrdersPage.tsx');
   assert.match(op, /const canVoid = can\('sales\.void'\);\s+const canRefund = can\('sales\.refund'\);/);
 });
-await ok('Z-report: kept for the cashier, but expected cash and the difference need reports.shifts or shifts.confirm', () => {
+await ok('Z-report: printed at shift CLOSE (not an any-time button); expected cash and the difference need reports.shifts or shifts.confirm', () => {
   const z = read('pages/pos/ZReportModal.tsx');
   assert.match(z, /const seesExpected = hasPermission\('reports\.shifts'\) \|\| hasPermission\('shifts\.confirm'\);/);
   assert.match(z, /\{seesExpected && data\.shifts && data\.shifts\.length > 0 && \(\(\) => \{/);
   assert.match(z, /\{seesProfit && \(\s*<div className="total-row"/);
-  assert.match(read('pages/pos/CashierScreen.tsx'), /onClick=\{\(\) => setShowZReport\(true\)\}/);
+  // Owner, 2026-11-09: the Z-report is no longer an any-time header button — it opens when the shift is CLOSED
+  // (onShiftClosed → setShowZReport(true)), then signs the cashier out when dismissed.
+  const cs = read('pages/pos/CashierScreen.tsx');
+  assert.doesNotMatch(cs, /onClick=\{\(\) => setShowZReport\(true\)\}/);
+  assert.match(cs, /setShowZReport\(true\);\s*\n\s*\}\}/);
 });
 await ok('Float / Expense: shifts.cash_movements (the old switch still applies on a map from before); printers: stations.manage', () => {
   const cs = read('pages/pos/CashierScreen.tsx');

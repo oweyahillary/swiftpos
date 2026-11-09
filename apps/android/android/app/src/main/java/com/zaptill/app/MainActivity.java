@@ -43,6 +43,10 @@ public class MainActivity extends BridgeActivity {
             Insets ime  = insets.getInsets(WindowInsetsCompat.Type.ime());
             // Top/left/right: never under a bar or the camera cutout. Bottom: clear of the nav bar, and lifted above the
             // keyboard when it is open (max of the two), so a field (enrolment code, payment amount) is never covered.
+            // This manual IME lift is the ONLY one: the manifest sets windowSoftInputMode="adjustNothing" (NOT adjustResize),
+            // because with setDecorFitsSystemWindows(false) adjustResize ALSO shrinks the window for the keyboard — the two
+            // together lifted the WebView by ~2× the keyboard height and left a band of this dark background showing between
+            // the content and the keyboard (owner, 2026-11-09: "the black section is still there").
             v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
             return WindowInsetsCompat.CONSUMED;
         });
