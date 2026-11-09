@@ -31,8 +31,16 @@ public class MainActivity extends BridgeActivity {
     /**
      * Android 15+ FORCES edge-to-edge, and this app targets SDK 36: the window draws BEHIND the status bar and the
      * navigation bar, and @capacitor/status-bar's setOverlaysWebView(false) / setBackgroundColor(...) are no-ops. That is
-     * why the WebView sat under the clock on every screen. We inset the content view ourselves by the system-bar insets
-     * (and lift it above the keyboard), with the dark app colour showing behind the bars — ONE place, every screen.
+     * why the WebView sat under the clock on every screen. We inset the content view ourselves by the system-bar insets,
+     * with the dark app colour showing behind the bars — ONE place, every screen.
+     *
+     * ── THE KEYBOARD IS THE WEBVIEW'S JOB, NOT OURS ──────────────────────────────
+     * We do NOT touch the IME inset here. The earlier code lifted the content by the keyboard height itself, which left a
+     * band of the dark background between the content and the keyboard (owner, 2026-11-09, three times: "the black section
+     * is still there"). Instead windowSoftInputMode="adjustResize" + the viewport's `interactive-widget=resizes-content`
+     * (apps/android/index.html) let the WebView resize its own layout for the keyboard — so 100dvh, and a fixed modal's
+     * backdrop, shrink to sit exactly on the keyboard with no gap. If we also inset by the IME here, the two fight and the
+     * band comes back — so this listener is SYSTEM BARS ONLY.
      */
     private void fitContentInsideSystemBars() {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
@@ -40,15 +48,10 @@ public class MainActivity extends BridgeActivity {
         content.setBackgroundColor(0xFF050D12);   // the app background (styles.css --bg), shown behind the status/nav bars
         ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-            Insets ime  = insets.getInsets(WindowInsetsCompat.Type.ime());
-            // Top/left/right: never under a bar or the camera cutout. Bottom: clear of the nav bar, and lifted above the
-            // keyboard when it is open (max of the two), so a field (enrolment code, payment amount) is never covered.
-            // This manual IME lift is the ONLY one: the manifest sets windowSoftInputMode="adjustNothing" (NOT adjustResize),
-            // because with setDecorFitsSystemWindows(false) adjustResize ALSO shrinks the window for the keyboard — the two
-            // together lifted the WebView by ~2× the keyboard height and left a band of this dark background showing between
-            // the content and the keyboard (owner, 2026-11-09: "the black section is still there").
-            v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
-            return WindowInsetsCompat.CONSUMED;
+            // System bars + the camera cutout only. The keyboard is handled by the WebView (adjustResize + interactive-widget),
+            // never here. We do NOT consume the insets, so the IME inset still reaches the WebView for its own resize.
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return insets;
         });
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), content);
         controller.setAppearanceLightStatusBars(false);        // light icons, for our dark status strip

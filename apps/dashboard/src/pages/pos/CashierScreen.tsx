@@ -1530,13 +1530,13 @@ export default function CashierScreen() {
           <button
             style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
             onClick={() => setShowBuyer(true)} title="The customer's details for this sale" data-testid="web-sale-customer-btn"
-          >{isPhone ? '👤' : (buyer ? `👤 ${buyer.label}` : '👤 Customer')}</button>
+          >{buyer ? `👤 ${buyer.label}` : '👤 Customer'}</button>
           {/* Menu drawer — shown only if cashier has extra permissions */}
           <button
             style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
             onClick={() => setShowDrawer(true)}
             title="Menu"
-          >☰{isPhone ? '' : ' Menu'}</button>
+          >☰ Menu</button>
           {/* Z-Report is no longer an any-time button — it prints when the shift is CLOSED (owner, 2026-11-09). */}
           {currentShift && (
             <>
@@ -1545,7 +1545,7 @@ export default function CashierScreen() {
                 style={{ ...s.lockBtn, background: 'transparent', color: 'rgb(var(--act-text, 16 185 129))', border: '1px solid rgb(var(--act-fill, 16 185 129))', marginRight: 4 }}
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
-              >⏱{isPhone ? '' : ' Clock'}</button>}
+              >⏱ Clock</button>}
               {/* Cash in/out and expenses are RIGHTS, OFF by default for cashiers (owner, 2026-11-09): hidden unless the
                   person holds the right (a manager does; a cashier granted shifts.cash_movements / shifts.cash_out /
                   expenses.record sees them). Keys are manager-level in the catalogue, so a plain cashier never sees them. */}
@@ -1554,20 +1554,20 @@ export default function CashierScreen() {
                   style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
                   onClick={() => setShiftModal('float')}
                   title="Cash In/Out"
-                >💵{isPhone ? '' : ' Float'}</button>
+                >💵 Float</button>
               )}
               {hasPermission('expenses.record') && (
                 <button
                   style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
                   onClick={() => setShiftModal('expense')}
                   title="Record an expense"
-                >🧾{isPhone ? '' : ' Expense'}</button>
+                >🧾 Expense</button>
               )}
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', marginRight: 4 }}
                 onClick={() => setShiftModal('close')}
                 title="End Shift"
-              >🔒{isPhone ? '' : ' End Shift'}</button>
+              >🔒 End Shift</button>
             </>
           )}
           {/* Help moved into the ☰ menu (owner, 2026-11-09). Sign out (was "Lock") takes the person back to the PIN pad. */}
@@ -1672,8 +1672,10 @@ export default function CashierScreen() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <button onClick={startTakeaway} style={{
                     padding: '8px 18px', borderRadius: 8, fontSize: 15, fontWeight: 700,
-                    border: '1px solid var(--pos-accent)', cursor: 'pointer',
-                    background: 'var(--pos-accent)', color: '#fff',
+                    border: 'none', cursor: 'pointer',
+                    // ROOT CAUSE (owner, "Takeaway is not readable" x3): --pos-accent is DEFINED NOWHERE, so this was
+                    // white text on an empty background. Use the branded action fill, which always resolves (emerald fallback).
+                    background: 'rgb(var(--act-fill, 16 185 129))', color: '#fff',
                   }}>
                     🥡 Takeaway
                   </button>
@@ -1687,7 +1689,7 @@ export default function CashierScreen() {
                         style={{
                           padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
                           border: 'none', cursor: 'pointer',
-                          background: floorMode === v.id ? 'var(--pos-accent)' : 'transparent',
+                          background: floorMode === v.id ? 'rgb(var(--act-fill, 16 185 129))' : 'transparent',
                           color: floorMode === v.id ? '#fff' : 'var(--pos-text3)',
                         }}>
                         {v.label}

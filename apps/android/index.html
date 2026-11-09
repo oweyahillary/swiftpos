@@ -2,8 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- user-scalable=no + maximum-scale=1: a counter POS must not pinch-zoom or double-tap-zoom the till out of shape. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <!-- user-scalable=no + maximum-scale=1: a counter POS must not pinch-zoom or double-tap-zoom the till out of shape.
+         interactive-widget=resizes-content (owner, 2026-11-09, "the black section is still there"): when the on-screen
+         keyboard opens, the WebView shrinks its OWN layout viewport to above the keyboard — so 100dvh and a fixed modal's
+         backdrop sit exactly on the keyboard with no black gap. Paired with adjustResize + MainActivity NOT insetting the
+         IME (that double-lift was the gap). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <!-- Only the app's own bundled files. script-src allows inline: on a WebView without document-start scripts Capacitor
          injects its bridge as an inline <script>. Nothing here talks to the network (cloud calls are native: src/cloud). -->
     <!-- img-src allows https: so the client's product photos and logo (remote, over https) load; without it the WebView
