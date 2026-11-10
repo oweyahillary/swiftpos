@@ -8,9 +8,13 @@
  * entry calls it only inside a Shop POS, so Till stage 1 and the web/desktop are unaffected. The decision and the
  * provisional answer are pure (offlineDecision, provisionalOrderResponse), so they are tested without a device; the exact
  * response shape the screens need is reconciled on hardware (the stage's "test slowly").
+ *
+ * This one wrap is also the READ half of the seam (cold start): when a read cache is given (shop/offlineReads.ts), the
+ * selling screen's catalogue GETs are cached online and served from cache offline, so the POS opens from a cold boot.
  */
 import { bufferableKind, orderUuidOf } from '@zaptill/core/tillBuffer';
 import { type BufferStore, enqueue } from './buffer';
+import { type ReadCache, isCacheableRead, readCacheKey, cachedResponse } from './offlineReads';
 
 /** What to do with a call while offline. A read is left to the screens (they show "needs connection"); a bufferable write
  *  is queued; any other write is refused so nothing a Shop POS cannot replay silently vanishes. */
@@ -63,6 +67,9 @@ export interface OfflineWritesDeps {
   isOffline: () => boolean;
   /** The cloud base the screens call, so only those requests are considered (config API_URL). */
   cloudBase: string;
+  /** The cold-start read cache (shop/offlineReads.ts). When given, the selling screen's catalogue GETs are cached online
+   *  and served from cache offline, so the POS opens from a cold boot. Omit it and reads just pass through (Till stage 1). */
+  reads?: ReadCache;
   now?: () => string;
 }
 
@@ -79,11 +86,30 @@ export function installOfflineWrites(deps: OfflineWritesDeps): () => void {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
     const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')) || 'GET';
     const isCloud = typeof url === 'string' && url.startsWith(deps.cloudBase);
-    if (!isCloud || !deps.isOffline()) return original(input as RequestInfo, init);
-
+    if (!isCloud) return original(input as RequestInfo, init);                // not the cloud: untouched
     const path = url.slice(deps.cloudBase.length);
-    const action = offlineDecision(method, path);
-    if (action === 'read') return original(input as RequestInfo, init);     // the screens handle "needs connection"
+
+    // ── Reads (cold start) ────────────────────────────────────────────────────────────────────────────────────────────
+    // The selling screen's catalogue GETs are cached as they pass through online, and answered from that cache offline, so
+    // the POS opens from a cold boot (opt-in: only when deps.reads is given). Every other read passes straight through.
+    const m = method.toUpperCase();
+    if (m === 'GET' || m === 'HEAD') {
+      if (m === 'GET' && deps.reads && isCacheableRead(path)) {
+        const key = readCacheKey(path);
+        if (deps.isOffline()) {
+          const hit = await deps.reads.get(key);
+          return hit ? cachedResponse(hit) : original(input as RequestInfo, init);   // no cache yet → the screen's own error
+        }
+        const res = await original(input as RequestInfo, init);
+        if (res.ok) { try { await deps.reads.put(key, res.status, await res.clone().text(), now()); } catch { /* cache is best-effort */ } }
+        return res;
+      }
+      return original(input as RequestInfo, init);
+    }
+
+    // ── Writes ────────────────────────────────────────────────────────────────────────────────────────────────────────
+    if (!deps.isOffline()) return original(input as RequestInfo, init);       // online: the sale reaches the cloud (Till stage 1)
+    const action = offlineDecision(method, path);                            // offline: 'buffer' a sale, 'refuse' anything else
     if (action === 'refuse') return refuseResponse();
 
     let body: unknown = undefined;

@@ -12,6 +12,7 @@
  *   R  replay (shop/replay.ts): a fake sender drains the queue; ok syncs, a transport failure retries and the sale is
  *      kept; ackFromStatus maps HTTP to ok / retry / failed.
  *   O  the offline-writes seam (shop/offlineWrites.ts): read vs buffer vs refuse; the provisional answer.
+ *   C  the offline read cache (shop/offlineReads.ts): cold start — a catalogue GET is cached online and served offline.
  *   P  the offline PIN (shop/offlinePin.ts): a provisional sign-in for a cached person, the reconnect upgrade / refusal.
  *   S  checked in source (cannot run here): the shared rule is imported once (no copy); the seam is opt-in; the status bar.
  *
@@ -20,6 +21,8 @@
  *   - runReplay dropping a retried sale                      → R "a transport failure keeps the sale (retry)"
  *   - ackFromStatus making a 400 a retry                     → R "a 400 is a permanent refusal (failed)"
  *   - offlineDecision buffering an unknown write             → O "an unknown write is refused offline"
+ *   - the seam not caching a read online                     → C "online: the catalogue read is cached as it passes through"
+ *   - the seam reaching the cloud for a cached read offline  → C "offline: the catalogue is served from cache with NO cloud call"
  *   - upgradeDecision upgrading on a 401                     → P "a PIN refused on reconnect is rejected"
  */
 import fs from 'node:fs';
@@ -45,6 +48,7 @@ fs.writeFileSync(path.join(tmp, 'entry.ts'), `
   export * from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/buffer.ts'))};
   export { runReplay, ackFromStatus } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/replay.ts'))};
   export { offlineDecision, provisionalOrderResponse, installOfflineWrites } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineWrites.ts'))};
+  export { isCacheableRead, readCacheKey, cachedResponse } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineReads.ts'))};
   export { beginOfflineSignIn, upgradeDecision, deferVerify, OfflinePinRefused } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlinePin.ts'))};
 `);
 // Resolve the shared rule to its source (the app's node_modules does not link @zaptill/core for a node bundle).
@@ -139,6 +143,44 @@ const run = async () => {
     offline = false;
     await globalThis.fetch('https://dev-api.zaptill.co.ke/api/pos/init', { method: 'GET' });
     ok('online: a call passes straight through to the cloud', passedThrough === 1);
+    restore();
+    globalThis.fetch = realFetch;
+  }
+
+  console.log('\nC. The offline read cache — cold start (shop/offlineReads.ts)');
+  eq('pos/init is a cacheable catalogue read', M.isCacheableRead('/api/pos/init?branch_id=BR1'), true);
+  eq('tables (parking bays) is cacheable', M.isCacheableRead('/api/tables?branch_id=BR1&slot_type=parking_bay'), true);
+  eq('a sale is NOT a cacheable read', M.isCacheableRead('/api/orders'), false);
+  eq('an unrelated GET is NOT cached', M.isCacheableRead('/api/settings/theme'), false);
+  eq('the cache key keeps the query (dining vs parking never collide)', M.readCacheKey('/api/tables?branch_id=BR1&slot_type=parking_bay'), '/api/tables?branch_id=BR1&slot_type=parking_bay');
+  {
+    // The read half of the seam end-to-end: online, a catalogue GET passes through AND is cached; offline, the same GET is
+    // answered from the cache (so usePOSData opens the real catalogue); an uncached read offline falls through to the screen.
+    const mem = new Map();
+    const reads = {
+      get: async (k) => mem.get(k) ?? null,
+      put: async (k, status, body, at) => { mem.set(k, { status, body, at }); },
+    };
+    const realFetch = globalThis.fetch;
+    let cloudCalls = 0;
+    globalThis.fetch = async () => { cloudCalls++; return new Response(JSON.stringify({ products: [{ id: 'P1' }], businessType: 'restaurant' }), { status: 200, headers: { 'Content-Type': 'application/json' } }); };
+    const store = new M.InMemoryBuffer();
+    let offline = false;
+    const restore = M.installOfflineWrites({ store, isOffline: () => offline, cloudBase: 'https://dev-api.zaptill.co.ke', reads, now: () => '2026-11-10T12:00:00Z' });
+
+    const liveRes = await globalThis.fetch('https://dev-api.zaptill.co.ke/api/pos/init?branch_id=BR1', { method: 'GET' });
+    const live = await liveRes.json();
+    ok('online: the catalogue read reaches the cloud and is answered', cloudCalls === 1 && live.products[0].id === 'P1');
+    ok('online: the catalogue read is cached as it passes through', mem.has('/api/pos/init?branch_id=BR1'));
+
+    offline = true;
+    const cachedRes = await globalThis.fetch('https://dev-api.zaptill.co.ke/api/pos/init?branch_id=BR1', { method: 'GET' });
+    const cached = await cachedRes.json();
+    ok('offline: the catalogue is served from cache with NO cloud call', cloudCalls === 1 && cached.products[0].id === 'P1' && cachedRes.headers.get('x-zaptill-offline-cache') === '2026-11-10T12:00:00Z');
+
+    const missRes = await globalThis.fetch('https://dev-api.zaptill.co.ke/api/tables?branch_id=BR1', { method: 'GET' });
+    ok('offline: an uncached catalogue read falls through to the screen (its own error)', cloudCalls === 2 && missRes.status === 200);
+
     restore();
     globalThis.fetch = realFetch;
   }

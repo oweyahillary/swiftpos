@@ -14,6 +14,7 @@ import { shopPosHostFor } from '../../shop/printing';
 import { useOnline } from '../../shop/connection';
 import { makeBuffer, sweepRetention } from '../../shop/buffer';
 import { installOfflineWrites } from '../../shop/offlineWrites';
+import { makeReadCache } from '../../shop/offlineReads';
 import { runReplay, cloudSender } from '../../shop/replay';
 import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
@@ -41,14 +42,17 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // tablet; the offline-writes seam queues a sale when there is no connection and hands the screen a provisional answer so
   // it completes and prints; replay drains the queue when the connection returns; a slow sweep drops long-synced rows.
   const [buffer] = useState(makeBuffer);
+  // Cold start: the read cache keeps the selling screen's catalogue (pos/init, tables, pumps, printers, order mode) from
+  // the last online load, so the POS opens offline from a cold boot (shop/offlineReads.ts).
+  const [reads] = useState(makeReadCache);
   const onlineRef = useRef(online);
   onlineRef.current = online;
   const replaying = useRef(false);
 
   // Install the seam ONCE (wraps window.fetch; online or non-cloud calls pass straight through, so Till stage 1 selling is
   // unchanged). cloudBase is this app's API_URL — the same base the web POS calls, because main.tsx sets the dashboard's
-  // apiUrl to it, so the two cannot drift.
-  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL }), [buffer]);
+  // apiUrl to it, so the two cannot drift. The read cache serves the catalogue on a cold offline boot.
+  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads }), [buffer, reads]);
 
   // Drain the queue to the cloud on open and whenever the connection returns; never two drains at once.
   useEffect(() => {
