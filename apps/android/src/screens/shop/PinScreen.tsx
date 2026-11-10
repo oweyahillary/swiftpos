@@ -14,6 +14,7 @@ import type { PosSession } from '../../shop/tillSession';
 import { PIN_MAX, PIN_MIN } from '../../shop/rules';
 import { applyShopBrand } from '../../shop/brandTheme';
 import { beginOfflineSignIn, readRoster, type RosterStaff } from '../../shop/offlinePin';
+import { bcryptVerify } from '../../shop/pinVerify';
 import { holdPin, clearHeldPin } from '../../shop/offlineUpgrade';
 
 /** The web POS screens keep the person's tokens here (apps/dashboard lib/api.ts TOKEN_KEYS). */
@@ -69,8 +70,9 @@ export default function PinScreen({ till, version, online }: { till: PosSession;
         session = await signInWithPin(pin, version);   // the cloud resolves the PIN to the person (Till stage 1)
       } else {
         if (!picked) { setProblem('Pick who is signing in.'); setBusy(false); return; }
-        // Offline: a provisional session for the picked person; the PIN is HELD and verified when the connection returns.
-        const { session: s, held } = beginOfflineSignIn(roster, till, picked.id, pin);
+        // Offline: the PIN is checked LOCALLY against the cached bcrypt verifier (a wrong PIN is refused here, now), then a
+        // provisional session is granted; the PIN is HELD and re-verified with the cloud when the connection returns.
+        const { session: s, held } = beginOfflineSignIn(roster, till, picked.id, pin, bcryptVerify);
         await holdPin(held);
         session = s;
       }
