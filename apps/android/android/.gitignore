@@ -56,6 +56,10 @@ captures/
 # Never in the repository: the release key is held by the owner only (docs/ANDROID-APP-DESIGN.md "Stage 0 — built").
 *.jks
 *.keystore
+# EXCEPTION (owner, 2026-11-10): the DEBUG keystore IS committed on purpose — a fixed debug key keeps the till's
+# ANDROID_ID (and so its device_id) stable across rebuilds, so a reinstalled test POS rejoins the same seat. Standard
+# Android debug credentials, debug-only, no secret. The release key stays out (matched by *.jks / *.keystore above).
+!app/debug.keystore
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
