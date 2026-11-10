@@ -31,16 +31,32 @@ export interface PosSession {
 
 const DEVICE_ID_KEY = 'zaptill.deviceId';
 
-/** This tablet's device id: made once, kept until Reset app (not a secret — the cloud knows it as this POS). */
+/**
+ * This tablet's device id (not a secret — the cloud knows it as this POS).
+ *
+ * Settings.Secure.ANDROID_ID is STABLE across a clean reinstall as long as the app keeps ONE signing key, so a reinstalled
+ * POS rejoins its SAME seat (A182 machine identity) instead of enrolling anew and burning a licence. The signing key is now
+ * fixed for debug (a committed app/debug.keystore) and held by the owner for release — both stable — so the hardware id
+ * holds across reinstalls.
+ *
+ * We therefore prefer the LIVE hardware id on EVERY call, not a value cached once. The old code returned the first stored
+ * id forever; if the platform withheld ANDROID_ID for that first call, it cached a RANDOM id — and then every reinstall
+ * enrolled as a NEW seat, because the random id is different each install and could never match the server's record. Now a
+ * random id is a true last resort (platform never yields a hardware id), and even then it cannot mask a hardware id that
+ * appears later. The hardware id is cached only as a stable fallback for a later moment the platform withholds it.
+ */
 export async function deviceId(): Promise<string> {
-  const { value } = await Preferences.get({ key: DEVICE_ID_KEY });
-  if (value) return value;   // already set on this install — never change an enrolled device's id
-  // A new install prefers a STABLE hardware id (Settings.Secure.ANDROID_ID), so a clean reinstall is recognised as the
-  // SAME POS (A182 machine identity) instead of enrolling anew; falls back to a random id when the platform withholds it.
-  let made = '';
-  try { const { id } = await CrashReports.hardwareId(); if (id && /^[0-9a-f]{8,}$/i.test(id)) made = `android-${id}`; }
+  let hardware = '';
+  try { const { id } = await CrashReports.hardwareId(); if (id && /^[0-9a-f]{8,}$/i.test(id)) hardware = `android-${id}`; }
   catch { /* native method missing or withheld: fall through */ }
-  if (!made) made = `android-${crypto.randomUUID()}`;
+
+  const { value: stored } = await Preferences.get({ key: DEVICE_ID_KEY });
+  if (hardware) {
+    if (stored !== hardware) await Preferences.set({ key: DEVICE_ID_KEY, value: hardware });   // adopt it / reconcile a random one
+    return hardware;
+  }
+  if (stored) return stored;   // hardware withheld right now — keep the id we already use (stable within and across launches)
+  const made = `android-${crypto.randomUUID()}`;   // no stable id at all: this install only; a reinstall starts fresh
   await Preferences.set({ key: DEVICE_ID_KEY, value: made });
   return made;
 }

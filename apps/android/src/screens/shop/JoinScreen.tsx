@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { CloudError } from '../../cloud/client';
-import { joinWithCode, type PosSession } from '../../shop/tillSession';
+import { deviceId, joinWithCode, type PosSession } from '../../shop/tillSession';
 import { findServers, joinThroughServer, serverIdentity } from '../../shop/branchServer';
 import { joinFormProblem, joinQuestion, joinRefusal, type FoundServer } from '../../shop/rules';
 
@@ -33,8 +33,11 @@ export default function JoinScreen({ version, online, onJoined, onReset }: {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
+  const [devId, setDevId] = useState('');
   const wanted = useRef(true);
   useEffect(() => () => { wanted.current = false; }, []);
+  // This POS's device id, shown so a technician can confirm a reinstall kept the SAME id (so it rejoins its seat, A182).
+  useEffect(() => { void deviceId().then(setDevId).catch(() => {}); }, []);
 
   const search = async () => {
     setProblem(''); setStep({ kind: 'searching' });
@@ -138,6 +141,7 @@ export default function JoinScreen({ version, online, onJoined, onReset }: {
 
       <section className="card">
         <p className="note">ZapTill {version} for Android · Wrong device type? <button className="text-button" onClick={() => void onReset()}>Reset app</button></p>
+        {devId && <p className="note">Device id <code className="code">{devId}</code> — this stays the same after a reinstall, so this POS keeps its seat.</p>}
       </section>
     </main>
   );
