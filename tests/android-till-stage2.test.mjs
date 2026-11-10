@@ -49,7 +49,7 @@ fs.writeFileSync(path.join(tmp, 'entry.ts'), `
   export { runReplay, ackFromStatus } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/replay.ts'))};
   export { offlineDecision, provisionalOrderResponse, installOfflineWrites } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineWrites.ts'))};
   export { isCacheableRead, readCacheKey, cachedResponse } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineReads.ts'))};
-  export { beginOfflineSignIn, upgradeDecision, deferVerify, OfflinePinRefused } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlinePin.ts'))};
+  export { beginOfflineSignIn, upgradeDecision, deferVerify, OfflinePinRefused, rosterFromWire, OFFLINE_PENDING } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlinePin.ts'))};
 `);
 // Resolve the shared rule to its source (the app's node_modules does not link @zaptill/core for a node bundle).
 esbuild.buildSync({
@@ -186,10 +186,23 @@ const run = async () => {
   }
 
   console.log('\nP. The offline PIN (shop/offlinePin.ts)');
+  {
+    // rosterFromWire: the cloud's branch-staff rows → the cached roster, keeping only a usable (id + name) row.
+    const wire = [
+      { staff_id: 'ST1', name: 'Jane', role_name: 'cashier', permissions: { 'sales.create': true }, pin_hash: '$2b$x' },
+      { staff_id: '', name: 'No id', role_name: 'cashier', permissions: {}, pin_hash: '$2b$y' },
+      { name: 'No staff_id' },
+    ];
+    const mapped = M.rosterFromWire(wire);
+    eq('rosterFromWire keeps only the usable row (id + name)', mapped.length, 1);
+    eq('rosterFromWire maps staff_id/role_name/pin_hash', [mapped[0].id, mapped[0].role, mapped[0].pinHash], ['ST1', 'cashier', '$2b$x']);
+    eq('rosterFromWire on a non-array is empty', M.rosterFromWire(null), []);
+  }
   const roster = [{ id: 'ST1', name: 'Jane', role: 'cashier', permissions: { 'sales.create': true }, pinHash: '$2b$x' }];
   {
     const { session, held } = M.beginOfflineSignIn(roster, till, 'ST1', '1234', M.deferVerify);
     ok('a provisional session for a cached person (no token)', session.staffId === 'ST1' && session.staffName === 'Jane' && session.token === '' && held.pin === '1234');
+    eq('the provisional session carries the OFFLINE_PENDING chain id (only it takes the upgrade)', session.refreshToken, M.OFFLINE_PENDING);
   }
   ok('a person not on this POS is refused', (() => { try { M.beginOfflineSignIn(roster, till, 'NOPE', '1', M.deferVerify); return false; } catch (e) { return e instanceof M.OfflinePinRefused; } })());
   ok('a local verifier that says no is refused', (() => { try { M.beginOfflineSignIn(roster, till, 'ST1', 'x', () => 'no'); return false; } catch { return true; } })());
@@ -210,6 +223,12 @@ const run = async () => {
   ok('offline selling: the No-connection cover no longer blocks the selling screen', read('apps/android/src/screens/shop/NoConnection.tsx').includes('/pos/cashier'));
   ok('the status bar reads the buffer status and the live online state', (() => { const s = read('apps/android/src/screens/shop/SyncStatusBar.tsx'); return s.includes('bufferStatusOf') && s.includes('useOnline'); })());
   ok('offline PIN upgrades on reconnect (verify-pin), the desktop model', read('apps/android/src/shop/offlinePin.ts').includes('verify-pin') || read('apps/android/src/shop/offlinePin.ts').includes('upgradeDecision'));
+  // Cold start — the sign-in half (Part B): the roster is pulled while online, the PIN pad signs in offline from the
+  // cache, the held PIN lives in the Keystore, and a reconnect upgrades it (or signs the person out).
+  ok('the roster is pulled from branch-staff and cached (shop/roster.ts)', (() => { const s = read('apps/android/src/shop/roster.ts'); return s.includes('/pos/branch-staff') && s.includes('cacheRoster'); })());
+  ok('the PIN screen signs in offline from the cached roster', (() => { const s = read('apps/android/src/screens/shop/PinScreen.tsx'); return s.includes('beginOfflineSignIn') && s.includes('readRoster') && s.includes('holdPin'); })());
+  ok('the held PIN lives in the Keystore (secrets pos.heldPin) and is cleared on a fresh PIN screen', read('apps/android/src/device/secrets.ts').includes('pos.heldPin') && read('apps/android/src/screens/shop/PinScreen.tsx').includes('clearHeldPin'));
+  ok('the Shop POS refreshes the roster and upgrades a held PIN when online (shop/offlineUpgrade.ts)', (() => { const s = read('apps/android/src/screens/shop/ShopPos.tsx'); return s.includes('refreshRoster') && s.includes('attemptUpgrade') && s.includes('swiftpos:pos-token'); })());
   ok('the status bar styles exist', read('apps/android/src/styles.css').includes('.sync-bar'));
   ok('the design doc describes Till stage 2', /### Till stage 2 — Keeps selling offline/.test(read('docs/ANDROID-APP-DESIGN.md')));
 };

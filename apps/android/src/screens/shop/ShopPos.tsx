@@ -15,6 +15,9 @@ import { useOnline } from '../../shop/connection';
 import { makeBuffer, sweepRetention } from '../../shop/buffer';
 import { installOfflineWrites } from '../../shop/offlineWrites';
 import { makeReadCache } from '../../shop/offlineReads';
+import { refreshRoster } from '../../shop/roster';
+import { attemptUpgrade } from '../../shop/offlineUpgrade';
+import { OFFLINE_PENDING } from '../../shop/offlinePin';
 import { runReplay, cloudSender } from '../../shop/replay';
 import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
@@ -69,6 +72,34 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
     return () => clearInterval(t);
   }, [buffer]);
 
+  // Cold start, the sign-in half: while online, keep the roster fresh (for an offline sign-in) and, if someone signed in
+  // while offline, verify their HELD PIN with the cloud the moment the connection returns — upgrading the provisional
+  // session to a real one with no second PIN entry, or signing the person out if their PIN changed on the web (A345).
+  const upgrading = useRef(false);
+  useEffect(() => {
+    if (!online || upgrading.current) return;
+    upgrading.current = true;
+    void (async () => {
+      await refreshRoster();
+      const outcome = await attemptUpgrade(version);
+      if (!outcome) return;
+      if (outcome.state === 'upgraded') {
+        const pos = await import('@zaptill/dashboard-pos');
+        pos.storeCashierSession(outcome.session);   // the real token where api.ts reads it (localStorage)
+        // Hand the LIVE POS context the real token + current permissions — the documented cross-component event the web
+        // POS already uses for a token renewal (apps/dashboard lib/api.ts / POSAuthContext). renewedFrom is the provisional
+        // session's chain id (OFFLINE_PENDING), so this session, and ONLY it, takes the upgrade — never another person who
+        // signed in since.
+        window.dispatchEvent(new CustomEvent('swiftpos:pos-token', { detail: {
+          accessToken: outcome.session.token, refreshToken: outcome.session.refreshToken, permissions: outcome.session.permissions, renewedFrom: OFFLINE_PENDING,
+        } }));
+      } else if (outcome.state === 'rejected') {
+        // A PIN changed or disabled on the web: sign the person out cleanly to the PIN pad (the event POSAuthContext hears).
+        window.dispatchEvent(new CustomEvent('swiftpos:session-expired'));
+      }
+    })().catch(() => {}).finally(() => { upgrading.current = false; });
+  }, [online, version]);
+
   const open = async (till: PosSession | null) => {
     if (!till) { setState({ kind: 'join' }); return; }
     await startScreens(till);
@@ -87,7 +118,7 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/pos" element={<PinScreen till={till} version={version} />} />
+        <Route path="/pos" element={<PinScreen till={till} version={version} online={online} />} />
         <Route path="/pos/cashier" element={
           <Suspense fallback={<main className="screen centre"><p className="note">Opening the POS…</p></main>}><Selling /></Suspense>} />
         <Route path="/pos/device" element={<ShopDevice till={till} version={version} onReset={onReset}

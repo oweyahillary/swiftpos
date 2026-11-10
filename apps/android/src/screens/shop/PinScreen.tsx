@@ -13,6 +13,8 @@ import { signInWithPin } from '../../shop/pinSignIn';
 import type { PosSession } from '../../shop/tillSession';
 import { PIN_MAX, PIN_MIN } from '../../shop/rules';
 import { applyShopBrand } from '../../shop/brandTheme';
+import { beginOfflineSignIn, readRoster, type RosterStaff } from '../../shop/offlinePin';
+import { holdPin, clearHeldPin } from '../../shop/offlineUpgrade';
 
 /** The web POS screens keep the person's tokens here (apps/dashboard lib/api.ts TOKEN_KEYS). */
 const PERSON_TOKENS = ['swiftpos_pos_token', 'swiftpos_pos_refresh_token', 'swiftpos_access_token', 'swiftpos_refresh_token'];
@@ -33,7 +35,7 @@ function readShopLogo(): string {
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'] as const;
 
-export default function PinScreen({ till, version }: { till: PosSession; version: string }) {
+export default function PinScreen({ till, version, online }: { till: PosSession; version: string; online: boolean }) {
   const navigate = useNavigate();
   // Hidden technician door to This device (printer setup, Reset app, Join again): long-press the header, as the desktop
   // hides its tech page behind a long-press on the logo. No visible link — a cashier never sees it.
@@ -41,8 +43,15 @@ export default function PinScreen({ till, version }: { till: PosSession; version
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
+  // Till stage 2 offline sign-in: the cached roster (empty until this POS has been online once), and the person picked —
+  // offline the cloud is not there to resolve a PIN to a person, so the technician's roster is shown to pick a name first.
+  const [roster, setRoster] = useState<RosterStaff[]>([]);
+  const [picked, setPicked] = useState<RosterStaff | null>(null);
   const logo = readShopLogo();
-  useEffect(() => { forgetLastPerson(); applyShopBrand(); }, []);
+  // A fresh PIN screen means the last person's turn is over (start, Lock, or Sign out): forget them, and drop any held
+  // offline PIN so a reconnect never upgrades a signed-out session (shop/offlineUpgrade.ts).
+  useEffect(() => { forgetLastPerson(); void clearHeldPin(); applyShopBrand(); }, []);
+  useEffect(() => { void readRoster(till.branchId).then(setRoster).catch(() => {}); }, [till.branchId]);
 
   const press = (k: (typeof KEYS)[number]) => {
     setProblem('');
@@ -55,13 +64,22 @@ export default function PinScreen({ till, version }: { till: PosSession; version
     if (pin.length < PIN_MIN || busy) return;
     setBusy(true); setProblem('');
     try {
-      const session = await signInWithPin(pin, version);
+      let session;
+      if (online) {
+        session = await signInWithPin(pin, version);   // the cloud resolves the PIN to the person (Till stage 1)
+      } else {
+        if (!picked) { setProblem('Pick who is signing in.'); setBusy(false); return; }
+        // Offline: a provisional session for the picked person; the PIN is HELD and verified when the connection returns.
+        const { session: s, held } = beginOfflineSignIn(roster, till, picked.id, pin);
+        await holdPin(held);
+        session = s;
+      }
       const pos = await import('@zaptill/dashboard-pos');
       pos.storeCashierSession(session);
       navigate('/pos/cashier');
     } catch (e) {
       setPin('');
-      setProblem(e instanceof Error ? e.message : String(e));   // PinRefused / TillSignedOut / no connection: already in words
+      setProblem(e instanceof Error ? e.message : String(e));   // PinRefused / OfflinePinRefused / no connection: already in words
     } finally { setBusy(false); }
   };
 
@@ -76,19 +94,44 @@ export default function PinScreen({ till, version }: { till: PosSession; version
           : <span className="mark" aria-hidden="true">Z</span>}
         <span>{till.businessName}{till.branchName ? ` · ${till.branchName}` : ''}</span>
       </header>
-      <h1>Enter your PIN</h1>
-      <div className="pin-dots" aria-label={`${pin.length} digits entered`}>
-        {Array.from({ length: Math.max(PIN_MIN, pin.length) }, (_, i) => <span key={i} className={i < pin.length ? 'on' : ''} />)}
-      </div>
-      <div className="pin-pad">
-        {KEYS.map((k) => (
-          <button key={k} className="pin-key" disabled={busy} onClick={() => press(k)}>
-            {k === 'clear' ? 'Clear' : k === 'back' ? '⌫' : k}
-          </button>
-        ))}
-      </div>
-      {problem && <p className="problem" role="alert">{problem}</p>}
-      <button className="primary" disabled={busy || pin.length < PIN_MIN} onClick={() => void signIn()}>{busy ? 'Signing in…' : 'Sign in'}</button>
+      {!online && !picked ? (
+        roster.length === 0 ? (
+          <>
+            <h1>Offline</h1>
+            <p className="note">No staff are saved on this POS yet. Connect it to the internet once and sign in while online — after that, staff can sign in here with no connection.</p>
+          </>
+        ) : (
+          <>
+            <h1>Who's signing in?</h1>
+            <p className="note">No connection — pick your name, then enter your PIN. The sale is saved and syncs when the connection is back.</p>
+            <div className="roster-pick">
+              {roster.map((s) => (
+                <button key={s.id} className="choice" disabled={busy} onClick={() => { setPicked(s); setPin(''); setProblem(''); }}>
+                  <span className="choice-title">{s.name}</span>
+                  {s.role && <span className="choice-detail">{s.role}</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )
+      ) : (
+        <>
+          <h1>{online ? 'Enter your PIN' : `${picked?.name} · enter your PIN`}</h1>
+          <div className="pin-dots" aria-label={`${pin.length} digits entered`}>
+            {Array.from({ length: Math.max(PIN_MIN, pin.length) }, (_, i) => <span key={i} className={i < pin.length ? 'on' : ''} />)}
+          </div>
+          <div className="pin-pad">
+            {KEYS.map((k) => (
+              <button key={k} className="pin-key" disabled={busy} onClick={() => press(k)}>
+                {k === 'clear' ? 'Clear' : k === 'back' ? '⌫' : k}
+              </button>
+            ))}
+          </div>
+          {problem && <p className="problem" role="alert">{problem}</p>}
+          <button className="primary" disabled={busy || pin.length < PIN_MIN} onClick={() => void signIn()}>{busy ? 'Signing in…' : online ? 'Sign in' : 'Sign in offline'}</button>
+          {!online && <button className="ghost" disabled={busy} onClick={() => { setPicked(null); setPin(''); setProblem(''); }}>← Someone else</button>}
+        </>
+      )}
     </main>
   );
 }

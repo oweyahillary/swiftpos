@@ -13,10 +13,12 @@
  *   device.secret    Till stage 1: the POS's device secret (A407), its way back in when its session is refused
  *   branch.server    Till stage 1: the branch server it joined through — address, pinned certificate, the branch access code
  *                    and this POS's device key there (shop/branchServer.ts)
+ *   pos.heldPin      Till stage 2: the PIN of an OFFLINE sign-in, held here until the connection returns and it is verified
+ *                    with the cloud (shop/offlineUpgrade.ts) — never leaves the Keystore, upgraded not re-entered.
  */
 import { SecureStorage } from '@aparajita/capacitor-secure-storage';
 
-export type SecretName = 'session.refresh' | 'pos.session' | 'device.secret' | 'branch.server';
+export type SecretName = 'session.refresh' | 'pos.session' | 'device.secret' | 'branch.server' | 'pos.heldPin';
 
 export async function readSecret(name: SecretName): Promise<string | null> { return SecureStorage.getItem(name); }
 
