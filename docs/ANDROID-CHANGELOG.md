@@ -19,6 +19,10 @@ mistaken for the next. Newest first.
 - After settling a bill, **New order** now lands on the **tables** grid (the phone cart sheet closes), instead of an empty
   "Select a table" cart sheet.
 - Roster now also caches right after an online sign-in, so the next offline sign-in reliably finds the staff list.
+- **Server:** the branch-staff roster route was gated to the desktop surface only, so the Android Shop POS (surface
+  `android-till`) was silently 403'd and its offline roster stayed empty ("No staff are saved on this POS yet"). The gate
+  now accepts any POS device (desktop or android-till), as the stage-2 design intends. No app change — the dev API carries
+  the fix; sign in online once after it deploys and the roster caches for offline use.
 
 **Housekeeping:**
 - Versioning: the build shows on the PIN screen; this changelog tracks what changed.

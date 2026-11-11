@@ -14,6 +14,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { isNodeRole } from '../lib/deviceRegistry';
+import { isPosDeviceSurface } from '../lib/posSurface';   // Till stage 2: the branch-staff roster goes to any POS device (desktop or android-till)
 import { checkDeviceBranch } from '../lib/deviceBinding';   // A446
 import { createHash } from 'crypto';   // A446
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
@@ -224,13 +225,17 @@ function rememberRoster(key: string, v: { staffVersion: number; version: string;
 }
 
 // active products (with category colour), active categories, main branch id, and variant groups.
-// GET /api/pos/branch-staff — hands a branch NODE its staff roster with bcrypt
-// PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17). This is
+// GET /api/pos/branch-staff — hands a POS DEVICE its branch's staff roster with bcrypt
+// PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17; Till stage 2). This is
 // the one route that gives a machine the branch's PIN hashes, so the guard is
-// four conditions: the desktop surface, the caller's own business, a device
-// registered as a node/office, and that device's own branch. bcrypt only.
+// four conditions: a POS DEVICE surface (the desktop POS or the Android Shop POS — posSurface.ts:
+// the cloud's gates treat the two alike), the caller's own business, a device registered as a
+// till/node, and that device's own branch. bcrypt only.
 router.get('/branch-staff', async (req, res) => {
-  if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
+  // Till stage 2: the Android Shop POS (surface 'android-till') pulls this roster for its OWN offline sign-in, exactly as
+  // the desktop POS does — so the gate is "is this a POS device?", not "is this the desktop?" (an android-till surface was
+  // silently 403'd here, leaving the tablet's offline roster empty: "No staff are saved on this POS yet").
+  if (!isPosDeviceSurface(req.surface)) { res.status(403).json({ error: 'POS device surface only' }); return; }
   // A494: the PIN hashes go to a TILL's own session only, for itself — never a person's sign-in (a cashier's token is not
   // a till), and never for another device named in a header. The till (staffRoster.ts, syncEngine.ts) asks with its own
   // session and its own id in X-Device-Id.

@@ -238,6 +238,10 @@ const run = async () => {
   // Cold start — the sign-in half (Part B): the roster is pulled while online, the PIN pad signs in offline from the
   // cache, the held PIN lives in the Keystore, and a reconnect upgrades it (or signs the person out).
   ok('the roster is pulled from branch-staff and cached (shop/roster.ts)', (() => { const s = read('apps/android/src/shop/roster.ts'); return s.includes('/pos/branch-staff') && s.includes('cacheRoster'); })());
+  // The server must actually HAND the roster to the Android Shop POS: the branch-staff gate is a POS-device surface
+  // (desktop OR android-till via isPosDeviceSurface), not strictly 'desktop' — else the tablet is 403'd and its offline
+  // roster stays empty ("No staff are saved on this POS yet"). This is the one line that made offline sign-in unreachable.
+  ok('branch-staff accepts a POS-device surface, not desktop-only (apps/server routes/pos.ts)', (() => { const s = read('apps/server/src/routes/pos.ts'); return /branch-staff[\s\S]*?isPosDeviceSurface\(req\.surface\)/.test(s) && !/'\/branch-staff'[\s\S]{0,400}req\.surface !== 'desktop'/.test(s); })());
   ok('the PIN screen signs in offline from the cached roster', (() => { const s = read('apps/android/src/screens/shop/PinScreen.tsx'); return s.includes('beginOfflineSignIn') && s.includes('readRoster') && s.includes('holdPin'); })());
   ok('the offline PIN is checked locally with bcrypt (shop/pinVerify.ts), not only on reconnect', (() => { const v = read('apps/android/src/shop/pinVerify.ts'); const p = read('apps/android/src/screens/shop/PinScreen.tsx'); return v.includes("from 'bcryptjs'") && v.includes('compareSync') && p.includes('bcryptVerify'); })());
   ok('the held PIN lives in the Keystore (secrets pos.heldPin) and is cleared on a fresh PIN screen', read('apps/android/src/device/secrets.ts').includes('pos.heldPin') && read('apps/android/src/screens/shop/PinScreen.tsx').includes('clearHeldPin'));
