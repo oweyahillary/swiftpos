@@ -56,6 +56,7 @@ import { cartSubtotal, extractTaxes } from '../../lib/cart';
 import { useBusiness } from '../../context/BusinessContext';
 import type { Product, Category, Menu } from '../../types';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, CategoryBar } from './cashier/CategoryPanel';   // A537; A566; 8n
+import { shopPosHost } from '../../lib/shopPos';   // Till stage 1: the Android Shop POS (no category pin on the tablet)
 import type { CategoryLayout } from '@zaptill/core/categoryLayout';   // 8n
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
 import { exactFirst } from '@zaptill/core/paginate';   // A472
@@ -170,7 +171,7 @@ export default function MinimartPOS({
   const [activeCategory, setActiveCategory]   = useState('all');
   const [catalogueSearch, setCatalogueSearch] = useState('');
   // A537: the categories in a left panel behind ☰ (collapsed at start, pinned open if pinned), menus as tabs on top.
-  const catPanel = useCategoryPanel(categoryLayout);   // 8n: 'top' — CategoryBar instead of ☰, the chip and the panel
+  const catPanel = useCategoryPanel(categoryLayout, shopPosHost() === null);   // 8n; no category pin on the Android Shop POS
   const activeMenu = catPanel.prefs.menu;
   const menuCats = useMemo(() => categoriesForMenu(categories, menus, activeMenu), [categories, menus, activeMenu]);
   const menuFilterScope = useMemo(() => menuScope(categories, menus, activeMenu), [categories, menus, activeMenu]);

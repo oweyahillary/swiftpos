@@ -79,6 +79,13 @@ try {
   ok('an open dine-in order only (checked, and the update itself scoped to open)',
     route.includes("order.status !== 'open' || order.order_type !== 'dine_in'")
       && /\.update\(\{ table_number: table \}\)\.eq\('id', order\.id\)\.eq\('business_id', req\.businessId\)\.eq\('status', 'open'\)/.test(route), route);
+  // Offline replay (Till stage 2): a table moved with no connection is buffered and replayed by the TILL's own order id
+  // (idempotency_key), so the route resolves it with cloudOrderId before looking the order up — as void/refund/pay do.
+  ok('a table moved offline replays by the till\'s own id (cloudOrderId)',
+    route.includes('await cloudOrderId(req.params.id, req.businessId!)') && route.includes(".eq('id', orderId)"), route);
+  const fc = o.slice(o.indexOf("router.post('/:id/fire-course'"), o.indexOf("router.post('/:id/move-table'"));
+  ok('a course fired offline replays by the till\'s own id too (cloudOrderId)',
+    fc.includes('await cloudOrderId(req.params.id, req.businessId!)'), fc.slice(0, 200));
 } catch (e) {
   ok('the test ran to its end', false, e?.stack ?? String(e));
 }

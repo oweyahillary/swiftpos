@@ -25,9 +25,10 @@
 // ── the buffered write ───────────────────────────────────────────────────────────────────────────────────────────────
 
 /** What a buffered write is about (§4.7's buffer list). Order lines ride inside the 'order' body; they are not their own
- *  kind. 'shift_event' is a shift opening/closing/drawer movement. */
-export type BufferKind = 'order' | 'payment' | 'void' | 'refund' | 'expense' | 'wastage' | 'shift_event';
-export const BUFFER_KINDS: readonly BufferKind[] = ['order', 'payment', 'void', 'refund', 'expense', 'wastage', 'shift_event'];
+ *  kind. 'shift_event' is a shift opening/closing/drawer movement. 'order_op' is a non-financial change to an OPEN order —
+ *  moving it to another table, firing a held course to the kitchen — each idempotent, so a replay is safe. */
+export type BufferKind = 'order' | 'payment' | 'void' | 'refund' | 'expense' | 'wastage' | 'shift_event' | 'order_op';
+export const BUFFER_KINDS: readonly BufferKind[] = ['order', 'payment', 'void', 'refund', 'expense', 'wastage', 'shift_event', 'order_op'];
 
 export type SyncState = 'pending' | 'syncing' | 'synced' | 'failed';
 
@@ -74,6 +75,12 @@ const WRITE_ROUTES: readonly WriteRoute[] = [
   { kind: 'expense',     re: /^\/expenses$/ },
   { kind: 'wastage',     re: /^\/wastage(-entries)?$/ },
   { kind: 'shift_event', re: /^\/shifts(\/[^/]+)?(\/(open|close|drawer|movement))?$/ },
+  // A restaurant keeps serving during an outage: move an open table order, fire a held course to the kitchen. Both act on
+  // an order the till already made (its own uuid in the path) and are idempotent on the server — move-table sets the
+  // table (last write wins), fire-course only fires still-'held' items (a replay finds none) — so they replay safely in
+  // seq order, after the order they belong to. The server resolves the till's order uuid (routes/orders.ts cloudOrderId).
+  { kind: 'order_op',    re: /^\/orders\/[^/]+\/move-table$/ },
+  { kind: 'order_op',    re: /^\/orders\/[^/]+\/fire-course$/ },
 ];
 
 /** Normalise a cloud-relative path for matching: drop the query, a trailing slash and a leading /api. */

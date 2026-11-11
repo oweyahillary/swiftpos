@@ -100,7 +100,10 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   // 2026-11-04: − 5 — PetrolPOS.tsx, which no screen imported (the petrol station sells in CashierScreen since A588), removed.
   // 2026-11-04 (owner, "6 yes"): − 1 — the fuel entry's "Full tank" chip moved with the keypad to @zaptill/ui FuelKeypad;
   // its look (cashier/Forecourt.tsx KEYPAD_LOOK) takes the theme through --act-strong (counted below).
-  ok(`84 inline uses take the theme (found ${themedUses})`, themedUses === 84);
+  // 2026-11-09 (owner, "Takeaway is not readable" x3): + 2 — the Takeaway button and the Floor/Grid toggle used
+  // var(--pos-accent), which is DEFINED NOWHERE (white text on an empty background). Now rgb(var(--act-fill, 16 185 129)),
+  // the branded action fill, so they take the theme and are readable.
+  ok(`86 inline uses take the theme (found ${themedUses})`, themedUses === 86);
   ok('the fuel keypad, the dispensers and the gauges take the theme (cashier/Forecourt.tsx: --act-strong, --pos-*)',
     /const ACCENT = 'rgb\(var\(--act-strong, 34 197 94\)\)';/.test(fs.readFileSync(path.join(posDir, 'cashier/Forecourt.tsx'), 'utf8')));
   ok('A537: the category panel takes the theme (--act-strong)',

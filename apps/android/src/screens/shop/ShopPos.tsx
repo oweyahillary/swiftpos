@@ -7,16 +7,24 @@
  * is this tablet's page: updates, printers, Reset app. Without a connection "No connection — can't sell" covers the PIN
  * pad and the selling screen — covers, never closes: an order on the screen is still there when the connection is back.
  */
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { readTill, type PosSession } from '../../shop/tillSession';
+import { readTill, tillToken, type PosSession } from '../../shop/tillSession';
 import { shopPosHostFor } from '../../shop/printing';
 import { useOnline } from '../../shop/connection';
+import { makeBuffer, sweepRetention } from '../../shop/buffer';
+import { installOfflineWrites } from '../../shop/offlineWrites';
+import { makeReadCache } from '../../shop/offlineReads';
+import { refreshRoster } from '../../shop/roster';
+import { attemptUpgrade } from '../../shop/offlineUpgrade';
+import { OFFLINE_PENDING } from '../../shop/offlinePin';
+import { runReplay, cloudSender } from '../../shop/replay';
+import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
 import PinScreen from './PinScreen';
 import ShopDevice from './ShopDevice';
-import NoConnection from './NoConnection';
 import PrintNotice from './PrintNotice';
+import SyncStatusBar from './SyncStatusBar';
 
 const Selling = lazy(() => import('@zaptill/dashboard-pos').then((m) => ({ default: m.ShopPosSelling })));
 
@@ -31,6 +39,65 @@ type State = { kind: 'loading' } | { kind: 'join' } | { kind: 'ready'; till: Pos
 export default function ShopPos({ version, onReset }: { version: string; onReset: () => Promise<void> }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const online = useOnline();
+
+  // Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7/§4.8): the Shop POS keeps selling offline. One durable buffer for the
+  // tablet; the offline-writes seam queues a sale when there is no connection and hands the screen a provisional answer so
+  // it completes and prints; replay drains the queue when the connection returns; a slow sweep drops long-synced rows.
+  const [buffer] = useState(makeBuffer);
+  // Cold start: the read cache keeps the selling screen's catalogue (pos/init, tables, pumps, printers, order mode) from
+  // the last online load, so the POS opens offline from a cold boot (shop/offlineReads.ts).
+  const [reads] = useState(makeReadCache);
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
+  const replaying = useRef(false);
+
+  // Install the seam ONCE (wraps window.fetch; online or non-cloud calls pass straight through, so Till stage 1 selling is
+  // unchanged). cloudBase is this app's API_URL — the same base the web POS calls, because main.tsx sets the dashboard's
+  // apiUrl to it, so the two cannot drift. The read cache serves the catalogue on a cold offline boot.
+  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads }), [buffer, reads]);
+
+  // Drain the queue to the cloud on open and whenever the connection returns; never two drains at once.
+  useEffect(() => {
+    if (!online || replaying.current) return;
+    replaying.current = true;
+    void runReplay(buffer, cloudSender(async () => { const { token, till } = await tillToken(); return { token, deviceId: till.deviceId }; }))
+      .catch(() => {})
+      .finally(() => { replaying.current = false; });
+  }, [online, buffer]);
+
+  // §4.8 retention: sweep sent rows older than the window, hourly.
+  useEffect(() => {
+    const t = setInterval(() => { void sweepRetention(buffer); }, 60 * 60_000);
+    return () => clearInterval(t);
+  }, [buffer]);
+
+  // Cold start, the sign-in half: while online, keep the roster fresh (for an offline sign-in) and, if someone signed in
+  // while offline, verify their HELD PIN with the cloud the moment the connection returns — upgrading the provisional
+  // session to a real one with no second PIN entry, or signing the person out if their PIN changed on the web (A345).
+  const upgrading = useRef(false);
+  useEffect(() => {
+    if (!online || upgrading.current) return;
+    upgrading.current = true;
+    void (async () => {
+      await refreshRoster();
+      const outcome = await attemptUpgrade(version);
+      if (!outcome) return;
+      if (outcome.state === 'upgraded') {
+        const pos = await import('@zaptill/dashboard-pos');
+        pos.storeCashierSession(outcome.session);   // the real token where api.ts reads it (localStorage)
+        // Hand the LIVE POS context the real token + current permissions — the documented cross-component event the web
+        // POS already uses for a token renewal (apps/dashboard lib/api.ts / POSAuthContext). renewedFrom is the provisional
+        // session's chain id (OFFLINE_PENDING), so this session, and ONLY it, takes the upgrade — never another person who
+        // signed in since.
+        window.dispatchEvent(new CustomEvent('swiftpos:pos-token', { detail: {
+          accessToken: outcome.session.token, refreshToken: outcome.session.refreshToken, permissions: outcome.session.permissions, renewedFrom: OFFLINE_PENDING,
+        } }));
+      } else if (outcome.state === 'rejected') {
+        // A PIN changed or disabled on the web: sign the person out cleanly to the PIN pad (the event POSAuthContext hears).
+        window.dispatchEvent(new CustomEvent('swiftpos:session-expired'));
+      }
+    })().catch(() => {}).finally(() => { upgrading.current = false; });
+  }, [online, version]);
 
   const open = async (till: PosSession | null) => {
     if (!till) { setState({ kind: 'join' }); return; }
@@ -50,7 +117,7 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/pos" element={<PinScreen till={till} version={version} />} />
+        <Route path="/pos" element={<PinScreen till={till} version={version} online={online} />} />
         <Route path="/pos/cashier" element={
           <Suspense fallback={<main className="screen centre"><p className="note">Opening the POS…</p></main>}><Selling /></Suspense>} />
         <Route path="/pos/device" element={<ShopDevice till={till} version={version} onReset={onReset}
@@ -58,7 +125,7 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
         <Route path="*" element={<Navigate to="/pos" replace />} />
       </Routes>
       <PrintNotice />
-      <NoConnection online={online} />
+      <SyncStatusBar store={buffer} />
     </BrowserRouter>
   );
 }

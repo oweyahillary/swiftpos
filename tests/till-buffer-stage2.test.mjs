@@ -39,6 +39,8 @@ eq('POST /orders/:id/void is a void', B.bufferableKind('POST', '/api/orders/abc/
 eq('POST /orders/:id/refund is a refund', B.bufferableKind('POST', '/api/orders/abc/refund'), 'refund');
 eq('POST /orders/:id/pay is a payment', B.bufferableKind('POST', '/orders/abc/pay'), 'payment');
 eq('POST /expenses is an expense', B.bufferableKind('POST', '/api/expenses'), 'expense');
+eq('POST /orders/:id/move-table is an order_op', B.bufferableKind('POST', '/api/orders/abc/move-table'), 'order_op');
+eq('POST /orders/:id/fire-course is an order_op', B.bufferableKind('POST', '/api/orders/abc/fire-course'), 'order_op');
 eq('query strings are dropped', B.bufferableKind('POST', '/api/orders?x=1'), 'order');
 ok('a read is never buffered', B.bufferableKind('GET', '/api/orders') === null);
 ok('a DELETE offline is refused', B.bufferableKind('DELETE', '/api/orders/abc') === null);
@@ -46,6 +48,7 @@ ok('an unknown write is refused (nothing silently vanishes)', B.bufferableKind('
 
 console.log('\n2. The order uuid / idempotency key');
 eq('a void takes the order id from its path', B.orderUuidOf('void', '/api/orders/ORD1/void', {}), 'ORD1');
+eq('a table move takes the order id from its path', B.orderUuidOf('order_op', '/api/orders/ORD1/move-table', { table_number: '5' }), 'ORD1');
 eq('an order takes its body uuid', B.orderUuidOf('order', '/api/orders', { uuid: 'ORD2' }), 'ORD2');
 eq('an expense takes its idempotency_key', B.orderUuidOf('expense', '/api/expenses', { idempotency_key: 'E1' }), 'E1');
 eq('withIdempotencyKey adds the key', B.withIdempotencyKey({ total: 100 }, 'ORD3'), { total: 100, idempotency_key: 'ORD3' });
@@ -98,8 +101,8 @@ ok('an old sent receipt cannot be reprinted offline', B.canReprintOffline(sentOl
 ok('an unsent receipt can always be reprinted', B.canReprintOffline(unsentOld, now) === true);
 
 console.log('\n7. The status bar (Till stage 2)');
-const st = B.bufferStatus([o1, p1, o2, { ...v1, state: 'synced', syncedAt: 't5' }, { ...row('order', 'F1', { seq: 20 }), state: 'failed', tries: B.MAX_TRIES }], false);
-eq('sales waiting counts pending order rows', st.salesWaiting, 2);
+const st = B.bufferStatus([o1, p1, o2, { ...v1, state: 'synced', syncedAt: 't5' }, row('order_op', 'M1', { seq: 15, state: 'pending' }), { ...row('order', 'F1', { seq: 20 }), state: 'failed', tries: B.MAX_TRIES }], false);
+eq('sales waiting counts pending order rows (a pending table move is not a sale)', st.salesWaiting, 2);
 eq('stuck counts parked rows', st.stuck, 1);
 eq('last synced is the newest ack', st.lastSynced, 't5');
 ok('offline is reported', st.online === false);

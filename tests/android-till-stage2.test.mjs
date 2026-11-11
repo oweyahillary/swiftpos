@@ -12,7 +12,9 @@
  *   R  replay (shop/replay.ts): a fake sender drains the queue; ok syncs, a transport failure retries and the sale is
  *      kept; ackFromStatus maps HTTP to ok / retry / failed.
  *   O  the offline-writes seam (shop/offlineWrites.ts): read vs buffer vs refuse; the provisional answer.
- *   P  the offline PIN (shop/offlinePin.ts): a provisional sign-in for a cached person, the reconnect upgrade / refusal.
+ *   C  the offline read cache (shop/offlineReads.ts): cold start — a catalogue GET is cached online and served offline.
+ *   P  the offline PIN (shop/offlinePin.ts, shop/pinVerify.ts): a provisional sign-in for a cached person, the LOCAL bcrypt
+ *      check (a wrong PIN refused at the till), the reconnect upgrade / refusal.
  *   S  checked in source (cannot run here): the shared rule is imported once (no copy); the seam is opt-in; the status bar.
  *
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted):
@@ -20,6 +22,8 @@
  *   - runReplay dropping a retried sale                      → R "a transport failure keeps the sale (retry)"
  *   - ackFromStatus making a 400 a retry                     → R "a 400 is a permanent refusal (failed)"
  *   - offlineDecision buffering an unknown write             → O "an unknown write is refused offline"
+ *   - the seam not caching a read online                     → C "online: the catalogue read is cached as it passes through"
+ *   - the seam reaching the cloud for a cached read offline  → C "offline: the catalogue is served from cache with NO cloud call"
  *   - upgradeDecision upgrading on a 401                     → P "a PIN refused on reconnect is rejected"
  */
 import fs from 'node:fs';
@@ -44,8 +48,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'till2-'));
 fs.writeFileSync(path.join(tmp, 'entry.ts'), `
   export * from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/buffer.ts'))};
   export { runReplay, ackFromStatus } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/replay.ts'))};
-  export { offlineDecision, provisionalOrderResponse } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineWrites.ts'))};
-  export { beginOfflineSignIn, upgradeDecision, deferVerify, OfflinePinRefused } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlinePin.ts'))};
+  export { offlineDecision, provisionalOrderResponse, installOfflineWrites } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineWrites.ts'))};
+  export { isCacheableRead, readCacheKey, cachedResponse } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineReads.ts'))};
+  export { beginOfflineSignIn, upgradeDecision, deferVerify, OfflinePinRefused, rosterFromWire, OFFLINE_PENDING } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlinePin.ts'))};
 `);
 // Resolve the shared rule to its source (the app's node_modules does not link @zaptill/core for a node bundle).
 esbuild.buildSync({
@@ -114,20 +119,105 @@ const run = async () => {
   console.log('\nO. The offline-writes seam (shop/offlineWrites.ts)');
   eq('a GET is a read (left to the screens)', M.offlineDecision('GET', '/api/orders'), 'read');
   eq('a sale is buffered', M.offlineDecision('POST', '/api/orders'), 'buffer');
+  eq('a table move is buffered (restaurant, offline)', M.offlineDecision('POST', '/api/orders/abc/move-table'), 'buffer');
+  eq('firing a course is buffered (restaurant, offline)', M.offlineDecision('POST', '/api/orders/abc/fire-course'), 'buffer');
   eq('an unknown write is refused offline', M.offlineDecision('POST', '/api/settings/theme'), 'refuse');
   {
-    const r = M.provisionalOrderResponse('/api/orders', { uuid: 'O9', total: 10 }, '2026-11-07T10:00:00Z');
+    const r = M.provisionalOrderResponse('/api/orders', { uuid: 'O9', order_number: 'ORD-9', total: 10 }, '2026-11-07T10:00:00Z');
     ok('the provisional answer carries the uuid and offline flag', r.id === 'O9' && r.uuid === 'O9' && r.offline === true && r.status === 'completed');
+    // The web POS (PaymentModal) reads camelCase { orderId, orderNumber }; without them the receipt shows a blank number.
+    eq('the provisional answer gives the orderId + orderNumber the web POS reads', [r.orderId, r.orderNumber], ['O9', 'ORD-9']);
+    eq('the provisional answer carries the ring-up time (created_at)', r.created_at, '2026-11-07T10:00:00Z');
+  }
+  {
+    // The seam end-to-end: offline, a sale POST is buffered (created_at stamped into the queued body for replay pricing)
+    // and answered provisionally with NO cloud call; online, a call passes straight through.
+    const store = new M.InMemoryBuffer();
+    const realFetch = globalThis.fetch;
+    let passedThrough = 0;
+    const fakeCloud = async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    globalThis.fetch = async (...a) => { passedThrough++; return fakeCloud(...a); };
+    let offline = true;
+    const restore = M.installOfflineWrites({ store, isOffline: () => offline, cloudBase: 'https://dev-api.zaptill.co.ke', now: () => '2026-11-07T11:00:00Z' });
+    const res = await globalThis.fetch('https://dev-api.zaptill.co.ke/api/orders', { method: 'POST', body: JSON.stringify({ uuid: 'Z1', order_number: 'ORD-Z1', total: 50 }) });
+    const ans = await res.json();
+    ok('offline: a sale is answered provisionally with no cloud call', res.status === 200 && ans.orderId === 'Z1' && ans.offline === true && passedThrough === 0);
+    eq('offline: the queued body carries created_at for replay pricing', (await store.all())[0].req.body.created_at, '2026-11-07T11:00:00Z');
+    offline = false;
+    await globalThis.fetch('https://dev-api.zaptill.co.ke/api/pos/init', { method: 'GET' });
+    ok('online: a call passes straight through to the cloud', passedThrough === 1);
+    restore();
+    globalThis.fetch = realFetch;
+  }
+
+  console.log('\nC. The offline read cache — cold start (shop/offlineReads.ts)');
+  eq('pos/init is a cacheable catalogue read', M.isCacheableRead('/api/pos/init?branch_id=BR1'), true);
+  eq('tables (parking bays) is cacheable', M.isCacheableRead('/api/tables?branch_id=BR1&slot_type=parking_bay'), true);
+  eq('a sale is NOT a cacheable read', M.isCacheableRead('/api/orders'), false);
+  eq('an unrelated GET is NOT cached', M.isCacheableRead('/api/settings/theme'), false);
+  eq('the cache key keeps the query (dining vs parking never collide)', M.readCacheKey('/api/tables?branch_id=BR1&slot_type=parking_bay'), '/api/tables?branch_id=BR1&slot_type=parking_bay');
+  {
+    // The read half of the seam end-to-end: online, a catalogue GET passes through AND is cached; offline, the same GET is
+    // answered from the cache (so usePOSData opens the real catalogue); an uncached read offline falls through to the screen.
+    const mem = new Map();
+    const reads = {
+      get: async (k) => mem.get(k) ?? null,
+      put: async (k, status, body, at) => { mem.set(k, { status, body, at }); },
+    };
+    const realFetch = globalThis.fetch;
+    let cloudCalls = 0;
+    globalThis.fetch = async () => { cloudCalls++; return new Response(JSON.stringify({ products: [{ id: 'P1' }], businessType: 'restaurant' }), { status: 200, headers: { 'Content-Type': 'application/json' } }); };
+    const store = new M.InMemoryBuffer();
+    let offline = false;
+    const restore = M.installOfflineWrites({ store, isOffline: () => offline, cloudBase: 'https://dev-api.zaptill.co.ke', reads, now: () => '2026-11-10T12:00:00Z' });
+
+    const liveRes = await globalThis.fetch('https://dev-api.zaptill.co.ke/api/pos/init?branch_id=BR1', { method: 'GET' });
+    const live = await liveRes.json();
+    ok('online: the catalogue read reaches the cloud and is answered', cloudCalls === 1 && live.products[0].id === 'P1');
+    ok('online: the catalogue read is cached as it passes through', mem.has('/api/pos/init?branch_id=BR1'));
+
+    offline = true;
+    const cachedRes = await globalThis.fetch('https://dev-api.zaptill.co.ke/api/pos/init?branch_id=BR1', { method: 'GET' });
+    const cached = await cachedRes.json();
+    ok('offline: the catalogue is served from cache with NO cloud call', cloudCalls === 1 && cached.products[0].id === 'P1' && cachedRes.headers.get('x-zaptill-offline-cache') === '2026-11-10T12:00:00Z');
+
+    const missRes = await globalThis.fetch('https://dev-api.zaptill.co.ke/api/tables?branch_id=BR1', { method: 'GET' });
+    ok('offline: an uncached catalogue read falls through to the screen (its own error)', cloudCalls === 2 && missRes.status === 200);
+
+    restore();
+    globalThis.fetch = realFetch;
   }
 
   console.log('\nP. The offline PIN (shop/offlinePin.ts)');
+  {
+    // rosterFromWire: the cloud's branch-staff rows → the cached roster, keeping only a usable (id + name) row.
+    const wire = [
+      { staff_id: 'ST1', name: 'Jane', role_name: 'cashier', permissions: { 'sales.create': true }, pin_hash: '$2b$x' },
+      { staff_id: '', name: 'No id', role_name: 'cashier', permissions: {}, pin_hash: '$2b$y' },
+      { name: 'No staff_id' },
+    ];
+    const mapped = M.rosterFromWire(wire);
+    eq('rosterFromWire keeps only the usable row (id + name)', mapped.length, 1);
+    eq('rosterFromWire maps staff_id/role_name/pin_hash', [mapped[0].id, mapped[0].role, mapped[0].pinHash], ['ST1', 'cashier', '$2b$x']);
+    eq('rosterFromWire on a non-array is empty', M.rosterFromWire(null), []);
+  }
   const roster = [{ id: 'ST1', name: 'Jane', role: 'cashier', permissions: { 'sales.create': true }, pinHash: '$2b$x' }];
   {
     const { session, held } = M.beginOfflineSignIn(roster, till, 'ST1', '1234', M.deferVerify);
     ok('a provisional session for a cached person (no token)', session.staffId === 'ST1' && session.staffName === 'Jane' && session.token === '' && held.pin === '1234');
+    eq('the provisional session carries the OFFLINE_PENDING chain id (only it takes the upgrade)', session.refreshToken, M.OFFLINE_PENDING);
   }
   ok('a person not on this POS is refused', (() => { try { M.beginOfflineSignIn(roster, till, 'NOPE', '1', M.deferVerify); return false; } catch (e) { return e instanceof M.OfflinePinRefused; } })());
   ok('a local verifier that says no is refused', (() => { try { M.beginOfflineSignIn(roster, till, 'ST1', 'x', () => 'no'); return false; } catch { return true; } })());
+  {
+    // The offline sign-in honours a LOCAL verifier so a wrong PIN is refused AT THE TILL, not only on reconnect. The real
+    // verifier is shop/pinVerify.ts bcryptVerify (bcryptjs) — source-checked below and bundled into the APK by android.yml;
+    // bcryptjs is not installed for this node suite, so the seam is proven here with a stand-in verifier.
+    const who = [{ id: 'ST1', name: 'Jane', role: 'cashier', permissions: {}, pinHash: '$2b$x' }];
+    const verify = (_hash, pin) => (pin === '1234' ? 'ok' : 'no');
+    ok('offline sign-in refuses a wrong PIN locally', (() => { try { M.beginOfflineSignIn(who, till, 'ST1', '9999', verify); return false; } catch (e) { return e instanceof M.OfflinePinRefused; } })());
+    ok('offline sign-in accepts the right PIN', M.beginOfflineSignIn(who, till, 'ST1', '1234', verify).session.staffId === 'ST1');
+  }
   {
     const held = { staffId: 'ST1', branchId: 'BR1', pin: '1234' };
     const up = M.upgradeDecision(held, till, { status: 200, body: { staff: { id: 'ST1', name: 'Jane', role: 'cashier' }, accessToken: 'tok', refreshToken: 'r', permissions: {} } });
@@ -140,9 +230,22 @@ const run = async () => {
   console.log('\nS. Checked in source');
   ok('the buffer imports the one shared rule (no copy)', read('apps/android/src/shop/buffer.ts').includes("from '@zaptill/core/tillBuffer'"));
   ok('replay imports the one shared rule', read('apps/android/src/shop/replay.ts').includes("from '@zaptill/core/tillBuffer'"));
-  ok('the offline-writes seam is opt-in (returns a restore fn, not auto-installed)', /export function installOfflineWrites/.test(read('apps/android/src/shop/offlineWrites.ts')) && !read('apps/android/src/main.tsx').includes('installOfflineWrites'));
+  ok('the offline-writes seam returns a restore fn and is wired in the Shop POS entry', /export function installOfflineWrites/.test(read('apps/android/src/shop/offlineWrites.ts')) && read('apps/android/src/screens/shop/ShopPos.tsx').includes('installOfflineWrites'));
+  ok('the Shop POS drains the queue on reconnect (runReplay) and mounts the status bar', (() => { const s = read('apps/android/src/screens/shop/ShopPos.tsx'); return s.includes('runReplay') && s.includes('SyncStatusBar'); })());
+  ok('offline: the old "can\'t sell" cover is gone — offline selling + offline PIN work, the SyncStatusBar shows the state', (() => { const s = read('apps/android/src/screens/shop/ShopPos.tsx'); return !s.includes('NoConnection') && s.includes('SyncStatusBar') && !fs.existsSync(path.join(ROOT, 'apps/android/src/screens/shop/NoConnection.tsx')); })());
   ok('the status bar reads the buffer status and the live online state', (() => { const s = read('apps/android/src/screens/shop/SyncStatusBar.tsx'); return s.includes('bufferStatusOf') && s.includes('useOnline'); })());
   ok('offline PIN upgrades on reconnect (verify-pin), the desktop model', read('apps/android/src/shop/offlinePin.ts').includes('verify-pin') || read('apps/android/src/shop/offlinePin.ts').includes('upgradeDecision'));
+  // Cold start — the sign-in half (Part B): the roster is pulled while online, the PIN pad signs in offline from the
+  // cache, the held PIN lives in the Keystore, and a reconnect upgrades it (or signs the person out).
+  ok('the roster is pulled from branch-staff and cached (shop/roster.ts)', (() => { const s = read('apps/android/src/shop/roster.ts'); return s.includes('/pos/branch-staff') && s.includes('cacheRoster'); })());
+  // The server must actually HAND the roster to the Android Shop POS: the branch-staff gate is a POS-device surface
+  // (desktop OR android-till via isPosDeviceSurface), not strictly 'desktop' — else the tablet is 403'd and its offline
+  // roster stays empty ("No staff are saved on this POS yet"). This is the one line that made offline sign-in unreachable.
+  ok('branch-staff accepts a POS-device surface, not desktop-only (apps/server routes/pos.ts)', (() => { const s = read('apps/server/src/routes/pos.ts'); return /branch-staff[\s\S]*?isPosDeviceSurface\(req\.surface\)/.test(s) && !/'\/branch-staff'[\s\S]{0,400}req\.surface !== 'desktop'/.test(s); })());
+  ok('the PIN screen signs in offline from the cached roster', (() => { const s = read('apps/android/src/screens/shop/PinScreen.tsx'); return s.includes('beginOfflineSignIn') && s.includes('readRoster') && s.includes('holdPin'); })());
+  ok('the offline PIN is checked locally with bcrypt (shop/pinVerify.ts), not only on reconnect', (() => { const v = read('apps/android/src/shop/pinVerify.ts'); const p = read('apps/android/src/screens/shop/PinScreen.tsx'); return v.includes("from 'bcryptjs'") && v.includes('compareSync') && p.includes('bcryptVerify'); })());
+  ok('the held PIN lives in the Keystore (secrets pos.heldPin) and is cleared on a fresh PIN screen', read('apps/android/src/device/secrets.ts').includes('pos.heldPin') && read('apps/android/src/screens/shop/PinScreen.tsx').includes('clearHeldPin'));
+  ok('the Shop POS refreshes the roster and upgrades a held PIN when online (shop/offlineUpgrade.ts)', (() => { const s = read('apps/android/src/screens/shop/ShopPos.tsx'); return s.includes('refreshRoster') && s.includes('attemptUpgrade') && s.includes('swiftpos:pos-token'); })());
   ok('the status bar styles exist', read('apps/android/src/styles.css').includes('.sync-bar'));
   ok('the design doc describes Till stage 2', /### Till stage 2 — Keeps selling offline/.test(read('docs/ANDROID-APP-DESIGN.md')));
 };

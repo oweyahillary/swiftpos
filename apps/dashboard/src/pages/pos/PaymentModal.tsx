@@ -26,6 +26,7 @@ import { QUICK_CASH_LOOK, TIP_LOOK, DISCOUNT_LOOK } from './paymentLooks';
 import { printReceipt } from '../../lib/printReceipt';
 import { printBytesToServer, getQZStatus } from '../../lib/localPrintServer';
 import { shopPosHost, serverPrintOrder } from '../../lib/shopPos';   // Till stage 1: the Android Shop POS
+import { useBackDismiss } from '../../hooks/useBackDismiss';   // Android hardware back closes this screen
 import { renderEscPos } from '../../lib/escposRenderer';
 import { buildReceiptOrder, buildReceiptBusinessConfig } from '../../lib/buildReceiptOrder';
 import { usePOSAuth } from '../../context/POSAuthContext';
@@ -537,6 +538,8 @@ export default function PaymentModal({
     void handleSplitCharge([{ id: 'c2b', method: 'mpesa', amount: grandTotal, reference: p.trans_id }]);
   }
   function closeModal() { claims.giveBackAll(); onClose(); }
+  // Android hardware back: on the receipt screen behave like "New order"; otherwise like the ✕. Inert on web/desktop.
+  useBackDismiss(completedOrder ? () => onSuccess(completedOrder.orderNumber) : closeModal, true);
 
   // ── Split charge ──────────────────────────────────────────────────────────
   async function handleSplitCharge(legs: PaymentLeg[]) {
@@ -961,7 +964,7 @@ export default function PaymentModal({
                     <input
                       type="number" value={tendered}
                       onChange={e => setTendered(e.target.value)}
-                      placeholder={fmt(grandTotal)} min={grandTotal} autoFocus
+                      placeholder={fmt(grandTotal)} min={grandTotal} autoFocus={shopPosHost() === null}
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-action-500 transition-colors text-lg font-semibold"
                     />
                   </div>
@@ -1093,7 +1096,7 @@ export default function PaymentModal({
                     {quote ? `${platformName} prices: ${changesText(quote.changes)}` : `${platformName} — normal prices`} · {currency} {fmt(grandTotal)}
                   </p>
                 </div>
-                <input type="text" value={platformRef} onChange={(e) => setPlatformRef(e.target.value)} autoFocus
+                <input type="text" value={platformRef} onChange={(e) => setPlatformRef(e.target.value)} autoFocus={shopPosHost() === null}
                   placeholder={branchButtons.find((b) => b.code === platform)?.reference ?? 'Order #'}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500" />
                 <div className="flex gap-2">

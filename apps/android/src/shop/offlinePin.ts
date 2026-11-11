@@ -38,6 +38,11 @@ export const deferVerify: VerifyLocally = () => 'deferred';
 
 export class OfflinePinRefused extends Error {}
 
+/** The provisional (offline) session's refresh-token chain id. It is NOT a real token — it tags the one session that a
+ *  reconnect upgrade may take, so the upgrade (dispatched as the web POS's 'swiftpos:pos-token' event, matched on this
+ *  chain id) can never land on a different person who has signed in since (ShopPos.tsx). */
+export const OFFLINE_PENDING = 'offline-pending';
+
 type Till = { branchId: string; branchName: string; businessType: string; currency: string };
 
 /**
@@ -52,7 +57,9 @@ export function beginOfflineSignIn(
   if (!who) throw new OfflinePinRefused('This person is not on this POS yet. Sign in once while online, then they can sign in offline.');
   if (verify(who.pinHash, pin) === 'no') throw new OfflinePinRefused('That PIN is not right.');
   const session = cashierSessionFrom({ staff: { id: who.id, name: who.name, role: who.role }, permissions: who.permissions }, till);
-  return { session, held: { staffId: who.id, branchId: till.branchId, pin } };
+  // Tag the provisional session's chain (refreshToken) so ONLY it takes the reconnect upgrade — never another person who
+  // has signed in since. It is not a usable token (there are no 401s offline; the upgrade replaces it with a real pair).
+  return { session: { ...session, refreshToken: OFFLINE_PENDING }, held: { staffId: who.id, branchId: till.branchId, pin } };
 }
 
 /** What a reconnect verify answer means for a held offline sign-in (PURE), mirroring the desktop's upgrade (A345). */
@@ -71,6 +78,25 @@ export function upgradeDecision(
     return { state: 'upgraded', session: cashierSessionFrom(r.body as { staff: { id: string; name: string; role?: string | null } }, till) };
   }
   return { state: 'rejected', reason: r.body?.error || 'That PIN was refused when the POS reconnected. Please sign in again.' };
+}
+
+/**
+ * The branch-staff rows the cloud sends (GET /api/pos/branch-staff — apps/server routes/pos.ts) mapped to the roster this
+ * POS caches. PURE. Keeps only a usable row (an id, a name, and a bcrypt pin_hash the server already filtered to), so an
+ * offline sign-in is never offered for a person who could not be upgraded on reconnect.
+ */
+export function rosterFromWire(rows: unknown): RosterStaff[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((r) => {
+    const o = (r && typeof r === 'object') ? r as Record<string, unknown> : {};
+    const id = typeof o.staff_id === 'string' ? o.staff_id : '';
+    const name = typeof o.name === 'string' ? o.name : '';
+    if (!id || !name) return [];
+    const permissions = (o.permissions && typeof o.permissions === 'object') ? o.permissions as Record<string, boolean> : {};
+    const role = typeof o.role_name === 'string' ? o.role_name : null;
+    const pinHash = typeof o.pin_hash === 'string' ? o.pin_hash : null;
+    return [{ id, name, role, permissions, pinHash }];
+  });
 }
 
 // ── the roster cache (secure storage) ────────────────────────────────────────────────────────────────────────────────

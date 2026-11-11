@@ -159,8 +159,8 @@ export { renderToStaticMarkup } from 'react-dom/server';`);
     && desk.includes('const catPanel = useCategoryPanel(categoryLayout);') && order(desk) && desk.includes('label={words.categories} />'));
   ok('the web POS: pos/init\'s value (usePOSData) into the panel\'s state, and to the minimart screen; the bar under the menu bar',
     read('apps/dashboard/src/pages/pos/cashier/usePOSData.ts').includes('setCategoryLayout(categoryLayoutOf(init.posCategoryLayout));')
-    && cash.includes('const catPanel = useCategoryPanel(categoryLayout);') && cash.includes('categoryLayout={categoryLayout}') && order(cash)
-    && mini.includes('const catPanel = useCategoryPanel(categoryLayout);') && order(mini));
+    && cash.includes('const catPanel = useCategoryPanel(categoryLayout, shopPosHost() === null);') && cash.includes('categoryLayout={categoryLayout}') && order(cash)
+    && mini.includes('const catPanel = useCategoryPanel(categoryLayout, shopPosHost() === null);') && order(mini));
   ok('every screen tells the chip the layout', [desk, cash, mini].every((s) => /<CategoryChip label=\{[^}]+\} onClear=\{clearCatChip\} panel=\{catPanel\} \/>/.test(s)));
   ok('no screen keeps a category row of its own', [desk, cash, mini].every((s) => !/setActiveCategory\(cat\.id\)|s\.catRow|s\.catBtn/.test(s)));
   const deskSet = read('apps/desktop/src/renderer/components/CategoryLayoutPanel.tsx');

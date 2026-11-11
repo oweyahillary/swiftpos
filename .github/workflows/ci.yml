@@ -143,15 +143,19 @@ jobs:
           fi
           echo "No tracked .env files."
 
-      # Android Stage 0: ZapTill's Android release key is the owner's alone and reaches CI only as secrets
-      # (.github/workflows/android.yml). A keystore in the repository would hand anyone the power to sign "ZapTill".
-      - name: Assert no committed keystore files
+      # Android Stage 0: ZapTill's Android RELEASE key is the owner's alone and reaches CI only as secrets
+      # (.github/workflows/android.yml). A release keystore in the repository would hand anyone the power to sign "ZapTill".
+      # THE ONE EXCEPTION is the DEBUG keystore (owner, 2026-11-10): it is committed on purpose so every debug build shares
+      # one signing key, which keeps the till's Settings.Secure.ANDROID_ID (and so its device_id) stable across rebuilds —
+      # that is what lets a reinstalled test POS rejoin the same seat. It holds the STANDARD public Android debug credentials
+      # and CANNOT sign a release build, so it gives away nothing. Any OTHER keystore still fails this gate.
+      - name: Assert no committed keystore files (the fixed debug key excepted)
         run: |
-          found=$(git ls-files | grep -Ei '\.(jks|keystore|p12)$' || true)
+          found=$(git ls-files | grep -Ei '\.(jks|keystore|p12)$' | grep -vxF 'apps/android/android/app/debug.keystore' || true)
           if [ -n "$found" ]; then
-            echo "::error::Keystore file(s) tracked in git:"; echo "$found"; exit 1
+            echo "::error::Non-debug keystore file(s) tracked in git:"; echo "$found"; exit 1
           fi
-          echo "No tracked keystore files."
+          echo "No tracked keystore files (debug key excepted)."
 
       # This repo previously leaked a hardcoded Ed25519 signing key to a public
       # remote (see handoffs/handoff-14-07-2026.md §1), and a service-role key in

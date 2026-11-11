@@ -281,7 +281,7 @@ try {
     assert.match(panel, /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/);
     assert.match(panel, /try \{ return parsePanelPrefs\(window\.localStorage\.getItem\(PANEL_PREFS_KEY\)\); \} catch/);
     assert.match(panel, /try \{ window\.localStorage\.setItem\(PANEL_PREFS_KEY, panelPrefsText\(p\)\); \} catch/);
-    assert.match(panel, /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/);
+    assert.match(panel, /const picked = useCallback\(\(\) => setOpen\(pinnable \? panelOpenAfterPick\(prefs\) : false\)/);
     assert.match(look, /minHeight: 44/);   // touch-sized rows
     assert.match(look, /^import SharedCategoryPanel, \{[^}]*\} from '@zaptill\/ui\/CategoryPanel';$/m);   // the shared panel, with the web's look
     assert.match(look, /^export default withLook<CategoryPanelProps>\(SharedCategoryPanel, LOOK\);$/m);

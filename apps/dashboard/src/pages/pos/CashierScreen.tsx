@@ -31,6 +31,7 @@ import NoteModal from './NoteModal';
 import { noteLines } from '@zaptill/core/orderNotes';
 import MinimartPOS from './MinimartPOS';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton, CategoryBar } from './cashier/CategoryPanel';   // A537; A566; A580; 8n
+import { shopPosHost } from '../../lib/shopPos';   // Till stage 1: the Android Shop POS (no category pin on the tablet)
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '@zaptill/core/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
@@ -44,6 +45,7 @@ import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreez
 import { useStockView } from '../../lib/useStockView';   // A563
 import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '@zaptill/core/stockGate';   // A563
 import { useToast } from '../../hooks/useToast';
+import { useBackDismiss } from '../../hooks/useBackDismiss';   // Android hardware back closes the topmost overlay
 import { businessTerms, foodAreas } from '@zaptill/core/businessTerms';   // A573
 import { COURSES } from '@zaptill/core/courses';   // owner 2026-11-04: the courses, one list with the desktop POS
 import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '@zaptill/core/menuHours';   // A578: menus by time of day; A580: Later
@@ -419,6 +421,17 @@ export default function CashierScreen() {
   // Petrol modal
   const [showPumpModal, setShowPumpModal] = useState(false);
   const [pendingPump, setPendingPump] = useState<Pump | null>(null);
+  // Android hardware back closes the topmost open overlay (hooks/useBackDismiss.ts); inert on web/desktop. closeFuelKeypad
+  // is a hoisted function declaration below, safe to reference here.
+  useBackDismiss(() => { setShowCoversModal(false); setPendingTable(null); }, showCoversModal);
+  useBackDismiss(() => { setShowParkingModal(false); setPendingBay(null); }, showParkingModal);
+  useBackDismiss(() => { setShowPumpModal(false); setPendingPump(null); }, showPumpModal);
+  useBackDismiss(closeFuelKeypad, !!fuelEntry);
+  // Owner, 2026-11-09 ("back doesn't work"): with an order open and a slot picker to return to (restaurant / parking /
+  // petrol), the hardware/gesture back goes order → tables (goBackToSlotPicker, the "← Tables" action). It sits BELOW any
+  // open overlay in the LIFO stack, so a back press closes a modal first and leaves the order only on the next press. A
+  // products-only business (minimart / retail) has nowhere to go back to, so nothing is registered and back is a no-op there.
+  useBackDismiss(goBackToSlotPicker, (isRestaurant || isParking || isPetrol) && view === 'products' && !!activeKey);
   // Fuel entry state now comes from useCart hook above
 
   const [now, setNow] = useState(Date.now());
@@ -454,10 +467,28 @@ export default function CashierScreen() {
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
   }, []);
+  // Android Shop POS: cache the client's logo AND brand colours (from pos/init) so the native shell — the PIN pad, the
+  // start and setup screens — wears them before the next sign-in, as the desktop lock screen does (A368). Written only on
+  // the tablet; the web/desktop POS never touch these keys.
+  useEffect(() => {
+    if (shopPosHost() === null) return;
+    const b = customerContent?.brand;
+    try {
+      if (b?.logo) localStorage.setItem('swiftpos_shop_logo', b.logo);
+      if (b && (b.primaryHex || b.secondaryHex || b.accentHex)) {
+        localStorage.setItem('swiftpos_shop_brand', JSON.stringify({ primary: b.primaryHex, secondary: b.secondaryHex, accent: b.accentHex }));
+      }
+    } catch { /* storage off: the shell shows the default mark and teal accent */ }
+  }, [customerContent]);
+  // Phone POS: the shared POS text is sized for a desktop monitor; bump the read-at-a-glance sizes a notch on a phone.
+  const big = (base: React.CSSProperties, px: number): React.CSSProperties => (isPhone ? { ...base, fontSize: px } : base);
   const [showPrinterSettings, setShowPrinterSettings] = useState(false);
   const { settings: printerSettings, save: savePrinterSettings, reset: resetPrinterSettings } = usePrinterSettings();
   // branchPrinters comes from usePOSData hook above
   const [showDrawer, setShowDrawer] = useState(false);
+  // Owner, 2026-11-09: the phone's "⋯ More" sheet (dark mode, help, and any gated cash actions) from the bottom nav.
+  const [showMore, setShowMore] = useState(false);
+  useBackDismiss(() => setShowMore(false), showMore);   // Android back closes the More sheet
   const [discountState, setDiscountState] = useState<DiscountState | null>(null);
   const [floorMode, setFloorMode]         = useState(true);
   // A188: only use the absolute-positioned floor plan when tables actually carry a
@@ -695,6 +726,7 @@ export default function CashierScreen() {
     }
     setActiveKey(null);
     setCart([]);
+    setCartSheet(false);   // phone: close the full-screen cart so the tables/bays/pumps grid shows, not an empty "New Order" sheet
     if (isRestaurant) setView('tables');
     else if (isParking) setView('bays');
     else if (isPetrol) setView('pumps');
@@ -930,7 +962,7 @@ export default function CashierScreen() {
   // collapse, and it should start collapsed by default?"): the category bar (and A464's fade at its right edge) became a
   // left panel behind ☰ — collapsed at start, pinned open if the cashier pins it, the business's menus as tabs on top.
   // 8n (owner, 2026-11-05): the branch's choice — with 'top', CategoryBar instead of ☰, the chip and the panel.
-  const catPanel = useCategoryPanel(categoryLayout);
+  const catPanel = useCategoryPanel(categoryLayout, shopPosHost() === null);   // 8n; no category pin on the Android Shop POS
   const activeMenu = catPanel.prefs.menu;
   const menuCats = useMemo(() => categoriesForMenu(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
   const menuFilterScope = useMemo(() => menuScope(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
@@ -1396,14 +1428,15 @@ export default function CashierScreen() {
           --pos-text: #0f172a; --pos-text2: #334155; --pos-text3: #64748b; --pos-text4: #94a3b8;
           --pos-input: #ffffff; --pos-input-border: #d5dae3;
           --pos-card: #ffffff; --pos-modal: #ffffff;
-          --pos-free-bg: linear-gradient(160deg,#e7fbf0 0%,#bbf3d5 100%);
-          --pos-free-border: rgba(16,185,129,0.45);
-          --pos-free-shadow: 0 1px 2px rgba(6,95,70,0.10),0 8px 18px rgba(6,95,70,0.12),inset 0 1px 0 rgba(255,255,255,0.75);
-          --pos-free-name: #065f46; --pos-free-sub: #059669;
-          --pos-occ-bg: linear-gradient(160deg,#fef3c7 0%,#fde4a6 100%);
-          --pos-occ-border: rgba(217,119,6,0.5);
-          --pos-occ-shadow: 0 1px 2px rgba(146,64,14,0.10),0 8px 18px rgba(146,64,14,0.12),inset 0 1px 0 rgba(255,255,255,0.75);
-          --pos-occ-name: #78350f; --pos-occ-label: #b45309;
+          /* Neutral cards; status is read from the corner dot (green = free, amber = occupied), not the whole card. */
+          --pos-free-bg: #ffffff;
+          --pos-free-border: #e3e8ef;
+          --pos-free-shadow: 0 1px 2px rgba(15,23,42,0.06),0 6px 16px rgba(15,23,42,0.08);
+          --pos-free-name: #0f172a; --pos-free-sub: #64748b;
+          --pos-occ-bg: #fffaf0;
+          --pos-occ-border: #f3cd8e;
+          --pos-occ-shadow: 0 1px 2px rgba(146,64,14,0.06),0 6px 16px rgba(146,64,14,0.10);
+          --pos-occ-name: #0f172a; --pos-occ-label: #b45309;
         }
       ` : `
         [data-pos-theme="dark"] {
@@ -1428,7 +1461,10 @@ export default function CashierScreen() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header style={isPhone ? { ...s.header, padding: '0 8px', gap: 8 } : s.header}>
         <div style={isPhone ? { ...s.headerLeft, minWidth: 0, flexShrink: 1 } : s.headerLeft}>
-          <span style={s.logoMark}>⚡</span>
+          {/* The client's logo on premium (themes) businesses — the same gated raster the customer screen wears; else the ⚡ mark. */}
+          {customerContent?.brand?.logo
+            ? <img src={customerContent.brand.logo} alt="" style={s.headerLogo} />
+            : <span style={s.logoMark}>⚡</span>}
           <div>
             <div style={s.branchLabel}>{session?.branchName}</div>
             <div style={s.staffLabel}>{session?.staffName} · {session?.role}</div>
@@ -1475,14 +1511,13 @@ export default function CashierScreen() {
           </span>
         </div>
 
-        <div style={isPhone ? { ...s.headerRight, minWidth: 0, flexShrink: 1, overflowX: 'auto', justifyContent: 'flex-start' } : s.headerRight}>
-          {!isPhone && <span style={s.clock}>{clockStr}</span>}
-          {/* Theme toggle */}
-          <button
-            onClick={togglePosTheme}
-            title={posTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-            style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
-          >{posTheme === 'light' ? '🌙' : '☀️'}</button>
+        {/* On the phone the action buttons move OFF the top into the bottom nav (owner, 2026-11-09): the top keeps only the
+            logo, the business name and the mode word. On desktop/web the header actions stay. */}
+        {!isPhone && (
+        <div style={s.headerRight}>
+          <span style={s.clock}>{clockStr}</span>
+          {/* Theme, the customer screen and Help moved OFF the header into the ☰ menu (owner, 2026-11-09 — the web POS
+              header had too much; match the desktop app). */}
           {/* Printer settings — A490: stations.manage */}
           {canSetPrinters && (
             <button
@@ -1491,15 +1526,7 @@ export default function CashierScreen() {
               title="Printer settings"
             >🖨</button>
           )}
-          {/* A606: the customer screen — a second window the cashier drags to the customer's monitor */}
-          {!isPhone && (
-            <button
-              style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
-              onClick={() => { openCustomerScreenWindow(); }}
-              title="Open customer screen — drag the new window to the customer's screen, then press F11"
-              data-testid="open-customer-screen"
-            >🖥 Customer screen</button>
-          )}
+          {/* A606: the customer screen (a second window for the customer's monitor) now lives in the ☰ menu. */}
           {/* A607: the customer for this sale — name, phone, KRA PIN (eTIMS); typed by the cashier or the customer */}
           <button
             style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
@@ -1511,12 +1538,7 @@ export default function CashierScreen() {
             onClick={() => setShowDrawer(true)}
             title="Menu"
           >☰ Menu</button>
-          {/* Z-Report — all cashiers need this to reconcile their shift */}
-          <button
-            style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
-            onClick={() => setShowZReport(true)}
-            title="Z-Report"
-          >📊 Z-Report</button>
+          {/* Z-Report is no longer an any-time button — it prints when the shift is CLOSED (owner, 2026-11-09). */}
           {currentShift && (
             <>
               {/* A599: with Attendance on (premium) everyone punches on the attendance device — the PIN clock-in is hidden. */}
@@ -1525,20 +1547,23 @@ export default function CashierScreen() {
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
               >⏱ Clock</button>}
-              {/* A594: for everyone on the drawer — without the right, a manager approves on the spot (ShiftModal). */}
-              {(<>
-              <button
-                style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
-                onClick={() => setShiftModal('float')}
-                title="Cash In/Out"
-              >💵 Float</button>
-              {/* A362: petty cash out of this drawer — any cashier on the shift, as at the till */}
-              <button
-                style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
-                onClick={() => setShiftModal('expense')}
-                title="Record an expense"
-              >🧾 Expense</button>
-              </>)}
+              {/* Cash in/out and expenses are RIGHTS, OFF by default for cashiers (owner, 2026-11-09): hidden unless the
+                  person holds the right (a manager does; a cashier granted shifts.cash_movements / shifts.cash_out /
+                  expenses.record sees them). Keys are manager-level in the catalogue, so a plain cashier never sees them. */}
+              {(hasPermission('shifts.cash_movements') || hasPermission('shifts.cash_out')) && (
+                <button
+                  style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
+                  onClick={() => setShiftModal('float')}
+                  title="Cash In/Out"
+                >💵 Float</button>
+              )}
+              {hasPermission('expenses.record') && (
+                <button
+                  style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
+                  onClick={() => setShiftModal('expense')}
+                  title="Record an expense"
+                >🧾 Expense</button>
+              )}
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', marginRight: 4 }}
                 onClick={() => setShiftModal('close')}
@@ -1546,11 +1571,61 @@ export default function CashierScreen() {
               >🔒 End Shift</button>
             </>
           )}
-          {/* 0.6.35 (A384): "What to do when" — a new tab, so the cart in progress is never lost. */}
-          <button style={s.lockBtn} data-testid="webpos-help" onClick={() => window.open('/help', '_blank', 'noopener')}>? Help</button>
-          <button style={s.lockBtn} onClick={() => setShowLockConfirm(true)}>🔒 Lock</button>
+          {/* Help moved into the ☰ menu (owner, 2026-11-09). Sign out (was "Lock") takes the person back to the PIN pad. */}
+          <button style={s.lockBtn} data-testid="webpos-signout" onClick={() => setShowLockConfirm(true)}>🔒 Sign out</button>
         </div>
+        )}
       </header>
+
+      {/* Phone bottom nav (owner, 2026-11-09): the cashier's actions live here, off the top (which keeps only the logo and
+          the business name). Shown on the idle home — no order in progress; the order screen keeps its own bottom actions.
+          Close shift and Lock till wear DISTINCT icons, not the same padlock. */}
+      {isPhone && !isMinimart && !activeKey && cart.length === 0 && !cartSheet && (
+        <nav style={s.bottomNav} data-testid="phone-bottom-nav">
+          <button style={s.bottomNavBtn} onClick={() => setShowBuyer(true)} data-testid="bn-customer">
+            <span style={s.bottomNavIcon}>👤</span>Customer
+          </button>
+          {currentShift && (
+            <button style={s.bottomNavBtn} onClick={() => setShiftModal('close')} data-testid="bn-close-shift">
+              <span style={s.bottomNavIcon}>🧮</span>Close shift
+            </button>
+          )}
+          <button style={s.bottomNavBtn} onClick={() => setShowLockConfirm(true)} data-testid="bn-lock">
+            <span style={s.bottomNavIcon}>🔒</span>Lock
+          </button>
+          <button style={s.bottomNavBtn} onClick={() => setShowMore(true)} data-testid="bn-more">
+            <span style={s.bottomNavIcon}>⋯</span>More
+          </button>
+        </nav>
+      )}
+      {isPhone && showMore && (
+        <div style={s.moreBackdrop} onClick={() => setShowMore(false)} data-testid="more-sheet">
+          <div style={s.moreSheet} onClick={(e) => e.stopPropagation()}>
+            <button style={s.moreItem} onClick={togglePosTheme}>
+              <span style={s.moreIcon}>{posTheme === 'light' ? '🌙' : '☀️'}</span>{posTheme === 'light' ? 'Dark mode' : 'Light mode'}
+            </button>
+            <button style={s.moreItem} onClick={() => { setShowMore(false); window.open('/help', '_blank', 'noopener'); }}>
+              <span style={s.moreIcon}>❔</span>Help
+            </button>
+            {currentShift && (hasPermission('shifts.cash_movements') || hasPermission('shifts.cash_out')) && (
+              <button style={s.moreItem} onClick={() => { setShowMore(false); setShiftModal('float'); }}>
+                <span style={s.moreIcon}>💵</span>Cash in / out
+              </button>
+            )}
+            {currentShift && hasPermission('expenses.record') && (
+              <button style={s.moreItem} onClick={() => { setShowMore(false); setShiftModal('expense'); }}>
+                <span style={s.moreIcon}>🧾</span>Expense
+              </button>
+            )}
+            {canSetPrinters && (
+              <button style={s.moreItem} onClick={() => { setShowMore(false); setShowPrinterSettings(true); }}>
+                <span style={s.moreIcon}>🖨</span>Printer settings
+              </button>
+            )}
+            <button style={{ ...s.moreItem, justifyContent: 'center', color: 'var(--pos-text3)' }} onClick={() => setShowMore(false)}>Close</button>
+          </div>
+        </div>
+      )}
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div style={isPhone && !cartSheet ? { ...s.body, paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))' } : s.body}>
@@ -1590,14 +1665,18 @@ export default function CashierScreen() {
           {/* ════════ TABLE GRID (restaurant / café) ════════ */}
           {isRestaurant && view === 'tables' && (
             <div style={s.slotView}>
+              {/* The client's logo as a faint watermark behind the tables (owner, 2026-11-09). */}
+              {customerContent?.brand?.logo && <img src={customerContent.brand.logo} alt="" aria-hidden style={s.tablesBgLogo} />}
               {/* Header with Floor/Grid toggle */}
-              <div style={{ ...s.slotViewHeader, marginBottom: 12 }}>
+              <div style={{ ...s.slotViewHeader, marginBottom: 12, position: 'relative', zIndex: 1 }}>
                 <span style={s.slotViewTitle}>Select a Table</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <button onClick={startTakeaway} style={{
-                    padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700,
-                    border: '1px solid var(--pos-accent)', cursor: 'pointer',
-                    background: 'var(--pos-accent)', color: '#fff',
+                    padding: '8px 18px', borderRadius: 8, fontSize: 15, fontWeight: 700,
+                    border: 'none', cursor: 'pointer',
+                    // ROOT CAUSE (owner, "Takeaway is not readable" x3): --pos-accent is DEFINED NOWHERE, so this was
+                    // white text on an empty background. Use the branded action fill, which always resolves (emerald fallback).
+                    background: 'rgb(var(--act-fill, 16 185 129))', color: '#fff',
                   }}>
                     🥡 Takeaway
                   </button>
@@ -1611,7 +1690,7 @@ export default function CashierScreen() {
                         style={{
                           padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
                           border: 'none', cursor: 'pointer',
-                          background: floorMode === v.id ? 'var(--pos-accent)' : 'transparent',
+                          background: floorMode === v.id ? 'rgb(var(--act-fill, 16 185 129))' : 'transparent',
                           color: floorMode === v.id ? '#fff' : 'var(--pos-text3)',
                         }}>
                         {v.label}
@@ -1678,15 +1757,16 @@ export default function CashierScreen() {
                         onMouseDown={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(3px)'; }}
                         onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}>
-                        <div style={s.slotName}>{table.name}</div>
-                        <div style={s.slotSub}>👥 {table.capacity}</div>
+                        <span aria-hidden style={{ ...s.slotDot, background: status === 'occupied' ? '#f59e0b' : '#22c55e' }} />
+                        <div style={big(s.slotName, 24)}>{table.name}</div>
+                        <div style={big(s.slotSub, 16)}>👥 {table.capacity}</div>
                         {order && order.cart.length > 0 ? (
                           <div style={s.slotOrderInfo}>
-                            <span style={s.slotItemCount}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
-                            <span style={s.slotTime}>{timeAgo(order.openedAt)}</span>
+                            <span style={big(s.slotItemCount, 15)}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
+                            <span style={big(s.slotTime, 13)}>{timeAgo(order.openedAt)}</span>
                           </div>
                         ) : (
-                          <div style={s.slotFreeLabel}>{status === 'occupied' ? 'Tap to view' : 'Tap to open'}</div>
+                          <div style={big(s.slotFreeLabel, 14)}>{status === 'occupied' ? 'Tap to view' : 'Tap to open'}</div>
                         )}
                       </button>
                     );
@@ -1718,6 +1798,7 @@ export default function CashierScreen() {
                         style={{ ...s.slotCard, ...(status === 'occupied' ? s.slotOccupied : s.slotFree) }}
                         onClick={() => onBayTap(bay)}
                       >
+                        <span aria-hidden style={{ ...s.slotDot, background: status === 'occupied' ? '#f59e0b' : '#22c55e' }} />
                         <div style={s.slotName}>{bay.name}</div>
                         <div style={s.slotSub}>🅿️ Bay</div>
                         {session ? (
@@ -1769,8 +1850,8 @@ export default function CashierScreen() {
                           state={pumpCardState(pump)} onTap={() => onPumpTap(pump)}
                           extra={order && (
                             <div style={s.slotOrderInfo}>
-                              <span style={s.slotItemCount}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
-                              <span style={s.slotTime}>{timeAgo(order.openedAt)}</span>
+                              <span style={big(s.slotItemCount, 15)}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
+                              <span style={big(s.slotTime, 13)}>{timeAgo(order.openedAt)}</span>
                             </div>
                           )} />
                       );
@@ -1892,8 +1973,8 @@ export default function CashierScreen() {
                             </span>
                           )}
                         </div>
-                        <div style={s.productName}>{product.name}</div>
-                        <div style={s.productPrice}>
+                        <div style={big(s.productName, 15)}>{product.name}</div>
+                        <div style={big(s.productPrice, 14)}>
                           {currency} {Number(product.base_price).toLocaleString()}
                           {(product as any).is_fuel && (
                             <span style={{ fontSize: 9, color: '#64748b' }}>/{(product as any).fuel_unit ?? 'L'}</span>
@@ -2043,10 +2124,10 @@ export default function CashierScreen() {
                 <div key={index} className="animate-line-in" data-testid="cart-line">
                 <div style={s.cartItem}>
                   <div style={s.cartItemInfo}>
-                    <div style={s.cartItemName}>{item.product.name}</div>
+                    <div style={big(s.cartItemName, 16)}>{item.product.name}</div>
                     {/* Sizes and add-ons as chips, as the desktop POS (@zaptill/ui LineChips, owner decision 2026-11-04) */}
                     <LineChips variants={item.selectedVariants} addOns={item.selectedModifiers} look={LINE_CHIPS_LOOK} />
-                    <div style={s.cartItemPrice}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : item.measureUnit ? '/kg' : 'each'}</div>
+                    <div style={big(s.cartItemPrice, 13)}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : item.measureUnit ? '/kg' : 'each'}</div>
                   </div>
                   <div style={s.cartItemControls}>
                     {item.isFuel ? (
@@ -2062,7 +2143,7 @@ export default function CashierScreen() {
                     )}
                     <button style={s.removeBtn} onClick={() => removeLine(index)}>✕</button>
                   </div>
-                  <div style={s.cartItemTotal}>{fmt(item.lineTotal, currency)}</div>
+                  <div style={big(s.cartItemTotal, 15)}>{fmt(item.lineTotal, currency)}</div>
                 </div>
                 {/* A367: the line's note, and the button that edits it */}
                 {!item.isFuel && (
@@ -2725,6 +2806,7 @@ export default function CashierScreen() {
             // openOrders[activeKey] via a stale closure, which re-occupies the table
             // that was just paid. The table was already freed above (and by onPaid);
             // simply return to the slot-picker view without re-adding it.
+            setCartSheet(false);   // phone: close the full-screen cart so "New order" lands on the tables grid, not an empty cart sheet
             if (isRestaurant) setView('tables');
             else if (isParking) setView('bays');
             else if (isPetrol) setView('pumps');
@@ -2901,9 +2983,16 @@ Signature: _______________`;
         </div>
       )}
 
-            <POSDrawer isOpen={showDrawer} onClose={() => setShowDrawer(false)} currency={currency} />
+            <POSDrawer isOpen={showDrawer} onClose={() => setShowDrawer(false)} currency={currency}
+              posTheme={posTheme} onToggleTheme={togglePosTheme} isPhone={isPhone}
+              onCustomerScreen={() => { openCustomerScreenWindow(); }}
+              onHelp={() => window.open('/help', '_blank', 'noopener')} />
 
-      {showZReport && <ZReportModal onClose={() => setShowZReport(false)} />}
+      {/* Z-report at shift close (owner, 2026-11-09): the ONLY way it opens now is after Close shift's "Done" — so
+          dismissing it signs the cashier out and leaves (the sign-out that used to run in onShiftClosed). A608. */}
+      {showZReport && (
+        <ZReportModal onClose={() => { setShowZReport(false); clearCashierSession(); navigate(exitTo); }} />
+      )}
 
       {/* A464 (owner, 2026-10-13): the bar names the open order, flashes the last item added, and charges in one tap;
           it sits clear of the iPhone home bar. */}
@@ -2954,10 +3043,11 @@ Signature: _______________`;
           currency={currency}
           onShiftOpened={(shift) => { markJoined(shift.id, session?.staffId); setCurrentShift(shift); setShiftModal(null); }}
           onShiftClosed={(shift) => {
+            // Owner, 2026-11-09: the Z-report is printed ONCE the shift is closed (not an any-time button). Show the
+            // printable Z-report now; signing out + leaving happens when it is dismissed (ZReportModal onClose below).
             setCurrentShift(shift);
             setShiftModal(null);
-            clearCashierSession();
-            navigate(exitTo);   // A608
+            setShowZReport(true);
           }}
           onFloatRecorded={() => setShiftModal(null)}
           mayCashIn={mayCashIn}   // A594
@@ -3033,6 +3123,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   headerLeft: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 180 },
   logoMark: { fontSize: 20 },
+  headerLogo: { height: 30, maxWidth: 132, objectFit: 'contain' as const, display: 'block' },
   branchLabel: { fontSize: 13, fontWeight: 700, color: '#f1f5f9', lineHeight: 1.2 },
   staffLabel: { fontSize: 11, color: '#94a3b8', lineHeight: 1.2 },
   headerCenter: {
@@ -3070,19 +3161,50 @@ const s: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8,
     color: '#fca5a5', fontSize: 12, cursor: 'pointer', fontWeight: 600,
   },
+  // Phone bottom nav (owner, 2026-11-09) — the cashier's actions, off the top header.
+  bottomNav: {
+    position: 'fixed' as const, bottom: 0, left: 0, right: 0, zIndex: 40,
+    display: 'flex', background: 'var(--pos-surface)', borderTop: '1px solid var(--pos-border)',
+    paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxShadow: '0 -4px 16px rgba(0,0,0,0.18)',
+  },
+  bottomNavBtn: {
+    flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center',
+    gap: 3, padding: '9px 4px', background: 'transparent', border: 'none',
+    color: 'var(--pos-text2)', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+  },
+  bottomNavIcon: { fontSize: 21, lineHeight: 1 },
+  moreBackdrop: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'flex-end' },
+  moreSheet: {
+    width: '100%', background: 'var(--pos-surface)', borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    padding: '10px 10px calc(14px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column' as const, gap: 2,
+  },
+  moreItem: {
+    display: 'flex', alignItems: 'center', gap: 14, padding: '14px 12px', background: 'transparent', border: 'none',
+    borderRadius: 10, color: 'var(--pos-text)', fontSize: 15, fontWeight: 600, cursor: 'pointer', textAlign: 'left' as const,
+  },
+  moreIcon: { fontSize: 20, width: 24, textAlign: 'center' as const },
   // Body
   body: { flex: 1, display: 'flex', overflow: 'hidden' },
   leftPanel: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   // Shared slot view (tables / bays / pumps)
-  slotView: { flex: 1, padding: '20px 24px', overflowY: 'auto' as const, background: 'var(--pos-bg)' },
+  slotView: { flex: 1, padding: '20px 24px', overflowY: 'auto' as const, background: 'var(--pos-bg)', position: 'relative' as const },
+  // Owner, 2026-11-09 ("be creative — put the logo on the select-a-table screen"): the client's logo as a faint watermark
+  // behind the tables. pointer-events:none so it never catches a tap; the header and the grid sit above it (zIndex 1).
+  tablesBgLogo: {
+    position: 'absolute' as const, top: '52%', left: '50%', transform: 'translate(-50%, -50%)',
+    width: 'min(55%, 360px)', maxHeight: '55%', objectFit: 'contain' as const,
+    opacity: 0.06, pointerEvents: 'none' as const, zIndex: 0, userSelect: 'none' as const,
+  },
   slotViewHeader: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 8,
   },
-  slotViewTitle: { fontSize: 12, fontWeight: 700, color: 'var(--pos-text3)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' },
-  slotLegend: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--pos-text3)' },
-  legendDot: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 4 },
-  slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 },
+  // Owner, 2026-11-09 ("Takeaway isn't readable; Free/Occupied bigger"): a readable weight/colour and +2px.
+  slotViewTitle: { fontSize: 13, fontWeight: 700, color: 'var(--pos-text2)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' },
+  slotLegend: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 600, color: 'var(--pos-text2)' },
+  legendDot: { display: 'inline-block', width: 10, height: 10, borderRadius: '50%', marginRight: 4 },
+  slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8, position: 'relative' as const, zIndex: 1 },
   slotCard: {
+    position: 'relative' as const,
     height: 130,
     padding: '14px 10px 12px',
     borderRadius: 12,
@@ -3092,6 +3214,9 @@ const s: Record<string, React.CSSProperties> = {
     transition: 'transform 0.1s ease, box-shadow 0.1s ease',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
     userSelect: 'none' as const,
+  },
+  slotDot: {
+    position: 'absolute' as const, top: 10, right: 10, width: 10, height: 10, borderRadius: '50%',
   },
   slotFree: {
     background: 'var(--pos-free-bg)',

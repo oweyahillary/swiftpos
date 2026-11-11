@@ -17,7 +17,7 @@ export default function ChooseMode({ onChosen }: { onChosen: (mode: DeviceMode) 
 
   if (choice) {
     return (
-      <main className="screen">
+      <main className="screen middle">
         <h1>{choice.title}</h1>
         <p className="lead">{choice.detail}</p>
         <p className="note">To change this later, use <strong>Reset app</strong>. It clears everything ZapTill keeps on this device.</p>
@@ -32,7 +32,7 @@ export default function ChooseMode({ onChosen }: { onChosen: (mode: DeviceMode) 
   }
 
   return (
-    <main className="screen">
+    <main className="screen middle">
       <h1>What is this device?</h1>
       <p className="lead">ZapTill sets itself up for how this device will be used.</p>
       <div className="choices">

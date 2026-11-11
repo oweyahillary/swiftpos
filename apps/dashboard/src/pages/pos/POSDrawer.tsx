@@ -27,6 +27,13 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   currency: string;
+  // Owner, 2026-11-09 ("the web POS header has too much — drop it"): the quiet actions that used to crowd the header now
+  // live here, off the counter. Optional so other callers of the drawer are unchanged.
+  posTheme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
+  onCustomerScreen?: () => void;   // the second window for the customer's monitor — desktop/web only (hidden on a phone)
+  onHelp?: () => void;
+  isPhone?: boolean;
 }
 
 // ── The screens ───────────────────────────────────────────────────────────────
@@ -66,7 +73,7 @@ export function drawerScreens(held: ReadonlySet<string>): string[] {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function POSDrawer({ isOpen, onClose, currency }: Props) {
+export default function POSDrawer({ isOpen, onClose, currency, posTheme, onToggleTheme, onCustomerScreen, onHelp, isPhone }: Props) {
   const { session, posApi, held } = usePOSAuth();
 
   const screens = drawerScreens(held);
@@ -163,6 +170,30 @@ export default function POSDrawer({ isOpen, onClose, currency }: Props) {
 
           </div>
         )}
+        {/* Quick actions moved off the header (owner, 2026-11-09): theme, the customer screen, help. Always shown, so a
+            cashier with no back-office screens still has them. */}
+        {(onToggleTheme || onCustomerScreen || onHelp) && (
+          <div style={s.quickRow}>
+            {onToggleTheme && (
+              <button style={s.quickBtn} onClick={onToggleTheme}
+                title={posTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} data-testid="drawer-theme">
+                <span style={{ fontSize: 18 }}>{posTheme === 'light' ? '🌙' : '☀️'}</span>
+                <span>{posTheme === 'light' ? 'Dark mode' : 'Light mode'}</span>
+              </button>
+            )}
+            {onCustomerScreen && !isPhone && (
+              <button style={s.quickBtn} onClick={() => { onClose(); onCustomerScreen(); }}
+                title="Open the customer screen — drag it to the customer's monitor" data-testid="drawer-customer-screen">
+                <span style={{ fontSize: 18 }}>🖥</span><span>Customer screen</span>
+              </button>
+            )}
+            {onHelp && (
+              <button style={s.quickBtn} onClick={() => { onClose(); onHelp(); }} title="What to do when…" data-testid="drawer-help">
+                <span style={{ fontSize: 18 }}>❔</span><span>Help</span>
+              </button>
+            )}
+          </div>
+        )}
         {/* 0.6.28: which release this website and the cloud run */}
         <div style={{ padding: '8px 16px', borderTop: '1px solid #334155', flexShrink: 0 }}>
           <ReleaseBadge getCloud={() => posApi.get('/api/version')} />
@@ -237,4 +268,12 @@ const s: Record<string, React.CSSProperties> = {
 
   // Content
   content: { flex: 1, overflowY: 'auto' as const, padding: '14px 16px 24px' },
+
+  // Quick actions row (theme / customer screen / help), off the header
+  quickRow: { display: 'flex', gap: 8, padding: '10px 16px', borderTop: '1px solid #334155', flexShrink: 0, flexWrap: 'wrap' as const },
+  quickBtn: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8,
+    background: '#0f172a', border: '1px solid #334155', color: '#cbd5e1', fontSize: 12, fontWeight: 600,
+    cursor: 'pointer',
+  },
 };

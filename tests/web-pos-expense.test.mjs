@@ -150,7 +150,8 @@ try {
   // The web POS screen (React is not run here)
   const modal = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/pos/ShiftModal.tsx'), 'utf8');
   const screen = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/pos/CashierScreen.tsx'), 'utf8');
-  await ok('A362: the web POS has "🧾 Expense" beside Float, for anyone on the shift, posting to this route', async () => {
+  await ok('Expense is a RIGHT (expenses.record), OFF by default for cashiers — the button is gated; posts to this route (owner, 2026-11-09)', async () => {
+    assert.match(screen, /hasPermission\('expenses\.record'\) && \(/);   // gated, not shown to every cashier
     assert.match(screen, /onClick=\{\(\) => setShiftModal\('expense'\)\}/);
     assert.match(modal, /export type ShiftModalMode = [^;]*'expense'/);
     assert.match(modal, /await posApi\.post<\{ approved_by_name\?: string \| null \}>\(`\/api\/shifts\/\$\{shiftId\}\/expense`, \{\s+description,\s+amount,\s+expense_category_id: expTypeId \|\| undefined,/);
