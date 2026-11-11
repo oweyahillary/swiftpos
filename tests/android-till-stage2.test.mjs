@@ -119,6 +119,8 @@ const run = async () => {
   console.log('\nO. The offline-writes seam (shop/offlineWrites.ts)');
   eq('a GET is a read (left to the screens)', M.offlineDecision('GET', '/api/orders'), 'read');
   eq('a sale is buffered', M.offlineDecision('POST', '/api/orders'), 'buffer');
+  eq('a table move is buffered (restaurant, offline)', M.offlineDecision('POST', '/api/orders/abc/move-table'), 'buffer');
+  eq('firing a course is buffered (restaurant, offline)', M.offlineDecision('POST', '/api/orders/abc/fire-course'), 'buffer');
   eq('an unknown write is refused offline', M.offlineDecision('POST', '/api/settings/theme'), 'refuse');
   {
     const r = M.provisionalOrderResponse('/api/orders', { uuid: 'O9', order_number: 'ORD-9', total: 10 }, '2026-11-07T10:00:00Z');
