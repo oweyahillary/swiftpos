@@ -232,7 +232,7 @@ const run = async () => {
   ok('replay imports the one shared rule', read('apps/android/src/shop/replay.ts').includes("from '@zaptill/core/tillBuffer'"));
   ok('the offline-writes seam returns a restore fn and is wired in the Shop POS entry', /export function installOfflineWrites/.test(read('apps/android/src/shop/offlineWrites.ts')) && read('apps/android/src/screens/shop/ShopPos.tsx').includes('installOfflineWrites'));
   ok('the Shop POS drains the queue on reconnect (runReplay) and mounts the status bar', (() => { const s = read('apps/android/src/screens/shop/ShopPos.tsx'); return s.includes('runReplay') && s.includes('SyncStatusBar'); })());
-  ok('offline selling: the No-connection cover no longer blocks the selling screen', read('apps/android/src/screens/shop/NoConnection.tsx').includes('/pos/cashier'));
+  ok('offline: the old "can\'t sell" cover is gone — offline selling + offline PIN work, the SyncStatusBar shows the state', (() => { const s = read('apps/android/src/screens/shop/ShopPos.tsx'); return !s.includes('NoConnection') && s.includes('SyncStatusBar') && !fs.existsSync(path.join(ROOT, 'apps/android/src/screens/shop/NoConnection.tsx')); })());
   ok('the status bar reads the buffer status and the live online state', (() => { const s = read('apps/android/src/screens/shop/SyncStatusBar.tsx'); return s.includes('bufferStatusOf') && s.includes('useOnline'); })());
   ok('offline PIN upgrades on reconnect (verify-pin), the desktop model', read('apps/android/src/shop/offlinePin.ts').includes('verify-pin') || read('apps/android/src/shop/offlinePin.ts').includes('upgradeDecision'));
   // Cold start — the sign-in half (Part B): the roster is pulled while online, the PIN pad signs in offline from the

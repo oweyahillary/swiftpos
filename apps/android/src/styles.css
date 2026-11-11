@@ -104,7 +104,8 @@ button:disabled { opacity: 0.5; }
 .text-button { background: none; border: none; color: var(--brand-light); padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
 .link-button { display: inline-flex; align-items: center; text-decoration: none; }
 
-.pin-screen { max-width: 420px; align-items: center; text-align: center; justify-content: center; min-height: 100dvh; padding-block: 24px; }
+.pin-screen { position: relative; max-width: 420px; align-items: center; text-align: center; justify-content: center; min-height: 100dvh; padding-block: 24px; }
+.pin-version { position: absolute; bottom: 10px; left: 0; right: 0; margin: 0; font-size: 12px; color: var(--muted); opacity: .7; }
 .pin-screen .brand { flex-direction: column; justify-content: center; gap: 10px; }
 .pin-screen .brand > span { font-size: 19px; }
 .pin-screen h1 { margin-top: 4px; }

@@ -23,7 +23,6 @@ import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
 import PinScreen from './PinScreen';
 import ShopDevice from './ShopDevice';
-import NoConnection from './NoConnection';
 import PrintNotice from './PrintNotice';
 import SyncStatusBar from './SyncStatusBar';
 
@@ -127,7 +126,6 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
       </Routes>
       <PrintNotice />
       <SyncStatusBar store={buffer} />
-      <NoConnection online={online} />
     </BrowserRouter>
   );
 }

@@ -16,6 +16,7 @@ import { applyShopBrand } from '../../shop/brandTheme';
 import { beginOfflineSignIn, readRoster, type RosterStaff } from '../../shop/offlinePin';
 import { bcryptVerify } from '../../shop/pinVerify';
 import { holdPin, clearHeldPin } from '../../shop/offlineUpgrade';
+import { refreshRoster } from '../../shop/roster';
 
 /** The web POS screens keep the person's tokens here (apps/dashboard lib/api.ts TOKEN_KEYS). */
 const PERSON_TOKENS = ['swiftpos_pos_token', 'swiftpos_pos_refresh_token', 'swiftpos_access_token', 'swiftpos_refresh_token'];
@@ -68,6 +69,7 @@ export default function PinScreen({ till, version, online }: { till: PosSession;
       let session;
       if (online) {
         session = await signInWithPin(pin, version);   // the cloud resolves the PIN to the person (Till stage 1)
+        void refreshRoster();   // we are online with a working session — cache the branch roster so the NEXT sign-in works offline
       } else {
         if (!picked) { setProblem('Pick who is signing in.'); setBusy(false); return; }
         // Offline: the PIN is checked LOCALLY against the cached bcrypt verifier (a wrong PIN is refused here, now), then a
@@ -134,6 +136,8 @@ export default function PinScreen({ till, version, online }: { till: PosSession;
           {!online && <button className="ghost" disabled={busy} onClick={() => { setPicked(null); setPin(''); setProblem(''); }}>← Someone else</button>}
         </>
       )}
+      {/* The build, so a tester can tell one install from the next at a glance (owner, 2026-11-11). */}
+      <p className="pin-version">ZapTill v{version}</p>
     </main>
   );
 }

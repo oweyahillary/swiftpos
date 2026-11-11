@@ -726,6 +726,7 @@ export default function CashierScreen() {
     }
     setActiveKey(null);
     setCart([]);
+    setCartSheet(false);   // phone: close the full-screen cart so the tables/bays/pumps grid shows, not an empty "New Order" sheet
     if (isRestaurant) setView('tables');
     else if (isParking) setView('bays');
     else if (isPetrol) setView('pumps');
@@ -2805,6 +2806,7 @@ export default function CashierScreen() {
             // openOrders[activeKey] via a stale closure, which re-occupies the table
             // that was just paid. The table was already freed above (and by onPaid);
             // simply return to the slot-picker view without re-adding it.
+            setCartSheet(false);   // phone: close the full-screen cart so "New order" lands on the tables grid, not an empty cart sheet
             if (isRestaurant) setView('tables');
             else if (isParking) setView('bays');
             else if (isPetrol) setView('pumps');
