@@ -4,6 +4,24 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.3.1 — Offline sign-in sells into the running shift
+- Offline, a cashier signing in now **sells into the shift that is already open**, instead of being forced to open a new
+  one. The current-shift check is cached (like the catalogue), so when the live check can't reach the cloud, the Shop POS
+  reads the last-known open shift and goes straight in.
+
+## 0.3.0 — PIN-first offline sign-in + device-id visibility
+**Sign-in:**
+- Offline sign-in is now **PIN-first**, the same as online and the same as the desktop POS: the person keys their PIN and
+  the cached bcrypt verifier resolves it to the one person — **no name list**. This matches the online experience, drops a
+  tap, and stops the offline screen from showing who works here. A wrong PIN is refused on the spot; a PIN shared by two
+  people is refused the way the cloud refuses it (ask a manager to reset).
+
+**Device / reinstall:**
+- The **This device** page (long-press the PIN-screen header) now shows this POS's **device id**, and flags it in red if
+  it ever drifts from the seat the POS joined as — so a technician can confirm on a live till that a reinstall keeps the
+  same seat, without resetting. (The reinstall "new seat" cause — a random id before the fixed debug key — is resolved;
+  the id is now a stable `Settings.Secure.ANDROID_ID`.)
+
 ## 0.2.0 — Till stage 2 (keeps selling offline) + fixes
 **Offline (Till stage 2):**
 - Keeps selling with no connection — sales are buffered and replay when the connection returns.

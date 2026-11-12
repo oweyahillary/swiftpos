@@ -9,7 +9,7 @@ import { readServerLink, type ServerLink } from '../../shop/branchServer';
 import { RawPrinter } from '../../native/plugins';
 import { printerAddress } from '../../shop/rules';
 import { readReceiptPrinter, saveReceiptPrinter } from '../../shop/printing';
-import type { PosSession } from '../../shop/tillSession';
+import { deviceId, type PosSession } from '../../shop/tillSession';
 
 /** ESC @ (reset), a few lines, feed and cut — enough to prove the address and the paper. */
 function testTicket(posName: string): string {
@@ -28,7 +28,12 @@ export default function ShopDevice({ till, version, onReset, onJoinAgain }: {
   const [printNote, setPrintNote] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [problem, setProblem] = useState('');
+  // The LIVE device id (same value the join sends): shown so a technician can confirm a reinstall keeps it — a stable id
+  // rejoins this POS's seat (A182). If it has drifted from the seat the POS joined as (till.deviceId), the platform changed
+  // the id since enrolment, which is exactly what makes a reinstall take a NEW seat — surfaced here instead of guessed.
+  const [liveId, setLiveId] = useState('');
   useEffect(() => { void readServerLink().then(setServer); }, []);
+  useEffect(() => { void deviceId().then(setLiveId).catch(() => {}); }, []);
 
   const saveAndTest = async () => {
     const a = printerAddress(address);
@@ -78,6 +83,10 @@ export default function ShopDevice({ till, version, onReset, onJoinAgain }: {
       <section className="card">
         <h2>This device</h2>
         <p className="note">ZapTill {version} for Android</p>
+        {liveId && <p className="note">Device id <code className="code">{liveId}</code> — this stays the same after a reinstall, so this POS keeps its seat.</p>}
+        {liveId && till.deviceId && liveId !== till.deviceId && (
+          <p className="problem">This device id has changed since this POS joined (it joined as <code className="code">{till.deviceId}</code>). That is why a reinstall takes a new seat — tell ZapTill.</p>
+        )}
         <div className="actions">
           <button className="ghost" onClick={onJoinAgain}>Join again (technician)</button>
           {!confirming && <button className="ghost danger" onClick={() => setConfirming(true)}>Reset app</button>}

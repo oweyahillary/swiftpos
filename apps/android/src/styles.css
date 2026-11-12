@@ -71,11 +71,6 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .choice-title { font-size: 21px; font-weight: 700; }
 .choice-detail { color: var(--muted); }
 
-/* Till stage 2 offline sign-in: the cached roster to pick a name from — compact rows, scroll a long branch. */
-.roster-pick { display: grid; gap: 10px; width: 100%; max-width: 360px; max-height: 46dvh; overflow-y: auto; padding: 2px; }
-.roster-pick .choice { min-height: 0; padding: 14px 18px; }
-.roster-pick .choice-title { font-size: 19px; }
-
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 button { font: inherit; }
 .primary, .ghost {
