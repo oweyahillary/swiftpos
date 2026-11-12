@@ -50,7 +50,7 @@ fs.writeFileSync(path.join(tmp, 'entry.ts'), `
   export { runReplay, ackFromStatus } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/replay.ts'))};
   export { offlineDecision, provisionalOrderResponse, installOfflineWrites } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineWrites.ts'))};
   export { isCacheableRead, readCacheKey, cachedResponse } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlineReads.ts'))};
-  export { beginOfflineSignIn, upgradeDecision, deferVerify, OfflinePinRefused, rosterFromWire, OFFLINE_PENDING } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlinePin.ts'))};
+  export { beginOfflineSignIn, resolveOfflinePin, upgradeDecision, deferVerify, OfflinePinRefused, rosterFromWire, OFFLINE_PENDING } from ${JSON.stringify(path.join(ROOT, 'apps/android/src/shop/offlinePin.ts'))};
 `);
 // Resolve the shared rule to its source (the app's node_modules does not link @zaptill/core for a node bundle).
 esbuild.buildSync({
@@ -219,6 +219,19 @@ const run = async () => {
     ok('offline sign-in accepts the right PIN', M.beginOfflineSignIn(who, till, 'ST1', '1234', verify).session.staffId === 'ST1');
   }
   {
+    // resolveOfflinePin: PIN-first — resolve a keyed PIN to its ONE person against the cached verifiers (the mirror of the
+    // cloud's /verify-pin), so no name is shown. 'none' is a wrong PIN; 'ambiguous' mirrors the cloud's PIN_NOT_UNIQUE.
+    const two = [
+      { id: 'A', name: 'Amina', role: 'cashier', permissions: {}, pinHash: '$2b$a' },
+      { id: 'B', name: 'Brian', role: 'manager', permissions: {}, pinHash: '$2b$b' },
+    ];
+    const verifyA = (hash, pin) => (hash === '$2b$a' && pin === '1234' ? 'ok' : 'no');
+    ok('resolveOfflinePin finds the one person whose PIN matches', M.resolveOfflinePin(two, '1234', verifyA)?.id === 'A');
+    eq('resolveOfflinePin: a wrong PIN is none', M.resolveOfflinePin(two, '0000', verifyA), 'none');
+    eq('resolveOfflinePin: a PIN two people share is ambiguous (PIN_NOT_UNIQUE)', M.resolveOfflinePin(two, '1234', () => 'ok'), 'ambiguous');
+    eq('resolveOfflinePin on an empty roster is none', M.resolveOfflinePin([], '1234', verifyA), 'none');
+  }
+  {
     const held = { staffId: 'ST1', branchId: 'BR1', pin: '1234' };
     const up = M.upgradeDecision(held, till, { status: 200, body: { staff: { id: 'ST1', name: 'Jane', role: 'cashier' }, accessToken: 'tok', refreshToken: 'r', permissions: {} } });
     eq('a good reconnect upgrades to a cloud session', [up.state, up.session?.token], ['upgraded', 'tok']);
@@ -243,6 +256,7 @@ const run = async () => {
   // roster stays empty ("No staff are saved on this POS yet"). This is the one line that made offline sign-in unreachable.
   ok('branch-staff accepts a POS-device surface, not desktop-only (apps/server routes/pos.ts)', (() => { const s = read('apps/server/src/routes/pos.ts'); return /branch-staff[\s\S]*?isPosDeviceSurface\(req\.surface\)/.test(s) && !/'\/branch-staff'[\s\S]{0,400}req\.surface !== 'desktop'/.test(s); })());
   ok('the PIN screen signs in offline from the cached roster', (() => { const s = read('apps/android/src/screens/shop/PinScreen.tsx'); return s.includes('beginOfflineSignIn') && s.includes('readRoster') && s.includes('holdPin'); })());
+  ok('offline sign-in is PIN-first (resolveOfflinePin), with no name picker to leak who works here', (() => { const s = read('apps/android/src/screens/shop/PinScreen.tsx'); return s.includes('resolveOfflinePin') && !s.includes('roster-pick') && !s.includes("Who's signing in"); })());
   ok('the offline PIN is checked locally with bcrypt (shop/pinVerify.ts), not only on reconnect', (() => { const v = read('apps/android/src/shop/pinVerify.ts'); const p = read('apps/android/src/screens/shop/PinScreen.tsx'); return v.includes("from 'bcryptjs'") && v.includes('compareSync') && p.includes('bcryptVerify'); })());
   ok('the held PIN lives in the Keystore (secrets pos.heldPin) and is cleared on a fresh PIN screen', read('apps/android/src/device/secrets.ts').includes('pos.heldPin') && read('apps/android/src/screens/shop/PinScreen.tsx').includes('clearHeldPin'));
   ok('the Shop POS refreshes the roster and upgrades a held PIN when online (shop/offlineUpgrade.ts)', (() => { const s = read('apps/android/src/screens/shop/ShopPos.tsx'); return s.includes('refreshRoster') && s.includes('attemptUpgrade') && s.includes('swiftpos:pos-token'); })());

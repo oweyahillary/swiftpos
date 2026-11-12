@@ -62,6 +62,21 @@ export function beginOfflineSignIn(
   return { session: { ...session, refreshToken: OFFLINE_PENDING }, held: { staffId: who.id, branchId: till.branchId, pin } };
 }
 
+/**
+ * Resolve a keyed PIN to the ONE person on the cached roster whose bcrypt verifier it matches (PURE) — the offline mirror
+ * of the cloud's /verify-pin (apps/server routes/auth.ts: scan all staff, bcrypt-compare, refuse if more than one match).
+ * So the offline sign-in is PIN-first like online and like the desktop POS — no name is shown. PINs are unique per
+ * business (enforced at set-pin), so a single match is the norm; 'ambiguous' mirrors the cloud's PIN_NOT_UNIQUE for the
+ * rare legacy collision. 'none' is a wrong PIN. bcrypt is slow, so this is a handful of compares for a branch's staff.
+ */
+export function resolveOfflinePin(
+  roster: readonly RosterStaff[], pin: string, verify: VerifyLocally = deferVerify,
+): RosterStaff | 'none' | 'ambiguous' {
+  const matches = roster.filter((s) => verify(s.pinHash, pin) === 'ok');
+  if (matches.length > 1) return 'ambiguous';
+  return matches[0] ?? 'none';
+}
+
 /** What a reconnect verify answer means for a held offline sign-in (PURE), mirroring the desktop's upgrade (A345). */
 export type UpgradeOutcome =
   | { state: 'upgraded'; session: CashierSession }
