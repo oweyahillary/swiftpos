@@ -68,6 +68,12 @@ function urlOf(input: RequestInfo | URL): string {
   return (input as Request).url;
 }
 
+/** A completed-order write: POST to /api/orders (not /api/orders/:id/…). Till stage 3's branch-sync hook. */
+function isOrderPath(path: string): boolean {
+  const p = path.split('?')[0];
+  return p === '/api/orders' || p === '/api/orders/';
+}
+
 /** The caller's body as a string (the web POS sends JSON strings); undefined for anything else, so it is left untouched. */
 function bodyStringOf(init?: RequestInit): string | undefined {
   const b = init?.body;
@@ -105,6 +111,10 @@ export interface OfflineWritesDeps {
    *  Omit it and nothing routes — Till stage 1/2 is unchanged. Tried before the cloud, so a POS with no internet of its
    *  own still sells when the branch server has internet. */
   gateway?: (fullUrl: string, method: string, body: string | undefined, headers: Record<string, string>) => Promise<Response | null>;
+  /** Till stage 3: told of every COMPLETED order write (a successful POST /api/orders — online, via the branch gateway,
+   *  or buffered offline) so the Shop POS can also push the sale to the joined branch server (shop/branchSync.ts) for the
+   *  branch's reports and the A19 cloud relay. Best-effort / fire-and-forget; omit it and nothing is pushed. */
+  onOrder?: (fullUrl: string, method: string, body: string | undefined) => void;
   now?: () => string;
 }
 
@@ -157,9 +167,17 @@ export function installOfflineWrites(deps: OfflineWritesDeps): () => void {
 
     const fromServer = await viaBranch(url, m, init, input);                  // the joined branch server, when present
     if (m === 'GET' || m === 'HEAD') return serveRead(m, path, init, input, fromServer);
-    if (fromServer) return fromServer;                                       // the server forwarded the write (own internet or not)
-    if (!deps.isOffline()) return original(input as RequestInfo, init);      // online: the sale reaches the cloud (Till stage 1)
-    return bufferWrite(method, path, init);                                  // offline and the server could not help: buffer
+
+    // A write: the server's forward if it made one, else the cloud (online), else the buffer (offline).
+    let resp: Response;
+    if (fromServer) resp = fromServer;                                        // the server forwarded the write (own internet or not)
+    else if (!deps.isOffline()) resp = await original(input as RequestInfo, init);   // online: the cloud (Till stage 1)
+    else resp = await bufferWrite(method, path, init);                        // offline and the server could not help: buffer
+
+    // Till stage 3: a COMPLETED sale is also pushed to the joined branch server (branch reports + A19 relay). Only on
+    // success — a sale the cloud rejected must not reach the branch aggregate; a buffered sale answers 200, so it counts.
+    if (deps.onOrder && m === 'POST' && isOrderPath(path) && resp.ok) deps.onOrder(url, m, bodyStringOf(init));
+    return resp;
   };
 
   globalThis.fetch = wrapped;

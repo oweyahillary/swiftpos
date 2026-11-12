@@ -4,6 +4,19 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.4.1 — Till stage 3 (sell through the branch server): the branch aggregate
+**Branch server (Slice B of Till stage 3):**
+- A completed sale on this POS is now also **pushed to the joined branch server** (`/node/sync`): the server keeps it in
+  the **branch's own records** (so a desktop POS at the branch shows this POS's sales in the branch report, over the LAN)
+  and **relays it to the cloud** on this POS's behalf — so a sale reaches the cloud **through the server even when this
+  POS has no internet of its own**. Faithful: the exact order the POS rang (its items, payments and figures) is what the
+  server relays, so the cloud re-prices it identically. A durable outbox retries until the server has it; a POS with no
+  branch server joined is unaffected.
+- **Not yet:** showing the *whole branch's* orders on this POS when the cloud is unreachable (`/node/since`) is deferred —
+  the POS reads the branch's orders from the cloud today, and a LAN branch-wide view is a screen of its own (see
+  docs/BUILD-TILL-STAGE-3B.md). Next in Till stage 3: PIN sign-in and session refresh through the server, then shared
+  tables across devices.
+
 ## 0.4.0 — Till stage 3 (sell through the branch server): the gateway
 **Branch server (in progress — Slice A of Till stage 3):**
 - When this POS has **joined a branch server**, its cloud traffic now goes **through that server** (`/node/cloud`, A410)

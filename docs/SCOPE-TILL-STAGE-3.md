@@ -62,7 +62,7 @@ The whole offline machinery already sits behind **one `window.fetch` wrap** (`ap
 Add one helper that, when a `ServerLink` is present, directs `/api/*` traffic to the server's `/node/cloud/api/*` gateway (A410), with a `/node/health` protocol check (`nodeHealth` integer compare — refuse to talk to an incompatible server, fall back to cloud) and transport-failure fallback to cloud-direct. Wire it into **both** interception points: the `offlineWrites` fetch seam (web POS) and `cloud/client.ts` (native). Mirrors desktop `cloudGateway.ts` + `nodeClient.ts`.
 *Done when:* a joined tablet's ordinary traffic provably flows through the server's gateway, and pulling the server's plug silently falls back to the cloud.
 
-### Slice B — Sell & sync through the server  *(medium–large)*
+### Slice B — Sell & sync through the server  *(medium–large)* — **BUILT (push) 2026-11-12, see `docs/BUILD-TILL-STAGE-3B.md`; `/node/since` pull deferred by design**
 Point the online write path and the Stage-2 replay sender at the server: sales ingest via `/node/sync` (the server relays to cloud, A19) and the tablet pulls peers' rows via `/node/since`. The offline buffer still backs a total outage. Touches `offlineWrites.ts:111`, `replay.ts:17,85` (`cloudUrl`/`cloudSender`).
 *Done when:* a tablet sells with the branch online but its **own** internet off; sales reach the cloud via the server; two devices' completed orders aggregate at the branch.
 

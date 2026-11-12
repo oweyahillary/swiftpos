@@ -9,7 +9,7 @@
  */
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { readTill, tillToken, type PosSession } from '../../shop/tillSession';
+import { readTill, tillToken, deviceId, type PosSession } from '../../shop/tillSession';
 import { shopPosHostFor } from '../../shop/printing';
 import { useOnline } from '../../shop/connection';
 import { makeBuffer, sweepRetention } from '../../shop/buffer';
@@ -20,6 +20,8 @@ import { attemptUpgrade } from '../../shop/offlineUpgrade';
 import { OFFLINE_PENDING } from '../../shop/offlinePin';
 import { runReplay, cloudSender } from '../../shop/replay';
 import { gatewayFetch, checkServerHealth } from '../../shop/branchGateway';
+import { readServerLink } from '../../shop/branchServer';
+import { enqueueOrderFor, drainToNode, makeNodeOutbox, type NodeOutbox } from '../../shop/branchSync';
 import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
 import PinScreen from './PinScreen';
@@ -49,6 +51,26 @@ async function branchGatewayAdapter(fullUrl: string, method: string, body: strin
   } catch { return null; }
 }
 
+/**
+ * Till stage 3 Slice B (docs/BUILD-TILL-STAGE-3B.md): push a completed sale to the joined branch server's outbox, then
+ * drain it. Best-effort; a no-op when no branch server is joined. The captured order body carries branch_id and
+ * idempotency_key (apps/dashboard PaymentModal buildOrderPayload), so branchSync needs nothing more than this device's id.
+ */
+async function pushOrderToBranch(outbox: NodeOutbox, body: string | undefined): Promise<void> {
+  try {
+    if (!body) return;
+    const link = await readServerLink();
+    if (!link) return;                       // no branch server — nothing to aggregate to
+    const parsed = JSON.parse(body) as Record<string, any>;
+    await enqueueOrderFor(outbox, parsed, {
+      deviceId: await deviceId(),
+      branchId: parsed.branch_id ?? null,
+      createdAt: parsed.created_at ?? new Date().toISOString(),
+    });
+    void drainToNode(outbox, { link }).catch(() => {});
+  } catch { /* best-effort */ }
+}
+
 type State = { kind: 'loading' } | { kind: 'join' } | { kind: 'ready'; till: PosSession } | { kind: 'failed'; message: string };
 
 export default function ShopPos({ version, onReset }: { version: string; onReset: () => Promise<void> }) {
@@ -62,6 +84,9 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // Cold start: the read cache keeps the selling screen's catalogue (pos/init, tables, pumps, printers, order mode) from
   // the last online load, so the POS opens offline from a cold boot (shop/offlineReads.ts).
   const [reads] = useState(makeReadCache);
+  // Till stage 3 Slice B: a durable outbox of completed sales pushed to the branch server (branch reports + A19 relay),
+  // separate from the cloud buffer — two destinations, each with its own state.
+  const [nodeOutbox] = useState(makeNodeOutbox);
   const onlineRef = useRef(online);
   onlineRef.current = online;
   const replaying = useRef(false);
@@ -69,11 +94,16 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // Install the seam ONCE (wraps window.fetch; online or non-cloud calls pass straight through, so Till stage 1 selling is
   // unchanged). cloudBase is this app's API_URL — the same base the web POS calls, because main.tsx sets the dashboard's
   // apiUrl to it, so the two cannot drift. The read cache serves the catalogue on a cold offline boot.
-  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads, gateway: branchGatewayAdapter }), [buffer, reads]);
+  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads,
+    gateway: branchGatewayAdapter, onOrder: (_u, _m, b) => { void pushOrderToBranch(nodeOutbox, b); } }), [buffer, reads, nodeOutbox]);
 
   // Till stage 3: ask the joined branch server what protocol it speaks (over the LAN, whether or not the cloud is
   // reachable), on open and whenever the connection changes. No branch server joined → this is a quick no-op.
   useEffect(() => { void checkServerHealth().catch(() => {}); }, [online]);
+
+  // Till stage 3 Slice B: drain the branch-sync outbox to the server on open and whenever the connection changes (it
+  // runs over the LAN even when the cloud is unreachable but the server is up). A no-op when nothing is waiting.
+  useEffect(() => { void drainToNode(nodeOutbox).catch(() => {}); }, [online, nodeOutbox]);
 
   // Drain the queue to the cloud on open and whenever the connection returns; never two drains at once.
   useEffect(() => {
