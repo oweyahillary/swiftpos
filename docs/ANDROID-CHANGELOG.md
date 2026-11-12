@@ -4,6 +4,11 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.3.1 — Offline sign-in sells into the running shift
+- Offline, a cashier signing in now **sells into the shift that is already open**, instead of being forced to open a new
+  one. The current-shift check is cached (like the catalogue), so when the live check can't reach the cloud, the Shop POS
+  reads the last-known open shift and goes straight in.
+
 ## 0.3.0 — PIN-first offline sign-in + device-id visibility
 **Sign-in:**
 - Offline sign-in is now **PIN-first**, the same as online and the same as the desktop POS: the person keys their PIN and

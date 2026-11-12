@@ -153,6 +153,7 @@ const run = async () => {
   console.log('\nC. The offline read cache — cold start (shop/offlineReads.ts)');
   eq('pos/init is a cacheable catalogue read', M.isCacheableRead('/api/pos/init?branch_id=BR1'), true);
   eq('tables (parking bays) is cacheable', M.isCacheableRead('/api/tables?branch_id=BR1&slot_type=parking_bay'), true);
+  eq('the current shift is cacheable (offline sign-in sells into the running shift, not a new one)', M.isCacheableRead('/api/shifts/current?branch_id=BR1'), true);
   eq('a sale is NOT a cacheable read', M.isCacheableRead('/api/orders'), false);
   eq('an unrelated GET is NOT cached', M.isCacheableRead('/api/settings/theme'), false);
   eq('the cache key keeps the query (dining vs parking never collide)', M.readCacheKey('/api/tables?branch_id=BR1&slot_type=parking_bay'), '/api/tables?branch_id=BR1&slot_type=parking_bay');

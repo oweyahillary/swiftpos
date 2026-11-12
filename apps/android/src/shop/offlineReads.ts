@@ -16,7 +16,10 @@
 
 /** The selling screen's own catalogue reads (apps/dashboard usePOSData) — the ONLY GETs cached for a cold start. Matched
  *  on the PATH; the query (?branch_id=…, &slot_type=…) is part of the cache KEY, not the match. */
-const CACHEABLE_READS = ['/api/pos/init', '/api/tables', '/api/pumps', '/api/printers', '/api/business/settings'];
+// /api/shifts/current is cached too (Till stage 2): offline, a cashier signing in must see the RUNNING shift and sell into
+// it — not be forced to open a new one because the live check can't reach the cloud. Online it caches the branch's current
+// shift (last-known-good); offline that cached shift is served, so the Shop POS (ownTerminal) goes straight in.
+const CACHEABLE_READS = ['/api/pos/init', '/api/tables', '/api/pumps', '/api/printers', '/api/business/settings', '/api/shifts/current'];
 
 export function isCacheableRead(path: string): boolean {
   const justPath = (path.split('?')[0] || '').replace(/\/+$/, '');
