@@ -61,6 +61,36 @@ export function refuseResponse(): Response {
     { status: 503, headers: { 'Content-Type': 'application/json' } });
 }
 
+/** The URL of a fetch input. */
+function urlOf(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return (input as Request).url;
+}
+
+/** The caller's body as a string (the web POS sends JSON strings); undefined for anything else, so it is left untouched. */
+function bodyStringOf(init?: RequestInit): string | undefined {
+  const b = init?.body;
+  return typeof b === 'string' ? b : undefined;
+}
+
+/** The request's headers as a plain object (Headers / array / object), so the branch gateway can forward them. */
+function headersOf(init: RequestInit | undefined, input: RequestInfo | URL): Record<string, string> {
+  const out: Record<string, string> = {};
+  const src = init?.headers ?? (input instanceof Request ? input.headers : undefined);
+  if (!src) return out;
+  if (Array.isArray(src)) {
+    for (const [k, v] of src as [string, string][]) { out[k] = String(v); }
+    return out;
+  }
+  if (typeof (src as Headers).forEach === 'function') {
+    (src as Headers).forEach((v, k) => { out[k] = v; });
+    return out;
+  }
+  for (const [k, v] of Object.entries(src as Record<string, string>)) { out[k] = String(v); }
+  return out;
+}
+
 export interface OfflineWritesDeps {
   store: BufferStore;
   /** True while there is no usable connection (shop/connection.ts useOnline, read live). */
@@ -70,6 +100,11 @@ export interface OfflineWritesDeps {
   /** The cold-start read cache (shop/offlineReads.ts). When given, the selling screen's catalogue GETs are cached online
    *  and served from cache offline, so the POS opens from a cold boot. Omit it and reads just pass through (Till stage 1). */
   reads?: ReadCache;
+  /** Till stage 3: route a cloud call through the joined branch server (shop/branchGateway.ts). Returns a Response when
+   *  the server forwarded the cloud's own answer, or null to fall back to the cloud (online) or the buffer (offline).
+   *  Omit it and nothing routes — Till stage 1/2 is unchanged. Tried before the cloud, so a POS with no internet of its
+   *  own still sells when the branch server has internet. */
+  gateway?: (fullUrl: string, method: string, body: string | undefined, headers: Record<string, string>) => Promise<Response | null>;
   now?: () => string;
 }
 
@@ -82,45 +117,49 @@ export function installOfflineWrites(deps: OfflineWritesDeps): () => void {
   if (!original) return () => {};
   const now = deps.now ?? (() => new Date().toISOString());
 
-  const wrapped: typeof fetch = async (input, init) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
-    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')) || 'GET';
-    const isCloud = typeof url === 'string' && url.startsWith(deps.cloudBase);
-    if (!isCloud) return original(input as RequestInfo, init);                // not the cloud: untouched
-    const path = url.slice(deps.cloudBase.length);
+  // Till stage 3: try the joined branch server first. A Response = the server forwarded the cloud's answer; null (or no
+  // gateway) = fall back to the cloud / the buffer here. Tried for reads and writes alike, online or not.
+  const viaBranch = (url: string, method: string, init?: RequestInit, input?: RequestInfo | URL): Promise<Response | null> =>
+    deps.gateway ? deps.gateway(url, method, bodyStringOf(init), headersOf(init, input ?? url)) : Promise.resolve(null);
 
-    // ── Reads (cold start) ────────────────────────────────────────────────────────────────────────────────────────────
-    // The selling screen's catalogue GETs are cached as they pass through online, and answered from that cache offline, so
-    // the POS opens from a cold boot (opt-in: only when deps.reads is given). Every other read passes straight through.
-    const m = method.toUpperCase();
-    if (m === 'GET' || m === 'HEAD') {
-      if (m === 'GET' && deps.reads && isCacheableRead(path)) {
-        const key = readCacheKey(path);
-        if (deps.isOffline()) {
-          const hit = await deps.reads.get(key);
-          return hit ? cachedResponse(hit) : original(input as RequestInfo, init);   // no cache yet → the screen's own error
-        }
-        const res = await original(input as RequestInfo, init);
-        if (res.ok) { try { await deps.reads.put(key, res.status, await res.clone().text(), now()); } catch { /* cache is best-effort */ } }
-        return res;
-      }
-      return original(input as RequestInfo, init);
+  // A read: the branch server's answer if it forwarded one, else the cloud; the selling screen's catalogue GETs are
+  // cached as they pass through (online or via the server) and served from that cache offline, for a cold boot.
+  const serveRead = async (m: string, path: string, init: RequestInit | undefined, input: RequestInfo | URL, fromServer: Response | null): Promise<Response> => {
+    const cacheable = m === 'GET' && !!deps.reads && isCacheableRead(path);
+    if (cacheable && !fromServer && deps.isOffline()) {
+      const hit = await deps.reads!.get(readCacheKey(path));
+      return hit ? cachedResponse(hit) : original(input as RequestInfo, init);       // no cache yet → the screen's own error
     }
+    const res = fromServer ?? await original(input as RequestInfo, init);
+    if (cacheable && res.ok) { try { await deps.reads!.put(readCacheKey(path), res.status, await res.clone().text(), now()); } catch { /* cache is best-effort */ } }
+    return res;
+  };
 
-    // ── Writes ────────────────────────────────────────────────────────────────────────────────────────────────────────
-    if (!deps.isOffline()) return original(input as RequestInfo, init);       // online: the sale reaches the cloud (Till stage 1)
-    const action = offlineDecision(method, path);                            // offline: 'buffer' a sale, 'refuse' anything else
-    if (action === 'refuse') return refuseResponse();
-
+  // A write the cloud/server could not take: buffer a sale (stamped with the ring-up time so the REPLAY is priced and
+  // de-stocked as of WHEN it happened — apps/server orders.ts anchors to created_at), refuse anything else.
+  const bufferWrite = async (method: string, path: string, init?: RequestInit): Promise<Response> => {
+    if (offlineDecision(method, path) === 'refuse') return refuseResponse();
     let body: unknown = undefined;
     try { body = init?.body ? JSON.parse(String(init.body)) : undefined; } catch { body = undefined; }
     const at = now();
-    // Stamp the tablet's ring-up time into the body so the REPLAYED call is priced and de-stocked as of WHEN the sale
-    // happened (apps/server orders.ts anchors to created_at), not whenever the queue later drains.
     const stamped = body && typeof body === 'object' ? { ...(body as Record<string, unknown>), created_at: at } : body;
     const row = await enqueue(deps.store, { method, path, body: stamped }, at);
     if (!row) return refuseResponse();
     return okResponse(provisionalOrderResponse(path, stamped, at));
+  };
+
+  const wrapped: typeof fetch = async (input, init) => {
+    const url = urlOf(input);
+    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')) || 'GET';
+    if (!url.startsWith(deps.cloudBase)) return original(input as RequestInfo, init);   // not the cloud: untouched
+    const path = url.slice(deps.cloudBase.length);
+    const m = method.toUpperCase();
+
+    const fromServer = await viaBranch(url, m, init, input);                  // the joined branch server, when present
+    if (m === 'GET' || m === 'HEAD') return serveRead(m, path, init, input, fromServer);
+    if (fromServer) return fromServer;                                       // the server forwarded the write (own internet or not)
+    if (!deps.isOffline()) return original(input as RequestInfo, init);      // online: the sale reaches the cloud (Till stage 1)
+    return bufferWrite(method, path, init);                                  // offline and the server could not help: buffer
   };
 
   globalThis.fetch = wrapped;

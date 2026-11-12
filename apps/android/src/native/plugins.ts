@@ -50,8 +50,9 @@ export interface BranchServerPlugin {
   listen(options: { ms: number }): Promise<{ heard: Array<{ ip: string; text: string }> }>;
   /** The server's certificate (public) and its security code; old: a server too old to have one (not joined). */
   readCert(options: { url: string }): Promise<{ cert?: string; code?: string; old?: boolean }>;
-  /** One request over TLS trusting only cert. Rejects with UNREACHABLE, or IDENTITY_CHANGED for any other certificate. */
-  request(options: { url: string; method: 'GET' | 'POST'; headers?: Record<string, string>; body?: string; cert: string; timeoutMs?: number }): Promise<{ status: number; body: string }>;
+  /** One request over TLS trusting only cert. Rejects with UNREACHABLE, or IDENTITY_CHANGED for any other certificate.
+   *  `headers` are the response headers (lowercased) — Till stage 3 reads the branch gateway's x-node-gateway / x-node-uplink marks. */
+  request(options: { url: string; method: 'GET' | 'POST'; headers?: Record<string, string>; body?: string; cert: string; timeoutMs?: number }): Promise<{ status: number; body: string; headers?: Record<string, string> }>;
 }
 
 export const ApkUpdater = registerPlugin<ApkUpdaterPlugin>('ApkUpdater');

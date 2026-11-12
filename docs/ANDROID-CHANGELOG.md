@@ -4,6 +4,18 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.4.0 — Till stage 3 (sell through the branch server): the gateway
+**Branch server (in progress — Slice A of Till stage 3):**
+- When this POS has **joined a branch server**, its cloud traffic now goes **through that server** (`/node/cloud`, A410)
+  over the pinned TLS of the server it joined — so a whole branch (desktop tills + tablets) can run on **one internet
+  connection**, like the desktop peers already do. It falls back to this POS's **own** cloud automatically if the server
+  is unreachable, has no internet itself, is on an older build, or refuses this POS (a preference, not a lock-in), and to
+  the offline buffer if neither can be reached. A POS with no branch server behaves exactly as before.
+- On open and on reconnect the POS checks the server's protocol (`/node/health`) and will not route through a server too
+  new for it (it says to update the POS instead).
+- Next in Till stage 3: selling and syncing through the server's own store (`/node/sync`, `/node/since`), PIN sign-in and
+  session refresh through the server, then shared tables across devices.
+
 ## 0.3.1 — Offline sign-in sells into the running shift
 - Offline, a cashier signing in now **sells into the shift that is already open**, instead of being forced to open a new
   one. The current-shift check is cached (like the catalogue), so when the live check can't reach the cloud, the Shop POS

@@ -19,6 +19,7 @@ import { refreshRoster } from '../../shop/roster';
 import { attemptUpgrade } from '../../shop/offlineUpgrade';
 import { OFFLINE_PENDING } from '../../shop/offlinePin';
 import { runReplay, cloudSender } from '../../shop/replay';
+import { gatewayFetch, checkServerHealth } from '../../shop/branchGateway';
 import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
 import PinScreen from './PinScreen';
@@ -32,6 +33,20 @@ const Selling = lazy(() => import('@zaptill/dashboard-pos').then((m) => ({ defau
 async function startScreens(till: PosSession): Promise<void> {
   const pos = await import('@zaptill/dashboard-pos');
   pos.setShopPosHost(shopPosHostFor(till));
+}
+
+/**
+ * Till stage 3 (docs/SCOPE-TILL-STAGE-3.md): the offline seam's branch-server adapter. When this POS has joined a branch
+ * server, a cloud call is tried through it first (`<server>/node/cloud/api/…`, A410) over pinned TLS; a Response here = the
+ * server forwarded the cloud's own answer. Any server problem returns null, so the seam falls back to the tablet's own
+ * cloud (online) or the Till-stage-2 buffer (offline) — A410 as a preference, not a lock-in.
+ */
+async function branchGatewayAdapter(fullUrl: string, method: string, body: string | undefined, headers: Record<string, string>): Promise<Response | null> {
+  try {
+    const r = await gatewayFetch(fullUrl, method, body, headers);
+    if (r.via !== 'gateway') return null;
+    return new Response(r.body ?? '', { status: r.status ?? 200, headers: { 'Content-Type': r.headers?.['content-type'] ?? 'application/json' } });
+  } catch { return null; }
 }
 
 type State = { kind: 'loading' } | { kind: 'join' } | { kind: 'ready'; till: PosSession } | { kind: 'failed'; message: string };
@@ -54,7 +69,11 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // Install the seam ONCE (wraps window.fetch; online or non-cloud calls pass straight through, so Till stage 1 selling is
   // unchanged). cloudBase is this app's API_URL — the same base the web POS calls, because main.tsx sets the dashboard's
   // apiUrl to it, so the two cannot drift. The read cache serves the catalogue on a cold offline boot.
-  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads }), [buffer, reads]);
+  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads, gateway: branchGatewayAdapter }), [buffer, reads]);
+
+  // Till stage 3: ask the joined branch server what protocol it speaks (over the LAN, whether or not the cloud is
+  // reachable), on open and whenever the connection changes. No branch server joined → this is a quick no-op.
+  useEffect(() => { void checkServerHealth().catch(() => {}); }, [online]);
 
   // Drain the queue to the cloud on open and whenever the connection returns; never two drains at once.
   useEffect(() => {
