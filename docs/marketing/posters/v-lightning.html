@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Lightning</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{position:relative;overflow:hidden;color:#eef1ff;
+    background:radial-gradient(64% 56% at 50% 40%, #2a1c63 0%, #150e3a 48%, #09071f 100%);}
+  .board.square{width:1080px;height:1080px;--pad:76px;--bolt:430px;--name:120px;--tag:25px;}
+  .board.story {width:1080px;height:1920px;--pad:104px;--bolt:560px;--name:156px;--tag:30px;}
+
+  .glow{position:absolute;left:50%;top:44%;width:880px;height:880px;transform:translate(-50%,-50%);z-index:0;filter:blur(8px);
+    background:radial-gradient(closest-side, rgba(139,92,246,.5), rgba(236,72,153,.26) 48%, rgba(34,211,238,.12) 66%, transparent 76%);}
+  .story .glow{top:38%;width:980px;height:980px;}
+  .core{position:absolute;left:50%;top:40%;width:360px;height:420px;transform:translate(-50%,-50%);z-index:1;filter:blur(14px);
+    background:radial-gradient(closest-side, rgba(220,240,255,.5), rgba(129,140,248,.2) 55%, transparent 74%);}
+  .story .core{top:34%;}
+  .ring{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);border-radius:50%;border:1px solid rgba(165,180,252,.1);z-index:1;}
+  .story .ring{top:38%;}
+  .r1{width:560px;height:560px;} .r2{width:820px;height:820px;} .r3{width:1080px;height:1080px;}
+  .story .r1{width:640px;height:640px;} .story .r2{width:920px;height:920px;} .story .r3{width:1180px;height:1180px;}
+
+  .wrap{position:absolute;inset:var(--pad);z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:space-between;}
+  .top{display:flex;flex-direction:column;align-items:center;gap:18px;}
+  .logo{display:flex;align-items:center;gap:.5em;}
+  .logo img{width:46px;height:46px;border-radius:24%;}
+  .logo b{font-family:var(--font-display);font-weight:700;font-size:32px;letter-spacing:-.01em;color:#eef1ff;}
+  .logo b i{font-style:italic;color:#c7b8ff;}
+  .eyebrow{font-family:var(--font-text);font-size:16px;letter-spacing:.5em;text-transform:uppercase;font-weight:800;
+    color:#a5b4fc;padding-left:.5em;}
+
+  .hero{display:flex;flex-direction:column;align-items:center;}
+  .bolt{height:var(--bolt);aspect-ratio:120/180;
+    clip-path:polygon(60% 3.3%, 23.3% 52.2%, 45% 52.2%, 36.7% 96.7%, 78.3% 43.3%, 55% 43.3%, 70% 3.3%);
+    background:linear-gradient(140deg,#ffffff 0%,#c9f0ff 19%,#67e8f9 45%,#818cf8 71%,#e05cf0 100%);
+    filter:drop-shadow(0 0 60px rgba(129,140,248,.85)) drop-shadow(0 0 26px rgba(236,72,153,.5));}
+  .name{font-family:var(--font-display);font-weight:800;font-size:var(--name);letter-spacing:-.03em;line-height:.9;margin-top:4px;
+    background:linear-gradient(135deg,#e9f3ff,#67e8f9 30%,#818cf8 62%,#e9b8ff 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .name i{font-style:italic;-webkit-text-fill-color:#e7e6ff;color:#e7e6ff;opacity:.95;}
+  .tagline{font-family:var(--font-text);font-weight:500;color:#b6b2e6;font-size:var(--tag);letter-spacing:.01em;margin-top:16px;}
+
+  .bottom{display:flex;flex-direction:column;align-items:center;gap:30px;}
+  .features{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;}
+  .story .features{gap:30px 34px;max-width:720px;}
+  .feat{display:flex;flex-direction:column;align-items:center;gap:11px;width:139px;}
+  .story .feat{width:208px;}
+  .ic{width:66px;height:66px;border-radius:20px;display:grid;place-items:center;color:#c7d2fe;
+    background:linear-gradient(180deg,rgba(60,54,120,.6),rgba(28,22,62,.7));border:1px solid rgba(165,180,252,.3);
+    box-shadow:0 18px 40px -22px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.08);}
+  .ic svg{width:44%;height:44%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .lb{font-family:var(--font-text);font-weight:600;font-size:16px;letter-spacing:.02em;color:#aab2e0;}
+  .story .lb{font-size:20px;}
+  .handle{display:flex;align-items:center;gap:20px;font-family:var(--font-text);}
+  .cta{display:inline-flex;align-items:center;background:linear-gradient(135deg,#67e8f9,#a78bfa);color:#161038;font-weight:800;
+    font-size:20px;padding:.72em 1.4em;border-radius:999px;box-shadow:0 14px 36px -12px rgba(129,140,248,.75);letter-spacing:.01em;}
+  .dom{color:#938fc9;font-weight:600;font-size:20px;}
+  .story .cta{font-size:25px;} .story .dom{font-size:25px;}
+</style>
+</head>
+<body>
+
+<div class="board square" id="feed"></div>
+<div class="board story" id="story"></div>
+
+<template id="tpl">
+  <div class="glow"></div><div class="core"></div>
+  <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+  <div class="wrap">
+    <div class="top">
+      <div class="logo"><img src="assets/logo.png" alt=""><b>Zap<i>Till</i></b></div>
+      <div class="eyebrow">Introducing</div>
+    </div>
+
+    <div class="hero">
+      <div class="bolt"></div>
+      <div class="name">Zap<i>Till</i></div>
+      <div class="tagline">The restaurant point of sale, built for Kenya</div>
+    </div>
+
+    <div class="bottom">
+      <div class="features">
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24"><path d="M4.5 11.5a11 11 0 0 1 15 0"/><path d="M7.7 15a6.5 6.5 0 0 1 8.6 0"/><circle cx="12" cy="18.6" r="1.1" fill="currentColor" stroke="none"/></svg></div><div class="lb">Offline</div></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg></div><div class="lb">M-Pesa</div></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg></div><div class="lb">Tables</div></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-1.8-3 1.8-3-1.8-3 1.8z"/><path d="M9 8h6M9 12h6"/></svg></div><div class="lb">Kitchen</div></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v5"/><path d="M12 9l-5 5M12 9l5 5"/><path d="M4 20h5M15 20h5"/></svg></div><div class="lb">Split bills</div></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></div><div class="lb">Day close</div></div>
+      </div>
+      <div class="handle"><span class="cta">Book a demo&nbsp;→</span><span class="dom">zaptill.co.ke</span></div>
+    </div>
+  </div>
+</template>
+
+<script>
+  var tpl = document.getElementById('tpl').innerHTML;
+  document.getElementById('feed').innerHTML = tpl;
+  document.getElementById('story').innerHTML = tpl;
+  var h=location.hash;
+  if(h==='#feed'||h==='#story'){
+    document.body.style.cssText='margin:0;padding:0;gap:0;display:block';
+    document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});
+    var el=document.querySelector(h==='#feed'?'.square':'.story'); if(el){el.style.display='block';el.style.margin='0';}
+  }
+</script>
+</body>
+</html>

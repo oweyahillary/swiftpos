@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Poster explorations</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  .section-title{font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--teal-light);
+    margin:48px 0 4px;letter-spacing:.02em;}
+  .section-sub{font-size:15px;color:var(--muted);margin-bottom:8px;}
+  .card .meta small{display:block;color:var(--muted);font-weight:500;font-size:12px;margin-top:2px;}
+</style>
+</head>
+<body>
+<div class="gallery">
+
+  <h1><img src="assets/logo.png" alt=""> ZapTill — poster explorations</h1>
+  <p class="lead">Several directions for the introduction poster — different concepts and different colour moods — plus the
+  product set. Open any one, or screenshot the board (right-click &rarr; Inspect &rarr; the <code>board</code> div &rarr;
+  Capture node screenshot) for an exact 1080&times;1080.</p>
+
+  <div class="section-title">Introduction — explorations</div>
+  <div class="section-sub">Six directions. Tell me which concept and which colour, and I'll take that one all the way (feed + story, polish, variants).</div>
+  <div class="grid">
+    <div class="card">
+      <div class="shotwrap"><iframe src="v-device.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>Product hero</b><a href="v-device.html" target="_blank">Open</a></div>
+      <div class="meta"><small>the real POS, tilted &amp; glowing · teal</small></div>
+    </div>
+    <div class="card">
+      <div class="shotwrap"><iframe src="v-receipt.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>The receipt</b><a href="v-receipt.html" target="_blank">Open</a></div>
+      <div class="meta"><small>features as a POS receipt · warm amber</small></div>
+    </div>
+    <div class="card">
+      <div class="shotwrap"><iframe src="v-diagonal.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>Appetite</b><a href="v-diagonal.html" target="_blank">Open</a></div>
+      <div class="meta"><small>food hero + diagonal brand panel · warm</small></div>
+    </div>
+    <div class="card">
+      <div class="shotwrap"><iframe src="v-light.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>Light &amp; airy</b><a href="v-light.html" target="_blank">Open</a></div>
+      <div class="meta"><small>dark product on bright canvas · light</small></div>
+    </div>
+    <div class="card">
+      <div class="shotwrap"><iframe src="v-lightning.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>Lightning core</b><a href="v-lightning.html" target="_blank">Open</a></div>
+      <div class="meta"><small>the zap as a bolt · electric violet</small></div>
+    </div>
+    <div class="card">
+      <div class="shotwrap"><iframe src="intro.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>Orbit</b><a href="intro.html" target="_blank">Open</a></div>
+      <div class="meta"><small>gradient name, features in a ring · jewel</small></div>
+    </div>
+  </div>
+
+  <div class="section-title">Product set</div>
+  <div class="section-sub">Feature-led posters on the real brand (feed + story each).</div>
+  <div class="grid">
+    <div class="card">
+      <div class="shotwrap"><iframe src="flagship.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>Flagship — one screen</b><a href="flagship.html" target="_blank">Open</a></div>
+    </div>
+    <div class="card">
+      <div class="shotwrap"><iframe src="offline.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>Sell with no internet</b><a href="offline.html" target="_blank">Open</a></div>
+    </div>
+    <div class="card">
+      <div class="shotwrap"><iframe src="payments.html" scrolling="no"></iframe></div>
+      <div class="meta"><b>M-Pesa &amp; split bills</b><a href="payments.html" target="_blank">Open</a></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function fit(){
+    document.querySelectorAll('.shotwrap').forEach(function(s){
+      var f = s.querySelector('iframe'); var scale = s.clientWidth / 1160;
+      f.style.width='1160px'; f.style.height='1160px'; f.style.transform='scale('+scale+')';
+    });
+  }
+  window.addEventListener('load', fit); window.addEventListener('resize', fit);
+</script>
+</body>
+</html>
