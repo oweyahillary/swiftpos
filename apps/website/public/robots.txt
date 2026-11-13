@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://zaptill.co.ke/sitemap-index.xml
+Sitemap: https://www.zaptill.co.ke/sitemap-index.xml

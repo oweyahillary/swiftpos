@@ -5,10 +5,15 @@ import assert from 'node:assert/strict';
 import { organization, softwareApplication, faqPage } from '../src/lib/schema.ts';
 import { PRICING_FAQ, RESTAURANT_FAQ, RETAIL_FAQ, MINIMART_FAQ, PETROL_FAQ, PARKING_FAQ } from '../src/lib/faq.ts';
 
-test('Organization carries the phone number', () => {
+test('the business is a LocalBusiness carrying the phone number, with no invented address or hours', () => {
   const o = organization();
-  assert.equal(o['@type'], 'Organization');
+  // Service-area local business (owner, 2026-11-13): LocalBusiness + areaServed, no street address (managed in a
+  // Google Business Profile), as Google advises for a "we come to you" business.
+  assert.equal(o['@type'], 'LocalBusiness');
   assert.equal(o.telephone, '+254717675635');
+  assert.equal(o.areaServed.name, 'Kenya');
+  // Nothing invented: address, opening hours and social links stay out until they are real.
+  assert.ok(!('address' in o) && !('openingHoursSpecification' in o) && !('sameAs' in o));
 });
 
 test('SoftwareApplication has no ratings, reviews or draft prices', () => {

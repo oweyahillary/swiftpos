@@ -13,7 +13,7 @@ if (GUIDES.every((g) => g.status === 'draft')) drafts.push('/guides/');
 const excluded = [...drafts, ...INDUSTRIES_PARKED.map((i) => i.href)].map((p) => p.replace(/\/$/, ''));
 
 export default defineConfig({
-  site: 'https://zaptill.co.ke',
+  site: 'https://www.zaptill.co.ke',
   output: 'static',
   trailingSlash: 'ignore',
   build: { format: 'directory' },
