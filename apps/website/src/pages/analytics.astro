@@ -4,7 +4,7 @@ import WhatsAppButton from '../components/WhatsAppButton.astro';
 import Laptop from '../components/frames/Laptop.astro';
 import Shot from '../components/screens/Shot.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
-import { WA_MESSAGES, PRICES, kes } from '../lib/site';
+import { WA_MESSAGES, kes } from '../lib/site';
 import TradeSwitch from '../components/TradeSwitch.astro';
 import ProductVideo from '../components/ProductVideo.astro';
 import { DEMO_CARDS, DEMO_DAYPARTS, DEMO_TOP3, DEMO_WEEK, DEMO_MOVES, DEMO_NO_COST, DEMO_TRADES, CARDS_BY_TRADE, DEMO_FOUND_BY_TRADE, SHOP_DAYPARTS, demoCard } from '../lib/analyticsDemo';
@@ -43,7 +43,7 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
           In a restaurant, a shop or a petrol station, in that trade's own words. Your prices stay competitive: it never
           tells you to charge more.
         </p>
-        <p class="an-hero__price">An add-on, planned at about KES {kes(PRICES.analyticsMonthly)} a month for your whole business.</p>
+        <p class="an-hero__price">An add-on to the cloud, for your whole business — one fee, not per branch.</p>
         <div class="actions">
           <WhatsAppButton message={WA_MESSAGES.analytics} label="Ask what it would show you" />
         </div>
@@ -266,19 +266,19 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
   <section class="band band--white" aria-labelledby="pay-h">
     <div class="wrap payback">
       <div>
-        <h2 id="pay-h">Does it pay for itself? Do the sum yourself.</h2>
+        <h2 id="pay-h">What could it be worth to you? Judge it yourself.</h2>
         <p class="lede">
-          Analytics is planned at about KES {kes(PRICES.analyticsMonthly)} a month. Here are the demo restaurant's cards
-          above. Not every card has a shilling figure, on purpose: a stock card tells you how many to have in, and a
-          warning tells you what to look into. Where there is a figure, it is an estimate, not a promise.
+          Here are the demo restaurant's cards above. Not every card has a shilling figure, on purpose: a stock card
+          tells you how many to have in, and a warning tells you what to look into. Where there is a figure, it is an
+          estimate, not a promise.
         </p>
         <p>
-          The old credit alone, if it is paid, is about {Math.floor(creditKes / PRICES.analyticsMonthly)} months of
-          Analytics. A Friday without running out of the best-selling beer keeps about {demoCard(1).estimate} of sales.
+          The old credit alone, if it is paid, is about KES {kes(creditKes)} back in the bank. A Friday without running
+          out of the best-selling beer keeps about {demoCard(1).estimate} of sales.
         </p>
       </div>
       <table class="payback__table">
-        <caption class="visually-hidden">The demo restaurant's estimates against the price of Analytics</caption>
+        <caption class="visually-hidden">The demo restaurant's estimates, card by card</caption>
         <thead><tr><th scope="col">Card (demo restaurant)</th><th scope="col">What it says</th></tr></thead>
         <tbody>
           {payback.map((p) => (
@@ -288,9 +288,6 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
             </tr>
           ))}
         </tbody>
-        <tfoot>
-          <tr><th scope="row">Analytics</th><td>about KES {kes(PRICES.analyticsMonthly)}<small>a month</small></td></tr>
-        </tfoot>
       </table>
     </div>
   </section>

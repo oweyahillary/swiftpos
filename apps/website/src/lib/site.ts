@@ -42,7 +42,7 @@ export const WA_MESSAGES = {
   general: "Hi ZapTill, I'd like to know more about your point of sale system.",
   demo: "Hi ZapTill, I run a business in Kenya and I'd like a demo.",
   restaurant: "Hi ZapTill, I run a restaurant and I'd like a demo.",
-  pricing: "Hi ZapTill, I've seen your prices and I'd like a quote for my business.",
+  pricing: "Hi ZapTill, I'd like a tailored quote for my business.",
   visit: "Hi ZapTill, I'd like to book a visit to see ZapTill running.",
   analytics: "Hi ZapTill, I'd like to see what Analytics would show for my business.",
   leakReport: "Hi ZapTill, I'd like to ask about a first-month money-leak report for my business.",
@@ -80,10 +80,17 @@ export function kes(n: number): string {
  * type ZapTill is set up for, not only food). Wording per type follows shared/businessTerms.ts: Menus for restaurants and
  * cafés, Departments for shops, minimarts and petrol stations, Groups for parking and other businesses.
  */
+// PUBLIC SCOPE (owner, 2026-11-12, overnight): market ONLY the tested restaurant POS for now — keep pricing and the
+// other POS verticals (shops/minimarts/petrol/parking) OFF the public site. These are the food-service pages that run
+// on the same tested restaurant POS. The other /for/* pages still exist in the repo but are UNLINKED from nav/footer/
+// who-its-for until the owner re-enables them. Re-add the rows here to bring a vertical back.
 export const INDUSTRIES = [
   { href: '/for/restaurants/', name: 'Restaurants and cafés', short: 'Restaurants' },
   { href: '/for/bars/', name: 'Bars and lounges', short: 'Bars' },
   { href: '/for/quick-service/', name: 'Quick service and takeaways', short: 'Quick service' },
+];
+/** Verticals parked off the public site for now (owner, 2026-11-12). Kept so nothing is lost; not linked anywhere. */
+export const INDUSTRIES_PARKED = [
   { href: '/for/retail/', name: 'Shops and supermarkets', short: 'Shops' },
   { href: '/for/minimarts/', name: 'Minimarts', short: 'Minimarts' },
   { href: '/for/petrol-stations/', name: 'Petrol stations', short: 'Petrol' },
@@ -99,10 +106,12 @@ export const TRADES = [
 ] as const;
 export type Trade = (typeof TRADES)[number]['id'];
 
+// Pricing is OFF the public nav for now (owner, 2026-11-12): no pricing on public material. The /pricing/ page still
+// exists in the repo but is unlinked here; price numbers that still appear inside other pages are listed in the morning
+// report for us to remove together during the day.
 export const NAV = [
   { href: '/how-it-works/', label: 'How it works' },
   { href: '/features/', label: 'Features' },
   { href: '/who-its-for/', label: "Who it's for" },
   { href: '/analytics/', label: 'Analytics' },
-  { href: '/pricing/', label: 'Pricing' },
 ];
