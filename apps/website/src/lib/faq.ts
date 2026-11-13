@@ -28,7 +28,7 @@ export const FAQ_HARDWARE: FaqItem = {
 </ul>
 <p>If you want them: a cash drawer, a kitchen printer or a kitchen screen, a barcode scanner, and a label printer (or
 use A4 sticker sheets on an office printer). If you already have hardware, we'll check it and use what fits. Anything
-new is quoted for your setup; an extra computer is from about KES 10,000.</p>`,
+new is quoted for your setup.</p>`,
 };
 
 export const FAQ_MPESA: FaqItem = {
@@ -88,8 +88,8 @@ export const FAQ_TILLS: FaqItem = {
   q: 'What is a branch, and can I have more points of sale?',
   // Owner, 2026-10-23: "10k, in fact the price might vary depending on the client, even installation costs".
   a: `<p>A branch is a two-computer setup: the branch server and a point of sale. A busy place can add more points of sale or a kitchen
-screen; each extra computer is from about KES 10,000, quoted for your setup. The branch setup is KES 30,000;
-installation can vary with the site, and we confirm the price before we start.</p>`,
+screen; each extra computer is quoted for your setup. The branch setup and installation vary with the site, and we
+confirm the price with you before we start.</p>`,
 };
 
 export const FAQ_SUPPORT: FaqItem = {

@@ -1,0 +1,91 @@
+/* posters.css — ZapTill social posters (restaurant POS). On-brand: the back-office teal on a deep teal-ink night,
+ * Bricolage Grotesque + Figtree, the real product screens and real food. Matches apps/website.
+ * Social only: .square = 1080x1080 (feed) · .story = 1080x1920 (status/story). Images live in ./assets/.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,500;1,9..144,600;1,9..144,700&family=Figtree:wght@400;500;600;700&display=swap');
+
+:root{
+  --teal:#14b8a6; --teal-light:#2dd4bf; --teal-strong:#0f766e; --teal-logo:#0d9488;
+  --night:#061a1d; --night-2:#0b2529; --night-line:#1d3c40; --text:#e4efee; --muted:#9fb7b5;
+  --font-display:'Fraunces',Georgia,'Times New Roman',serif;
+  --font-text:'Figtree',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#05161a;font-family:var(--font-text);}
+
+/* ---- artboard ---- */
+.board{position:relative;overflow:hidden;color:var(--text);isolation:isolate;
+  background:
+    radial-gradient(120% 78% at 82% -12%, rgba(20,184,166,.22), transparent 58%),
+    radial-gradient(95% 70% at 6% 112%, rgba(13,148,136,.20), transparent 55%),
+    linear-gradient(162deg, #0a2429 0%, #061a1d 54%, #04151a 100%);}
+.board.square{width:1080px;height:1080px;--pad:74px;--h:70px;--sub:25px;}
+.board.story {width:1080px;height:1920px;--pad:96px;--h:92px;--sub:30px;}
+.frame{position:absolute;inset:var(--pad);z-index:3;display:flex;flex-direction:column;}
+
+/* ---- logo + tag ---- */
+.row-top{display:flex;justify-content:space-between;align-items:center;}
+.logo{display:flex;align-items:center;gap:.5em;}
+.logo img{width:calc(var(--sub)*2.1);height:calc(var(--sub)*2.1);border-radius:24%;display:block;}
+.logo b{font-family:var(--font-display);font-weight:800;font-size:calc(var(--sub)*1.5);letter-spacing:-.02em;}
+.logo b i{font-style:normal;color:var(--teal-light);}
+.tag{font-size:calc(var(--sub)*.64);letter-spacing:.26em;text-transform:uppercase;font-weight:700;color:var(--teal-light);
+  border:1.5px solid var(--night-line);border-radius:999px;padding:.6em 1.1em;}
+
+/* ---- type: a confident headline, a quiet sub ---- */
+.h{font-family:var(--font-display);font-weight:800;font-size:var(--h);line-height:1.02;letter-spacing:-.022em;
+  text-wrap:balance;}
+.h em{font-style:normal;color:var(--teal-light);}
+.sub{font-size:var(--sub);line-height:1.5;color:var(--muted);font-weight:500;max-width:21em;margin-top:calc(var(--pad)*.3);}
+
+/* ---- benefit ticks ---- */
+.ticks{display:flex;flex-wrap:wrap;gap:.7em 1.5em;margin-top:calc(var(--pad)*.42);}
+.tick{display:inline-flex;align-items:center;gap:.5em;font-size:calc(var(--sub)*.92);font-weight:600;color:var(--text);}
+.tick .c{width:1.5em;height:1.5em;border-radius:50%;background:rgba(20,184,166,.16);color:var(--teal-light);
+  display:grid;place-items:center;font-size:.8em;font-weight:800;}
+
+/* ---- the floating product screen ---- */
+.shot{position:relative;border-radius:18px;overflow:hidden;background:var(--night-2);
+  border:1px solid rgba(45,212,191,.22);
+  box-shadow:0 48px 110px -34px rgba(0,0,0,.78), 0 26px 70px -40px rgba(20,184,166,.55), inset 0 0 0 1px rgba(255,255,255,.03);}
+.shot img{width:100%;display:block;}
+.shot .glare{position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.07),transparent 42%);pointer-events:none;}
+
+/* a status pill overlaid on a screen (echoes the app's own) */
+.statuspill{position:absolute;left:4.4%;top:5.5%;z-index:2;display:inline-flex;align-items:center;gap:.55em;
+  background:rgba(6,26,29,.86);border:1px solid var(--teal-strong);border-radius:999px;padding:.5em .95em;
+  font-size:calc(var(--sub)*.74);font-weight:700;color:var(--text);backdrop-filter:blur(3px);}
+.statuspill .d{width:.62em;height:.62em;border-radius:50%;background:var(--teal-light);box-shadow:0 0 0 4px rgba(45,212,191,.22);}
+
+/* a round food inset for warmth */
+.food{position:absolute;border-radius:50%;overflow:hidden;z-index:4;border:4px solid var(--night);
+  box-shadow:0 30px 60px -22px rgba(0,0,0,.7);}
+.food img{width:100%;height:100%;object-fit:cover;display:block;}
+
+/* full-bleed food hero (brand poster) */
+.foodbg{position:absolute;inset:0 0 auto 0;z-index:0;overflow:hidden;}
+.foodbg img{width:100%;height:100%;object-fit:cover;object-position:center 42%;}
+.foodbg::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg, rgba(4,21,25,.28) 0%, rgba(5,22,26,.5) 48%, var(--night) 86%);}
+
+/* ---- footer ---- */
+.foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;gap:2em;}
+.cta{display:inline-flex;align-items:center;gap:.5em;background:var(--teal);color:#042;font-weight:800;
+  font-size:calc(var(--sub)*.9);padding:.75em 1.3em;border-radius:12px;}
+.cta.ghost{background:transparent;color:var(--teal-light);border:1.5px solid var(--night-line);}
+.handle{font-size:calc(var(--sub)*.82);color:var(--muted);font-weight:600;}
+
+/* ---- gallery ---- */
+.gallery{max-width:1200px;margin:0 auto;padding:64px 28px 120px;color:var(--text);font-family:var(--font-text);}
+.gallery h1{font-family:var(--font-display);font-size:56px;font-weight:800;letter-spacing:-.02em;display:flex;align-items:center;gap:16px;}
+.gallery h1 img{width:56px;height:56px;border-radius:24%;}
+.gallery .lead{font-size:18px;line-height:1.6;color:var(--muted);max-width:62ch;margin-top:16px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:32px;margin-top:40px;}
+.card{background:#0b2529;border:1px solid var(--night-line);border-radius:18px;overflow:hidden;}
+.card .shotwrap{aspect-ratio:1;overflow:hidden;position:relative;background:#05161a;}
+.card .shotwrap iframe{border:0;position:absolute;top:0;left:0;transform-origin:top left;}
+.card .meta{padding:15px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.card .meta b{font-size:16px;font-family:var(--font-display);font-weight:700;}
+.card .meta a{font-size:13px;color:var(--teal-light);text-decoration:none;font-weight:700;border:1px solid var(--night-line);padding:7px 12px;border-radius:9px;}
+.note{margin-top:46px;border-top:1px solid var(--night-line);padding-top:26px;font-size:14px;color:var(--muted);line-height:1.7;}
+.note b{color:var(--text);} .note code{background:#0b2529;border:1px solid var(--night-line);padding:1px 6px;border-radius:6px;color:var(--teal-light);}

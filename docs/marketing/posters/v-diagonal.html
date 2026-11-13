@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Appetite</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{width:1080px;height:1080px;position:relative;overflow:hidden;color:var(--text);background:#0b1512;}
+  .food{position:absolute;inset:0;z-index:0;}
+  .food img{width:100%;height:100%;object-fit:cover;object-position:center 34%;}
+  .food::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,16,14,.1),rgba(8,16,14,.25) 40%,transparent 60%);}
+
+  /* diagonal brand panel */
+  .panel{position:absolute;inset:0;z-index:1;clip-path:polygon(0 50%, 100% 33%, 100% 100%, 0 100%);
+    background:linear-gradient(160deg, rgba(5,20,21,.72) 0%, rgba(4,18,20,.95) 46%, #05151a 72%);}
+  .edge{position:absolute;left:0;right:0;z-index:2;height:4px;z-index:2;
+    /* a thin warm accent line riding the diagonal */
+    background:linear-gradient(90deg,#ff8a3d,#ffc24b);clip-path:polygon(0 50%, 100% 33%, 100% calc(33% + 4px), 0 calc(50% + 4px));}
+
+  .wrap{position:absolute;left:92px;right:92px;bottom:96px;z-index:3;}
+  .brand{display:flex;align-items:center;gap:.5em;font-family:var(--font-display);font-weight:800;font-size:34px;letter-spacing:-.02em;}
+  .brand img{width:50px;height:50px;border-radius:24%;} .brand i{font-style:normal;color:#ffb34d;}
+  .h{font-family:var(--font-display);font-weight:800;font-size:76px;line-height:1.0;letter-spacing:-.025em;margin-top:26px;max-width:15em;}
+  .h em{font-style:normal;background:linear-gradient(120deg,#ffb04a,#ff7a3d);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .ticks{display:flex;flex-wrap:wrap;gap:12px 14px;margin-top:30px;}
+  .tk{display:flex;align-items:center;gap:.5em;font-family:var(--font-text);font-weight:600;font-size:23px;color:#f0e9df;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,180,90,.3);border-radius:999px;padding:.5em .95em;}
+  .tk b{color:#ffb34d;font-weight:800;}
+  .foot{position:absolute;right:92px;bottom:40px;z-index:3;font-family:var(--font-text);color:#c7bdae;font-size:22px;font-weight:600;}
+</style>
+</head>
+<body>
+<div class="board">
+  <div class="food"><img src="assets/food-nyamachoma.webp" alt=""></div>
+  <div class="panel"></div>
+  <div class="edge"></div>
+  <div class="wrap">
+    <div class="brand"><img src="assets/logo.png" alt="">Zap<i>Till</i></div>
+    <div class="h">The point of sale with an <em>appetite</em> for service.</div>
+    <div class="ticks">
+      <span class="tk"><b>›</b>Works offline</span>
+      <span class="tk"><b>›</b>M-Pesa &amp; cards</span>
+      <span class="tk"><b>›</b>Tables &amp; tabs</span>
+      <span class="tk"><b>›</b>Kitchen tickets</span>
+    </div>
+  </div>
+  <div class="foot">zaptill.co.ke</div>
+</div>
+</body>
+</html>

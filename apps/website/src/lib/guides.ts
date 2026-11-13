@@ -46,7 +46,7 @@ export const GUIDES: Guide[] = [
     related: [
       { href: '/for/bars/', label: 'ZapTill for bars and lounges' },
       { href: '/for/minimarts/', label: 'ZapTill for minimarts' },
-      { href: '/pricing/#calc-title', label: 'Work out what leaks could be costing you' },
+      { href: '/analytics/#report-h', label: 'Ask for a first-month money-leak report' },
     ],
   },
   {
@@ -95,8 +95,8 @@ export const GUIDES: Guide[] = [
     date: '2026-10-23',
     status: 'draft',
     related: [
-      { href: '/pricing/', label: 'ZapTill pricing' },
-      { href: '/pricing/#compare-title', label: 'ZapTill, a cash book or a basic POS' },
+      { href: '/pricing/', label: 'Build your quote' },
+      { href: '/how-it-works/', label: 'How ZapTill works' },
       { href: '/contact/', label: 'Ask for a quote' },
     ],
   },
