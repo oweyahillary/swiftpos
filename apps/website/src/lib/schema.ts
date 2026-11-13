@@ -27,15 +27,14 @@ export function organization() {
   };
 }
 
-/** Who the product is for, in search engines' words. */
+/**
+ * Who the product is for, in search engines' words. Public scope (owner, 2026-11-13): only the tested restaurant/hotel
+ * POS is marketed publicly, so only the food-service audiences are named here. The other verticals are parked.
+ */
 export const AUDIENCES = [
-  'Retail shops and supermarkets',
-  'Minimarts',
   'Restaurants and cafés',
   'Bars and lounges',
   'Quick-service restaurants and takeaways',
-  'Petrol stations',
-  'Car parks',
 ];
 
 /** The product: on Home, Features and Analytics. */
@@ -50,7 +49,7 @@ export function softwareApplication(description: string) {
     description,
     url: SITE.url,
     publisher: { '@id': `${SITE.url}/#organization` },
-    // 2026-10-23: every business type ZapTill is set up for (shared/businessTerms.ts), not only food service.
+    // Public scope (owner, 2026-11-13): only the food-service audiences (AUDIENCES), the tested restaurant/hotel POS.
     audience: AUDIENCES.map((audienceType) => ({ '@type': 'BusinessAudience', audienceType, geographicArea: { '@type': 'Country', name: 'Kenya' } })),
     // TODO(owner): add an "offers" block (price, KES) once the prices are final; left out while they are a draft.
   };

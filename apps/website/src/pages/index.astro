@@ -11,26 +11,18 @@ import DayCloseScreen from '../components/screens/DayCloseScreen.astro';
 import PhoneSummary from '../components/screens/PhoneSummary.astro';
 import Receipt from '../components/screens/Receipt.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
-import ProductVideo from '../components/ProductVideo.astro';
-import { WA_MESSAGES, PRICES, kes } from '../lib/site';
-import { SHOP_CARDS } from '../lib/analyticsDemo';
+import { WA_MESSAGES } from '../lib/site';
 import { HOME_FAQ } from '../lib/faq';
 import { softwareApplication, website } from '../lib/schema';
 
-// 2026-10-23 (owner: "the whole website markets more of restaurant than all the other businesses"): one card per
-// business type ZapTill is set up for, each to its own page. Words per type follow shared/businessTerms.ts.
-const lanes: { href: string; name: string; line: string; also?: { href: string; label: string } }[] = [
+// Public scope (owner, 2026-11-13): the public site markets only the tested restaurant/hotel POS — restaurants, cafés,
+// bars and quick service. The other verticals are parked (unlinked, noindexed). Words per type follow shared/businessTerms.ts.
+const lanes: { href: string; name: string; line: string }[] = [
   { href: '/for/restaurants/', name: 'Restaurants and cafés', line: 'Kitchen tickets, tables and menus as big tabs.' },
-  { href: '/for/bars/', name: 'Bars and quick service', line: 'Over and short by name, credit for regulars, a fast counter.',
-    also: { href: '/for/quick-service/', label: 'Quick service' } },
-  { href: '/for/retail/', name: 'Shops and supermarkets', line: 'Barcodes on every product, labels, stock and suppliers.' },
-  { href: '/for/minimarts/', name: 'Minimarts', line: 'Scan, weigh the meat and tomatoes, and sell on account.' },
-  { href: '/for/petrol-stations/', name: 'Petrol stations', line: 'Pumps on the point of sale, fuel by amount or litres, the forecourt shop.' },
-  { href: '/for/parking/', name: 'Car parks', line: 'Bays, number plates and hourly charges, on the web POS.' },
-  { href: '/who-its-for/#other', name: 'Other businesses', line: 'Your own groups of products and services. Ask us.' },
+  { href: '/for/bars/', name: 'Bars and lounges', line: 'Over and short by name at every close, credit for regulars.' },
+  { href: '/for/quick-service/', name: 'Quick service and takeaways', line: 'A fast counter, dispatch tickets, offers and M-Pesa.' },
 ];
-const shopCard = SHOP_CARDS[1];
-const description = 'A POS for shops, supermarkets, restaurants, bars, petrol stations and car parks in Kenya: M-Pesa on every receipt, drawers by cashier, a desktop POS that sells offline.';
+const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on every receipt, orders straight to the kitchen, drawers by cashier, a desktop POS that sells offline.';
 ---
 <Base
   title="ZapTill | POS system for Kenyan businesses, with M-Pesa"
@@ -45,7 +37,7 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
       <div class="hero__copy">
         <h1>Know where every shilling went, every single day.</h1>
         <p class="hero__sub">
-          In your shop, your restaurant or your station. ZapTill runs your point of sale (POS) and <span class="nb">M-Pesa</span> through
+          In your restaurant, café or bar. ZapTill runs your point of sale (POS) and <span class="nb">M-Pesa</span> through
           internet cuts, closes your day in minutes, tells you who was short, and sends you the numbers before you sleep.
         </p>
         <div class="actions">
@@ -55,8 +47,10 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
         <p class="hero__small">Built in Kenya. M-Pesa and KES from the first day. We set it up and train your staff.</p>
       </div>
       <div class="hero__visual">
-        <ProductVideo name="reel" eager class="hero__video" note="The real ZapTill: a minimart, a grill and the owner's phone."
-          label="A short film of ZapTill: at Kijani Basket, a minimart, milk, bread and eggs go on the bill, beef is weighed at 0.640 kg and paid by M-Pesa, and the receipt prints with the shop's logo; at Mama Lishe Grill, Table 4's order goes to the kitchen and the kitchen ticket prints; then the owner sees the day and what to do next on the phone." />
+        <Monitor label="The ZapTill point of sale at a demo restaurant">
+          <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
+            alt="The real ZapTill point of sale at a demo restaurant: menu buttons and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
+        </Monitor>
       </div>
     </div>
   </section>
@@ -64,7 +58,7 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
   <!-- Trust strip -->
   <section class="trust" aria-label="Who uses ZapTill">
     <div class="wrap trust__inner">
-      <p>Made in Kenya for every business that sells over a counter: shops, restaurants, bars, stations and car parks.</p>
+      <p>Made in Kenya for restaurants, cafés and bars that sell over a counter.</p>
       <!--
         TODO(owner): client logos go here, only with each client's written permission (analysis §8).
         Real clients only; never partner or vendor logos. No numbers until they are real.
@@ -76,9 +70,9 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
   <section class="band" aria-labelledby="lanes-title">
     <div class="wrap">
       <div class="section-head">
-        <h2 id="lanes-title">Built for your business</h2>
-        <p>The same point of sale, set up the way your place works and in your trade's own words: menus in a restaurant,
-          departments in a shop, groups everywhere else.</p>
+        <h2 id="lanes-title">Built for your place</h2>
+        <p>The same point of sale, set up the way your place works and in your own words: menus and tables in a
+          restaurant, tabs and credit in a bar, a fast counter for takeaway.</p>
       </div>
       <ul class="lanes">
         {lanes.map((l) => (
@@ -118,30 +112,27 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
         <div class="benefit__copy">
           <h2>When the internet goes, your points of sale don't.</h2>
           <p>
-            Every point of sale keeps selling and printing with no internet: the shop's scanner, the restaurant's kitchen tickets,
-            the station's pumps. A branch server keeps all the points of sale in step with each other. When the line comes back,
+            Every point of sale keeps taking orders and printing with no internet: the counter, the kitchen tickets and
+            the receipts. A branch server keeps all the points of sale in step with each other. When the line comes back,
             everything catches up by itself, and nobody has to do anything.
           </p>
           <p><a href="#offline">See the busiest hour with no internet</a></p>
         </div>
-        <div class="benefit__visual">
-          <Monitor label="The petrol station point of sale: the pumps, with fuel and shop items on one sale">
-            <Shot src="/screens/till-pumps.webp" width={1280} height={800}
-              alt="The real ZapTill point of sale at a demo petrol station: five pumps with their grade and price per litre, and a sale of 11.66 litres of diesel for KES 2,000 with engine oil and water from the shop, total KES 2,920." />
-          </Monitor>
+        <div class="benefit__visual benefit__slips">
+          <Receipt kind="cafe" print />
         </div>
       </article>
 
       <article class="benefit">
         <div class="benefit__copy">
-          <h2>Every item scans. Every order reaches the kitchen. Every receipt carries your M-Pesa number.</h2>
+          <h2>Every order reaches the kitchen. Every receipt carries your M-Pesa number.</h2>
           <p>
-            In a shop, products without a barcode get their own code from ZapTill, and the labels print on whatever
-            printer you have. Meat, vegetables and anything sold loose are weighed on the POS keypad.
+            Orders go straight to the kitchen printer or screen, with the variant on the same line:
+            "Chips Masala - Spicy", and the extras and the cashier's notes under the dish.
           </p>
           <p>
-            In a restaurant, orders go straight to the kitchen printer or screen, with the variant on the same line:
-            "Chips masala - Spicy".
+            Open a table and add to it round by round, hold an order and pick it up again, and send drinks to the bar
+            while the food goes to the grill.
           </p>
           <p>
             Your Buy Goods or Paybill number prints large on every receipt. Part M-Pesa, part cash? Split it at the
@@ -149,7 +140,7 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
           </p>
         </div>
         <div class="benefit__visual benefit__slips">
-          <Receipt kind="shop" print />
+          <Receipt kind="sale" print />
           <Receipt kind="kitchen" print printDelay={450} />
         </div>
       </article>
@@ -180,7 +171,7 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
     <div class="wrap offline">
       <div class="section-head">
         <h2 id="offline-title">Friday, 12:40. The busiest hour. The internet goes.</h2>
-        <p>Here is what happens at a minimart and at the restaurant next door, both running ZapTill.</p>
+        <p>Here is what happens at a busy restaurant running ZapTill.</p>
       </div>
       <ol class="timeline">
         <li>
@@ -193,9 +184,9 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
         <li>
           <time>12:45</time>
           <div>
-            <h3>The scanner keeps beeping. The kitchen keeps cooking.</h3>
-            <p>At the minimart, bread and milk scan and the beef is weighed as usual. At the restaurant, orders still reach
-              the kitchen. Each branch server keeps its own points of sale in step.</p>
+            <h3>The orders keep coming. The kitchen keeps cooking.</h3>
+            <p>Waiters keep sending tables to the kitchen and the tickets keep printing. The branch server keeps every
+              point of sale in step.</p>
           </div>
         </li>
         <li>
@@ -215,7 +206,7 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
         <li>
           <time>22:47</time>
           <div>
-            <h3>Both owners check their phones.</h3>
+            <h3>The owner checks their phone.</h3>
             <p>The day's numbers are all there, outage and all.</p>
           </div>
         </li>
@@ -230,12 +221,12 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
         <h2 id="dtn-title">Then it tells you what to change.</h2>
         <p class="lede">
           ZapTill Analytics reads your sales and ranks what to do next, in plain words: what to order before Friday,
-          what is about to run out, what sells together (bread with milk, water at the pumps, a drink with a dish), and
+          what is about to run out, what sells together (a drink with a dish, a side with a main), and
           whose voids are worth a look. Your prices stay yours: it never tells you to charge more.
         </p>
         <p><a href="/analytics/">How Analytics works</a></p>
       </div>
-      <DoThisNextCard {...shopCard} who="a demo minimart" />
+      <DoThisNextCard who="a demo restaurant" />
     </div>
   </section>
 
@@ -316,9 +307,9 @@ const description = 'A POS for shops, supermarkets, restaurants, bars, petrol st
   .lanes li { position: relative; }
   .lanes .lanes__also { display: inline-flex; align-items: center; min-height: 32px; padding: 0.25rem 0.4rem; position: relative; z-index: 1; margin: calc(-1 * var(--s-3)) 0 var(--s-4) var(--s-2); font-weight: 600; font-size: var(--fs-sm); }
   @media (min-width: 900px) {
-    .lanes { grid-template-columns: repeat(4, 1fr); border-top: 0; border-left: 1px solid var(--line-strong); }
+    .lanes { grid-template-columns: repeat(3, 1fr); border-top: 0; border-left: 1px solid var(--line-strong); }
     .lanes li { border-bottom: 1px solid var(--line-strong); border-right: 1px solid var(--line-strong); }
-    .lanes li:nth-child(-n + 4) { border-top: 1px solid var(--line-strong); }
+    .lanes li:nth-child(-n + 3) { border-top: 1px solid var(--line-strong); }
     .lanes > li > a:first-child { padding: var(--s-5) var(--s-4); height: 100%; align-content: start; }
     .lanes .lanes__also { position: absolute; left: calc(var(--s-4) - 0.4rem); bottom: calc(var(--s-4) - 0.25rem); margin: 0; }
     .lanes li:has(.lanes__also) > a:first-child { padding-bottom: calc(var(--s-5) + 1.6rem); }

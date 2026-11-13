@@ -7,7 +7,7 @@ export interface FaqItem { q: string; a: string }
 export const FAQ_INTERNET: FaqItem = {
   q: 'Do I need internet?',
   a: `<p>Not to sell. Your points of sale keep selling and printing receipts with no internet, and a branch server keeps every
-point of sale in the shop in step. When the internet comes back, everything catches up by itself.</p>
+point of sale in the branch in step. When the internet comes back, everything catches up by itself.</p>
 <p>You need internet to see your numbers from somewhere else, and for the daily summary to reach you.</p>`,
 };
 
@@ -26,9 +26,8 @@ export const FAQ_HARDWARE: FaqItem = {
 <li>A receipt printer</li>
 <li>A UPS, recommended, so a short power cut doesn't stop the counter</li>
 </ul>
-<p>If you want them: a cash drawer, a kitchen printer or a kitchen screen, a barcode scanner, and a label printer (or
-use A4 sticker sheets on an office printer). If you already have hardware, we'll check it and use what fits. Anything
-new is quoted for your setup.</p>`,
+<p>If you want them: a cash drawer, and a kitchen printer or a kitchen screen. If you already have hardware, we'll
+check it and use what fits. Anything new is quoted for your setup.</p>`,
 };
 
 export const FAQ_MPESA: FaqItem = {

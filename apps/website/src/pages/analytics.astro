@@ -5,9 +5,8 @@ import Laptop from '../components/frames/Laptop.astro';
 import Shot from '../components/screens/Shot.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
 import { WA_MESSAGES, kes } from '../lib/site';
-import TradeSwitch from '../components/TradeSwitch.astro';
 import ProductVideo from '../components/ProductVideo.astro';
-import { DEMO_CARDS, DEMO_DAYPARTS, DEMO_TOP3, DEMO_WEEK, DEMO_MOVES, DEMO_NO_COST, DEMO_TRADES, CARDS_BY_TRADE, DEMO_FOUND_BY_TRADE, SHOP_DAYPARTS, demoCard } from '../lib/analyticsDemo';
+import { DEMO_CARDS, DEMO_DAYPARTS, DEMO_TOP3, DEMO_WEEK, DEMO_MOVES, DEMO_NO_COST, DEMO_FOUND_BY_TRADE, demoCard } from '../lib/analyticsDemo';
 import { softwareApplication } from '../lib/schema';
 
 const description =
@@ -40,7 +39,7 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
         <p class="an-hero__sub">
           ZapTill Analytics reads your own sales and tells you what to do next, in plain words: what to order before
           Friday, what sells together, what to prepare each day, which branch needs stock from another, and who owes you.
-          In a restaurant, a shop or a petrol station, in that trade's own words. Your prices stay competitive: it never
+          In your restaurant's own words. Your prices stay competitive: it never
           tells you to charge more.
         </p>
         <p class="an-hero__price">An add-on to the cloud, for your whole business — one fee, not per branch.</p>
@@ -83,27 +82,20 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
           your figures support it.
         </p>
       </div>
-      <TradeSwitch trades={DEMO_TRADES} label="Show the example cards for a restaurant, a shop or a petrol station">
-        {DEMO_TRADES.map((t) => (
-          <div data-trade-panel={t.id}>
-            <p class="demo-tag">Example from {t.who}</p>
-            <p class="an-found" set:html={DEMO_FOUND_BY_TRADE[t.id]} />
-            {t.id === 'restaurant' && (
-              <p class="an-nocost">
-                <b>{DEMO_NO_COST.items} items have no cost</b>: {DEMO_NO_COST.share} of your sales, so your margins are partly
-                blind. Analytics lists them, so you can set a cost and see every margin.
-              </p>
-            )}
-            <ul class="an-cards">
-              {CARDS_BY_TRADE[t.id].map((c) => <li><DoThisNextCard bare {...c} /></li>)}
-            </ul>
-          </div>
-        ))}
-      </TradeSwitch>
+      <div>
+        <p class="demo-tag">Example from a demo restaurant</p>
+        <p class="an-found" set:html={DEMO_FOUND_BY_TRADE['restaurant']} />
+        <p class="an-nocost">
+          <b>{DEMO_NO_COST.items} items have no cost</b>: {DEMO_NO_COST.share} of your sales, so your margins are partly
+          blind. Analytics lists them, so you can set a cost and see every margin.
+        </p>
+        <ul class="an-cards">
+          {DEMO_CARDS.map((c) => <li><DoThisNextCard bare {...c} /></li>)}
+        </ul>
+      </div>
       <p class="an-words">
-        Each business gets its cards in its own words. A shop is told to put two products on the same shelf; a petrol
-        station to offer a shop item at the pumps; a restaurant to make two dishes a combo. None of them is ever told to
-        charge more.
+        Every card is in a restaurant's own words: make two dishes a combo, prep more of what sells on a Friday, chase
+        the oldest credit. None of them is ever a push to charge more.
       </p>
     </div>
   </section>
@@ -118,48 +110,25 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
           top 3 at every hour, to have ready before the hour starts.
         </p>
       </div>
-      <TradeSwitch trades={DEMO_TRADES.slice(0, 2)} label="Show what sells when for a restaurant or a shop">
-        <div data-trade-panel="restaurant">
-          <p class="demo-tag">Example from a demo restaurant</p>
-          <ul class="dayparts">
-            {DEMO_DAYPARTS.map((d) => (
-              <li class="daypart">
-                <h3>What sells {d.name === 'Late at night' ? 'late at night' : d.name === 'Lunch' ? 'at lunch' : `in the ${d.name.toLowerCase()}`}</h3>
-                <p class="daypart__meta">{d.hours} &middot; {d.share} of everything sold</p>
-                <ul>
-                  {d.items.map(([name, pct]) => (
-                    <li>
-                      <span class="daypart__row"><span>{name}</span><b>{pct}%</b></span>
-                      <span class="daypart__bar" style={`--w:${pct}%`}></span>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div data-trade-panel="shop">
-          <p class="demo-tag">Example from a demo minimart</p>
-          <p class="an-found">Bread and milk sell most from 6 to 9 in the morning, so the bakery shelf is full before the first
-            customer; the evening brings flour, meat and oil for dinner.</p>
-          <ul class="dayparts">
-            {SHOP_DAYPARTS.map((d) => (
-              <li class="daypart">
-                <h3>What sells {d.name === 'Afternoon' ? 'in the afternoon' : d.name === 'Evening' ? 'in the evening' : d.name.toLowerCase()}</h3>
-                <p class="daypart__meta">{d.hours} &middot; {d.share} of everything sold</p>
-                <ul>
-                  {d.items.map(([name, pct]) => (
-                    <li>
-                      <span class="daypart__row"><span>{name}</span><b>{pct}%</b></span>
-                      <span class="daypart__bar" style={`--w:${pct}%`}></span>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </TradeSwitch>
+      <div>
+        <p class="demo-tag">Example from a demo restaurant</p>
+        <ul class="dayparts">
+          {DEMO_DAYPARTS.map((d) => (
+            <li class="daypart">
+              <h3>What sells {d.name === 'Late at night' ? 'late at night' : d.name === 'Lunch' ? 'at lunch' : `in the ${d.name.toLowerCase()}`}</h3>
+              <p class="daypart__meta">{d.hours} &middot; {d.share} of everything sold</p>
+              <ul>
+                {d.items.map(([name, pct]) => (
+                  <li>
+                    <span class="daypart__row"><span>{name}</span><b>{pct}%</b></span>
+                    <span class="daypart__bar" style={`--w:${pct}%`}></span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       <div class="week">
         <h3 id="week-h">Your week at a glance: what to prepare each day</h3>

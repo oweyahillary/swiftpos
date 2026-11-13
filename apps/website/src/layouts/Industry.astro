@@ -5,7 +5,7 @@ import Base from './Base.astro';
 import WhatsAppButton from '../components/WhatsAppButton.astro';
 import VisitButton from '../components/VisitButton.astro';
 import Faq from '../components/Faq.astro';
-import { INDUSTRIES } from '../lib/site';
+import { INDUSTRIES, INDUSTRIES_PARKED } from '../lib/site';
 import { faqPage, breadcrumb } from '../lib/schema';
 import { GUIDES, guideHref } from '../lib/guides';
 import type { FaqItem } from '../lib/faq';
@@ -32,8 +32,11 @@ const { title, description, ogImage, crumb, heading, sub, waMessage, problems, p
 const readNext = GUIDES.filter((g) => guides.includes(g.slug));
 const here = Astro.url.pathname;
 const others = INDUSTRIES.filter((i) => !here.startsWith(i.href));
+// Public scope (owner, 2026-11-13): the parked verticals (shops, minimarts, petrol, parking) stay in the repo but are
+// unlinked and kept out of search — noindex here, and out of the sitemap (astro.config.mjs).
+const parked = INDUSTRIES_PARKED.some((i) => here.startsWith(i.href));
 ---
-<Base title={title} description={description} waMessage={waMessage} ogImage={ogImage} jsonLd={[faqPage(faq), breadcrumb([["Who it's for", '/who-its-for/'], [crumb, here]])]}>
+<Base title={title} description={description} waMessage={waMessage} ogImage={ogImage} noindex={parked} jsonLd={[faqPage(faq), breadcrumb([["Who it's for", '/who-its-for/'], [crumb, here]])]}>
   <section class="ind-hero">
     <div class="wrap ind-hero__grid">
       <div class="ind-hero__copy">

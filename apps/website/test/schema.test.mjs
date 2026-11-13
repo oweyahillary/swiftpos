@@ -16,11 +16,12 @@ test('SoftwareApplication has no ratings, reviews or draft prices', () => {
   assert.ok(!/aggregateRating|review|offers/i.test(s));
 });
 
-test('SoftwareApplication names every business type, not only food service', () => {
+test('SoftwareApplication names only the public food-service business types', () => {
+  // Public scope (owner, 2026-11-13): only the tested restaurant/hotel POS is marketed publicly.
   const s = softwareApplication('x');
   const types = s.audience.map((a) => a.audienceType).join(' | ');
-  for (const t of ['Retail', 'Minimarts', 'Restaurants', 'Petrol stations', 'Car parks']) assert.ok(types.includes(t), t);
-  assert.ok(!/hotel/i.test(types));
+  for (const t of ['Restaurants', 'Bars', 'Quick-service']) assert.ok(types.includes(t), t);
+  for (const t of ['Retail', 'Minimarts', 'Petrol', 'Car parks', 'Supermarket']) assert.ok(!types.includes(t), `parked: ${t}`);
 });
 
 test('FAQPage answers are plain text, one per question', () => {

@@ -34,10 +34,10 @@ export interface Guide {
 export const GUIDES: Guide[] = [
   {
     slug: 'stop-cash-going-missing',
-    title: 'How to stop cash going missing at your shop',
-    metaTitle: 'How to stop cash going missing at your shop | ZapTill',
+    title: 'How to stop cash going missing at your counter',
+    metaTitle: 'Stop cash going missing at your counter | ZapTill',
     description:
-      'Practical habits and point of sale checks that show where cash and stock go missing in a shop, bar, restaurant or petrol station in Kenya, and who was on the drawer.',
+      'Practical habits and point of sale checks that show where cash and stock go missing in a restaurant, café or bar in Kenya, and who was on the drawer.',
     summary:
       'Most missing money is not one big theft. It is small, daily and hard to see. Here is how to make it visible, by name, without accusing anyone.',
     minutes: 7,
@@ -45,7 +45,7 @@ export const GUIDES: Guide[] = [
     status: 'draft',
     related: [
       { href: '/for/bars/', label: 'ZapTill for bars and lounges' },
-      { href: '/for/minimarts/', label: 'ZapTill for minimarts' },
+      { href: '/for/restaurants/', label: 'ZapTill for restaurants and cafés' },
       { href: '/analytics/#report-h', label: 'Ask for a first-month money-leak report' },
     ],
   },
@@ -54,7 +54,7 @@ export const GUIDES: Guide[] = [
     title: 'Running two branches without being there',
     metaTitle: 'Running two branches without being there | ZapTill',
     description:
-      'How Kenyan owners run a second shop, restaurant or station without standing in it all day: one daily routine, the numbers that matter, and what to check by phone.',
+      'How Kenyan owners run a second restaurant or café without standing in it all day: one daily routine, the numbers that matter, and what to check by phone.',
     summary:
       'You cannot be in two places at once. You can know, every night, what happened in both. A routine for the owner who is away.',
     minutes: 7,
@@ -63,7 +63,7 @@ export const GUIDES: Guide[] = [
     related: [
       { href: '/features/#branches', label: 'Branches and branding' },
       { href: '/analytics/', label: 'ZapTill Analytics' },
-      { href: '/for/retail/', label: 'ZapTill for shops and supermarkets' },
+      { href: '/for/quick-service/', label: 'ZapTill for quick service and takeaways' },
     ],
   },
   {
@@ -79,7 +79,7 @@ export const GUIDES: Guide[] = [
     status: 'draft',
     related: [
       { href: '/features/#offline', label: 'Works offline' },
-      { href: '/for/petrol-stations/', label: 'ZapTill for petrol stations' },
+      { href: '/for/bars/', label: 'ZapTill for bars and lounges' },
       { href: '/for/restaurants/', label: 'ZapTill for restaurants and cafés' },
     ],
   },
