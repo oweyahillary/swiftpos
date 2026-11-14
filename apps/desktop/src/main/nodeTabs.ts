@@ -137,6 +137,29 @@ export function claimTab(db: DB, id: string, who: string): ClaimResult {
   return { ok: false, code: 409, lockedBy: cur?.locked_by ?? '(unknown)' };
 }
 
+/**
+ * A MANAGER-APPROVED steal of a tab even while its lease is still LIVE — the owner's
+ * "see it, then take over" decision (2026-11-14). `claimTab` only takes a LAPSED
+ * lease; this overrides an active holder. The CALLER gates it on a manager's
+ * approval; the node records who took it from whom (the returned `previousHolder`
+ * feeds the audit). One unconditional atomic UPDATE on the id — the node serves
+ * requests one at a time, so two managers forcing at the same instant still leave
+ * exactly one holder. A gone tab → 409.
+ */
+export function forceClaim(db: DB, id: string, who: string):
+  { ok: true; tab: TabRow; previousHolder: string | null } | { ok: false; code: 409 } {
+  const before = getTab(db, id);
+  if (!before) return { ok: false, code: 409 };
+  const previousHolder = before.locked_by && before.locked_by !== who ? before.locked_by : null;
+  db.prepare(`
+    UPDATE node_tabs
+       SET locked_by = @who, lock_expires = @exp,
+           last_changed_by = COALESCE(last_changed_by, @who)
+     WHERE id = @id
+  `).run({ who, exp: leaseUntil(), id });
+  return { ok: true, tab: getTab(db, id)!, previousHolder };
+}
+
 /** Save edits — only the lock-holder may, and each edit RENEWS the lease. */
 export function updateTab(db: DB, id: string, who: string, cart: unknown, label?: string):
   { ok: true; tab: TabRow } | { ok: false; code: 409 | 423; lockedBy?: string } {

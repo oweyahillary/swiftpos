@@ -60,6 +60,15 @@ function claim(id, who, expOverride) {
   if (changes === 1) return { ok: true, tab: getTab(id), stole };
   return { ok: false, code: 409, lockedBy: getTab(id)?.locked_by ?? '?' };
 }
+// force-claim: the exact atomic UPDATE from nodeTabs.ts — overrides even a LIVE lock (manager-approved steal)
+function forceClaim(id, who) {
+  const before = getTab(id);
+  if (!before) return { ok: false, code: 409 };
+  const previousHolder = before.locked_by && before.locked_by !== who ? before.locked_by : null;
+  db.prepare(`UPDATE node_tabs SET locked_by=@who, lock_expires=@exp, last_changed_by=COALESCE(last_changed_by,@who) WHERE id=@id`)
+    .run({ who, exp: leaseUntil(), id });
+  return { ok: true, tab: getTab(id), previousHolder };
+}
 function updateTab(id, who, cart) {
   const t = getTab(id);
   if (!t) return { ok: false, code: 409 };
@@ -142,6 +151,19 @@ registerTab({ ...base, id: 'tab6' });
 claim('tab6', 'till-1');
 const clrDenied = deleteTab('tab6', 'till-2', 'cleared');
 ok('a non-holder cannot clear a tab (423)', clrDenied.ok === false && clrDenied.code === 423);
+
+// 9. a MANAGER force-claim takes an ACTIVELY-held tab (owner 2026-11-14: "see it, then take over")
+registerTab({ ...base, id: 'tab7', opened_by: 'Jane' });
+claim('tab7', 'till-1');                           // till-1 holds a LIVE lease
+const normalDenied = claim('tab7', 'till-2');
+ok('a normal claim still 409s on a LIVE foreign lock', normalDenied.ok === false && normalDenied.code === 409);
+const fc = forceClaim('tab7', 'till-2');           // manager-approved force-steal of the live lock
+ok('force-claim takes a live lock', fc.ok === true && getTab('tab7').locked_by === 'till-2');
+ok('force-claim reports the previous holder (for the audit)', fc.previousHolder === 'till-1');
+const fcMine = forceClaim('tab7', 'till-2');       // already mine → nothing stolen
+ok('force-claim on my own tab reports no previous holder', fcMine.ok === true && fcMine.previousHolder === null);
+const fcGone = forceClaim('does-not-exist', 'till-2');
+ok('force-claim on a gone tab → 409', fcGone.ok === false && fcGone.code === 409);
 
 console.log(`\n${fail === 0 ? `All ${pass} checks passed. The atomic claim/lease/audit semantics hold.` : `${fail} FAILED (${pass} passed)`}`);
 console.log('NOTE: live cross-till behaviour (poll lag, offline mid-charge, real race) needs a two-till rig — not covered here.');

@@ -1004,6 +1004,13 @@ jobs:
       - name: ZapTill for Android, Till stage 3 Slice D (session refresh through the branch server)
         run: node --no-warnings tests/android-till-stage3d.test.mjs
 
+      # Till stage 3b server (docs/BUILD-TILL-STAGE-3B-SERVER.md) — SHARED HELD ORDERS: the branch node's authoritative
+      # tab store (nodeTabs.ts) exposed as /node/tabs… routes. The atomic claim / 90s lease / lapsed-steal / clear-audit
+      # semantics AND the manager-approved force-claim of a live lock, under a SQLite stand-in. The live cross-till
+      # behaviour (two real tills racing) needs a two-till rig — not covered here.
+      - name: Shared held orders — node tab store (claim/lease/force-claim/audit)
+        run: node apps/desktop/test/node-tabs-claim.test.mjs
+
   # 2026-11-02 (owner: "11 min is a lot of time"): the server job ran its named steps, every migration test and the
   # loop over every tests/*.test.mjs one after the other (~10.5 minutes). The migration tests (two halves) and the loop
   # now run as jobs of their own, at the same time as the named steps — the same tests, about half the wait.
