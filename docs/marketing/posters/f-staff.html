@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Your most reliable employee</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{position:relative;overflow:hidden;color:var(--text);font-family:var(--font-text);
+    background:
+      radial-gradient(70% 48% at 78% 20%, rgba(246,196,83,.18), transparent 60%),
+      radial-gradient(72% 48% at 50% 50%, rgba(20,184,166,.22), transparent 62%),
+      radial-gradient(100% 80% at 6% 112%, rgba(13,148,136,.22), transparent 60%),
+      linear-gradient(158deg,#0a2a28 0%,#07211f 52%,#05161a 100%);}
+  .board.square{width:1080px;height:1080px;}
+  .board.story{width:1080px;height:1920px;}
+  .frame{position:absolute;inset:76px;z-index:6;display:flex;flex-direction:column;}
+  .story .frame{inset:96px;}
+  .row-top{display:flex;justify-content:space-between;align-items:center;}
+  .logo{display:flex;align-items:center;gap:.5em;}
+  .logo img{width:52px;height:52px;border-radius:24%;display:block;}
+  .logo b{font-family:var(--font-display);font-weight:800;font-size:38px;letter-spacing:-.02em;}
+  .logo b i{font-style:normal;color:var(--teal-light);}
+  .tag{font-size:16px;letter-spacing:.24em;text-transform:uppercase;font-weight:800;color:#3a2606;
+    background:linear-gradient(92deg,#f6c453,#e0a327);border-radius:999px;padding:.6em 1.1em;}
+
+  .h{font-family:var(--font-display);font-weight:800;letter-spacing:-.022em;line-height:1.02;text-wrap:balance;color:#fff;}
+  .h em{font-style:normal;color:#f6c453;}
+  .sub{line-height:1.5;color:#cfe7e2;font-weight:500;}
+
+  /* the "never" list */
+  .nevers{display:flex;flex-direction:column;}
+  .nv{display:flex;align-items:center;gap:.7em;font-weight:600;color:#fff;}
+  .nv .c{flex:none;display:grid;place-items:center;border-radius:50%;
+    background:rgba(20,184,166,.18);color:var(--teal-light);}
+  .nv .c svg{width:62%;height:62%;stroke:currentColor;fill:none;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round;}
+  .nv b{font-weight:800;color:#f6c453;}
+
+  /* ===== award rosette ===== */
+  .rosette{position:absolute;z-index:5;}
+  .rosette .tail{position:absolute;left:50%;top:58%;width:30%;height:52%;background:linear-gradient(#e0a327,#c9881d);
+    box-shadow:0 20px 40px -18px rgba(0,0,0,.6);}
+  .rosette .tail.l{transform:translateX(-96%) rotate(7deg);clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%);}
+  .rosette .tail.r{transform:translateX(-4%) rotate(-7deg);clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%);}
+  .rosette .pleats{position:absolute;inset:0;border-radius:50%;
+    background:repeating-conic-gradient(from 0deg,#f6c453 0 6deg,#dc9f28 6deg 12deg);
+    box-shadow:0 30px 70px -26px rgba(0,0,0,.7);}
+  .rosette .ring{position:absolute;inset:11%;border-radius:50%;background:radial-gradient(circle at 50% 36%,#1a4f49,#0c332f);
+    border:3px solid #f6c453;display:grid;place-items:center;text-align:center;}
+  .rosette .ring .star{color:#f6c453;line-height:1;}
+  .rosette .ring .t1{font-weight:800;letter-spacing:.14em;color:#d9efe9;text-transform:uppercase;}
+  .rosette .ring .t2{font-family:var(--font-display);font-weight:800;color:#fff;line-height:.98;}
+  .rosette .ring .t3{font-weight:700;letter-spacing:.2em;color:#f6c453;text-transform:uppercase;}
+
+  .foot{position:absolute;z-index:6;display:flex;justify-content:space-between;align-items:flex-end;gap:2em;}
+  .foot .fx b{font-family:var(--font-display);font-weight:700;color:#fff;display:block;line-height:1.1;}
+  .cta{display:inline-flex;align-items:center;gap:.4em;background:linear-gradient(92deg,#5eead4,#2dd4bf);color:#053029;font-weight:800;
+    padding:.75em 1.3em;border-radius:12px;box-shadow:0 16px 36px -12px rgba(45,212,191,.5);margin-top:16px;}
+  .handle{color:rgba(255,255,255,.82);font-weight:600;}
+
+  /* ===== square ===== */
+  .square .h{font-size:74px;}
+  .square .copy{position:absolute;left:76px;top:168px;z-index:6;width:560px;}
+  .square .sub{font-size:24px;max-width:17em;margin-top:22px;}
+  .square .nevers{position:absolute;left:76px;top:548px;z-index:6;gap:26px;}
+  .square .nv{font-size:30px;} .square .nv .c{width:42px;height:42px;}
+  .square .rosette{right:62px;top:300px;width:430px;height:430px;}
+  .square .rosette .ring .star{font-size:40px;}
+  .square .rosette .ring .t1{font-size:19px;margin-top:4px;}
+  .square .rosette .ring .t2{font-size:52px;margin:6px 0;}
+  .square .rosette .ring .t3{font-size:16px;}
+  .square .foot{left:76px;right:76px;bottom:66px;font-size:24px;}
+
+  /* ===== story ===== */
+  .story .h{font-size:104px;}
+  .story .copy{position:absolute;left:96px;right:96px;top:230px;z-index:6;text-align:center;}
+  .story .sub{font-size:32px;max-width:20em;margin:28px auto 0;}
+  .story .rosette{left:50%;transform:translateX(-50%);top:740px;width:560px;height:560px;}
+  .story .rosette .ring .star{font-size:54px;}
+  .story .rosette .ring .t1{font-size:24px;margin-top:6px;}
+  .story .rosette .ring .t2{font-size:70px;margin:8px 0;}
+  .story .rosette .ring .t3{font-size:21px;}
+  .story .nevers{position:absolute;left:0;right:0;top:1420px;z-index:6;align-items:center;gap:30px;}
+  .story .nv{font-size:40px;} .story .nv .c{width:54px;height:54px;}
+  .story .foot{left:96px;right:96px;bottom:92px;font-size:30px;}
+</style>
+</head>
+<body>
+<div class="board square" id="feed"></div>
+<div class="board story" id="story"></div>
+
+<template id="tpl">
+  <div class="frame">
+    <div class="row-top">
+      <span class="logo"><img src="assets/logo.png" alt="">Zap<b><i>Till</i></b></span>
+      <span class="tag">Meet the team</span>
+    </div>
+  </div>
+
+  <div class="copy">
+    <div class="h">Your most <em>reliable</em> employee.</div>
+    <div class="sub">Every order logged, every shift reconciled &mdash; and it keeps selling when the internet goes down.</div>
+  </div>
+
+  <div class="rosette">
+    <span class="tail l"></span><span class="tail r"></span>
+    <div class="pleats"></div>
+    <div class="ring">
+      <div>
+        <div class="star">&#9733;</div>
+        <div class="t1">Staff of the month</div>
+        <div class="t2">Every<br>month</div>
+        <div class="t3">ZapTill</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nevers">
+    <div class="nv"><span class="c"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>Never <b>forgets an order</b></div>
+    <div class="nv"><span class="c"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>Logs <b>every shilling</b></div>
+    <div class="nv"><span class="c"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>Never <b>calls in sick</b></div>
+  </div>
+
+  <div class="foot">
+    <span class="fx"><b>Hire the till that never clocks out.</b><span class="cta">Book a demo&nbsp;&rarr;</span></span>
+    <span class="handle">zaptill.co.ke</span>
+  </div>
+</template>
+
+<script>
+  var tpl=document.getElementById('tpl').innerHTML;
+  document.getElementById('feed').innerHTML=tpl;document.getElementById('story').innerHTML=tpl;
+  var h=location.hash;
+  if(h==='#feed'||h==='#story'){document.body.style.cssText='margin:0;padding:0;gap:0;display:block';
+    document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});
+    var el=document.querySelector(h==='#feed'?'.square':'.story');if(el){el.style.display='block';el.style.margin='0';}}
+</script>
+</body>
+</html>
