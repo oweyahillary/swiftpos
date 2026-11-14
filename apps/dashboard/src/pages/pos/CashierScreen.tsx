@@ -31,7 +31,8 @@ import NoteModal from './NoteModal';
 import { noteLines } from '@zaptill/core/orderNotes';
 import MinimartPOS from './MinimartPOS';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton, CategoryBar } from './cashier/CategoryPanel';   // A537; A566; A580; 8n
-import { shopPosHost } from '../../lib/shopPos';   // Till stage 1: the Android Shop POS (no category pin on the tablet)
+import { shopPosHost, branchTabsHost, type BranchTab } from '../../lib/shopPos';   // Till stage 1 + 3b (shared tables)
+import { tableOccupied as tabOccupied, heldBy as tabHeldBy, tapAction as tabTapAction, claimAction as tabClaimAction, editLost as tabEditLost } from './branchTabsUx';
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '@zaptill/core/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
@@ -116,6 +117,7 @@ interface OpenOrder {
   cart: CartItem[];
   covers: number;
   openedAt: number;
+  node?: boolean;   // Till stage 3b: this table's tab is shared on the branch node (this till holds its 90s lease)
   orderType?: string; // e.g. 'takeaway' for non-table orders; undefined = derive from tableId
   // 0.6.27: a delivery's rider and fee (the fee is required with the client's 'delivery_fee' switch)
   rider?: string;
@@ -382,6 +384,14 @@ export default function CashierScreen() {
   // ── Order state ────────────────────────────────────────────────────────────
   const [openOrders, setOpenOrders] = useState<Record<string, OpenOrder>>({});
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  // ── Till stage 3b: shared tables (the branch node's held orders). `tabsHost` is non-null ONLY on a tablet that joined a
+  // branch server AND a restaurant; a browser / server-less / non-restaurant POS leaves it null and every branch-tabs call
+  // and merge below is inert — the selling screen is byte-for-byte unchanged. ──────────────────────────────────────────
+  const tabsHost = isRestaurant ? branchTabsHost() : null;
+  const [nodeTabs, setNodeTabs] = useState<BranchTab[]>([]);
+  const [heldTab, setHeldTab] = useState<BranchTab | null>(null);
+  const cartRef = useRef<CartItem[]>(cart);
+  cartRef.current = cart;
 
   // ── A367: notes — one on each line (on the cart item) and one on the whole order, kept per open order (the table,
   // bay or pump; '' for a quick sale). An order with no items has no note, so an emptied cart drops it.
@@ -638,31 +648,86 @@ export default function CashierScreen() {
     });
   }, [cart, activeKey]);
 
+  // ── Till stage 3b: shared-table effects (all inert when tabsHost is null) ───────────────────────────────────────────
+  // Keep the branch node's open tabs, refreshed on entering the tables grid and every ~5s while on it (not inside an
+  // order), so another till's tables show occupied + "Held by" near-live.
+  useEffect(() => {
+    if (!tabsHost || !session?.branchId) { setNodeTabs([]); return; }
+    let live = true;
+    const branchId = session.branchId;
+    const load = () => { void tabsHost.listTabs(branchId).then((rows) => { if (live) setNodeTabs(rows); }).catch(() => {}); };
+    load();
+    const t = setInterval(() => { if (view !== 'products') load(); }, 5000);
+    return () => { live = false; clearInterval(t); };
+  }, [tabsHost, session?.branchId, view]);
+  // While holding a shared tab, renew its 90s lease on edits (debounced). 'lost' = another till took it over → say so and
+  // drop back to the tables grid, never silently keep editing a stolen tab.
+  useEffect(() => {
+    if (!tabsHost || !activeKey) return;
+    const oo = openOrders[activeKey];
+    if (!oo?.node) return;
+    const label = oo.tableName;
+    const h = setTimeout(() => {
+      void tabsHost.updateTab(activeKey, cartRef.current, label).then((res) => {
+        if (tabEditLost(res)) { showFreezeToast('This table was taken over on another POS.', 'warning'); goBackToSlotPicker(); }
+      }).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(h);
+  }, [cart, activeKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // An open-but-idle shared tab would lapse in 90s; a ~60s heartbeat renews the lease so a waiter standing at the table
+  // doesn't lose it.
+  useEffect(() => {
+    if (!tabsHost || !activeKey) return;
+    const oo = openOrders[activeKey];
+    if (!oo?.node) return;
+    const label = oo.tableName;
+    const t = setInterval(() => { void tabsHost.updateTab(activeKey, cartRef.current, label).catch(() => {}); }, 60000);
+    return () => clearInterval(t);
+  }, [activeKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Table actions (restaurant) ─────────────────────────────────────────────
 
+  const nodeTabFor = (id: string): BranchTab | undefined => (tabsHost ? nodeTabs.find((t) => t.id === id) : undefined);
   function tableStatus(table: Table): 'free' | 'occupied' {
-    return openOrders[table.id] ? 'occupied' : 'free';
+    return tabOccupied(!!openOrders[table.id], !!nodeTabFor(table.id)) ? 'occupied' : 'free';
   }
 
   const [showClearTableModal, setShowClearTableModal] = useState(false);
   const [tableToClear, setTableToClear] = useState<Table | null>(null);
 
+  function openCovers(table: Table) { setPendingTable(table); setCovers(2); setShowCoversModal(true); }
   function onTableTap(table: Table) {
-    const existing = openOrders[table.id];
-    if (existing) {
-      // Occupied — show details modal (resume or clear)
-      setTableToClear(table);
-      setShowClearTableModal(true);
-      return;
+    // Till stage 3b: our own open order → the resume/clear modal; a table held on the branch (not here) → try to claim
+    // it; free → open covers (today). When tabsHost is null this is always 'resume-local' or 'open-free' (unchanged).
+    const act = tabTapAction(!!openOrders[table.id], !!nodeTabFor(table.id), !!tabsHost);
+    if (act === 'resume-local') { setTableToClear(table); setShowClearTableModal(true); return; }
+    if (act === 'take-node') { void takeNodeTab(table); return; }
+    openCovers(table);
+  }
+
+  // Till stage 3b: a table held on the branch (not here). Claim it — a lapsed lease auto-wins (toast), a LIVE lock opens
+  // the read-only "Held by <name>" browse, and no server/answer falls back to opening it fresh (local-only).
+  async function takeNodeTab(table: Table) {
+    const node = nodeTabFor(table.id);
+    if (!tabsHost || !node) { openCovers(table); return; }
+    const res = await tabsHost.claimTab(node.id, session?.staffName ?? 'Cashier');
+    const action = tabClaimAction(res, table.name);
+    if (action.kind === 'open') {
+      const loaded = action.cart as CartItem[];
+      setOpenOrders((prev) => ({ ...prev, [table.id]: {
+        tableId: table.id, tableName: table.name, cart: loaded, covers: 2, openedAt: Date.now(), node: true } }));
+      setActiveKey(table.id); setCart(loaded); setView('products');
+      if (action.toast) showFreezeToast(action.toast, 'warning');
+    } else if (action.kind === 'held') {
+      setHeldTab(node);
+    } else {
+      openCovers(table);   // unreachable → today's local path
     }
-    // Free — open covers modal
-    setPendingTable(table);
-    setCovers(2);
-    setShowCoversModal(true);
   }
 
   function clearTable(table: Table) {
     if (!sentTabGuard(table.id)) { setShowClearTableModal(false); setTableToClear(null); return; }   // 0.6.28
+    if (tabsHost && (openOrders[table.id]?.node || nodeTabFor(table.id))) void tabsHost.deleteTab(table.id, 'cleared');   // 3b: remove it on the branch (audited)
     setOpenOrders(prev => {
       const next = { ...prev };
       delete next[table.id];
@@ -678,15 +743,18 @@ export default function CashierScreen() {
 
   function confirmCovers() {
     if (!pendingTable) return;
-    const key = pendingTable.id;
+    const table = pendingTable;
+    const key = table.id;
+    const shared = !!tabsHost;   // Till stage 3b: share this table on the branch node
     setOpenOrders((prev) => ({
       ...prev,
       [key]: {
-        tableId: pendingTable.id,
-        tableName: pendingTable.name,
+        tableId: table.id,
+        tableName: table.name,
         cart: [],
         covers,
         openedAt: Date.now(),
+        ...(shared ? { node: true } : {}),
       },
     }));
     setActiveKey(key);
@@ -694,6 +762,36 @@ export default function CashierScreen() {
     setShowCoversModal(false);
     setPendingTable(null);
     setView('products');
+    if (shared && tabsHost && session?.branchId) {
+      const name = session.staffName ?? 'Cashier';
+      const branchId = session.branchId;
+      void (async () => {
+        await tabsHost.registerTab({ id: key, branch_id: branchId, order_number: '', label: table.name, order_type: 'dine_in', table_number: table.name, cart: [], opened_by: name });
+        await tabsHost.claimTab(key, name);
+      })();
+    }
+  }
+
+  // Till stage 3b: resume a table we already hold locally. On a shared tab, re-claim first (renew our lease); if it was
+  // taken over while we were away, show the read-only "Held by <name>" instead of silently resuming.
+  async function resumeTable(table: Table, order: OpenOrder) {
+    if (tabsHost && order.node) {
+      const action = tabClaimAction(await tabsHost.claimTab(table.id, session?.staffName ?? 'Cashier'), table.name);
+      if (action.kind === 'held') {
+        const nt = nodeTabFor(table.id);
+        if (nt) setHeldTab(nt); else showFreezeToast(`${table.name} is in use on another POS.`, 'warning');
+        return;
+      }
+      if (action.kind === 'open' && Array.isArray(action.cart) && action.cart.length) {
+        const loaded = action.cart as CartItem[];
+        setOpenOrders((prev) => ({ ...prev, [table.id]: { ...prev[table.id], cart: loaded, node: true } }));
+        setActiveKey(table.id); setCart(loaded); setView('products');
+        if (action.toast) showFreezeToast(action.toast, 'warning');
+        return;
+      }
+      // 'open' with an empty node cart, or 'fallback' → resume our local copy below
+    }
+    setActiveKey(table.id); setCart(order.cart); setView('products');
   }
 
   // Start a non-table takeaway order (restaurant/cafe). No table, no covers —
@@ -719,6 +817,7 @@ export default function CashierScreen() {
 
   function goBackToSlotPicker() {
     if (activeKey) {
+      if (tabsHost && openOrders[activeKey]?.node) void tabsHost.releaseTab(activeKey);   // 3b: free the lock; the tab stays registered for another till
       setOpenOrders((prev) => ({
         ...prev,
         [activeKey]: { ...prev[activeKey], cart },
@@ -1145,6 +1244,7 @@ export default function CashierScreen() {
   const closeVoidedTab = () => {
     if (!activeKey) return;
     const key = activeKey;
+    if (tabsHost && openOrders[key]?.node) void tabsHost.deleteTab(key, 'cleared');   // 3b: a fully-voided tab is cleared on the branch (audited)
     setSentOrderIds(prev => { const n = { ...prev }; delete n[key]; return n; });
     setOpenOrders(prev => { const n = { ...prev }; delete n[key]; return n; });
     setActiveKey(null);
@@ -2449,11 +2549,7 @@ export default function CashierScreen() {
                   onClick={() => {
                     setShowClearTableModal(false);
                     setTableToClear(null);
-                    if (order) {
-                      setActiveKey(tableToClear.id);
-                      setCart(order.cart);
-                      setView('products');
-                    }
+                    if (order) void resumeTable(tableToClear, order);   // 3b: re-claims a shared tab first (else resumes local)
                   }}
                 >
                   Resume order
@@ -2468,6 +2564,54 @@ export default function CashierScreen() {
                 >
                   Clear table
                 </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Till stage 3b: a table held on ANOTHER till — read-only browse of its order + who holds it. Taking over an
+          ACTIVELY-held tab (a manager-approved force-steal) is a flagged follow-up; a tab left idle >90s frees itself and
+          this till can then open it normally. */}
+      {heldTab && (() => {
+        const items = Array.isArray(heldTab.cart) ? (heldTab.cart as CartItem[]) : [];
+        const total = items.reduce((sum, i) => sum + (i.lineTotal ?? 0), 0);
+        const holder = tabHeldBy(heldTab);
+        return (
+          <div style={s.overlay} className="animate-fade-in" onClick={() => setHeldTab(null)}>
+            <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 400, padding: 0, overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ padding: '18px 20px 16px', borderBottom: '1px solid var(--pos-border)', background: 'var(--pos-modal)' }}>
+                <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--pos-text)' }}>{heldTab.label || 'Table'}</div>
+                <div style={{ fontSize: 12, color: 'var(--pos-text3)', marginTop: 3 }}>
+                  Held by <span style={{ color: 'var(--pos-text2)', fontWeight: 600 }}>{holder}</span> on another POS
+                </div>
+              </div>
+              <div style={{ padding: '14px 20px', maxHeight: 220, overflowY: 'auto', background: 'var(--pos-modal)' }}>
+                {items.length === 0 ? (
+                  <div style={{ color: 'var(--pos-text4)', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>No items yet</div>
+                ) : (
+                  <>
+                    {items.map((item, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--pos-border)', fontSize: 13 }}>
+                        <span style={{ color: 'var(--pos-text)' }}>{item.product?.name}<span style={{ color: 'var(--pos-text3)', marginLeft: 6 }}>×{item.quantity}</span></span>
+                        <span style={{ color: 'var(--pos-text2)', fontVariantNumeric: 'tabular-nums' }}>{currency} {(item.lineTotal ?? 0).toLocaleString('en-KE', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 4px', fontWeight: 700, fontSize: 14 }}>
+                      <span style={{ color: 'var(--pos-text)' }}>Total</span>
+                      <span style={{ color: '#22c55e' }}>{currency} {total.toLocaleString('en-KE', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div style={{ padding: '12px 20px 14px', borderTop: '1px solid var(--pos-border)', background: 'var(--pos-surface)', fontSize: 12, color: 'var(--pos-text3)' }}>
+                This table is open on another POS. It frees itself if left idle, or {holder} can finish it.
+              </div>
+              <div style={{ display: 'flex', gap: 10, padding: '0 20px 16px', background: 'var(--pos-surface)' }}>
+                <button
+                  style={{ flex: 1, padding: '11px', background: 'var(--pos-panel)', border: '1px solid var(--pos-border)', borderRadius: 10, color: 'var(--pos-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => setHeldTab(null)}
+                >Close</button>
               </div>
             </div>
           </div>
@@ -2736,6 +2880,7 @@ export default function CashierScreen() {
             // Free the table immediately on payment (independent of the receipt's
             // New Sale button), so a paid table never stays stuck "Occupied".
             if (activeKey) {
+              if (tabsHost && openOrders[activeKey]?.node) void tabsHost.deleteTab(activeKey, 'charged');   // 3b: paid → remove the shared tab (routine, not audited)
               setOpenOrders(prev => { const n = { ...prev }; delete n[activeKey]; return n; });
             }
           }}

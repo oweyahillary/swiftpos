@@ -45,6 +45,36 @@ local-only for now (out of "shared tables" scope). Hook points, already located 
 
 **Deferred follow-ups (flagged):** (1) a full **read-only browse** of another till's cart (vs a "Held by X" info modal) — needs new read-only rendering in the products/cart view; (2) a **cloud-relayed manager alert** for a force-steal/clear (the server logs + returns the audit today — see the server build sheet); (3) non-restaurant held orders (parking/petrol/retail) on the node.
 
+## Selling-screen wiring — SHIPPED (v0.4.5)
+
+`CashierScreen.tsx` is now wired to the host, gated on `branchTabsHost() && isRestaurant` (a browser / server-less /
+non-restaurant POS is byte-for-byte unchanged). The decision logic is a pure module, `pages/pos/branchTabsUx.ts`
+(`tableOccupied`/`heldBy`/`tapAction`/`claimAction`/`editLost`), unit-tested hermetically in `tests/branch-tabs-ux.test.mjs`
+(18 assertions). What the screen does now:
+
+- **Occupancy** (`tableStatus`): occupied if a local order **or** a node tab exists; `nodeTabs` state polled via
+  `host.listTabs` every ~5 s while on the tables grid, refreshed on entry (`view`-gated).
+- **New table** (`confirmCovers`): `registerTab` + `claimTab`, and the local order is marked `node:true`.
+- **Tap a shared table** (`onTableTap`→`takeNodeTab`): `claimTab` → `claimed` loads the cart + opens it (a **lapsed**
+  steal toasts "took over an idle table"); `locked` opens the **read-only "Held by &lt;name&gt;" browse modal**;
+  `unreachable` falls back to opening it fresh (local-only).
+- **Resume** (`resumeTable`): re-claims first; if taken over meanwhile → the Held modal, else resume (local on any fallback).
+- **Lease**: a debounced `updateTab` on cart edits renews the 90 s lease; `lost` → toast + `goBackToSlotPicker`; a ~60 s
+  heartbeat keeps an open-but-idle table held. **Release** on `goBackToSlotPicker`.
+- **Delete**: `onPaid` → `deleteTab('charged')`; `clearTable`/`closeVoidedTab` → `deleteTab('cleared')`.
+
+### Deferred / flagged (NOT in v0.4.5)
+1. **Manager-approved force-steal of an ACTIVELY-held table.** The Held modal browses read-only and tells the waiter the
+   table frees itself if idle — it does **not** offer a force take-over. Reason (flag, not a guess): the node's
+   `/node/tabs/:id/force-claim` **trusts the caller** (no PIN check), there is **no manager-PIN pattern inside
+   CashierScreen** to reuse (the existing ones verify server-side, e.g. `ShiftModal` `approvePin`), and **which permission
+   authorises a take-over is undecided**. A correct build needs: node-side manager-PIN verification on force-claim (server
+   slice) **or** a host `verifyManagerPin` via `/node/verify-pin` (plumbing), **plus** an owner call on the authorising
+   permission. The **idle-auto-takeover** (a lapsed >90 s lease) already covers an abandoned table with no manager.
+2. **Holder name on the table tile** — shown in the Resume/Held modal; a caption on the tile itself (two tile renderers:
+   floor-plan + grid) is a small follow-up, left out to avoid editing the tile layout blind.
+3. Non-restaurant held orders (parked retail / pumps / bays) stay local-only (owner: restaurant tables only for v1).
+
 ## Rig test — two tills + two tablets (required before any floor use)
 The hermetic test proves the client's wiring, not the live cross-device behaviour (the point of D9):
 1. Open a tab on **till A** → it appears on **till B**'s table grid as occupied + "Held by A".

@@ -4,6 +4,21 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.4.5 — Till stage 3b (shared tables wired into the selling screen)
+**Shared tables are now live on the restaurant POS (when a branch server is joined):**
+- The **table grid shows every till's open tables**, not just this one's — a table held on another till reads **occupied**,
+  refreshed every ~5 s while you're on the grid.
+- Opening a **free** table registers it on the branch and takes its lock; your edits **renew the 90 s lease** (with a ~60 s
+  heartbeat so an open-but-idle table isn't lost), and leaving it (**← Tables**) releases the lock for the next till.
+- Tapping a table **held on another till** opens a **read-only browse** of its order with **"Held by &lt;name&gt;"**. A table
+  left **idle > 90 s frees itself**, so you can then open it normally.
+- **Charge** removes the shared tab; **clear / full void** removes it with an audit.
+- **Never blocks a sale:** any branch-server hiccup falls back to this till's own local tables.
+- **Unchanged** on the browser, a server-less tablet, or a non-restaurant POS (the shared-tabs host is null there).
+- **Flagged follow-up:** a *manager-approved take-over of an actively-held* table (a force-steal) is **not** in this build —
+  it needs the node to verify the manager PIN (it trusts the caller today) and a decision on which permission authorises it.
+  The idle-auto-takeover above covers an abandoned table without a manager. See `docs/BUILD-TILL-STAGE-3B-CLIENT.md`.
+
 ## 0.4.4 — Till stage 3b (shared held orders: the POS client + bridge)
 **Branch server (Stage 3b, client foundation):**
 - When this POS has **joined a branch server**, it can now talk to the branch's **shared held-order store** — a tab (held

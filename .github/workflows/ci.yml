@@ -1010,6 +1010,11 @@ jobs:
       - name: ZapTill for Android, Till stage 3b client (shared held-order tabs)
         run: node --no-warnings tests/android-till-tabs.test.mjs
 
+      # Till stage 3b CashierScreen wiring (docs/BUILD-TILL-STAGE-3B-CLIENT.md §Selling-screen) — the PURE shared-table
+      # decisions the selling screen uses: occupancy merge, tap routing, the claim/take-over outcomes, lease-lost drop.
+      - name: ZapTill shared tables, CashierScreen decisions
+        run: node --no-warnings tests/branch-tabs-ux.test.mjs
+
       # Till stage 3b server (docs/BUILD-TILL-STAGE-3B-SERVER.md) — SHARED HELD ORDERS: the branch node's authoritative
       # tab store (nodeTabs.ts) exposed as /node/tabs… routes. The atomic claim / 90s lease / lapsed-steal / clear-audit
       # semantics AND the manager-approved force-claim of a live lock, under a SQLite stand-in. The live cross-till
