@@ -21,4 +21,20 @@ declare module '@zaptill/dashboard-pos' {
     token: string; refreshToken: string; staffId: string; staffName: string; role: string;
     branchId: string; branchName: string; businessType: string; currency: string; permissions: Record<string, boolean>;
   }): void;
+  // Till stage 3b: the shared held-orders (tabs) host, installed only when this POS joined a branch server.
+  interface BranchTab {
+    id: string; order_number: string; label: string; order_type: string; table_number: string;
+    cart: unknown; opened_by: string; last_changed_by: string | null; locked_by: string | null; locked: boolean;
+  }
+  type BranchClaim = { outcome: 'claimed'; tab: BranchTab; stole: boolean } | { outcome: 'locked'; lockedBy: string } | { outcome: 'unreachable' };
+  type BranchEdit = { outcome: 'ok'; tab: BranchTab } | { outcome: 'lost'; lockedBy?: string } | { outcome: 'unreachable' };
+  export function setBranchTabsHost(host: {
+    listTabs: (branchId: string) => Promise<BranchTab[]>;
+    registerTab: (t: { id: string; branch_id: string; order_number: string; label: string; order_type: string; table_number?: string; cart: unknown; opened_by: string }) => Promise<void>;
+    claimTab: (id: string, name: string) => Promise<BranchClaim>;
+    forceClaim: (id: string, name: string) => Promise<BranchClaim>;
+    updateTab: (id: string, cart: unknown, label?: string) => Promise<BranchEdit>;
+    releaseTab: (id: string) => Promise<void>;
+    deleteTab: (id: string, reason: 'charged' | 'cleared') => Promise<void>;
+  } | null): void;
 }

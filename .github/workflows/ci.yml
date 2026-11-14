@@ -1004,6 +1004,12 @@ jobs:
       - name: ZapTill for Android, Till stage 3 Slice D (session refresh through the branch server)
         run: node --no-warnings tests/android-till-stage3d.test.mjs
 
+      # Till stage 3b client (docs/BUILD-TILL-STAGE-3B-CLIENT.md) — the Shop POS's client for the branch node's shared held
+      # orders: list/register/claim/force-claim/update/release/delete over pinned TLS, the lock proven by the device.
+      # 404/503/no-link → unreachable so a server-less POS stays local-only. Hermetic (pure parsers + injected IO).
+      - name: ZapTill for Android, Till stage 3b client (shared held-order tabs)
+        run: node --no-warnings tests/android-till-tabs.test.mjs
+
       # Till stage 3b server (docs/BUILD-TILL-STAGE-3B-SERVER.md) — SHARED HELD ORDERS: the branch node's authoritative
       # tab store (nodeTabs.ts) exposed as /node/tabs… routes. The atomic claim / 90s lease / lapsed-steal / clear-audit
       # semantics AND the manager-approved force-claim of a live lock, under a SQLite stand-in. The live cross-till

@@ -22,6 +22,7 @@ import { OFFLINE_PENDING } from '../../shop/offlinePin';
 import { runReplay, cloudSender } from '../../shop/replay';
 import { gatewayFetch, checkServerHealth } from '../../shop/branchGateway';
 import { readServerLink } from '../../shop/branchServer';
+import * as branchTabs from '../../shop/branchTabs';
 import { enqueueOrderFor, drainToNode, makeNodeOutbox, type NodeOutbox } from '../../shop/branchSync';
 import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
@@ -36,6 +37,14 @@ const Selling = lazy(() => import('@zaptill/dashboard-pos').then((m) => ({ defau
 async function startScreens(till: PosSession): Promise<void> {
   const pos = await import('@zaptill/dashboard-pos');
   pos.setShopPosHost(shopPosHostFor(till));
+  // Till stage 3b: when this POS joined a branch server, hand the web POS the shared-tabs host so a held order opened on
+  // one till is seen, locked and taken over from another. No server joined → null host → CashierScreen is local-only.
+  const link = await readServerLink();
+  pos.setBranchTabsHost(link ? {
+    listTabs: branchTabs.listTabs, registerTab: branchTabs.registerTab, claimTab: branchTabs.claimTab,
+    forceClaim: branchTabs.forceClaim, updateTab: branchTabs.updateTab, releaseTab: branchTabs.releaseTab,
+    deleteTab: branchTabs.deleteTab,
+  } : null);
 }
 
 /**

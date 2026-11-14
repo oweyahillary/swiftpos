@@ -45,6 +45,33 @@ export function setShopPosHost(h: ShopPosHost | null): void {
 /** The Shop POS this page runs in, or null in a browser. */
 export function shopPosHost(): ShopPosHost | null { return host; }
 
+// ── Till stage 3b: the branch node's shared held orders (apps/android shop/branchTabs.ts) ───────────────────────────────
+// A tab opened on one till is registered to the branch node so another till SEES it; editing/charging needs its lock.
+// The Android app installs this ONLY when it has joined a branch server, so a browser / a server-less POS has it null and
+// CashierScreen stays byte-for-byte local-only.
+export interface BranchTab {
+  id: string; order_number: string; label: string; order_type: string; table_number: string;
+  cart: unknown; opened_by: string; last_changed_by: string | null; locked_by: string | null; locked: boolean;
+}
+export type BranchClaim =
+  | { outcome: 'claimed'; tab: BranchTab; stole: boolean }
+  | { outcome: 'locked'; lockedBy: string }
+  | { outcome: 'unreachable' };
+export type BranchEdit = { outcome: 'ok'; tab: BranchTab } | { outcome: 'lost'; lockedBy?: string } | { outcome: 'unreachable' };
+export interface BranchTabsHost {
+  listTabs: (branchId: string) => Promise<BranchTab[]>;
+  registerTab: (t: { id: string; branch_id: string; order_number: string; label: string; order_type: string; table_number?: string; cart: unknown; opened_by: string }) => Promise<void>;
+  claimTab: (id: string, name: string) => Promise<BranchClaim>;
+  forceClaim: (id: string, name: string) => Promise<BranchClaim>;
+  updateTab: (id: string, cart: unknown, label?: string) => Promise<BranchEdit>;
+  releaseTab: (id: string) => Promise<void>;
+  deleteTab: (id: string, reason: 'charged' | 'cleared') => Promise<void>;
+}
+let tabsHost: BranchTabsHost | null = null;
+export function setBranchTabsHost(h: BranchTabsHost | null): void { tabsHost = h; }
+/** The shared-tabs host when this POS joined a branch server, else null (browser / no server → local-only tabs). */
+export function branchTabsHost(): BranchTabsHost | null { return tabsHost; }
+
 /** One web POS cart line, as the branch server's printer takes it (apps/desktop escposBridge CartLine — the same names). */
 interface CartLineLike {
   product?: { id?: string; name?: string; category_id?: string | null; description?: string | null } | null;

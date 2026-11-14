@@ -4,6 +4,18 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.4.4 — Till stage 3b (shared held orders: the POS client + bridge)
+**Branch server (Stage 3b, client foundation):**
+- When this POS has **joined a branch server**, it can now talk to the branch's **shared held-order store** — a tab (held
+  order) opened on one till is **registered** to the branch node so another till can **see** it, and editing/charging it
+  takes its **lock** (a 90-second lease; two tills can never both hold it). The client covers list, register, claim, a
+  manager **force-claim** (take over a live tab), lease-renewing edit, release, and delete (charged vs cleared), all over
+  the pinned TLS of the server this POS joined — the lock holder is proven by the device.
+- **Server-less is unchanged:** the shared-tabs host is installed only when a branch server is joined, so a plain tablet
+  (or the browser) never sees it and the selling screen behaves exactly as before.
+- This build lands the **client + the web-POS bridge seam**; wiring the selling screen's table flow to it (the
+  see-it-then-take-over UX) is the next step — see `docs/BUILD-TILL-STAGE-3B-CLIENT.md`.
+
 ## 0.4.3 — Till stage 3 (session refresh through the branch server)
 **Branch server (Slice D of Till stage 3):**
 - When this POS has **joined a branch server**, its **session renewal** (the quiet, automatic one that keeps a signed-in
