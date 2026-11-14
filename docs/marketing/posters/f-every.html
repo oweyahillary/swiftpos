@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — built for every kind of spot</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{position:relative;overflow:hidden;color:#fff;font-family:var(--font-text);
+    background:
+      radial-gradient(72% 50% at 50% 42%, rgba(45,212,191,.28), transparent 60%),
+      radial-gradient(120% 80% at 92% -10%, rgba(94,234,212,.22), transparent 54%),
+      radial-gradient(110% 80% at 4% 112%, rgba(16,185,129,.26), transparent 60%),
+      linear-gradient(158deg,#0a2e2b 0%,#072420 52%,#04161a 100%);}
+  .board.square{width:1080px;height:1080px;}
+  .board.story{width:1080px;height:1920px;}
+  .frame{position:absolute;inset:76px;display:flex;flex-direction:column;}
+  .story .frame{inset:96px;}
+  .row-top{display:flex;justify-content:space-between;align-items:center;}
+  .logo{display:flex;align-items:center;gap:.5em;}
+  .logo img{width:52px;height:52px;border-radius:24%;display:block;}
+  .logo b{font-family:var(--font-display);font-weight:800;font-size:38px;letter-spacing:-.02em;}
+  .logo b i{font-style:normal;color:#5eead4;}
+  .tag{font-size:16px;letter-spacing:.26em;text-transform:uppercase;font-weight:800;color:#063a34;
+    background:rgba(255,255,255,.92);border-radius:999px;padding:.6em 1.1em;}
+  .h{font-family:var(--font-display);font-weight:800;letter-spacing:-.022em;line-height:1.02;text-wrap:balance;color:#fff;}
+  .h em{font-style:normal;color:#fbbf24;}
+  .sub{line-height:1.5;color:#bfe0da;font-weight:500;}
+
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:26px;}
+  .tile{aspect-ratio:1;border-radius:24px;display:grid;place-items:center;position:relative;
+    box-shadow:0 20px 40px -16px rgba(0,0,0,.5),inset 0 2px 5px rgba(255,255,255,.3);}
+  .tile img{width:54%;height:54%;object-fit:contain;}
+  .tile.teal{background:linear-gradient(150deg,#5eead4,#14b8a6);}
+  .tile.coral{background:linear-gradient(150deg,#fb7185,#f43f5e);}
+  .tile.amber{background:linear-gradient(150deg,#fbbf24,#f59e0b);}
+  .tile.amber img{filter:brightness(0) saturate(100%) invert(10%) sepia(25%) saturate(1400%) hue-rotate(185deg);}
+  .tile .cap{position:absolute;bottom:12px;left:0;right:0;text-align:center;font-weight:800;font-size:16px;color:#fff;letter-spacing:.01em;}
+  .tile.amber .cap{color:#06313a;}
+
+  .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;gap:2em;}
+  .cta{display:inline-flex;align-items:center;gap:.4em;background:linear-gradient(92deg,#5eead4,#2dd4bf);color:#053029;
+    font-weight:800;padding:.75em 1.3em;border-radius:12px;box-shadow:0 14px 34px -12px rgba(45,212,191,.6);}
+  .handle{color:rgba(255,255,255,.82);font-weight:600;}
+
+  .square .h{font-size:60px;margin-top:30px;}
+  .square .grid{margin-top:46px;}
+  .square .sub{font-size:26px;max-width:26em;margin-top:40px;}
+  .square .foot{font-size:24px;}
+  .story .h{font-size:90px;margin-top:34px;}
+  .story .grid{grid-template-columns:repeat(2,1fr);gap:26px;margin-top:48px;}
+  .story .tile{aspect-ratio:auto;height:262px;padding-bottom:40px;}
+  .story .tile img{width:42%;height:50%;}
+  .story .tile .cap{font-size:24px;bottom:18px;}
+  .story .sub{font-size:30px;margin-top:44px;}
+  .story .foot{font-size:30px;}
+</style>
+</head>
+<body>
+<div class="board square" id="feed"></div>
+<div class="board story" id="story"></div>
+
+<template id="tpl">
+  <div class="frame">
+    <div class="row-top">
+      <span class="logo"><img src="assets/logo.png" alt="">Zap<b><i>Till</i></b></span>
+      <span class="tag">Every business</span>
+    </div>
+    <div class="h">Built for every <em>kind of spot</em>.</div>
+    <div class="grid">
+      <div class="tile teal"><img src="assets/resto/chefhat.png" alt=""><span class="cap">Grill</span></div>
+      <div class="tile amber"><img src="assets/resto/cup.png" alt=""><span class="cap">Caf&eacute;</span></div>
+      <div class="tile coral"><img src="assets/resto/cocktail.png" alt=""><span class="cap">Bar</span></div>
+      <div class="tile amber"><img src="assets/resto/cloche.png" alt=""><span class="cap">Hotel</span></div>
+      <div class="tile coral"><img src="assets/resto/menu.png" alt=""><span class="cap">Eatery</span></div>
+      <div class="tile teal"><img src="assets/resto/table.png" alt=""><span class="cap">Dine&#8209;in</span></div>
+      <div class="tile amber"><img src="assets/resto/wine.png" alt=""><span class="cap">Winebar</span></div>
+      <div class="tile teal"><img src="assets/resto/card.png" alt=""><span class="cap">Takeaway</span></div>
+    </div>
+    <div class="sub">Caf&eacute;s, grills, bars, bakeries, hotels, takeaways &mdash; one till runs them all, on or offline.</div>
+    <div class="foot">
+      <span class="cta">Book a demo&nbsp;&rarr;</span>
+      <span class="handle">zaptill.co.ke</span>
+    </div>
+  </div>
+</template>
+
+<script>
+  var tpl=document.getElementById('tpl').innerHTML;
+  document.getElementById('feed').innerHTML=tpl;document.getElementById('story').innerHTML=tpl;
+  var h=location.hash;
+  if(h==='#feed'||h==='#story'){document.body.style.cssText='margin:0;padding:0;gap:0;display:block';
+    document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});
+    var el=document.querySelector(h==='#feed'?'.square':'.story');if(el){el.style.display='block';el.style.margin='0';}}
+</script>
+</body>
+</html>

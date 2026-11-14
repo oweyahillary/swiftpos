@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — One screen runs the floor</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{position:relative;overflow:hidden;color:#ffffff;font-family:var(--font-text);
+    background:
+      radial-gradient(74% 52% at 50% 46%, rgba(45,212,191,.46), transparent 60%),
+      radial-gradient(98% 52% at 50% 95%, rgba(45,212,191,.30), transparent 64%),
+      radial-gradient(130% 84% at 90% -12%, rgba(94,234,212,.34), transparent 54%),
+      radial-gradient(114% 86% at 0% 116%, rgba(16,185,129,.42), transparent 60%),
+      linear-gradient(156deg,#083b37 0%,#0b5a52 44%,#0e776b 78%,#139184 100%);}
+  .board.square{width:1080px;height:1080px;}
+  .board.story{width:1080px;height:1920px;}
+  .frame{position:absolute;inset:74px;z-index:3;display:flex;flex-direction:column;}
+  .story .frame{inset:96px;}
+  .row-top{display:flex;justify-content:space-between;align-items:center;}
+  .logo{display:flex;align-items:center;gap:.5em;}
+  .logo img{width:52px;height:52px;border-radius:24%;display:block;}
+  .logo b{font-family:var(--font-display);font-weight:800;font-size:38px;letter-spacing:-.02em;}
+  .logo b i{font-style:normal;color:#5eead4;}
+  .tag{font-size:16px;letter-spacing:.26em;text-transform:uppercase;font-weight:800;color:#063a34;
+    background:rgba(255,255,255,.92);border:none;border-radius:999px;padding:.6em 1.1em;}
+  .h{font-family:var(--font-display);font-weight:800;letter-spacing:-.022em;line-height:1.02;text-wrap:balance;color:#ffffff;}
+  .h em{font-style:normal;color:#fbbf24;}
+  .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;gap:2em;}
+  .cta{display:inline-flex;align-items:center;gap:.4em;background:linear-gradient(92deg,#5eead4,#2dd4bf);color:#053029;font-weight:800;
+    padding:.75em 1.3em;border-radius:12px;box-shadow:0 14px 36px -10px rgba(45,212,191,.65);}
+  .handle{color:rgba(255,255,255,.85);font-weight:600;}
+
+  .gi{stroke:#04231f;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
+  .node{position:absolute;transform:translate(-50%,0);text-align:center;z-index:5;width:176px;}
+  .node .ic{width:118px;height:118px;margin:0 auto;border-radius:50%;
+    background:radial-gradient(closest-side,#eefffb 0%,#a7f3e4 100%);
+    border:none;display:grid;place-items:center;
+    box-shadow:0 18px 38px -14px rgba(0,0,0,.42),0 0 0 6px rgba(167,243,228,.14),0 0 22px -4px rgba(153,246,228,.45),inset 0 2px 6px rgba(255,255,255,.85);}
+  .node .ic .gi{width:52px;height:52px;}
+  .node .nl{margin-top:15px;font-weight:800;font-size:21px;color:#ffffff;line-height:1.15;}
+
+  .dev{position:absolute;padding:12px;border-radius:22px;background:#07171b;border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 60px 120px -28px rgba(2,24,22,.65),0 0 0 1px rgba(2,24,22,.25);z-index:4;}
+  .dev img{width:100%;display:block;border-radius:12px;}
+
+  /* ---- square: the dome (nodes arc over the till, labels clear of the line) ---- */
+  .square .h{font-size:58px;margin-top:26px;text-align:center;}
+  .square .hub{position:relative;width:100%;height:640px;margin-top:8px;}
+  .square .stack,.square .devwrap{display:none;}
+  .wires{position:absolute;inset:0;width:100%;height:100%;z-index:1;}
+  .square .hub .dev{left:50%;top:466px;transform:translate(-50%,-50%);width:510px;}
+  /* labels sit outside the arc: above the four upper nodes, below the two outer ones */
+  .square .node .nl{position:absolute;left:50%;transform:translateX(-50%);bottom:100%;margin-bottom:16px;
+    white-space:nowrap;font-size:22px;}
+  /* 6 nodes evenly spaced on a wide dome that uses the full width, symmetric about centre */
+  .square .node.a{left:10.20%;top:307px;} .square .node.b{left:22.53%;top:167px;} .square .node.c{left:40.24%;top:107px;}
+  .square .node.d{left:59.76%;top:107px;} .square .node.e{left:77.47%;top:167px;} .square .node.f{left:89.80%;top:307px;}
+  .square .foot{font-size:24px;}
+
+  /* ---- story: device on top, 2x3 node grid below ---- */
+  .story .h{font-size:92px;margin-top:44px;}
+  .story .hub,.story .wires{display:none;}
+  .story .devwrap{margin:62px auto 0;width:772px;position:relative;}
+  .story .dev{position:static;transform:none;width:772px;}
+  .story .stack{display:grid;grid-template-columns:repeat(3,1fr);gap:66px 20px;margin-top:92px;}
+  .story .node{position:static;transform:none;width:auto;}
+  .story .node .ic{width:150px;height:150px;} .story .node .ic .gi{width:62px;height:62px;}
+  .story .node .nl{font-size:27px;margin-top:18px;}
+  .story .tagline{margin-top:88px;text-align:center;font-family:var(--font-display);font-weight:700;
+    font-size:48px;line-height:1.12;letter-spacing:-.02em;color:#ffffff;}
+  .story .tagline em{font-style:normal;color:#fbbf24;}
+  .story .foot{font-size:30px;}
+  .story .cta,.story .tag{font-size:1em;}
+  .square .tagline{margin-top:26px;text-align:center;font-family:var(--font-display);font-weight:700;
+    font-size:35px;line-height:1.12;letter-spacing:-.02em;color:#ffffff;}
+  .square .tagline em{font-style:normal;color:#fbbf24;}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-clip" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol>
+  <symbol id="i-chef" viewBox="0 0 24 24"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><path d="M6 17h12"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+</svg>
+
+<div class="board square" id="feed"></div>
+<div class="board story" id="story"></div>
+
+<template id="tpl">
+  <div class="frame">
+    <div class="row-top">
+      <span class="logo"><img src="assets/logo.png" alt="">Zap<b><i>Till</i></b></span>
+      <span class="tag">All in one</span>
+    </div>
+    <div class="h">One screen runs <em>the whole floor</em>.</div>
+
+    <div class="hub">
+      <svg class="wires" viewBox="0 0 932 640" preserveAspectRatio="none">
+        <path d="M95,366 C114.2,342.7 163.3,259.3 210,226 C256.7,192.7 317.2,176 375,166 C432.8,156 499.2,156 557,166 C614.8,176 675.3,192.7 722,226 C768.7,259.3 817.8,342.7 837,366"
+          fill="none" stroke="rgba(255,255,255,.62)" stroke-width="3.5"/>
+      </svg>
+      <div class="dev"><img src="assets/dash-cockpit.webp" alt="ZapTill owner dashboard — the whole operation, live"></div>
+      <div class="node a"><div class="ic"><svg class="gi"><use href="#i-clip"/></svg></div><div class="nl">Orders</div></div>
+      <div class="node b"><div class="ic"><svg class="gi"><use href="#i-phone"/></svg></div><div class="nl">M&#8209;Pesa</div></div>
+      <div class="node c"><div class="ic"><svg class="gi"><use href="#i-chef"/></svg></div><div class="nl">Kitchen</div></div>
+      <div class="node d"><div class="ic"><svg class="gi"><use href="#i-grid"/></svg></div><div class="nl">Tables</div></div>
+      <div class="node e"><div class="ic"><svg class="gi"><use href="#i-chart"/></svg></div><div class="nl">Reports</div></div>
+      <div class="node f"><div class="ic"><svg class="gi"><use href="#i-users"/></svg></div><div class="nl">Staff</div></div>
+    </div>
+
+    <div class="devwrap"><div class="dev"><img src="assets/dash-cockpit.webp" alt="ZapTill owner dashboard — the whole operation, live"></div></div>
+    <div class="stack">
+      <div class="node"><div class="ic"><svg class="gi"><use href="#i-clip"/></svg></div><div class="nl">Menu &amp; orders</div></div>
+      <div class="node"><div class="ic"><svg class="gi"><use href="#i-grid"/></svg></div><div class="nl">Table map</div></div>
+      <div class="node"><div class="ic"><svg class="gi"><use href="#i-phone"/></svg></div><div class="nl">M&#8209;Pesa pay</div></div>
+      <div class="node"><div class="ic"><svg class="gi"><use href="#i-chef"/></svg></div><div class="nl">Kitchen tickets</div></div>
+      <div class="node"><div class="ic"><svg class="gi"><use href="#i-chart"/></svg></div><div class="nl">Live reports</div></div>
+      <div class="node"><div class="ic"><svg class="gi"><use href="#i-users"/></svg></div><div class="nl">Staff PINs</div></div>
+    </div>
+
+    <div class="tagline">Order, cook, charge &amp; count &mdash; <em>one screen</em>.</div>
+
+    <div class="foot">
+      <span class="cta">Book a demo&nbsp;&rarr;</span>
+      <span class="handle">zaptill.co.ke</span>
+    </div>
+  </div>
+</template>
+
+<script>
+  var tpl=document.getElementById('tpl').innerHTML;
+  document.getElementById('feed').innerHTML=tpl;document.getElementById('story').innerHTML=tpl;
+  var h=location.hash;
+  if(h==='#feed'||h==='#story'){document.body.style.cssText='margin:0;padding:0;gap:0;display:block';
+    document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});
+    var el=document.querySelector(h==='#feed'?'.square':'.story');if(el){el.style.display='block';el.style.margin='0';}}
+</script>
+</body>
+</html>
