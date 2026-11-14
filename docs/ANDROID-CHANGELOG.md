@@ -4,6 +4,36 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.4.3 — Till stage 3 (session refresh through the branch server)
+**Branch server (Slice D of Till stage 3):**
+- When this POS has **joined a branch server**, its **session renewal** (the quiet, automatic one that keeps a signed-in
+  POS from being logged out) now goes **through that server** (`/node/refresh`, then the acknowledgement `/node/refresh/ack`,
+  over the pinned TLS of the server it joined). The server passes the renewal on to the cloud and hands back the cloud's own
+  answer — so renewal keeps working over the shop network even when the tablet's own route to the internet is flaky, as long
+  as the server has internet.
+- **Fallback:** the cloud's own answer is used as-is — including a refusal, which still makes the POS sign back in with its
+  device secret, exactly as before. Only a transport-like problem — the server does not answer, is on an older build, or
+  tells us it cannot reach the cloud — makes the POS renew **straight from the cloud** instead. A POS with no branch server
+  joined renews direct, unchanged.
+- The POS's key for the branch server is **never** forwarded as the cloud's (the cloud checks this POS's own machine).
+- **Next in Till stage 3:** shared tables / held orders across devices (Stage 3b).
+
+## 0.4.2 — Till stage 3 (verify a PIN at the branch server)
+**Branch server (Slice C of Till stage 3):**
+- When this POS has **joined a branch server**, a staff PIN sign-in is now **checked by that server first** (`/node/verify-pin`,
+  over the pinned TLS of the server it joined). The branch server's roster is the **LAN authority** — kept fresh on every
+  catalogue pull and by relayed staff changes — so it is a better answer than this POS's own cached verifier, and it works
+  with **no internet at either end** (purely over the shop network).
+- **Fallback, in order:** a plain **no** from the server (a wrong or shared PIN) is **final** — it is never re-asked of the
+  cloud. Any *other* problem — the server is unreachable, on an older build, busy, or cannot prove which POS is asking — is
+  treated as transport-like: the POS falls back to the **cloud** sign-in, and then to the **Stage-2 offline** PIN check. A
+  POS with no branch server joined behaves exactly as before.
+- A POS that has **joined a server but not yet cached a roster** can now sign in **offline** too (the server verifies it),
+  instead of the old "no staff saved on this POS yet" wall.
+- The verified person's sales are posted under this POS's **own till token** (carrying their cashier id), exactly as online
+  — the server mints no separate token. **Next in Till stage 3:** session refresh through the server (Slice D), then shared
+  tables across devices.
+
 ## 0.4.1 — Till stage 3 (sell through the branch server): the branch aggregate
 **Branch server (Slice B of Till stage 3):**
 - A completed sale on this POS is now also **pushed to the joined branch server** (`/node/sync`): the server keeps it in

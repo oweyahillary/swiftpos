@@ -9,7 +9,8 @@
  */
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { readTill, tillToken, deviceId, type PosSession } from '../../shop/tillSession';
+import { readTill, tillToken, deviceId, setServerRefresh, type PosSession } from '../../shop/tillSession';
+import { refreshViaServer } from '../../shop/branchRefresh';
 import { shopPosHostFor } from '../../shop/printing';
 import { useOnline } from '../../shop/connection';
 import { makeBuffer, sweepRetention } from '../../shop/buffer';
@@ -96,6 +97,10 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // apiUrl to it, so the two cannot drift. The read cache serves the catalogue on a cold offline boot.
   useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads,
     gateway: branchGatewayAdapter, onOrder: (_u, _m, b) => { void pushOrderToBranch(nodeOutbox, b); } }), [buffer, reads, nodeOutbox]);
+
+  // Till stage 3 Slice D: route session renewal (A477) through the joined branch server when there is one. A setter, not an
+  // import, so branchRefresh → branchServer → tillSession cannot form a cycle. Unset → renewal stays cloud-direct.
+  useEffect(() => { setServerRefresh(refreshViaServer); return () => setServerRefresh(null); }, []);
 
   // Till stage 3: ask the joined branch server what protocol it speaks (over the LAN, whether or not the cloud is
   // reachable), on open and whenever the connection changes. No branch server joined → this is a quick no-op.

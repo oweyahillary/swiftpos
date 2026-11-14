@@ -991,6 +991,19 @@ jobs:
       - name: ZapTill for Android, Till stage 3 Slice B (sell through the branch server)
         run: node --no-warnings tests/android-till-stage3b.test.mjs
 
+      # Till stage 3 Slice C (docs/BUILD-TILL-STAGE-3C.md) — VERIFY A PIN at the branch server: a joined Shop POS checks a
+      # sign-in PIN at the branch server (POST /node/verify-pin, pinned TLS) first; the LAN roster is the authority. A 'no'
+      # (401) is FINAL, any other problem falls back to the cloud then the Stage-2 offline check. Hermetic; in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice C (verify a PIN at the branch server)
+        run: node --no-warnings tests/android-till-stage3c.test.mjs
+
+      # Till stage 3 Slice D (docs/BUILD-TILL-STAGE-3D.md) — SESSION REFRESH through the branch server: a joined Shop POS
+      # renews its session via POST /node/refresh[/ack] (pinned TLS), which proxies the cloud's /api/auth/refresh[/ack].
+      # The cloud's forwarded answer is used as-is (a 401 still drives sign-back-in); no answer / 404 / 503 renews
+      # cloud-direct. The branch router is injected via a setter, so no import cycle. Hermetic; in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice D (session refresh through the branch server)
+        run: node --no-warnings tests/android-till-stage3d.test.mjs
+
   # 2026-11-02 (owner: "11 min is a lot of time"): the server job ran its named steps, every migration test and the
   # loop over every tests/*.test.mjs one after the other (~10.5 minutes). The migration tests (two halves) and the loop
   # now run as jobs of their own, at the same time as the named steps — the same tests, about half the wait.

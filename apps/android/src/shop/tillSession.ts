@@ -130,15 +130,44 @@ export async function joinWithCode(a: { businessId: string; code: string; posNam
 
 interface RenewAnswer { accessToken: string; refreshToken?: string; deviceSecret?: string; ack?: boolean }
 
+/**
+ * Till stage 3 Slice D (docs/BUILD-TILL-STAGE-3D.md): when a branch server is joined, session renewal is routed through it
+ * (POST /node/refresh[/ack]). ShopPos injects the router with setServerRefresh — a SETTER, not an import, so
+ * branchRefresh → branchServer → tillSession cannot form a cycle. Unset (the default) → renewal is cloud-direct, unchanged.
+ */
+type ServerRefresh = (path: '/node/refresh' | '/node/refresh/ack', refreshToken: string, deviceId: string)
+  => Promise<{ via: 'answer'; status: number; data: unknown } | { via: 'fallback' }>;
+let serverRefresh: ServerRefresh | null = null;
+export function setServerRefresh(fn: ServerRefresh | null): void { serverRefresh = fn; }
+
+/**
+ * One renewal call — through the joined branch server when there is one (the cloud's answer, forwarded), else cloud-direct.
+ * A non-2xx forwarded answer is thrown as the SAME CloudError cloud/client would have, so a cloud 401 still drives renew's
+ * signBackIn; a {via:'fallback'} (no server / old build / server can't reach the cloud) renews straight from the cloud.
+ */
+async function refreshCall(cloudPath: string, nodePath: '/node/refresh' | '/node/refresh/ack',
+  refreshToken: string, deviceId: string, headers: Record<string, string>): Promise<RenewAnswer> {
+  if (serverRefresh) {
+    const v = await serverRefresh(nodePath, refreshToken, deviceId);
+    if (v.via === 'answer') {
+      if (v.status >= 200 && v.status < 300) return v.data as RenewAnswer;
+      const err = (v.data ?? {}) as { error?: string; code?: string };
+      throw new CloudError(err.error || `ZapTill answered ${v.status}.`, v.status, err.code ?? null);
+    }
+    // via: 'fallback' — the server could not help; renew straight from the cloud.
+  }
+  return cloudPost<RenewAnswer>(cloudPath, { refreshToken }, null, headers);
+}
+
 /** A477: the renewal, then its acknowledgement (the old token is revoked only once the new one is kept). */
 async function renew(s: PosSession): Promise<PosSession> {
   const headers = { 'x-device-id': s.deviceId };
   try {
-    const r = await cloudPost<RenewAnswer>('/auth/refresh', { refreshToken: s.refreshToken }, null, headers);
+    const r = await refreshCall('/auth/refresh', '/node/refresh', s.refreshToken, s.deviceId, headers);
     const next = { ...s, accessToken: r.accessToken, refreshToken: r.refreshToken ?? s.refreshToken };
     await saveTill(next);
     if (r.deviceSecret) await saveSecret('device.secret', r.deviceSecret);
-    if (r.ack && r.refreshToken) await cloudPost('/auth/refresh/ack', { refreshToken: r.refreshToken }, null, headers).catch(() => {});
+    if (r.ack && r.refreshToken) await refreshCall('/auth/refresh/ack', '/node/refresh/ack', r.refreshToken, s.deviceId, headers).catch(() => {});
     return next;
   } catch (e) {
     if (!(e instanceof CloudError) || e.status !== 401) throw e;   // no connection, or the cloud busy: keep the session
