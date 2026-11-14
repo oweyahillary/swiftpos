@@ -138,8 +138,8 @@ The desktop POS need **nothing**: they talk only to the API on Render, never to 
 1. The dev move is done and checked (section C).
 2. Prod's logs are under ~33 MB a day:
    - A611 deployed;
-   - `BRANCH_DRAWERS_MEMO_S=300` on prod Render;
-   - KRUNCH & CO's two old day closes cancelled before their licence is restored.
+   - `BRANCH_DRAWERS_MEMO_S=300` on prod Render.
+   - (KRUNCH & CO **terminated** — desktop + cloud services off — so their two old day-closes no longer generate logs; nothing to cancel.)
 3. If prod needs Route B: the copy commands written into this file from the dev rehearsal, a maintenance window agreed,
    and a fresh nightly backup from that day.
 
@@ -154,7 +154,7 @@ anything they could not send lands when the API answers again. Route A avoids al
 
 ### E0. Before you start
 - [ ] A fresh backup from **today** (GitHub Actions → `backup`, or Supabase → Database → Backups).
-- [ ] Old-org prod logs under ~33 MB/day (§D): **A611 deployed**, **`BRANCH_DRAWERS_MEMO_S=300`** on prod Render, **KRUNCH & CO's two old day-closes cancelled**.
+- [ ] Old-org prod logs under ~33 MB/day (§D): **A611 deployed**, **`BRANCH_DRAWERS_MEMO_S=300`** on prod Render. (KRUNCH & CO **terminated** — desktop + cloud services off — so their two old day-closes are no longer a log source; nothing to cancel.)
 - [ ] New organisation (Free) → **New project**, region **eu-central-1** (as today). Note its URL, anon key, service-role key, JWT secret (Project Settings → API) — password manager, **never** chat or the repo.
 - [ ] Old project's **Storage** tab: logos live in the DB (as on dev, no buckets). If prod has **any bucket with files**, STOP and tell me first — those objects copy separately from the database.
 - [ ] Put the prod API in **maintenance** so nothing writes during the copy.

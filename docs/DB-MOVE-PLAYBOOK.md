@@ -72,7 +72,7 @@ Vercel re-pointed, `/health` → `db up, schema ok`, owner signed in with correc
 ## Prerequisites (so Route A isn't refused / the new org stays under quota)
 
 Old org is restricted from **20 Nov 2026** if still over its 1 GB/month log quota. Before prod moves (§D): **A611 deployed**,
-**`BRANCH_DRAWERS_MEMO_S=300`** on prod Render, **KRUNCH & CO's two old day-closes cancelled**. Target: prod under **~33 MB
-logs/day**.
+**`BRANCH_DRAWERS_MEMO_S=300`** on prod Render. (KRUNCH & CO **terminated** — desktop + cloud services off — so their two old
+day-closes are no longer a log source.) Target: prod under **~33 MB logs/day**.
 
 **The owner runs the move; never run or query prod from here.**
