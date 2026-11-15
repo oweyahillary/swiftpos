@@ -70,8 +70,10 @@ const ALLOW = new Set([
  * vanished design, plan or scope doc carries none of them, so A39's real fault —
  * a specification cited by section that silently went missing — still fails here.
  */
+// Case-insensitive, and the date reads either way round (2026-08-02 or
+// 11-07-2026) — the handoffs were named by many hands over months.
 const ARCHIVED_EPHEMERAL =
-  /^(HANDOFF|MANIFEST|SESSION|VERIFY(-[A-Z]+)?|MORNING(-[A-Z]+)?)-\d{4}-\d{2}-\d{2}\b/;
+  /^(HANDOFF|SESSION-HANDOFF|SESSION|MANIFEST|VERIFY(-[A-Z]+)?|MORNING(-[A-Z]+)?)-\d{2,4}-\d{2}-\d{2,4}\b/i;
 
 /**
  * Named docs that are ours but deliberately not in main's tree today — each a
@@ -123,6 +125,10 @@ for (const file of files) {
       if (rel === path.join('scripts', 'check-doc-refs.mjs')) continue;
       // Skip anything that looks like a URL path rather than a repo document.
       if (/https?:\/\/[^\s]*$/.test(line.slice(0, m.index))) continue;
+      // Skip a git object path like `git show 0f85155:HANDOFF.md` — that names
+      // a file inside a commit and carries its own recovery command. It is an
+      // archaeology note, not a live citation a reader follows in the tree.
+      if (/[0-9a-f]{7,40}:$/.test(line.slice(0, m.index))) continue;
       citations++;
       if (present.has(doc)) continue;
       // Resolves to a document deliberately archived out of the repo, or one
