@@ -2154,6 +2154,9 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
     branding: (_j.branding && typeof _j.branding === 'object')
       ? {
           accentHex: _j.branding.accentHex ?? null, logoPng: _j.branding.logoPng ?? null,
+          // The Cloudinary brand logo: undefined (older cloud) → keep; a URL → cache its bytes; null → clear. See
+          // applyPulledBranding / cacheLogoFromUrl.
+          logoUrl: 'logoUrl' in _j.branding ? (_j.branding.logoUrl ?? null) : undefined,
           // A311: undefined (not null) when the cloud predates migration 105, so the
           // local value is kept rather than cleared — see applyPulledBranding.
           logoReceipt: 'logoReceipt' in _j.branding ? (_j.branding.logoReceipt ?? null) : undefined,

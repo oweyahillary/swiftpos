@@ -23,7 +23,8 @@ export interface BrandCache { bid: string; vars: Record<string, string>; look: B
 
 const VAR_NAMES = new Set<string>(DASHBOARD_THEME_VARS);
 const CHANNELS = /^\d{1,3} \d{1,3} \d{1,3}$/;
-const LOGO = /^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+$/;
+// A base64 data-URI (legacy) OR the unified Cloudinary https URL — both are valid cached logos (an <img src>).
+const LOGO = /^(?:data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+|https:\/\/[^\s"'<>]+)$/;
 
 /** Only what ThemeLayer itself could have written: known variable names with "r g b" values, a clean look. PURE. */
 export function cleanBrandCache(raw: unknown, bid: string): BrandCache | null {

@@ -300,7 +300,7 @@ ok('the bar shows only when something changed (or briefly with the saved message
 ok('the live preview: the dashboard and the POS, light and dark, from brandPalette; the logo\'s colours; the notes', () => {
   assert.match(tab, /function BrandLivePreview/); assert.match(tab, /data-testid="preview-dashboard"/); assert.match(tab, /data-testid="preview-pos"/);
   assert.match(tab, /const p = brandPalette\(primaryHex\), s = brandPalette\(secondaryHex\);/);
-  assert.match(tab, /Use colours from my logo/); assert.match(tab, /logoColoursFromDataUri\(logoPng, 5\)/);
+  assert.match(tab, /Use colours from my logo/); assert.match(tab, /logoColoursFromDataUri\(logoSrc, 5\)/);
   assert.match(tab, /const notes = \[\.\.\.brandNotes\(primaryHex\)/);
 });
 ok('each branch\'s save sits at the bottom of its own panel, with Discard changes', () => {

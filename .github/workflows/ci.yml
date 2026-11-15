@@ -781,6 +781,11 @@ jobs:
       - name: Brand palette (A605)
         run: node --no-warnings tests/brand-palette-a605.test.mjs
 
+      # Cloudinary logos — the per-row decision in the base64→Cloudinary backfill (scripts/backfill-logos-to-cloudinary.mjs):
+      # a migrated business is skipped (idempotent), a non-raster logo_png is skipped, a png/jpeg base64 is uploaded.
+      - name: Cloudinary logo backfill decision
+        run: node --no-warnings tests/backfill-logos.test.mjs
+
       # A606 — the customer screen (a dual-screen POS): the owner's slideshow (up to 10 uploaded JPEG / PNG / WebP images,
       # 3–60 s each), the owner's alone and part of the online licence (a manager, a POS 403; no licence 403, emptying
       # allowed), served with /pos/init and the 'setup' change; the generic settings write refuses the key; the web POS's

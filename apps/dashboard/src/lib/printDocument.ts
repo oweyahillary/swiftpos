@@ -61,8 +61,8 @@ export function documentLogo(): Promise<string | null> { return brandLogo(); }
 function brandLogo(): Promise<string | null> {
   if (!brandLogoCache) {
     brandLogoCache = import('./api')
-      .then(({ api }) => api.get<{ logo_png: string | null } | null>('/api/business/branding'))
-      .then((b) => b?.logo_png ?? null)
+      .then(({ api }) => api.get<{ logo_url?: string | null; logo_png?: string | null } | null>('/api/business/branding'))
+      .then((b) => b?.logo_url ?? b?.logo_png ?? null)   // prefer the unified Cloudinary URL; legacy base64 is the fallback
       .catch(() => { brandLogoCache = null; return null; });
   }
   return brandLogoCache;

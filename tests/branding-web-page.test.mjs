@@ -51,10 +51,19 @@ ok('A313: bundle exports the shared raster helpers (one thresholding rule on the
 ok('A313: bundle carries the GS v 0 image emit (A310 rebuilt in)', /case "image"/.test(rend) && /118, 48, 0/.test(rend));
 ok('A313: page thresholds with the BUNDLED rule, not its own', /monoRasterFromRGBA\(/.test(tab) && !/threshold\s*=\s*128/.test(tab));
 ok('A313: page has the opt-in toggle', /Print logo on customer receipts/.test(tab) && /receipt_logo_enabled:/.test(tab));
-ok('A313: toggle is disabled without a logo', /checked=\{receiptLogoEnabled\}\s+disabled=\{!logoPng\}/.test(tab));
-ok('A313: saving without a logo forces raster null + toggle off', /logo_receipt:\s*logoPng\s*\?\s*logoReceipt\s*:\s*null/.test(tab) && /receipt_logo_enabled:\s*!!logoPng\s*&&\s*receiptLogoEnabled/.test(tab));
+ok('A313: toggle is disabled without a logo', /checked=\{receiptLogoEnabled\}\s+disabled=\{!hasLogo\}/.test(tab));
+ok('A313: saving without a logo forces raster null + toggle off', /logo_receipt:\s*hasLogo\s*\?\s*logoReceipt\s*:\s*null/.test(tab) && /receipt_logo_enabled:\s*hasLogo\s*&&\s*receiptLogoEnabled/.test(tab));
 ok('A313: has a receipt preview drawn from the stored raster', /function ReceiptPreview/.test(tab) && /<ReceiptPreview/.test(tab) && /paintRaster\(/.test(tab));
 ok('A313: reset clears the raster and the toggle too', /logo_receipt:\s*null,\s*receipt_logo_enabled:\s*false/.test(tab));
+
+// Cloudinary logos: the Branding upload goes to Cloudinary and the DB keeps the URL, not the base64 (the egress fix).
+ok('Cloudinary: BrandingTab uploads the logo to Cloudinary', /from '\.\.\/\.\.\/lib\/upload'/.test(tab) && /uploadImage\(f\)/.test(tab));
+ok('Cloudinary: save sends logo_url and drops the base64 when on Cloudinary', /logoUrl\s*\?\s*\{\s*logo_url:\s*logoUrl,\s*logo_png:\s*null\s*\}\s*:\s*\{\s*logo_png:\s*logoPng,\s*logo_url:\s*null\s*\}/.test(tab));
+{
+  const biz = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/business.ts'), 'utf8');
+  ok('Cloudinary: server PUT accepts logo_url and writes businesses.logo_url', /has\('logo_url'\)/.test(biz) && /from\('businesses'\)\.update\(\{\s*logo_url:/.test(biz));
+  ok('Cloudinary: server drops the base64 logo_png when a URL is set', /row\.logo_png = null;\s*\/\/ on Cloudinary/.test(biz));
+}
 
 ok('A313: ReceiptBusinessConfig accepts logoRaster', /logoRaster\?:/.test(bro) && /logoRaster:\s*extra\.logoRaster/.test(bro));
 ok('A313: usePOSData resolves the logo from /pos/init with the SAME gate as the till (toggle && raster)',
