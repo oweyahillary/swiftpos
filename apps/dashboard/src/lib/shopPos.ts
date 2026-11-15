@@ -54,15 +54,17 @@ export interface BranchTab {
   cart: unknown; opened_by: string; last_changed_by: string | null; locked_by: string | null; locked: boolean;
 }
 export type BranchClaim =
-  | { outcome: 'claimed'; tab: BranchTab; stole: boolean }
+  | { outcome: 'claimed'; tab: BranchTab; stole: boolean; approvedBy?: string }
   | { outcome: 'locked'; lockedBy: string }
+  | { outcome: 'refused'; reason: 'pin' | 'permission' | 'rate_limited' | 'other'; message: string }   // force-claim: node rejected the manager's PIN/permission
   | { outcome: 'unreachable' };
 export type BranchEdit = { outcome: 'ok'; tab: BranchTab } | { outcome: 'lost'; lockedBy?: string } | { outcome: 'unreachable' };
 export interface BranchTabsHost {
   listTabs: (branchId: string) => Promise<BranchTab[]>;
   registerTab: (t: { id: string; branch_id: string; order_number: string; label: string; order_type: string; table_number?: string; cart: unknown; opened_by: string }) => Promise<void>;
   claimTab: (id: string, name: string) => Promise<BranchClaim>;
-  forceClaim: (id: string, name: string) => Promise<BranchClaim>;
+  /** Manager take-over of a LIVE lock — the node verifies `pin` against the branch roster and tables.manage (A490). */
+  forceClaim: (id: string, name: string, pin: string, branchId: string) => Promise<BranchClaim>;
   updateTab: (id: string, cart: unknown, label?: string) => Promise<BranchEdit>;
   releaseTab: (id: string) => Promise<void>;
   deleteTab: (id: string, reason: 'charged' | 'cleared') => Promise<void>;

@@ -32,7 +32,7 @@ import { noteLines } from '@zaptill/core/orderNotes';
 import MinimartPOS from './MinimartPOS';
 import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton, CategoryBar } from './cashier/CategoryPanel';   // A537; A566; A580; 8n
 import { shopPosHost, branchTabsHost, type BranchTab } from '../../lib/shopPos';   // Till stage 1 + 3b (shared tables)
-import { tableOccupied as tabOccupied, heldBy as tabHeldBy, tapAction as tabTapAction, claimAction as tabClaimAction, editLost as tabEditLost } from './branchTabsUx';
+import { tableOccupied as tabOccupied, heldBy as tabHeldBy, tapAction as tabTapAction, claimAction as tabClaimAction, editLost as tabEditLost, takeOverAction as tabTakeOverAction } from './branchTabsUx';
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '@zaptill/core/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '@zaptill/core/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
@@ -390,6 +390,13 @@ export default function CashierScreen() {
   const tabsHost = isRestaurant ? branchTabsHost() : null;
   const [nodeTabs, setNodeTabs] = useState<BranchTab[]>([]);
   const [heldTab, setHeldTab] = useState<BranchTab | null>(null);
+  // Till stage 3b manager take-over (owner 2026-11-15): from the read-only "Held by <name>" overlay, a manager can take a
+  // LIVE lock by typing their PIN — the NODE verifies it and tables.manage before it overrides the holder (the till never
+  // decides). `pin` is what they typed; `err` is the node's refusal shown under the field; `busy` guards a double-submit.
+  const [takeOverPin, setTakeOverPin] = useState('');
+  const [takeOverErr, setTakeOverErr] = useState<string | null>(null);
+  const [takingOver, setTakingOver] = useState(false);
+  const closeHeld = () => { setHeldTab(null); setTakeOverPin(''); setTakeOverErr(null); setTakingOver(false); };
   const cartRef = useRef<CartItem[]>(cart);
   cartRef.current = cart;
 
@@ -722,6 +729,35 @@ export default function CashierScreen() {
       setHeldTab(node);
     } else {
       openCovers(table);   // unreachable → today's local path
+    }
+  }
+
+  // Till stage 3b manager take-over (owner 2026-11-15): from the read-only "Held by <name>" overlay, the manager types
+  // their PIN and we ask the NODE to force-claim. The node (not this till) verifies the PIN against the branch roster and
+  // that they hold tables.manage; on a yes it returns the cart and we open the order exactly as a normal claim does, and
+  // the previous holder is dropped on their next lease-renew (the editLost path). On a no we keep the overlay and show why.
+  async function takeOverHeld() {
+    const node = heldTab;
+    const branchId = session?.branchId;
+    if (!tabsHost || !node || !branchId || takingOver) return;
+    const pin = takeOverPin.trim();
+    if (!pin) { setTakeOverErr('Enter a manager’s PIN to take over this table.'); return; }
+    setTakingOver(true); setTakeOverErr(null);
+    const res = await tabsHost.forceClaim(node.id, session?.staffName ?? 'Cashier', pin, branchId);
+    const table = tables.find((t: Table) => t.id === node.id);
+    const action = tabTakeOverAction(res, table?.name ?? node.label ?? 'the table');
+    if (action.kind === 'open') {
+      const loaded = action.cart as CartItem[];
+      setOpenOrders((prev) => ({ ...prev, [node.id]: {
+        tableId: node.id, tableName: table?.name ?? node.label ?? 'Table', cart: loaded, covers: 2, openedAt: Date.now(), node: true } }));
+      setActiveKey(node.id); setCart(loaded); setView('products');
+      closeHeld();
+      showFreezeToast(action.toast, 'warning');
+    } else {
+      // 'refused' (wrong PIN / no permission / too many tries) or 'retry' (server silent) — keep the overlay, show why, clear the PIN.
+      setTakingOver(false);
+      setTakeOverPin('');
+      setTakeOverErr(action.message);
     }
   }
 
@@ -2578,7 +2614,7 @@ export default function CashierScreen() {
         const total = items.reduce((sum, i) => sum + (i.lineTotal ?? 0), 0);
         const holder = tabHeldBy(heldTab);
         return (
-          <div style={s.overlay} className="animate-fade-in" onClick={() => setHeldTab(null)}>
+          <div style={s.overlay} className="animate-fade-in" onClick={closeHeld}>
             <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 400, padding: 0, overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
               <div style={{ padding: '18px 20px 16px', borderBottom: '1px solid var(--pos-border)', background: 'var(--pos-modal)' }}>
                 <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--pos-text)' }}>{heldTab.label || 'Table'}</div>
@@ -2604,14 +2640,32 @@ export default function CashierScreen() {
                   </>
                 )}
               </div>
-              <div style={{ padding: '12px 20px 14px', borderTop: '1px solid var(--pos-border)', background: 'var(--pos-surface)', fontSize: 12, color: 'var(--pos-text3)' }}>
-                This table is open on another POS. It frees itself if left idle, or {holder} can finish it.
+              <div style={{ padding: '12px 20px 10px', borderTop: '1px solid var(--pos-border)', background: 'var(--pos-surface)', fontSize: 12, color: 'var(--pos-text3)' }}>
+                This table is open on another POS. It frees itself if left idle, or {holder} can finish it — or a manager can take it over now.
               </div>
-              <div style={{ display: 'flex', gap: 10, padding: '0 20px 16px', background: 'var(--pos-surface)' }}>
+              {/* Till stage 3b (owner 2026-11-15): manager take-over. The NODE checks this PIN and tables.manage before it
+                  overrides the live holder — the till only relays it. A wrong PIN / no permission comes back under the field. */}
+              <div style={{ padding: '0 20px 8px', background: 'var(--pos-surface)' }}>
+                <input
+                  type="password" inputMode="numeric" autoComplete="off" value={takeOverPin}
+                  onChange={(e) => { setTakeOverPin(e.target.value.replace(/\D/g, '')); if (takeOverErr) setTakeOverErr(null); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void takeOverHeld(); }}
+                  placeholder="Manager PIN to take over"
+                  disabled={takingOver}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', background: 'var(--pos-panel)', border: `1px solid ${takeOverErr ? '#ef4444' : 'var(--pos-border)'}`, borderRadius: 10, color: 'var(--pos-text)', fontSize: 15, letterSpacing: 2, textAlign: 'center' }}
+                />
+                {takeOverErr && <div style={{ color: '#ef4444', fontSize: 12, marginTop: 6, textAlign: 'center' }}>{takeOverErr}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 10, padding: '6px 20px 16px', background: 'var(--pos-surface)' }}>
                 <button
                   style={{ flex: 1, padding: '11px', background: 'var(--pos-panel)', border: '1px solid var(--pos-border)', borderRadius: 10, color: 'var(--pos-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                  onClick={() => setHeldTab(null)}
+                  onClick={closeHeld}
                 >Close</button>
+                <button
+                  style={{ flex: 1.4, padding: '11px', background: takingOver ? 'var(--pos-panel)' : '#f59e0b', border: 'none', borderRadius: 10, color: takingOver ? 'var(--pos-text3)' : '#1a1205', fontSize: 13, fontWeight: 700, cursor: takingOver ? 'default' : 'pointer', opacity: takingOver ? 0.7 : 1 }}
+                  onClick={() => void takeOverHeld()}
+                  disabled={takingOver}
+                >{takingOver ? 'Taking over…' : 'Take over'}</button>
               </div>
             </div>
           </div>

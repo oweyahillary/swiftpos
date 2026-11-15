@@ -64,7 +64,7 @@ non-restaurant POS is byte-for-byte unchanged). The decision logic is a pure mod
 - **Delete**: `onPaid` → `deleteTab('charged')`; `clearTable`/`closeVoidedTab` → `deleteTab('cleared')`.
 
 ### Deferred / flagged (NOT in v0.4.5)
-1. **Manager-approved force-steal of an ACTIVELY-held table.** The Held modal browses read-only and tells the waiter the
+1. ✓ **SHIPPED in v0.4.6** — see "Manager take-over" below. *(Originally deferred, for the record:)* **Manager-approved force-steal of an ACTIVELY-held table.** The Held modal browses read-only and tells the waiter the
    table frees itself if idle — it does **not** offer a force take-over. Reason (flag, not a guess): the node's
    `/node/tabs/:id/force-claim` **trusts the caller** (no PIN check), there is **no manager-PIN pattern inside
    CashierScreen** to reuse (the existing ones verify server-side, e.g. `ShiftModal` `approvePin`), and **which permission
@@ -74,6 +74,31 @@ non-restaurant POS is byte-for-byte unchanged). The decision logic is a pure mod
 2. **Holder name on the table tile** — shown in the Resume/Held modal; a caption on the tile itself (two tile renderers:
    floor-plan + grid) is a small follow-up, left out to avoid editing the tile layout blind.
 3. Non-restaurant held orders (parked retail / pumps / bays) stay local-only (owner: restaurant tables only for v1).
+
+## Manager take-over — SHIPPED (v0.4.6)
+
+Deferred item 1 above is now built. Owner decisions (2026-11-15): **node-verified PIN in one call** · reuse the existing
+**`tables.manage`** permission · the taken-over waiter is **dropped with a toast** (no two-editor merge).
+
+- **Node gate** (`nodeServer.ts` `/node/tabs/:id/force-claim`). The route no longer trusts the caller: it reads the
+  manager's `pin`, verifies it against the branch roster with **`verifyPinAtNodeAsync`** (the `/node/verify-pin` path), then
+  runs the pure **`forceClaimVerdict`** (`nodeTabs.ts`), which requires **`tables.manage`** via an injected `personCan` (the
+  owner's role holds it as `*`). `forceClaim` runs **only on allow**. Bad/ambiguous PIN → **401 (final)**; roster-read
+  failure → **503 (retry)**; verified-but-no-permission → **403**. PIN tries are **rate-limited** like verify-pin (10/min per
+  device and per address). The steal audit records **approved_by / approved_by_id**.
+- **Client** (`branchTabs.ts`). `forceClaim(id, name, pin, branchId)` relays the PIN + branch; `readClaimOutcome` maps
+  401/403/429/400 to a new **`refused`** outcome (reason + message) — a **final** answer, never a local fallback (there is no
+  local way to steal a live lock). The host interface (`shopPos.ts` / `env.d.ts`) carries the new signature and the
+  `refused`/`approvedBy` fields; `ShopPos.tsx` forwards it unchanged (no wrapper — the dashboard already holds `branchId`).
+- **UX** (`CashierScreen.tsx` + pure `branchTabsUx.ts` `takeOverAction`). The read-only "Held by &lt;name&gt;" overlay now has
+  a **Take over** button + a **manager-PIN field**: `claimed` → open the taken-over cart + a toast naming the approver;
+  `refused` → the node's message under the field (PIN cleared); `retry` → "the branch server didn't answer". The **previous
+  holder is dropped** via the existing `editLost` path (their next lease-renew gets 423 → toast + back to the grid).
+- **Tests** (all green; the gate assertion mutation-checked). `branch-tabs-ux` — `takeOverAction` open/refused/retry +
+  approver toast. `android-till-tabs` — `forceClaim` relays pin+branch; 401/403/429/400 → `refused`. `node-tabs-claim` — the
+  pure **`forceClaimVerdict`** gate (allow only a verified manager with `tables.manage`; 401/403/503) **and** a route-wiring
+  source assertion (the force-claim route verifies the PIN, gates on `tables.manage` via `personCan`, and calls `forceClaim`
+  only after allow). No new test files — the three suites are already named in `ci.yml`.
 
 ## Rig test — two tills + two tablets (required before any floor use)
 The hermetic test proves the client's wiring, not the live cross-device behaviour (the point of D9):

@@ -64,7 +64,8 @@ import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from
 import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents, retryRefusedAfterEvents,
   checkDeviceKey, isKnownTill, issueDeviceKey, joinVerdict, prepareDeviceEnrolment, type DeviceKeyVerdict } from './nodeIngest';
 import { verifyPinAtNodeAsync, readBranchStaffForServe, vetRelayedStaffChanges } from './branchStaff';
-import { ensureNodeTabs, registerTab, listOpenTabs, claimTab, forceClaim, updateTab, releaseTab, deleteTab, getTab, stealAudit } from './nodeTabs';   // Till stage 3b: shared held orders
+import { ensureNodeTabs, registerTab, listOpenTabs, claimTab, forceClaim, forceClaimVerdict, updateTab, releaseTab, deleteTab, getTab, stealAudit } from './nodeTabs';   // Till stage 3b: shared held orders
+import { personCan } from './personAccess';   // Till stage 3b: a manager force-steal is gated on tables.manage (A490)
 import { logLine } from './logFile';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 import { buildReferenceBundle } from './referenceBundle';
@@ -724,12 +725,37 @@ export function startNodeServer(): void {
             return json(res, 200, { ok: true, tab: r.tab, stole: r.stole, audit });
           }
           if (action === 'force-claim') {
+            // A manager-approved steal of an ACTIVE lease (owner 2026-11-15): the NODE verifies the manager's PIN and that
+            // they hold tables.manage BEFORE overriding a live holder — the till never decides this, it only relays the PIN
+            // the manager typed. Same node-authority path as /node/verify-pin (A17): THIS node's roster is the source of
+            // truth, not the caller. Unlocked / lapsed tabs take the plain `claim` above and never reach here.
+            const branchId = String(body?.branch_id ?? c?.branch_id ?? '');
+            const pin = String(body?.pin ?? '');
+            if (!pin) return json(res, 400, { ok: false, reason: 'pin_required', error: 'A manager’s PIN is needed to take over a table someone is still holding.' });
+            if (!branchId) return json(res, 400, { ok: false, error: 'branch_id is required' });
+            // A force-claim is a PIN attempt — the same rate limit as /node/verify-pin (F16/A496), by device AND by address.
+            if (!pinAttemptAllowed(`dev:${who ?? lanAddress(req)}`) || !pinAttemptAllowed(`ip:${lanAddress(req)}`)) {
+              logLine('node', `force-claim: too many PIN attempts from ${who} — refused for a minute`);
+              return json(res, 429, { ok: false, reason: 'rate_limited', error: 'Too many PIN attempts — wait a minute and try again.' });
+            }
+            // The node verifies the PIN against its own roster, then the pure gate decides: a bad PIN is final (401), a
+            // roster-read failure retryable (503), a verified staff without tables.manage is 403 (A490; the owner's role
+            // holds it via '*'). Permissions come from THIS node's roster, never the caller. forceClaim runs only on allow.
+            const verdict = await verifyPinAtNodeAsync(pin, branchId);
+            const gate = forceClaimVerdict(verdict, (s) => personCan({ roleName: s.roleName, permissions: s.permissions }, 'tables.manage'));
+            if (!gate.allow) {
+              if (gate.status === 403) logLine('node', `force-claim: a staff member without tables.manage was refused tab ${id}`);
+              return json(res, gate.status, { ok: false, reason: gate.reason, error: gate.message });
+            }
             const before = getTab(getLocalDb(), id);
             const r = forceClaim(getLocalDb(), id, who);
             if (!r.ok) return json(res, r.code, { ok: false, code: r.code });
             let audit: Record<string, unknown> | null = null;
-            if (r.previousHolder && before) { audit = { ...stealAudit(before, who), forced: true }; logLine('node', `/node/tabs: MANAGER force-steal — ${who} took tab ${id} from ${r.previousHolder}`); }
-            return json(res, 200, { ok: true, tab: r.tab, stole: !!r.previousHolder, previousHolder: r.previousHolder, audit });
+            if (r.previousHolder && before) {
+              audit = { ...stealAudit(before, who), forced: true, approved_by: gate.staff.name, approved_by_id: gate.staff.staffId };
+              logLine('node', `/node/tabs: MANAGER force-steal — ${who} took tab ${id} from ${r.previousHolder}, approved by ${gate.staff.name}`);
+            }
+            return json(res, 200, { ok: true, tab: r.tab, stole: !!r.previousHolder, previousHolder: r.previousHolder, approvedBy: gate.staff.name, audit });
           }
           if (action === 'release') {
             return json(res, 200, { ok: releaseTab(getLocalDb(), id, who).ok });

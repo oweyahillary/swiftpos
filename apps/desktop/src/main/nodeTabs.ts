@@ -160,6 +160,26 @@ export function forceClaim(db: DB, id: string, who: string):
   return { ok: true, tab: getTab(db, id)!, previousHolder };
 }
 
+/**
+ * Till stage 3b — the MANAGER TAKE-OVER gate (owner 2026-11-15), as a pure decision so the one rule that protects a live
+ * lock is unit-tested (test/node-tabs-claim.test.mjs). Given the node's verify-pin verdict for the PIN the manager typed
+ * and a predicate for the required permission, it says whether `forceClaim` may run. It is policy-agnostic: the ROUTE
+ * injects `canTakeOver = personCan(staff, 'tables.manage')`, so WHICH permission authorises a take-over is decided there,
+ * and this stays the single place that says "a live lock is taken only by a VERIFIED manager who holds that permission".
+ * A bad/ambiguous PIN is FINAL (401); only a roster-read failure is retryable (503); a verified staff without the
+ * permission is 403. Never allows on anything else.
+ */
+export interface VerifiedStaff { staffId?: string; name: string; roleName: string | null; permissions: unknown }
+export type PinVerdict = { ok: true; staff: VerifiedStaff } | { ok: false; reason: string; message: string };
+export type ForceGate =
+  | { allow: true; staff: VerifiedStaff }
+  | { allow: false; status: 401 | 403 | 503; reason: string; message: string };
+export function forceClaimVerdict(verdict: PinVerdict, canTakeOver: (s: VerifiedStaff) => boolean): ForceGate {
+  if (!verdict.ok) return { allow: false, status: verdict.reason === 'unavailable' ? 503 : 401, reason: verdict.reason, message: verdict.message };
+  if (!canTakeOver(verdict.staff)) return { allow: false, status: 403, reason: 'forbidden', message: `${verdict.staff.name} is not allowed to take over another waiter’s table.` };
+  return { allow: true, staff: verdict.staff };
+}
+
 /** Save edits — only the lock-holder may, and each edit RENEWS the lease. */
 export function updateTab(db: DB, id: string, who: string, cart: unknown, label?: string):
   { ok: true; tab: TabRow } | { ok: false; code: 409 | 423; lockedBy?: string } {

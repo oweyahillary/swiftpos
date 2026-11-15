@@ -28,10 +28,12 @@ export function tapAction(hasLocal: boolean, hasNodeTab: boolean, sharedOn: bool
   return 'open-free';                                  // free — open covers as today
 }
 
-/** The claim answer (branchTabs ClaimOutcome shape) → what the screen does. */
+/** The claim answer (branchTabs ClaimOutcome shape) → what the screen does. `refused`/`approvedBy` only arise on a
+ *  force-claim; a plain claim never returns them, so claimAction lets them fall through to `fallback`. */
 export type ClaimOutcomeLike =
-  | { outcome: 'claimed'; tab: { cart: unknown }; stole: boolean }
+  | { outcome: 'claimed'; tab: { cart: unknown }; stole: boolean; approvedBy?: string }
   | { outcome: 'locked'; lockedBy: string }
+  | { outcome: 'refused'; reason: 'pin' | 'permission' | 'rate_limited' | 'other'; message: string }
   | { outcome: 'unreachable' };
 export type ClaimAction =
   | { kind: 'open'; cart: unknown[]; toast: string | null }   // we hold it — load the cart; toast if we took a lapsed lease
@@ -44,6 +46,29 @@ export function claimAction(r: ClaimOutcomeLike, tableName: string): ClaimAction
   }
   if (r.outcome === 'locked') return { kind: 'held' };
   return { kind: 'fallback' };
+}
+
+/**
+ * A manager force-claim (take-over of a LIVE lock) answer → what the held-tab overlay does. The node has already checked
+ * the manager's PIN and tables.manage, so here we only route its verdict: `open` the taken-over cart (with a toast naming
+ * the approver), show the node's `refused` message under the PIN field, or ask to `retry` when the server didn't settle it.
+ */
+export type ForceOutcomeLike =
+  | { outcome: 'claimed'; tab: { cart: unknown }; stole: boolean; approvedBy?: string }
+  | { outcome: 'refused'; reason: 'pin' | 'permission' | 'rate_limited' | 'other'; message: string }
+  | { outcome: 'locked'; lockedBy: string }
+  | { outcome: 'unreachable' };
+export type TakeOverAction =
+  | { kind: 'open'; cart: unknown[]; toast: string }     // the node granted it — load the cart and open the order
+  | { kind: 'refused'; message: string }                 // wrong PIN / no permission / rate-limited — show it, keep the overlay
+  | { kind: 'retry'; message: string };                  // server didn't answer — keep the overlay, let them try again
+export function takeOverAction(r: ForceOutcomeLike, tableName: string): TakeOverAction {
+  if (r.outcome === 'claimed') {
+    const cart = Array.isArray(r.tab.cart) ? (r.tab.cart as unknown[]) : [];
+    return { kind: 'open', cart, toast: r.approvedBy ? `Took over ${tableName} — approved by ${r.approvedBy}.` : `Took over ${tableName}.` };
+  }
+  if (r.outcome === 'refused') return { kind: 'refused', message: r.message };
+  return { kind: 'retry', message: 'The branch server didn’t answer — try the take-over again.' };
 }
 
 /** A lease-renew (updateTab) answer → true when our lease was lost/stolen and the screen must drop the table. */

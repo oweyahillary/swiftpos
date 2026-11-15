@@ -26,13 +26,13 @@ declare module '@zaptill/dashboard-pos' {
     id: string; order_number: string; label: string; order_type: string; table_number: string;
     cart: unknown; opened_by: string; last_changed_by: string | null; locked_by: string | null; locked: boolean;
   }
-  type BranchClaim = { outcome: 'claimed'; tab: BranchTab; stole: boolean } | { outcome: 'locked'; lockedBy: string } | { outcome: 'unreachable' };
+  type BranchClaim = { outcome: 'claimed'; tab: BranchTab; stole: boolean; approvedBy?: string } | { outcome: 'locked'; lockedBy: string } | { outcome: 'refused'; reason: 'pin' | 'permission' | 'rate_limited' | 'other'; message: string } | { outcome: 'unreachable' };
   type BranchEdit = { outcome: 'ok'; tab: BranchTab } | { outcome: 'lost'; lockedBy?: string } | { outcome: 'unreachable' };
   export function setBranchTabsHost(host: {
     listTabs: (branchId: string) => Promise<BranchTab[]>;
     registerTab: (t: { id: string; branch_id: string; order_number: string; label: string; order_type: string; table_number?: string; cart: unknown; opened_by: string }) => Promise<void>;
     claimTab: (id: string, name: string) => Promise<BranchClaim>;
-    forceClaim: (id: string, name: string) => Promise<BranchClaim>;
+    forceClaim: (id: string, name: string, pin: string, branchId: string) => Promise<BranchClaim>;
     updateTab: (id: string, cart: unknown, label?: string) => Promise<BranchEdit>;
     releaseTab: (id: string) => Promise<void>;
     deleteTab: (id: string, reason: 'charged' | 'cleared') => Promise<void>;

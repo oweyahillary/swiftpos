@@ -9,6 +9,8 @@
  *   - tapAction preferring 'take-node' over 'resume-local'      → "a local order resumes, never re-claims as foreign"
  *   - claimAction treating 'locked' as 'open'                   → "a live foreign lock is read-only, not opened"
  *   - editLost returning true for 'unreachable'                 → "unreachable keeps the table (local), only 'lost' drops it"
+ *   - takeOverAction treating 'refused' as 'open'               → "a wrong PIN / no permission must never open the table"
+ *   - takeOverAction treating 'unreachable' as 'open'           → "a silent server asks to retry, never silently opens"
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -60,6 +62,33 @@ eq('claimed (not stolen) opens the cart, no toast',
 eq('a bad cart becomes []', M.claimAction({ outcome: 'claimed', tab: { cart: 'oops' }, stole: false }, 'T4').cart, []);
 eq('a live foreign lock is read-only, not opened', M.claimAction({ outcome: 'locked', lockedBy: 'd' }, 'T4'), { kind: 'held' });
 eq('unreachable → fallback (local)', M.claimAction({ outcome: 'unreachable' }, 'T4'), { kind: 'fallback' });
+eq('an unexpected refused on a plain claim stays local (never opens)', M.claimAction({ outcome: 'refused', reason: 'other', message: 'x' }, 'T4'), { kind: 'fallback' });
+
+console.log('\ntakeOverAction (manager force-claim)');
+{
+  const a = M.takeOverAction({ outcome: 'claimed', tab: { cart: [{ x: 1 }] }, stole: true, approvedBy: 'Mary' }, 'T4');
+  ok('granted → open the taken-over cart with an approver toast',
+    a.kind === 'open' && JSON.stringify(a.cart) === JSON.stringify([{ x: 1 }]) && /Mary/.test(a.toast) && /T4/.test(a.toast), JSON.stringify(a));
+}
+{
+  const a = M.takeOverAction({ outcome: 'claimed', tab: { cart: [] }, stole: true }, 'T4');
+  ok('granted without an approver name still opens (generic toast)', a.kind === 'open' && !/approved by/i.test(a.toast), JSON.stringify(a));
+}
+eq('a bad cart becomes [] on take-over', M.takeOverAction({ outcome: 'claimed', tab: { cart: 'oops' }, stole: true }, 'T4').cart, []);
+eq('a wrong PIN is refused, surfaced verbatim (never opens)',
+  M.takeOverAction({ outcome: 'refused', reason: 'pin', message: 'That PIN was not recognised.' }, 'T4'),
+  { kind: 'refused', message: 'That PIN was not recognised.' });
+eq('a permission refusal is surfaced',
+  M.takeOverAction({ outcome: 'refused', reason: 'permission', message: 'Mary may not take over tables.' }, 'T4'),
+  { kind: 'refused', message: 'Mary may not take over tables.' });
+{
+  const a = M.takeOverAction({ outcome: 'unreachable' }, 'T4');
+  ok('an unreachable server asks to retry (never silently opens)', a.kind === 'retry' && /try the take-over again/i.test(a.message), JSON.stringify(a));
+}
+{
+  const a = M.takeOverAction({ outcome: 'locked', lockedBy: 'd' }, 'T4');
+  ok('an unexpected locked answer asks to retry, never opens', a.kind === 'retry', JSON.stringify(a));
+}
 
 console.log('\neditLost');
 eq('lost → drop', M.editLost({ outcome: 'lost' }), true);

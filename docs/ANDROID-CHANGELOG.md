@@ -4,6 +4,24 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.4.6 — Till stage 3b (manager take-over of a held table)
+**Closes the 0.4.5 flagged follow-up.** A manager can now take over a table another waiter is *actively* holding — the
+force-steal that the 90 s idle-auto-takeover does not cover:
+- From the read-only **"Held by &lt;name&gt;"** overlay, a **Take over** button asks for a **manager's PIN**. The **branch
+  node** (not the till) verifies that PIN against its own roster **and** that the person holds **Manage tables**
+  (`tables.manage`; the owner's role always does) before it overrides the live lock — a till can never decide this for
+  itself. A wrong PIN, or a staff member without the permission, is refused with the reason shown under the field.
+- On success the taken-over order opens with its cart and a toast naming who approved it; the node records **who took which
+  table from whom, and who approved it** (audited).
+- The **previous holder is dropped** on their next lease-renew — their screen shows *"This table was taken over on another
+  POS"* and returns them to the table grid (any unsent lines they were mid-adding are discarded; the manager's copy is now
+  authoritative).
+- PIN attempts are **rate-limited at the node** exactly like the offline sign-in PIN (10/min per device and per address).
+- **Unchanged** everywhere shared tables are off (browser, server-less tablet, non-restaurant POS).
+
+Owner decisions that shaped it (2026-11-15): node-verified PIN in one call · reuse `tables.manage` · holder dropped with a
+toast, no two-editor merge. See `docs/BUILD-TILL-STAGE-3B-CLIENT.md` (take-over section).
+
 ## 0.4.5 — Till stage 3b (shared tables wired into the selling screen)
 **Shared tables are now live on the restaurant POS (when a branch server is joined):**
 - The **table grid shows every till's open tables**, not just this one's — a table held on another till reads **occupied**,

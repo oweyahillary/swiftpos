@@ -7,7 +7,8 @@
  *   node --no-warnings tests/android-till-tabs.test.mjs   (bundles apps/android/src with esbuild — Capacitor external)
  *
  * RUNS (pure parsers + injected IO — no device touched):
- *   C  readClaimOutcome: claimed (±stole) · 409 locked+lockedBy · 404/503/null → unreachable · a 200 with no tab → unreachable.
+ *   C  readClaimOutcome: claimed (±stole, ±approvedBy) · 409 locked+lockedBy · 401/403/429/400 → refused (force-claim
+ *      PIN/permission, FINAL — not a local fallback) · 404/503/null → unreachable · a 200 with no tab → unreachable.
  *   E  readEditOutcome: ok · 423/409 lost · 404/503/null unreachable.
  *   L  parseTabList: a bare array · {tabs:[…]} · a non-200 → [] · a cart JSON string parsed.
  *   F  listTabs/registerTab/claimTab/forceClaim/updateTab/releaseTab/deleteTab: no link → neutral + the server untouched;
@@ -16,6 +17,8 @@
  *
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted):
  *   - readClaimOutcome treating a 503 as 'claimed'                 → C "a 503 is unreachable (falls back to local)"
+ *   - readClaimOutcome treating a 401/403 as 'unreachable'         → C "a wrong PIN / no permission is refused, not a local fallback"
+ *   - forceClaim dropping the pin from the body                    → F "force-claim relays the manager PIN + branch to the node"
  *   - claimTab not sending x-device-id                             → F "claim proves the device"
  *   - readEditOutcome treating a 423 as 'ok'                       → E "a 423 is a lost lease"
  */
@@ -82,6 +85,11 @@ const run = async () => {
     ok('a lapsed-lease claim reports stole', r.outcome === 'claimed' && r.stole === true); }
   eq('a 200 with no tab → unreachable', M.readClaimOutcome({ status: 200, body: JSON.stringify({ ok: true }), headers: {} }), { outcome: 'unreachable' });
   eq('a 409 is locked + lockedBy', M.readClaimOutcome({ status: 409, body: JSON.stringify({ lockedBy: 'till-B' }), headers: {} }), { outcome: 'locked', lockedBy: 'till-B' });
+  // force-claim auth rejections — the node's FINAL answers, never a local fallback (there is no local way to steal a live lock).
+  eq('a 401 wrong PIN → refused(pin), verbatim', M.readClaimOutcome({ status: 401, body: JSON.stringify({ reason: 'no_match', error: 'That PIN was not recognised.' }), headers: {} }), { outcome: 'refused', reason: 'pin', message: 'That PIN was not recognised.' });
+  eq('a 403 no permission → refused(permission)', M.readClaimOutcome({ status: 403, body: JSON.stringify({ reason: 'forbidden', error: 'Mary may not take over tables.' }), headers: {} }), { outcome: 'refused', reason: 'permission', message: 'Mary may not take over tables.' });
+  eq('a 429 → refused(rate_limited)', M.readClaimOutcome({ status: 429, body: JSON.stringify({ reason: 'rate_limited', error: 'Too many PIN attempts — wait a minute and try again.' }), headers: {} }), { outcome: 'refused', reason: 'rate_limited', message: 'Too many PIN attempts — wait a minute and try again.' });
+  eq('a 400 pin_required → refused(pin)', M.readClaimOutcome({ status: 400, body: JSON.stringify({ reason: 'pin_required', error: 'A manager’s PIN is needed.' }), headers: {} }), { outcome: 'refused', reason: 'pin', message: 'A manager’s PIN is needed.' });
 
   console.log('\nE. readEditOutcome (pure)');
   { const r = M.readEditOutcome({ status: 200, body: JSON.stringify({ ok: true, tab: TAB }), headers: {} }); ok('ok', r.outcome === 'ok' && r.tab.id === 't4'); }
@@ -114,8 +122,16 @@ const run = async () => {
     eq('claim proves the device', s.calls[0].headers['x-device-id'], 'android-dev');
     ok('claim carries the name', JSON.parse(s.calls[0].body).name === 'Jane');
     ok('claim → claimed', r.outcome === 'claimed'); }
-  { const s = stub({ status: 200, body: JSON.stringify({ ok: true, tab: TAB }), headers: {} });
-    await M.forceClaim('t4', 'Mgr', deps(s)); eq('force-claim path', s.calls[0].path, '/node/tabs/t4/force-claim'); }
+  { const s = stub({ status: 200, body: JSON.stringify({ ok: true, tab: TAB, stole: true, approvedBy: 'Mary' }), headers: {} });
+    const r = await M.forceClaim('t4', 'Mgr', '1234', 'b1', deps(s));
+    eq('force-claim path', s.calls[0].path, '/node/tabs/t4/force-claim');
+    const sent = JSON.parse(s.calls[0].body);
+    ok('force-claim relays the manager PIN + branch to the node', sent.pin === '1234' && sent.branch_id === 'b1', s.calls[0].body);
+    eq('force-claim proves the asking device', s.calls[0].headers['x-device-id'], 'android-dev');
+    ok('a granted force-claim carries the approver name', r.outcome === 'claimed' && r.approvedBy === 'Mary'); }
+  { const s = stub({ status: 403, body: JSON.stringify({ reason: 'forbidden', error: 'No permission.' }), headers: {} });
+    const r = await M.forceClaim('t4', 'Mgr', '0000', 'b1', deps(s));
+    ok('a refused force-claim is surfaced, not swallowed as unreachable', r.outcome === 'refused' && r.reason === 'permission'); }
   { const s = stub({ status: 200, body: JSON.stringify({ ok: true, tab: TAB }), headers: {} });
     await M.updateTab('t4', [{ q: 2 }], 'T4', deps(s));
     eq('update path', s.calls[0].path, '/node/tabs/t4');

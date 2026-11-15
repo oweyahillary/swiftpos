@@ -32,8 +32,9 @@ export interface TabInput {
 
 /** The outcome of trying to take a tab's lock, as the caller drives the see-it-then-take-over UX. */
 export type ClaimOutcome =
-  | { outcome: 'claimed'; tab: NodeTab; stole: boolean }   // we hold it now (stole = took a LAPSED lease — show a toast)
+  | { outcome: 'claimed'; tab: NodeTab; stole: boolean; approvedBy?: string }   // we hold it now (stole = took a LAPSED or, on a force-claim, a LIVE lease — show a toast; approvedBy = the manager who authorised a force-claim)
   | { outcome: 'locked'; lockedBy: string }                // 409: a LIVE foreign lock — read-only + manager take-over
+  | { outcome: 'refused'; reason: 'pin' | 'permission' | 'rate_limited' | 'other'; message: string }   // force-claim only: the node rejected the manager's PIN (401) / permission (403) / rate limit (429). NOT a local fallback.
   | { outcome: 'unreachable' };                            // no link / server silent → caller falls back to local-only
 
 export type EditOutcome =
@@ -68,10 +69,20 @@ export function readClaimOutcome(r: NodeResponse | null): ClaimOutcome {
   const o = (body && typeof body === 'object') ? body as Record<string, unknown> : {};
   if (r.status >= 200 && r.status < 300 && o.ok) {
     const tab = parseTab(o.tab);
-    if (tab) return { outcome: 'claimed', tab, stole: !!o.stole };
+    if (tab) return { outcome: 'claimed', tab, stole: !!o.stole, approvedBy: o.approvedBy ? String(o.approvedBy) : undefined };
     return { outcome: 'unreachable' };
   }
   if (r.status === 409) return { outcome: 'locked', lockedBy: String(o.lockedBy ?? o.locked_by ?? '') };
+  // force-claim auth rejections — a wrong PIN (401), no tables.manage (403) or too many PIN tries (429). These are FINAL
+  // answers from the node, never a reason to fall back to the local-only path (there is no local way to steal a live lock).
+  if (r.status === 401 || r.status === 403 || r.status === 429 || r.status === 400) {
+    const reason: 'pin' | 'permission' | 'rate_limited' | 'other' =
+      o.reason === 'forbidden' ? 'permission'
+      : o.reason === 'rate_limited' ? 'rate_limited'
+      : (r.status === 401 || o.reason === 'pin_required') ? 'pin'
+      : 'other';
+    return { outcome: 'refused', reason, message: String(o.error ?? 'That take-over was not allowed.') };
+  }
   return { outcome: 'unreachable' };   // any other non-2xx → be safe, stay local
 }
 
@@ -130,9 +141,14 @@ export async function claimTab(id: string, name: string, deps: BranchTabsDeps = 
   return c ? readClaimOutcome(c.r) : { outcome: 'unreachable' };
 }
 
-/** Manager-approved take-over of a LIVE lock (the caller gates this on a manager PIN). Audited at the node. */
-export async function forceClaim(id: string, name: string, deps: BranchTabsDeps = {}): Promise<ClaimOutcome> {
-  const c = await call(`/node/tabs/${encodeURIComponent(id)}/force-claim`, 'POST', JSON.stringify({ name }), deps);
+/**
+ * Manager-approved take-over of a LIVE lock. The node (not this till) verifies the manager's `pin` against the branch
+ * roster and that they hold `tables.manage` before it overrides the holder — so the PIN is relayed, never checked here. A
+ * wrong PIN or a staff member without the permission comes back as `{ outcome: 'refused' }`, which the caller shows and
+ * does NOT treat as a server failure. Audited at the node (who took which tab from whom, and who approved it).
+ */
+export async function forceClaim(id: string, name: string, pin: string, branchId: string, deps: BranchTabsDeps = {}): Promise<ClaimOutcome> {
+  const c = await call(`/node/tabs/${encodeURIComponent(id)}/force-claim`, 'POST', JSON.stringify({ name, pin, branch_id: branchId }), deps);
   return c ? readClaimOutcome(c.r) : { outcome: 'unreachable' };
 }
 
