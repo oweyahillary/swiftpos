@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — A623 STK Push Query recovery: Daraja sandbox test</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+@media print{h2{break-after:avoid}table,blockquote{break-inside:avoid}}
+</style></head>
+<body><div class="wrap">
+<h1>ZapTill — A623 STK Push Query recovery: Daraja sandbox test</h1>
+<p><strong>What this closes:</strong> A623 — a lost or late M-Pesa STK callback used to let <code>GET /api/mpesa/status</code> mark a customer who <strong>had already paid</strong> as <strong>failed</strong> at the 70 s timeout (the exact fault seen on 2026-11-15: a prompt was accepted and paid, but the system waited ~60 s and then failed it). A623 asks Safaricom the real outcome first (Daraja STK Push Query, <code>lib/stkQuery.ts</code>) and settles on it. The code is built and bench-green (<code>tests/stk-query.test.mjs</code> 21/21, the M-Pesa route suites green); this is the live sandbox pass that turns it from BUILT into CLOSED (rule 16).</p>
+<p><strong>You need:</strong> a <strong>sandbox</strong>-configured business or branch (Daraja sandbox consumer key / secret / shortcode / passkey, M-Pesa › STK push), the <strong>A623 server deployed</strong>, <strong>migration 191 run</strong> on that database, a <strong>real phone</strong> that can accept the prompt (the sandbox still moves <strong>KES 1</strong> — keep every amount at 1), and access to the <strong>server log</strong> (to see the <code>[mpesa]</code> lines) and to that environment's <strong>env vars</strong> (to simulate a lost callback). Do this on the <strong>sandbox / test server — never touch production callbacks.</strong></p>
+<blockquote>If a test FAILS, stop and send me the exact POS message, the status the sale ended in, and the matching <code>[mpesa] …</code> log line. That is a real bug, not a checklist gap (rule 11). Nothing here needs new code.</blockquote>
+<h2>How to simulate a lost callback (the heart of the test)</h2>
+<p>The recovery only has to run when the callback does <strong>not</strong> settle the prompt in time. Make that happen without waiting for a real network fault, in <strong>one</strong> of these ways on the sandbox server:</p>
+<ol><li><strong>Reject the callback (simplest):</strong> set <code>MPESA_ALLOWED_IPS</code> to a bogus value (for example <code>203.0.113.1</code>) so every incoming callback is refused at the IP gate — the server never settles via callback, exactly as a lost one. Restore the real value after the test.</li><li><strong>Black-hole the callback:</strong> point <code>CALLBACK_BASE</code> (the STK callback host) at a URL that is not your server, so Safaricom's callback never arrives. Restore it after.</li></ol>
+<p>Either way the prompt stays pending with no callback, so the query at ~25 s is what resolves it.</p>
+<h2>Setup — do this first</h2>
+<ol><li>Confirm the sandbox business/branch has <strong>M-Pesa STK configured</strong> and the server shows A623 (the <code>/api/mpesa/status</code> route is the A623 build) with <strong>migration 191 applied</strong> (the <code>mpesa_queried_at</code> column exists on <code>payments</code> and <code>mpesa_stk_requests</code>).</li><li>Turn on the <strong>lost-callback simulation</strong> (one method above).</li><li>Open the <strong>server log</strong> and keep it visible.</li></ol>
+<h2>Test 1 — The real bug: paid, callback lost, must still complete (headline)</h2>
+<ul><li>With the simulation ON, ring a <strong>KES 1</strong> sale and send the STK prompt to the phone.</li><li>On the phone, <strong>accept and enter the PIN — actually pay.</strong></li><li>Do <strong>not</strong> expect a callback (it is being dropped). Watch the POS and the log.</li><li><strong>Expect, all of:</strong><ul><li>At about <strong>25 s</strong> the log shows a query firing, then <strong>`[mpesa] STK query CONFIRMED paid without a callback`</strong>.</li><li>Within a poll or two the POS flips to <strong>PAID / completed</strong> — <strong>not</strong> failed — and the sale closes.</li><li>The payment's note reads <strong>"Confirmed by Safaricom query — M-Pesa receipt reconciles later"</strong> (no M-Pesa receipt yet, by design).</li><li>It resolves <strong>before</strong> the old 70 s timeout. Pass / Fail.</li></ul></li><li>(Before A623 this same run ended <strong>failed</strong> at ~70 s — that is the fault this proves fixed.)</li></ul>
+<h2>Test 2 — The customer ignores the prompt (no response)</h2>
+<ul><li>Simulation still ON. Ring a <strong>KES 1</strong> prompt and <strong>do nothing on the phone</strong> (let it sit).</li><li><strong>Expect:</strong> at ~25 s the query runs and the sale is marked <strong>failed</strong> with <strong>"No response from the customer (timed out)"</strong> — a real, named reason, and sooner than the 70 s blind timeout. Pass / Fail.</li></ul>
+<h2>Test 3 — The customer cancels</h2>
+<ul><li>Simulation still ON. Ring a <strong>KES 1</strong> prompt and <strong>Cancel</strong> it on the phone.</li><li><strong>Expect:</strong> the sale is marked <strong>failed</strong> with <strong>"Cancelled by the customer"</strong> (from the query's ResultCode). Pass / Fail.</li></ul>
+<h2>Test 4 — One query per prompt, not a flood (rate guard)</h2>
+<ul><li>During Test 1 or 2, watch the log while the POS polls every 3 s.</li><li><strong>Expect:</strong> the query fires <strong>about once every 20 s</strong>, not on every 3 s poll — the <code>mpesa_queried_at</code> claim is working, so Daraja is not hammered. Pass / Fail.</li></ul>
+<h2>Test 5 — Regression: a normal callback still completes fast</h2>
+<ul><li><strong>Turn the simulation OFF</strong> (restore <code>MPESA_ALLOWED_IPS</code> / <code>CALLBACK_BASE</code>).</li><li>Ring a <strong>KES 1</strong> prompt and <strong>pay</strong> normally.</li><li><strong>Expect:</strong> the sale completes <strong>within a few seconds</strong> on the callback, <strong>with</strong> the real M-Pesa receipt number — the recovery query never needed to fire (it settled well before 25 s). Pass / Fail.</li></ul>
+<h2>Test 6 — Both surfaces</h2>
+<ul><li>Run Test 1 once from a <strong>web POS order</strong> (settles on the <code>payments</code> row) and once from a <strong>desktop POS prompt</strong> (the A607 <code>mpesa_stk_requests</code> row).</li><li><strong>Expect:</strong> the recovery works the same on both. Pass / Fail.</li></ul>
+<h2>Teardown</h2>
+<ul><li><strong>Restore `MPESA_ALLOWED_IPS` and `CALLBACK_BASE`</strong> to their real values. Confirm a final normal payment completes on the callback (Test 5 again) so the environment is back to normal.</li></ul>
+<h2>Copy this back to close A623</h2>
+<p>Build tested is the <strong>A623 server</strong> with <strong>migration 191</strong>.</p>
+<table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Note</th></tr></thead><tbody><tr><td>T1</td><td>Paid + callback lost → completed via query (not failed), with the reconcile note, before 70 s</td><td>PASS / FAIL</td><td></td></tr><tr><td>T2</td><td>No response → failed "No response (timed out)" at ~25 s</td><td>PASS / FAIL</td><td></td></tr><tr><td>T3</td><td>Cancelled → failed "Cancelled by the customer"</td><td>PASS / FAIL</td><td></td></tr><tr><td>T4</td><td>One query per ~20 s, not every 3 s poll</td><td>PASS / FAIL</td><td></td></tr><tr><td>T5</td><td>Normal callback still completes fast, with the real receipt</td><td>PASS / FAIL</td><td></td></tr><tr><td>T6</td><td>Works on both web (<code>payments</code>) and desktop POS (<code>mpesa_stk_requests</code>)</td><td>PASS / FAIL</td><td></td></tr><tr><td>—</td><td>Env vars restored after the test</td><td>DONE / —</td><td></td></tr></tbody></table>
+<p><strong>Note on the receipt:</strong> a query-confirmed payment has <strong>no M-Pesa receipt number</strong> (the query does not return one). The sale is complete and the money is in; the receipt reconciles against the Daraja statement, or fills in if a late callback still arrives. That is the owner's decision (2026-11-15) and is expected, not a failure. Once every box above passes, A623 is <strong>CLOSED</strong> and clear for production.</p>
+</div></body></html>
