@@ -22,7 +22,7 @@ rest. New docs: drop them in the right section below and add a line here.
 ## 2. Manuals & guides (user / technician facing)
 - [Manuals/](Manuals/) — each as `.md` + `.docx` + `.html` (the standing rule): **ANDROID-INSTALL**, **BARCODE-LABELS**, **WEIGHED-ITEMS**, + Technical Manuals for DB setup (Local PostgreSQL / Supabase).
 - [RUNBOOK.md](RUNBOOK.md) · [RESTORE-GUIDE.md](RESTORE-GUIDE.md) · [BACKUPS.md](BACKUPS.md) (+ `.docx`/`.html`) · [PRINT-SERVER-SETUP.md](PRINT-SERVER-SETUP.md).
-- [setup/](setup/) — installer / technician setup material · [SwiftPOS_Pilot_Checklist.md](SwiftPOS_Pilot_Checklist.md).
+- [setup/](setup/) — installer / technician setup material.
 
 ## 3. Architecture & design
 - [ANDROID-APP-DESIGN.md](designs/ANDROID-APP-DESIGN.md) · [DESKTOP_DESIGN.md](designs/DESKTOP_DESIGN.md).
@@ -31,7 +31,7 @@ rest. New docs: drop them in the right section below and add a line here.
 - Till Stage 3 (on branch `android-till-3`): `SCOPE-TILL-STAGE-3.md`, `BUILD-TILL-STAGE-3A/3B/3C/3D*.md`, [HELD-ORDERS-CROSS-TILL-D9.md](designs/HELD-ORDERS-CROSS-TILL-D9.md), [D9-decision-brief.md](designs/D9-decision-brief.md).
 
 ## 4. Plans, scopes & roadmap
-- [ADMIN-PORTAL-PLAN.md](ADMIN-PORTAL-PLAN.md) · [DESKTOP-AUTOUPDATE-PLAN.md](DESKTOP-AUTOUPDATE-PLAN.md) · [DESKTOP-ONLY-CUTOFF-PLAN.md](DESKTOP-ONLY-CUTOFF-PLAN.md) · [SHARED-COMPONENTS-PLAN.md](SHARED-COMPONENTS-PLAN.md) · [SUSPEND-PURGE-PLAN.md](SUSPEND-PURGE-PLAN.md) · [PLAN-web-print-parity.md](PLAN-web-print-parity.md).
+- [ADMIN-PORTAL-PLAN.md](ADMIN-PORTAL-PLAN.md) · [DESKTOP-ONLY-CUTOFF-PLAN.md](DESKTOP-ONLY-CUTOFF-PLAN.md) · [SHARED-COMPONENTS-PLAN.md](SHARED-COMPONENTS-PLAN.md) · [SUSPEND-PURGE-PLAN.md](SUSPEND-PURGE-PLAN.md).
 - Platform move (on hold): [PLATFORM-MOVE-OVERVIEW.md](PLATFORM-MOVE-OVERVIEW.md) · [VPS-MIGRATION-PLAN.md](VPS-MIGRATION-PLAN.md) · [OWN-AUTH-PLAN.md](OWN-AUTH-PLAN.md).
 - Scopes: [SCOPE-A295-branding.md](SCOPE-A295-branding.md) · [SCOPE-enrolment-only-activation.md](SCOPE-enrolment-only-activation.md) · [SCOPE-node-authority-A160.md](SCOPE-node-authority-A160.md).
 
@@ -44,10 +44,10 @@ The `A###-*.md` specs now live in **[tasks/](tasks/)** (`A59`, `A295`, `A612`, `
 
 ## 7. Testing & QA
 - [TEST_PLAN.md](TEST_PLAN.md) · [TEST_TOOLING.md](TEST_TOOLING.md) · [E2E-CI-PLAN.md](E2E-CI-PLAN.md) · [E2E-NIGHTLY.md](E2E-NIGHTLY.md).
-- [checklists/](checklists/) · [testing/](testing/) · verification: [A129-live-verification-checklist.md](tasks/A129-live-verification-checklist.md), [OFFLINE-CLUSTER-verification-checklist.md](OFFLINE-CLUSTER-verification-checklist.md), the loose `VERIFY-*.md` (archive — §11).
+- [checklists/](checklists/) · [testing/](testing/) · verification: [A129-live-verification-checklist.md](tasks/A129-live-verification-checklist.md); older `VERIFY-*` logs are in [history/verify/](history/verify/).
 
 ## 8. Schema & audits
-- [SCHEMA_AUDIT.md](SCHEMA_AUDIT.md) · [LOCAL-SCHEMA-VERSIONS.md](LOCAL-SCHEMA-VERSIONS.md) · [PERMISSIONS-AUDIT.md](PERMISSIONS-AUDIT.md) · [DESKTOP-AUDIT-FINAL.md](DESKTOP-AUDIT-FINAL.md).
+- [SCHEMA_AUDIT.md](SCHEMA_AUDIT.md) · [LOCAL-SCHEMA-VERSIONS.md](LOCAL-SCHEMA-VERSIONS.md) · [PERMISSIONS-AUDIT.md](PERMISSIONS-AUDIT.md).
 
 ## 9. Marketing & website
 - [marketing/](marketing/) — posters, screens, assets (the ZapTill poster set lives in `marketing/posters/`).
@@ -61,4 +61,5 @@ The `A###-*.md` specs now live in **[tasks/](tasks/)** (`A59`, `A295`, `A612`, `
 ## 11. Folders & history / archive
 - **[designs/](designs/)** — agreed design docs · **[tasks/](tasks/)** — A‑register feature specs · **[manifests/](manifests/)** — the 348 per‑batch records are **archived** out (zip in `C:\swiftpos\other files`; see that folder's README).
 - [history/verify/](history/verify/) — swept `VERIFY-*` logs (30) · [history/mornings/](history/mornings/) — swept `MORNING-*` logs (8) · [history/applied/](history/applied/) — applied‑patch notes · [reports/](reports/) — current reports.
-- [history/handoffs/](history/handoffs/) — **all dated handoffs archived** out (40, same zip folder; see that folder's README). The working rules they held were lifted into [WORKING-RULES.md](WORKING-RULES.md); the register keeps their names as historical identifiers.
+- [history/handoffs/](history/handoffs/) — **all dated handoffs archived** out (40). The working rules they held were lifted into [WORKING-RULES.md](WORKING-RULES.md); the register keeps their names as historical identifiers.
+- **Archived out of the repo (all 2026‑11‑15, in `C:\swiftpos\other files\`):** `zaptill-manifests-archive` (348) · `zaptill-handoffs-archive` (40) · `zaptill-docs-archive` (15 — dated QA logs, finished audits, old phase status, one‑off mockups/proposals, draft SQL). Everything code‑referenced was kept.
