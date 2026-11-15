@@ -1,5 +1,5 @@
 /**
- * till-buffer-stage2.test.mjs — Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7, §4.8): the offline store-and-forward
+ * till-buffer-stage2.test.mjs — Till stage 2 (docs/designs/ANDROID-APP-DESIGN.md §4.7, §4.8): the offline store-and-forward
  * rules in @zaptill/core/tillBuffer. Pure, so run straight on the source.
  *
  *   node --no-warnings tests/till-buffer-stage2.test.mjs

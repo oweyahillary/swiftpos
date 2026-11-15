@@ -139,7 +139,7 @@ router.use('/products',       productsRoutes);
 router.use('/branch-prices',  branchPricesRoutes);
 router.use('/pos',            posRoutes);
 router.use('/desktop-update', desktopUpdateRoutes);
-router.use('/app-update',     appUpdateRoutes);   // Android Stage 0 (docs/ANDROID-APP-DESIGN.md)
+router.use('/app-update',     appUpdateRoutes);   // Android Stage 0 (docs/designs/ANDROID-APP-DESIGN.md)
 router.use('/app-errors',     appErrorsRoutes);   // Android Stage 0: into the admin portal's alerts
 router.use('/variants',       variantsRoutes);
 router.use('/modifiers',      modifiersRoutes);

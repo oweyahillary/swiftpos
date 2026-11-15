@@ -1,5 +1,5 @@
 /**
- * AndroidAppCard — "ZapTill for Android" on a client's Updates tab (docs/ANDROID-APP-DESIGN.md, Stage 0).
+ * AndroidAppCard — "ZapTill for Android" on a client's Updates tab (docs/designs/ANDROID-APP-DESIGN.md, Stage 0).
  *
  * The desktop's Desktop updates card (A348) and Download ZapTill (A570), for the Android app's two surfaces:
  *   - Shop POS (a shop tablet that sells) and Owner / manager phone, each approved or held on its own. Nothing is

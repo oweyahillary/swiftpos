@@ -1,5 +1,5 @@
 /**
- * appUpdate.ts — the ZapTill Android app's update feed, per business and surface (docs/ANDROID-APP-DESIGN.md, Stage 0).
+ * appUpdate.ts — the ZapTill Android app's update feed, per business and surface (docs/designs/ANDROID-APP-DESIGN.md, Stage 0).
  *
  * The desktop's A348, for a new surface: the app asks which version its business is approved for and downloads only
  * that APK, through the cloud. Nothing is approved by default (migration 189: NULL = hold).

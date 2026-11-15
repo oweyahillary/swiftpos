@@ -1,5 +1,5 @@
 /**
- * posSurface.ts — which sessions are a POS DEVICE's (Till stage 1, docs/ANDROID-APP-DESIGN.md §11).
+ * posSurface.ts — which sessions are a POS DEVICE's (Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11).
  *
  * A POS device signs in as itself (A415) and takes a POS seat: the desktop POS (surface 'desktop') and, from Till stage 1,
  * the Android Shop POS (surface 'android-till'). Decision taken for stage 1 (§10.8, 2026-11-05): the cloud's GATES treat

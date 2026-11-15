@@ -1,5 +1,5 @@
 /**
- * ChooseMode — the first-launch question: "What is this device?" (docs/ANDROID-APP-DESIGN.md §2). Two steps: pick, then
+ * ChooseMode — the first-launch question: "What is this device?" (docs/designs/ANDROID-APP-DESIGN.md §2). Two steps: pick, then
  * confirm, because changing it later means Reset app (everything on the device is cleared).
  */
 import { useState } from 'react';

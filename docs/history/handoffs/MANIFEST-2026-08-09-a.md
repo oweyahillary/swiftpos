@@ -146,7 +146,7 @@ site visit. Nothing ships before 0.5.25 has traded a full service.
 
 | File | Change | Why |
 |---|---|---|
-| `docs/PHASE5-NODE-AUTHORITY.md` | **NEW** | The specification. FOR APPROVAL BEFORE CODE, per this repo's own convention. |
+| `docs/designs/PHASE5-NODE-AUTHORITY.md` | **NEW** | The specification. FOR APPROVAL BEFORE CODE, per this repo's own convention. |
 | `docs/AUDIT-REGISTER.md` | A17 → design agreed · A19 → resolved · A18 note · changelog | Rule 14. |
 
 ## The three answers, and what each changed
@@ -179,7 +179,7 @@ Documentation only in this batch; nothing executable changed since -b.
 
 ```bash
 git checkout f9d29a8 -- docs/AUDIT-REGISTER.md
-rm -f docs/PHASE5-NODE-AUTHORITY.md
+rm -f docs/designs/PHASE5-NODE-AUTHORITY.md
 ```
 
 ---
@@ -191,7 +191,7 @@ and §10.1 needs an owner decision. Documentation and register only.
 
 | File | Change | Why |
 |---|---|---|
-| `docs/PHASE5-NODE-AUTHORITY.md` | **+§10 Failover** (six subsections) | Promotion is in scope now that PHASE5 makes the node load-bearing for auth. |
+| `docs/designs/PHASE5-NODE-AUTHORITY.md` | **+§10 Failover** (six subsections) | Promotion is in scope now that PHASE5 makes the node load-bearing for auth. |
 | `docs/AUDIT-REGISTER.md` | +A20 (P1), +A21 (P1), +A22 (P2), +A23 (P2), changelog | Rule 14. |
 
 ## First: the existing promotion machinery is better than the register credits
@@ -246,7 +246,7 @@ Documentation only; nothing executable changed since -b.
 
 ```bash
 git checkout f9d29a8 -- docs/AUDIT-REGISTER.md
-# and revert §10 from docs/PHASE5-NODE-AUTHORITY.md, or drop the file (new in -c)
+# and revert §10 from docs/designs/PHASE5-NODE-AUTHORITY.md, or drop the file (new in -c)
 ```
 
 ---
@@ -258,7 +258,7 @@ source and **upheld**. Documentation and register only; no code.
 
 | File | Change |
 |---|---|
-| `docs/PHASE5-NODE-AUTHORITY.md` | **+§11 REVISION**, which supersedes §§3-5 where they disagree |
+| `docs/designs/PHASE5-NODE-AUTHORITY.md` | **+§11 REVISION**, which supersedes §§3-5 where they disagree |
 | `docs/AUDIT-REGISTER.md` | +A24 (P1, the unifying finding), + an explicit CORRECTION entry, changelog |
 
 ## What I got wrong
@@ -308,7 +308,7 @@ all 18 tests/*.test.mjs          exit 0
 
 ```bash
 git checkout f9d29a8 -- docs/AUDIT-REGISTER.md
-# revert §11 from docs/PHASE5-NODE-AUTHORITY.md, or drop the file (new in -c)
+# revert §11 from docs/designs/PHASE5-NODE-AUTHORITY.md, or drop the file (new in -c)
 ```
 
 ---
@@ -576,7 +576,7 @@ Base `f9d29a8`. Cumulative. **Contains a MIGRATION** — first batch that does.
 | `apps/server/src/routes/sync.ts` | Role refreshed on sync, as a **separate** statement |
 | `apps/desktop/src/main/syncEngine.ts` | Sends `X-Device-Role` |
 | `tests/device-registration.test.mjs` | 20 → **33 tests** |
-| `docs/PHASE5-NODE-AUTHORITY.md` | **§12 correction** — every gate becomes `isNodeRole()` |
+| `docs/designs/PHASE5-NODE-AUTHORITY.md` | **§12 correction** — every gate becomes `isNodeRole()` |
 | `docs/AUDIT-REGISTER.md` | A27, A28 closed · A4 measured · changelog |
 
 ## The design was wrong and the code comment predicted it
@@ -636,7 +636,7 @@ are silently absent until the migration lands.
 
 ```bash
 git checkout f9d29a8 -- apps/server/src/routes/auth.ts apps/server/src/routes/sync.ts \
-  apps/desktop/src/main/syncEngine.ts docs/AUDIT-REGISTER.md docs/PHASE5-NODE-AUTHORITY.md
+  apps/desktop/src/main/syncEngine.ts docs/AUDIT-REGISTER.md docs/designs/PHASE5-NODE-AUTHORITY.md
 rm -f migrations/73_device_role.sql apps/server/src/lib/deviceRegistry.ts \
   tests/device-registration.test.mjs
 ```
@@ -1319,7 +1319,7 @@ Nothing registers until that build is live.
 | File | Change |
 |---|---|
 | `docs/HANDOFF-2026-08-08-evening.md` | **+rule 21** — say node or cloud, never "server" |
-| `docs/PHASE6-BRANCH-SETTINGS.md` | **NEW** — branch-local settings owned by the node |
+| `docs/designs/PHASE6-BRANCH-SETTINGS.md` | **NEW** — branch-local settings owned by the node |
 | `docs/AUDIT-REGISTER.md` | Rule 21 note · A24 first payload |
 
 ## Rule 21
@@ -1377,8 +1377,8 @@ No code in this batch.
 
 | File | Change |
 |---|---|
-| `docs/BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` | **ADDED** — supplied by the owner; six source files cite it and it was in neither the repo nor its history |
-| `docs/PHASE6-BRANCH-SETTINGS.md` | Reconciled — it is an APPLICATION of that design, not a new one |
+| `docs/designs/BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` | **ADDED** — supplied by the owner; six source files cite it and it was in neither the repo nor its history |
+| `docs/designs/PHASE6-BRANCH-SETTINGS.md` | Reconciled — it is an APPLICATION of that design, not a new one |
 | `docs/AUDIT-REGISTER.md` | A39 |
 
 ## The finding
@@ -1436,7 +1436,7 @@ and it would have caught this the day the citation was written. Alongside A31's
 |---|---|
 | `scripts/check-doc-refs.mjs` | **NEW** — every cited document must exist |
 | `.github/workflows/ci.yml` | Runs it in `desktop-scope` |
-| `docs/BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` | Added (from batch -o) |
+| `docs/designs/BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` | Added (from batch -o) |
 | `docs/AUDIT-REGISTER.md` | A39 updated with the gate and the full missing list |
 
 ## What the gate found
@@ -1447,7 +1447,7 @@ More than a manual grep did. **Three of your own documents are cited and absent:
 |---|---|
 | `DESKTOP_DESIGN.md` | `migrations/18_web_access_remodel.sql:4` **and BRANCH_AUTHORITY itself at :3, :28, :157** |
 | `SwiftPOS_eTIMS_Integration_Scope.md` | `apps/server/src/lib/etims/provider.ts:4`, citing §2 |
-| `BRANCH-SERVER-PLAN.md` | `docs/PHASE2-3-DESIGN.md:3` |
+| `BRANCH-SERVER-PLAN.md` | `docs/designs/PHASE2-3-DESIGN.md:3` |
 
 **`DESKTOP_DESIGN.md` blocks PHASE6.** BRANCH_AUTHORITY opens *"Companion to
 DESKTOP_DESIGN.md"* and §1 widens the node role *"from DESKTOP_DESIGN.md"*.
@@ -1488,8 +1488,8 @@ repo root; `git status --short` should then show 18 modified and 18 new.
 | File | Change |
 |---|---|
 | `scripts/check-doc-refs.mjs` | **NEW**, in CI — a comment must not cite a `.md` that is not in the tree (A39) |
-| `docs/BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` | **ADDED** — cited by 8 places, was in neither the repo nor its history |
-| `docs/PHASE6-BRANCH-SETTINGS.md` | **NEW** — reconciled as an *application* of BRANCH_AUTHORITY, not a new design |
+| `docs/designs/BRANCH_AUTHORITY_AND_SYNC_DESIGN.md` | **ADDED** — cited by 8 places, was in neither the repo nor its history |
+| `docs/designs/PHASE6-BRANCH-SETTINGS.md` | **NEW** — reconciled as an *application* of BRANCH_AUTHORITY, not a new design |
 | `docs/HANDOFF-2026-08-08-evening.md` | **+rule 21** — say node or cloud, never "server" |
 | `docs/AUDIT-REGISTER.md` | A39 · rule 21 · A24 first payload |
 
@@ -1501,7 +1501,7 @@ repo root; `git status --short` should then show 18 modified and 18 new.
 |---|---|
 | **`DESKTOP_DESIGN.md`** | `migrations/18_web_access_remodel.sql:4`, and **BRANCH_AUTHORITY itself at :3, :28, :157** |
 | `SwiftPOS_eTIMS_Integration_Scope.md` | `apps/server/src/lib/etims/provider.ts:4`, citing §2 |
-| `BRANCH-SERVER-PLAN.md` | `docs/PHASE2-3-DESIGN.md:3` |
+| `BRANCH-SERVER-PLAN.md` | `docs/designs/PHASE2-3-DESIGN.md:3` |
 
 **`DESKTOP_DESIGN.md` blocks PHASE6.** BRANCH_AUTHORITY opens *"Companion to
 DESKTOP_DESIGN.md"* and widens the node role *"from DESKTOP_DESIGN.md"*. Building

@@ -77,7 +77,7 @@ Repo:
 - `scripts/check-register-consistency.mjs` — Tree-line version check.
 - `docs/AUDIT-REGISTER.md` — A296–A299 entries; D3/D4/D18/D13/D10/A19 heading + Tree/counts;
   changelog rows.
-- Six per-delivery manifests, `docs/MANIFEST-2026-09-18-a.md` through `-f`.
+- Six per-delivery manifests, `docs/manifests/MANIFEST-2026-09-18-a.md` through `-f`.
 
 ## 3. Changes made — the reasoning trail
 

@@ -1,5 +1,5 @@
 /**
- * androidReleases.ts — the ZapTill Android app's releases the cloud can hand out (docs/ANDROID-APP-DESIGN.md, Stage 0).
+ * androidReleases.ts — the ZapTill Android app's releases the cloud can hand out (docs/designs/ANDROID-APP-DESIGN.md, Stage 0).
  *
  * Like the desktop (A348, lib/desktopReleases.ts): the app never reads GitHub itself. It asks the cloud which version its
  * business is approved for (routes/appUpdate.ts) and downloads that one APK through the cloud, which redirects to the

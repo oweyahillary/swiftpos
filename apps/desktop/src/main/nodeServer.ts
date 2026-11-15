@@ -484,7 +484,7 @@ export function startNodeServer(): void {
         return json(res, status, { ok: false, reason: verdict.reason, error: verdict.message });
       }
 
-      // Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): a Shop POS tablet that joined this server prints its tickets here —
+      // Till stage 1 (docs/designs/ANDROID-APP-DESIGN.md §11): a Shop POS tablet that joined this server prints its tickets here —
       // this server's stations, printers and spool (nodePrintRelay.ts). The branch access code is checked above, as for
       // every /node/* route; like the PIN check, only a POS that proves which it is (its device key) is answered.
       if (req.method === 'POST' && url === '/node/print') {

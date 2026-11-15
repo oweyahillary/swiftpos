@@ -1,5 +1,5 @@
 /**
- * test-migration-189.mjs — Android Stage 0 (docs/ANDROID-APP-DESIGN.md): businesses.android_till_approved_version and
+ * test-migration-189.mjs — Android Stage 0 (docs/designs/ANDROID-APP-DESIGN.md): businesses.android_till_approved_version and
  * mobile_approved_version — per-business approval of the ZapTill Android app, one column per surface (NULL = hold, as
  * the desktop's migration 108). Run for real against the WHOLE schema (every migration before 189 replayed into PGlite).
  *

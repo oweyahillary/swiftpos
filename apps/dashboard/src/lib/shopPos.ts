@@ -1,6 +1,6 @@
 /**
  * shopPos.ts — what changes when the web POS screens run inside the ZapTill Android app's Shop POS (Till stage 1,
- * docs/ANDROID-APP-DESIGN.md §11). In the browser nothing here is set, and every screen behaves exactly as before.
+ * docs/designs/ANDROID-APP-DESIGN.md §11). In the browser nothing here is set, and every screen behaves exactly as before.
  *
  * The Shop POS is a POS of its own (A415: it joined with an enrolment code and has its own device id), not a browser
  * covering a desktop POS (A273). So, when the Android app registers itself here at start:

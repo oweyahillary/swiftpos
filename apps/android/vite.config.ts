@@ -6,7 +6,7 @@ import pkg from './package.json' with { type: 'json' };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_SRC = path.resolve(HERE, '../dashboard/src');
-/** Till stage 1: the web POS screens, entered through ONE dashboard file (docs/ANDROID-APP-DESIGN.md §11.1). */
+/** Till stage 1: the web POS screens, entered through ONE dashboard file (docs/designs/ANDROID-APP-DESIGN.md §11.1). */
 const SHOP_POS_ENTRY = path.join(DASHBOARD_SRC, 'shopPos/ShopPosScreens.tsx');
 /** The dashboard's Supabase client is for the owner's web sign-in, never a Shop POS (its sign-in is its own, A415). */
 const SUPABASE_CLIENT = path.join(DASHBOARD_SRC, 'lib/supabase');

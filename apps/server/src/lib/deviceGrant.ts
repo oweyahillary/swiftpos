@@ -55,7 +55,7 @@ export interface TillClaims {
   branchId:   string | null;
   sessionId:  string;
   /**
-   * Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): which POS device — the desktop POS ('desktop', the default) or the
+   * Till stage 1 (docs/designs/ANDROID-APP-DESIGN.md §11): which POS device — the desktop POS ('desktop', the default) or the
    * Android Shop POS ('android-till'). The cloud's gates treat both alike (lib/posSurface.ts).
    */
   surface?:   PosDeviceSurface;

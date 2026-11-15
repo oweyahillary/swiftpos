@@ -1,5 +1,5 @@
 ext {
-    minSdkVersion = 29   // Android 10+ (docs/ANDROID-APP-DESIGN.md Q4)
+    minSdkVersion = 29   // Android 10+ (docs/designs/ANDROID-APP-DESIGN.md Q4)
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'

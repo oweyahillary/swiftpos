@@ -1,5 +1,5 @@
 /**
- * android-till-stage2.test.mjs — ZapTill for Android, Till stage 2: KEEPS SELLING OFFLINE (docs/ANDROID-APP-DESIGN.md
+ * android-till-stage2.test.mjs — ZapTill for Android, Till stage 2: KEEPS SELLING OFFLINE (docs/designs/ANDROID-APP-DESIGN.md
  * §4.7, §4.8, §5 "Till stage 2"). The shared rules are in @zaptill/core/tillBuffer (tested on their own in
  * till-buffer-stage2.test.mjs); this RUNS the app's own offline layer on top of them.
  *
@@ -144,7 +144,7 @@ const run = async () => {
   ok('the status bar reads the buffer status and the live online state', (() => { const s = read('apps/android/src/screens/shop/SyncStatusBar.tsx'); return s.includes('bufferStatusOf') && s.includes('useOnline'); })());
   ok('offline PIN upgrades on reconnect (verify-pin), the desktop model', read('apps/android/src/shop/offlinePin.ts').includes('verify-pin') || read('apps/android/src/shop/offlinePin.ts').includes('upgradeDecision'));
   ok('the status bar styles exist', read('apps/android/src/styles.css').includes('.sync-bar'));
-  ok('the design doc describes Till stage 2', /### Till stage 2 — Keeps selling offline/.test(read('docs/ANDROID-APP-DESIGN.md')));
+  ok('the design doc describes Till stage 2', /### Till stage 2 — Keeps selling offline/.test(read('docs/designs/ANDROID-APP-DESIGN.md')));
 };
 
 run().then(() => { console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0); })

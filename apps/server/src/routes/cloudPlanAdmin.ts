@@ -28,7 +28,7 @@
  *        a special case (no payment, no invoice): web access on, the client put on the plan, a trial converted; the reason
  *        required; audited ('cloud_plan.complimentary'). Super admin.
  *
- * A612 phase 3 — the cloud billed per branch (docs/A612-per-branch-cloud.md). A client whose branches have their own plans
+ * A612 phase 3 — the cloud billed per branch (docs/tasks/A612-per-branch-cloud.md). A client whose branches have their own plans
  * (branch_cloud_plans) is billed per branch; GET adds the branches (each its plan, premium, package and where it stands):
  *   PUT  …/cloud-plan/branches/:branchId     — { period, amount, custom_until?, web_off?, premium?, package?, own_prices?,
  *        notes? }: a branch's plan; web_off is "Disable" for that branch alone. Super admin, audited ('cloud_plan.branch').

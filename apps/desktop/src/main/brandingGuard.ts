@@ -8,7 +8,7 @@
  * Slice 1 (the desktop-local write path) accepts an accent hex and a RASTER logo only.
  * SVG is rejected here and stays deferred to its own slice: an SVG is code, and making it
  * safe needs an allow-list DOM sanitiser (DOMPurify-class, renderer + server), which is
- * NOT a small pure helper like this one. See docs/A295-SLICE1C-UPLOAD-VALIDATION.md, and
+ * NOT a small pure helper like this one. See docs/tasks/A295-SLICE1C-UPLOAD-VALIDATION.md, and
  * rule 20 — do not ship the thing whose guard does not exist yet.
  *
  * This runs at the persist boundary in the main process too (setBranding calls it), not

@@ -61,7 +61,7 @@ plain `git apply` now — the CRLF fix from yesterday held all session).
 - DB (A280): `migrations/103_reconcile_a280_columns.sql` (new); `scripts/schema-index.json`.
 - Docs: `docs/AUDIT-REGISTER.md` (A281/A280/A300 entries + A295 changelog + Tree line v0.5.49);
   `docs/SCOPE-A295-branding.md` (addendum); `README.md` (count); per-delivery manifests
-  `docs/MANIFEST-2026-09-19-a.md`, `docs/MANIFEST-2026-09-19-b.md`, `docs/MANIFEST-2026-09-19-c.md`.
+  `docs/manifests/MANIFEST-2026-09-19-a.md`, `docs/manifests/MANIFEST-2026-09-19-b.md`, `docs/manifests/MANIFEST-2026-09-19-c.md`.
 
 ## 3. Changes made — the reasoning trail
 

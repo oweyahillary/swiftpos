@@ -1,5 +1,5 @@
 /**
- * SyncStatusBar — Till stage 2 (docs/ANDROID-APP-DESIGN.md §5 "a status bar: online/offline, sales waiting, last
+ * SyncStatusBar — Till stage 2 (docs/designs/ANDROID-APP-DESIGN.md §5 "a status bar: online/offline, sales waiting, last
  * synced; refusals visible to managers"). A thin strip the Shop POS shows while selling. It reads the buffer's status
  * (shop/buffer.ts → @zaptill/core/tillBuffer.bufferStatus) and the live online state, and never shows a partial total.
  *

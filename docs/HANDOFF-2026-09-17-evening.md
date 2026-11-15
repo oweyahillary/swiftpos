@@ -72,7 +72,7 @@ Scoped, NOT built:
 - `.gitignore` — A283 un-ignore of the installer script.
 - `docs/AUDIT-REGISTER.md` — entries (see §5 note).
 - `docs/SCOPE-A295-branding.md` — new.
-- `docs/MANIFEST-2026-09-16-*.md`, `docs/MANIFEST-2026-09-17-*.md` — delivery manifests.
+- `docs/manifests/MANIFEST-2026-09-16-*.md`, `docs/manifests/MANIFEST-2026-09-17-*.md` — delivery manifests.
 
 ## 3. Changes made — the reasoning trail
 

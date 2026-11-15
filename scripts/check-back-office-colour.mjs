@@ -3,7 +3,7 @@
  * check-back-office-colour.mjs — A329 step 3: no NEW raw green or blue in the back office.
  *
  * The back office (dashboard `src/` minus the web POS `pages/pos` and the shared `components`, which A328's
- * check-web-pos-green.mjs covers) was classified in docs/A329-back-office-colour-classification.md: every action,
+ * check-web-pos-green.mjs covers) was classified in docs/tasks/A329-back-office-colour-classification.md: every action,
  * the wordmark, the sign-in backdrop and the accents moved to the FIXED SwiftPOS teal (`swift-*`, never the client's
  * theme); what is left green or blue MEANS something — status, money, data colours, blue info. This ratchet keeps it
  * that way: per file, the count of raw green/blue may go down, never up. A new green or blue button fails CI and
@@ -90,7 +90,7 @@ if (process.argv.includes('--self-test')) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   if (process.argv.includes('--write')) {
     const sorted = Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
-    fs.writeFileSync(BASEFILE, JSON.stringify({ _: 'A329 step 3: raw green/blue LEFT in the back office — status, money, data colours and blue info only (docs/A329-back-office-colour-classification.md). Counts classes, hex/rgb(a) by hue and named strings. May go DOWN, never up.', files: sorted }, null, 1) + '\n');
+    fs.writeFileSync(BASEFILE, JSON.stringify({ _: 'A329 step 3: raw green/blue LEFT in the back office — status, money, data colours and blue info only (docs/tasks/A329-back-office-colour-classification.md). Counts classes, hex/rgb(a) by hue and named strings. May go DOWN, never up.', files: sorted }, null, 1) + '\n');
     console.log(`baseline written: ${total} use(s) in ${Object.keys(counts).length} file(s)`);
   } else {
     const BASE = JSON.parse(fs.readFileSync(BASEFILE, 'utf8')).files;
@@ -103,7 +103,7 @@ if (process.argv.includes('--self-test')) {
         for (const h of perFileHits[f]) console.log(`     :${h.line}  ${h.tok}   ${h.src}`);
       }
       console.log('\nUse swift-* (pressed / selected / links / focus). If a new green or blue is genuinely a status, money,');
-      console.log('data or info colour, record it in docs/A329-back-office-colour-classification.md and raise that file\'s baseline.');
+      console.log('data or info colour, record it in docs/tasks/A329-back-office-colour-classification.md and raise that file\'s baseline.');
       process.exitCode = 1;
     } else console.log('\nOK — no new raw green or blue; every back-office action is SwiftPOS teal.');
   }

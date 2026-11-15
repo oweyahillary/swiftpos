@@ -1,5 +1,5 @@
 /**
- * ShopPos — the Shop POS (Till stage 1, docs/ANDROID-APP-DESIGN.md §11): not joined → the technician's joining screen;
+ * ShopPos — the Shop POS (Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11): not joined → the technician's joining screen;
  * joined → the PIN pad, and after a PIN the web POS screens themselves (loaded, not copied).
  *
  * The paths are the web POS's own (/pos the PIN pad, /pos/cashier the selling screen), so the screens behave as they do

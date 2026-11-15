@@ -1,5 +1,5 @@
 /**
- * offlinePin.ts — Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.4, §5 Till stage 2): a person signs in at the Shop POS
+ * offlinePin.ts — Till stage 2 (docs/designs/ANDROID-APP-DESIGN.md §4.4, §5 Till stage 2): a person signs in at the Shop POS
  * while it is OFFLINE, and the sign-in is confirmed with the cloud the moment the connection returns.
  *
  * The model is the desktop's (A345, apps/desktop/src/main/offlineSession.ts), which the one-POS rule says to reuse:

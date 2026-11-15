@@ -1,5 +1,5 @@
 /**
- * branchPauseScope.ts — A612: who sees what while a branch's cloud is paused (docs/A612-per-branch-cloud.md).
+ * branchPauseScope.ts — A612: who sees what while a branch's cloud is paused (docs/tasks/A612-per-branch-cloud.md).
  *
  * Owner, 2026-10-30: "if a branch does not pay it should not view its data and the owner should not see it too, it cuts
  * across all users". lib/cloudPlan.ts branchPause() says which branches are paused; this narrows a signed-in web request to

@@ -1,5 +1,5 @@
 /**
- * printing.ts — how the web POS screens print on a Shop POS (Till stage 1, docs/ANDROID-APP-DESIGN.md §11.4).
+ * printing.ts — how the web POS screens print on a Shop POS (Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11.4).
  *
  *   joined through a branch server → the whole ticket goes to the server, which prints it with its own stations, printers
  *                                    and spool (shop/branchServer.ts printThroughServer);

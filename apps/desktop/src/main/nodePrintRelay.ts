@@ -1,6 +1,6 @@
 /**
  * nodePrintRelay.ts — POST /node/print: a Shop POS tablet prints through its branch server (Till stage 1,
- * docs/ANDROID-APP-DESIGN.md §11).
+ * docs/designs/ANDROID-APP-DESIGN.md §11).
  *
  * Owner, 2026-11-05: the branch server is there "so that printing can be easier". A tablet that joined this server sends
  * the whole ticket — the same order the desktop's own sale screen prints — and the server prints it exactly as it prints

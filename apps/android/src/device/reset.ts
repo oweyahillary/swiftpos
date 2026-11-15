@@ -1,6 +1,6 @@
 /**
  * reset.ts — "Reset app": back to the first-launch question, with nothing of the old mode left on the device
- * (docs/ANDROID-APP-DESIGN.md §2). Clears the mode and every preference, every stored secret (device/secrets.ts) and
+ * (docs/designs/ANDROID-APP-DESIGN.md §2). Clears the mode and every preference, every stored secret (device/secrets.ts) and
  * every downloaded update.
  *
  * A Shop POS with unsent sales refuses the reset until they are sent, or until a technician confirms (the desktop's

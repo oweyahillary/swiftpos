@@ -189,7 +189,7 @@ export default function CashierScreen() {
     if (!session) return;
     const dest = resolveRoute(session.permissions, session.role);
     // A608: the owner sells from the dashboard. Till stage 1: not on a Shop POS — there an owner sells with their PIN, as at
-    // a desktop POS (docs/ANDROID-APP-DESIGN.md §2).
+    // a desktop POS (docs/designs/ANDROID-APP-DESIGN.md §2).
     if (dest === '/' && !session.fromDashboard && !ownTerminal()) navigate(dest, { replace: true });
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 

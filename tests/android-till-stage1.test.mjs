@@ -1,5 +1,5 @@
 /**
- * android-till-stage1.test.mjs — ZapTill for Android, Till stage 1: the online Shop POS (docs/ANDROID-APP-DESIGN.md §11).
+ * android-till-stage1.test.mjs — ZapTill for Android, Till stage 1: the online Shop POS (docs/designs/ANDROID-APP-DESIGN.md §11).
  *
  *   node tests/android-till-stage1.test.mjs      (build apps/server first — this runs its dist/; needs apps/dashboard's
  *                                                 npm ci for esbuild)

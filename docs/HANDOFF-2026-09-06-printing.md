@@ -62,7 +62,7 @@ Dashboard wiring:
 
 Tests / docs:
 - `tests/tiny-bridge-printing.test.mjs` — source guards (5/5)
-- `docs/MANIFEST-2026-09-05-y.md` — A239 delivery notes
+- `docs/manifests/MANIFEST-2026-09-05-y.md` — A239 delivery notes
 - `docs/AUDIT-REGISTER.md` — A239 entry (P2), header `1 P0 · 16 P1 · 23 P2 · 12 P3`
 
 ---

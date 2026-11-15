@@ -1,5 +1,5 @@
 /**
- * rules.ts — the Shop POS's own rules, pure (Till stage 1, docs/ANDROID-APP-DESIGN.md §11). No imports that run, so
+ * rules.ts — the Shop POS's own rules, pure (Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11). No imports that run, so
  * tests/android-till-stage1.test.mjs loads this file as it is.
  *
  * What a person reads says "POS", never "till" (A586); a technician joins the tablet (owner, 2026-11-05: "joining should

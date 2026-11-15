@@ -1,7 +1,7 @@
 /**
  * terminalWrites.ts — A159: which WRITES a till (surface 'desktop') may make to the cloud.
  *
- * Till stage 1 (docs/ANDROID-APP-DESIGN.md §11, 2026-11-05): the Android Shop POS (surface 'android-till') is guarded the
+ * Till stage 1 (docs/designs/ANDROID-APP-DESIGN.md §11, 2026-11-05): the Android Shop POS (surface 'android-till') is guarded the
  * same way — its own session to TILL_WRITES, a person's PIN sign-in on it to TILL_WRITES + MANAGER_WRITES — plus the
  * writes the web POS screens it sells with make live (SHOP_POS_WRITES), for a person's PIN sign-in on a Shop POS only.
  *

@@ -17,7 +17,7 @@ Three items, all on `dev`, uncommitted until you commit. Built from `a1f589d` (A
 - **Before migration 186:** payments carry on with the business default.
 - **Today's dev test:** the details you put in by SQL are now B Foods' business default.
 
-Design note: [docs/A618-branch-mpesa.md](A618-branch-mpesa.md).
+Design note: [docs/tasks/A618-branch-mpesa.md](A618-branch-mpesa.md).
 
 ## 2. Free Themes for current clients' new branches (A617 follow-up, migration 185 changed)
 
@@ -57,7 +57,7 @@ Design note: [docs/A618-branch-mpesa.md](A618-branch-mpesa.md).
 4. **If an item's own platform price changes while it's in a desktop cart,** payment is refused with "prices changed —
    open it again".
 
-Design note: [docs/A619-delivery-platform-prices.md](A619-delivery-platform-prices.md).
+Design note: [docs/tasks/A619-delivery-platform-prices.md](A619-delivery-platform-prices.md).
 
 ## Checks
 

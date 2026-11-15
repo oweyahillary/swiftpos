@@ -3,7 +3,7 @@
  *
  * Owner, 2026-10-30: "monthly subscription should be per branch for premium services or web — if a branch does not pay it
  * should not view its data and the owner should not see it too, it cuts across all users" · "if a branch has not paid
- * it's cut off completely, nothing syncs" · "even price change online should not sync". (docs/A612-per-branch-cloud.md)
+ * it's cut off completely, nothing syncs" · "even price change online should not sync". (docs/tasks/A612-per-branch-cloud.md)
  *
  *   cd apps/server && npm run build && cd ../.. && node --no-warnings tests/branch-cloud-a612.test.mjs
  *

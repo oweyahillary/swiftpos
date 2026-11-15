@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Test;
 
 /**
- * How a Shop POS sends a ticket to a network printer (RawPrinterSpool; Till stage 1, docs/ANDROID-APP-DESIGN.md §11.4).
+ * How a Shop POS sends a ticket to a network printer (RawPrinterSpool; Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11.4).
  * On the build machine: ./gradlew testDebugUnitTest (CI's Android job runs it).
  *
  * A stand-in printer records what each CONNECTION carried, and fails the test if two connections are ever open at once.

@@ -1,5 +1,5 @@
 /**
- * JoinScreen — the technician joins this tablet to a business and branch (Till stage 1, docs/ANDROID-APP-DESIGN.md §4.3).
+ * JoinScreen — the technician joins this tablet to a business and branch (Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §4.3).
  * Owner, 2026-11-05: "joining should be done by a tech"; ZapTill recommends a dedicated branch server, but most clients
  * have none — so both ways, the server first when one answers:
  *

@@ -1,6 +1,6 @@
 /**
  * pinSignIn.ts — a person signs in at the Shop POS with their PIN (Till stage 1, online; the offline PIN check is Till
- * stage 2). docs/ANDROID-APP-DESIGN.md §4.4: POST /api/auth/verify-pin WITH the POS's own session (A415) — the cloud
+ * stage 2). docs/designs/ANDROID-APP-DESIGN.md §4.4: POST /api/auth/verify-pin WITH the POS's own session (A415) — the cloud
  * answers with that person's session (a PIN sign-in on a POS: A159 bounds what it may write) and their permissions.
  * Owners and managers use their PIN here too, as at a desktop POS (§2).
  */

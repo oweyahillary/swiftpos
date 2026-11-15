@@ -12,7 +12,7 @@
 
 `BRANCH-SERVER-PLAN.md` was the original Phase 2 / Phase 3 plan for the
 branch-server (branch-node) architecture. Its surviving citation origin is
-`docs/PHASE2-3-DESIGN.md:3`, which opens by describing itself as *"One amendment
+`docs/designs/PHASE2-3-DESIGN.md:3`, which opens by describing itself as *"One amendment
 to BRANCH-SERVER-PLAN.md"* — so `PHASE2-3-DESIGN.md` is an amendment **to** this
 plan, not the plan itself. The base plan was never filed in the repository or in
 its git history (register A39).
@@ -21,13 +21,13 @@ its git history (register A39).
 
 The parts that were captured, and are authoritative, are these live documents:
 
-- **`docs/PHASE2-3-DESIGN.md`** — the amendment: replicated star (not true mesh),
+- **`docs/designs/PHASE2-3-DESIGN.md`** — the amendment: replicated star (not true mesh),
   three resolved decisions, and the Phase 2 mitigations. Read it with its own
   2026-08-10 status banner: it records what was built, not a proposal.
-- **`docs/BRANCH_AUTHORITY_AND_SYNC_DESIGN.md`** — branch authority, sync, and the
+- **`docs/designs/BRANCH_AUTHORITY_AND_SYNC_DESIGN.md`** — branch authority, sync, and the
   `node` role.
-- **`docs/PHASE5-NODE-AUTHORITY.md`** — node authority and failover.
-- **`docs/PHASE6-BRANCH-SETTINGS.md`** — branch-local settings.
+- **`docs/designs/PHASE5-NODE-AUTHORITY.md`** — node authority and failover.
+- **`docs/designs/PHASE6-BRANCH-SETTINGS.md`** — branch-local settings.
 
 ## What is genuinely gone
 

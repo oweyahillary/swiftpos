@@ -13,7 +13,7 @@ import javax.net.ssl.X509TrustManager;
 import org.junit.Test;
 
 /**
- * The branch server's certificate, trusted byte for byte (PinnedTls; Till stage 1, docs/ANDROID-APP-DESIGN.md §11.3).
+ * The branch server's certificate, trusted byte for byte (PinnedTls; Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11.3).
  * On the build machine: ./gradlew testDebugUnitTest (CI's Android job runs it).
  *
  * The two certificates below were made by the desktop's own lanTls.makeServerIdentity (as a branch server makes its own),

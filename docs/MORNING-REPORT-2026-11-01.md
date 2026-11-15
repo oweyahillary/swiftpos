@@ -25,7 +25,7 @@
 **Migration 184** adds the shifts table and the pinned shift. If the code is deployed before the migration is run, the
 report works exactly as it does now.
 
-**Design note:** [docs/A616-attendance-shifts.md](A616-attendance-shifts.md).
+**Design note:** [docs/tasks/A616-attendance-shifts.md](A616-attendance-shifts.md).
 
 **Local CI:**
 - 268 steps and 318 test files, run one by one.
@@ -42,7 +42,7 @@ report works exactly as it does now.
 **Commit (Git Bash):**
 ```bash
 cd /c/swiftpos/pos
-git add .github/workflows/ci.yml apps/dashboard/src/lib/attendanceView.ts apps/dashboard/src/pages/attendance/AttendancePage.tsx apps/server/src/lib/attendanceRules.ts apps/server/src/routes/attendance.ts scripts/dev-seed/attendance-demo-cleanup.sql scripts/dev-seed/attendance-demo.sql scripts/schema-index.json scripts/test-attendance-demo-seed.mjs tests/attendance-a599.test.mjs docs/A616-attendance-shifts.md migrations/184_attendance_shifts.sql scripts/test-migration-184.mjs docs/MORNING-REPORT-2026-11-01.md
+git add .github/workflows/ci.yml apps/dashboard/src/lib/attendanceView.ts apps/dashboard/src/pages/attendance/AttendancePage.tsx apps/server/src/lib/attendanceRules.ts apps/server/src/routes/attendance.ts scripts/dev-seed/attendance-demo-cleanup.sql scripts/dev-seed/attendance-demo.sql scripts/schema-index.json scripts/test-attendance-demo-seed.mjs tests/attendance-a599.test.mjs docs/tasks/A616-attendance-shifts.md migrations/184_attendance_shifts.sql scripts/test-migration-184.mjs docs/MORNING-REPORT-2026-11-01.md
 git commit -m "Attendance work days and shifts (A616, migration 184): punches grouped into work days before pairing (before 06:00 is the night before; a night guard's day from noon once the branch has a Night shift), so one missed punch never shifts the following days (real ZKTeco export: 83.1 h, not 96.9 h); shifts per branch (copy from another branch, end, pin a person, else the nearest shift each day); late arrivals on cards, the grid, a person's days and the Excel; the report as before until migration 184 runs; All branches now reads every branch, not the sidebar's; This month no longer widens the page; demo shifts in the dev seed" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git push origin dev
 ```

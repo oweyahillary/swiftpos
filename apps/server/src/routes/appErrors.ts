@@ -1,5 +1,5 @@
 /**
- * appErrors.ts — POST /api/app-errors: the ZapTill Android app reports a crash or an error (docs/ANDROID-APP-DESIGN.md,
+ * appErrors.ts — POST /api/app-errors: the ZapTill Android app reports a crash or an error (docs/designs/ANDROID-APP-DESIGN.md,
  * Stage 0, "Crash and error reports into the existing alerts").
  *
  *   body: AppErrorReport (@zaptill/core/androidApp) — { surface, kind: 'crash' | 'error', appVersion, message, stack?, device? }

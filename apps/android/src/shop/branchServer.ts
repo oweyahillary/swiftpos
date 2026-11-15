@@ -1,5 +1,5 @@
 /**
- * branchServer.ts — the branch server on the shop network, for a Shop POS (Till stage 1, docs/ANDROID-APP-DESIGN.md §4.3,
+ * branchServer.ts — the branch server on the shop network, for a Shop POS (Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §4.3,
  * §11). Owner, 2026-11-05: ZapTill recommends a dedicated branch server (backups, easier printing), but a tablet works
  * without one — "build both".
  *

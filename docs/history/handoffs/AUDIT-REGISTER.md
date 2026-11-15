@@ -127,7 +127,7 @@ it has.
 
 **DESIGN AGREED 08-09** — owner confirmed the node is the branch's source of
 truth and sole cloud uplink, and that it may stay offline indefinitely and may
-authorise. Specification in **`docs/PHASE5-NODE-AUTHORITY.md`**. Expiry is
+authorise. Specification in **`docs/designs/PHASE5-NODE-AUTHORITY.md`**. Expiry is
 redefined there as "days since ANY authority was reached", so a peer that sees
 its node daily never expires and a node never expires at all.
 
@@ -147,7 +147,7 @@ status column). `INSERT INTO sync_queue` appears in exactly one place,
 
 This is the file a new reader opens to learn the architecture. Header corrected
 08-09 to describe the tree as it stands. **The finding stays open until §3 of
-`docs/PHASE5-NODE-AUTHORITY.md` is implemented**, at which point the ORIGINAL
+`docs/designs/PHASE5-NODE-AUTHORITY.md` is implemented**, at which point the ORIGINAL
 header becomes true again and the corrected one must be corrected back. Noted
 here so that does not read as a regression.
 
@@ -169,7 +169,7 @@ for branch operation. A peer with a `node_url` will push to the node only; the
 node enqueues peer rows into its own `sync_queue` preserving the original id and
 idempotency key. The two-queue separation stays — `syncEngine.ts:1138-1151` was
 right about the mechanism and wrong about the routing. See
-`docs/PHASE5-NODE-AUTHORITY.md` §3, including why a node outage delays cloud
+`docs/designs/PHASE5-NODE-AUTHORITY.md` §3, including why a node outage delays cloud
 backup rather than losing sales, and why idempotency makes a mixed-version
 rollout safe.
 
@@ -836,7 +836,7 @@ missing**:
 |---|---|
 | `DESKTOP_DESIGN.md` | `migrations/18_web_access_remodel.sql:4`, and **BRANCH_AUTHORITY itself at :3, :28, :157** — it is the companion that defines the `node` role and steps 5-6 of the build sequence |
 | `SwiftPOS_eTIMS_Integration_Scope.md` | `etims/provider.ts:4`, citing **§2** |
-| `BRANCH-SERVER-PLAN.md` | `docs/PHASE2-3-DESIGN.md:3` |
+| `BRANCH-SERVER-PLAN.md` | `docs/designs/PHASE2-3-DESIGN.md:3` |
 
 `DESKTOP_DESIGN.md` matters most: PHASE6 is to be built against BRANCH_AUTHORITY,
 which opens by calling itself *"Companion to DESKTOP_DESIGN.md"* and widens the
@@ -853,7 +853,7 @@ reporting a real gap, not a false alarm.
 
 ### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
 
-**FIRST PAYLOAD DESIGNED 08-10** — `docs/PHASE6-BRANCH-SETTINGS.md`. Printer
+**FIRST PAYLOAD DESIGNED 08-10** — `docs/designs/PHASE6-BRANCH-SETTINGS.md`. Printer
 settings rather than the staff roster, deliberately: if downstream distribution
 misbehaves, a ticket prints an item it should not (visible, harmless), where the
 same failure with credentials means someone signs in who should not. Also

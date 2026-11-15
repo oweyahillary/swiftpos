@@ -64,7 +64,7 @@ A160–A164/A129/A179/A168) which needs a two-till LAN.
  M apps/dashboard/src/pages/products/ProductsPage.tsx   # A257 empty-name message
  M tests/ui-reports-fixes.test.mjs                      # +3 guards (8→11), mutation-checked
  M docs/AUDIT-REGISTER.md                               # 12 CLOSED + counts + 3 fix notes
- ?? docs/MANIFEST-2026-09-09-g.md                        # delivery-g record
+ ?? docs/manifests/MANIFEST-2026-09-09-g.md                        # delivery-g record
 ```
 
 ## Changes made (this session, by theme)
@@ -119,7 +119,7 @@ git pull origin dev
 cd apps/dashboard && npx tsc --noEmit         # expect 0 errors
 cd ../.. && node tests/ui-reports-fixes.test.mjs   # expect 11/11
 node scripts/check-register-consistency.mjs && node scripts/check-doc-refs.mjs
-git add apps/dashboard/src/pages/OverviewPage.tsx apps/dashboard/src/pages/ReportsPage.tsx apps/dashboard/src/pages/products/CategoriesPage.tsx apps/dashboard/src/pages/products/ProductsPage.tsx tests/ui-reports-fixes.test.mjs docs/AUDIT-REGISTER.md docs/MANIFEST-2026-09-09-g.md
+git add apps/dashboard/src/pages/OverviewPage.tsx apps/dashboard/src/pages/ReportsPage.tsx apps/dashboard/src/pages/products/CategoriesPage.tsx apps/dashboard/src/pages/products/ProductsPage.tsx tests/ui-reports-fixes.test.mjs docs/AUDIT-REGISTER.md docs/manifests/MANIFEST-2026-09-09-g.md
 git commit -m "Browser verification: close 12 items + fix owner Overview/staff-report/empty-submit (A258/A257/A259)"
 git push origin dev
 ```

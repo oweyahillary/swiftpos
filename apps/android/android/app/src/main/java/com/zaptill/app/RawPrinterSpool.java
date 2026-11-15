@@ -10,7 +10,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
 /**
- * RawPrinterSpool — how a Shop POS sends a ticket to a network printer (Till stage 1, docs/ANDROID-APP-DESIGN.md §11.4).
+ * RawPrinterSpool — how a Shop POS sends a ticket to a network printer (Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11.4).
  *
  * Port 9100 takes one connection at a time (pinch point 2), and a ticket must reach the paper whole:
  *   - ONE JOB, ONE CONNECTION: a ticket's bytes are written on a connection of their own, then it is closed. Nothing of

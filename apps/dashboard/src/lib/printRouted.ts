@@ -83,7 +83,7 @@ export interface PrintRoutedArgs {
 export interface PrintRoutedResult { printed: number; failed: number; configured: number }
 
 /**
- * Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): a Shop POS that joined a branch server prints the whole ticket THERE —
+ * Till stage 1 (docs/designs/ANDROID-APP-DESIGN.md §11): a Shop POS that joined a branch server prints the whole ticket THERE —
  * the server's stations, printers and spool (owner, 2026-11-05). null = no branch server to print through (none joined,
  * or not reachable): this page prints directly, below. Never anything in a browser (no Shop POS).
  */

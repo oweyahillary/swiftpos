@@ -7,7 +7,7 @@ Last night: M-Pesa payment notifications (A621), CI cut from about 11 minutes to
 
 A customer who won't give their number pays the branch's Paybill or Till directly. Safaricom tells the cloud, and the
 cashier taps the payment to put it on the bill. Your decisions: always a tap, never matched by amount; part of the
-online licence; next release, not 1.0.23. Full write-up: `docs/A621-mpesa-payment-notifications.md`.
+online licence; next release, not 1.0.23. Full write-up: `docs/tasks/A621-mpesa-payment-notifications.md`.
 
 **At the POS (desktop and web):**
 - A notice when a payment arrives: "KES 1,080 received — JOHN — QJK7XT3L5P". On the desktop it pops up within seconds;

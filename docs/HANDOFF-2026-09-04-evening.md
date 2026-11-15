@@ -46,7 +46,7 @@ A184, A199, A192, A195, A194, A193, A190, A185, A200, A143, A12, A202, A145, A20
 - `apps/print-server/src/index.js` — NEW `POST /print/receipt` (renders via shared/printing).
 - Tests: `tests/manager-nav-grouped`, `manager-receiving`, `pos-manager-open`, `manager-shift-tab`,
   `manager-menu-readonly`, `receipt-escpos-format` (all `.test.mjs`, mutation-checked).
-- `docs/AUDIT-REGISTER.md` + `docs/MANIFEST-2026-09-04-{j..o}.md`.
+- `docs/AUDIT-REGISTER.md` + `docs/manifests/MANIFEST-2026-09-04-{j..o}.md`.
 
 ## §4 Changes made (this session, in order)
 Register clears + fixes → A143 exports (auth + missing expenses route) → A12 dead-column drop

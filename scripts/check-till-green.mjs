@@ -2,7 +2,7 @@
 /**
  * check-till-green.mjs — A326 (client branding Phase 2, slice 3): no NEW raw green on the till.
  *
- * The till's 222 green classes were classified (docs/A326-till-green-classification.md): 154 became the themeable
+ * The till's 222 green classes were classified (docs/tasks/A326-till-green-classification.md): 154 became the themeable
  * `action-*` / `brand-*` colours; 68 stay green because they MEAN something — status (paid, saved, online), money,
  * the SwiftPOS wordmark. This ratchet keeps it that way: per file, the count of raw green classes may go down, never
  * up. A new green button (or a reverted `action-*`) fails CI and names the file and lines.
@@ -59,7 +59,7 @@ if (over.length) {
     for (const h of o.hits) console.log(`     :${h.line}  ${h.cls}   ${h.src}`);
   }
   console.log('\nUse action-* (pressed / selected / links) or brand-* (lock curtain). If a new green is genuinely a status,');
-  console.log('record it in docs/A326-till-green-classification.md and raise that file\'s baseline in the same reviewed change.');
+  console.log('record it in docs/tasks/A326-till-green-classification.md and raise that file\'s baseline in the same reviewed change.');
   process.exit(1);
 }
 console.log('\nOK — no new raw green; every action on the till takes the theme.');
