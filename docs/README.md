@@ -15,7 +15,7 @@ rest. New docs: drop them in the right section below and add a line here.
 ## 1. Start here — how a session runs (the working rules)
 - [WORKING-RULES.md](WORKING-RULES.md) — **one entry point to every standing rule** (method, base rules, owner rulings, conventions).
 - [WORKING-METHOD.md](WORKING-METHOD.md) — the canonical session method (sits on top of the base rules).
-- base rules 1–24: `HANDOFF-2026-08-08-evening.md` §0 · owner rulings: `HANDOFF-2026-09-22.md`.
+- the base rules 1–24 + owner rulings now live in [WORKING-RULES.md](WORKING-RULES.md) (lifted from the handoffs 2026‑11‑15).
 - [AUDIT-REGISTER.md](AUDIT-REGISTER.md) + [AUDIT-ID-INDEX.md](AUDIT-ID-INDEX.md) — the A‑register (every change, by id).
 - [ROADMAP.md](ROADMAP.md) · [BUGFIXES.md](BUGFIXES.md).
 
@@ -61,4 +61,4 @@ The `A###-*.md` specs now live in **[tasks/](tasks/)** (`A59`, `A295`, `A612`, `
 ## 11. Folders & history / archive
 - **[designs/](designs/)** — agreed design docs · **[tasks/](tasks/)** — A‑register feature specs · **[manifests/](manifests/)** — the 348 per‑batch records are **archived** out (zip in `C:\swiftpos\other files`; see that folder's README).
 - [history/verify/](history/verify/) — swept `VERIFY-*` logs (30) · [history/mornings/](history/mornings/) — swept `MORNING-*` logs (8) · [history/applied/](history/applied/) — applied‑patch notes · [reports/](reports/) — current reports.
-- [history/handoffs/](history/handoffs/) — **handoff records archived** out (38, same zip folder; see that folder's README). **Kept at root:** the two rules‑bearing handoffs — `HANDOFF-2026-08-08-evening.md` (rules 1–24) and `HANDOFF-2026-09-22.md` (owner rulings).
+- [history/handoffs/](history/handoffs/) — **all dated handoffs archived** out (40, same zip folder; see that folder's README). The working rules they held were lifted into [WORKING-RULES.md](WORKING-RULES.md); the register keeps their names as historical identifiers.

@@ -3,9 +3,10 @@
 **Living document.** The single tracker for audit findings: what is open, what is
 closed, and what was checked and found correct. Update in place; do not fork.
 
-> **Manifests archived 2026‑11‑15.** The `MANIFEST-*.md` files named throughout this register are no longer in the repo —
-> they're zipped at `C:\swiftpos\other files\zaptill-manifests-archive-2026-11-15.zip` (348 files). The names below still
-> identify each delivery; open that zip to read one. See `docs/manifests/README.md`.
+> **Manifests + handoffs archived 2026‑11‑15.** The `MANIFEST-*.md` and dated `HANDOFF-*.md` files named throughout this
+> register are no longer in the repo — they're zipped in `C:\swiftpos\other files\` (`zaptill-manifests-archive-2026-11-15.zip`,
+> 348; `zaptill-handoffs-archive-2026-11-15.zip`, 40). The names below still identify each delivery; open the zips to read
+> one. The working rules those handoffs held are now in `docs/WORKING-RULES.md`.
 
 | | |
 |---|---|

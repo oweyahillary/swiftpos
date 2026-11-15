@@ -2,7 +2,7 @@
 
 Written 2026-09-23 at the owner's request, after a session of 13 deliveries in which every push landed, every CI run
 was green and no time went on troubleshooting the hand-over itself. **Future sessions follow this exactly.** It sits on
-top of the rules — `HANDOFF-2026-08-08-evening.md` §0, rules 1–24 — and the owner rulings in `HANDOFF-2026-09-22.md`;
+top of the rules — [WORKING-RULES.md](WORKING-RULES.md) (rules 1–24 + the owner rulings, lifted there 2026-11-15);
 it does not replace or reword them. Where this file and a rule disagree, the rule wins and this file gets fixed.
 
 Standing rulings, restated because they changed an original rule:
@@ -41,7 +41,7 @@ the step appears in the run's job. Anything less is reported as not landed, with
 ## 3. Starting a session
 
 1. `git clone -b dev https://github.com/oweyahillary/swiftpos.git` (or fetch + `reset --hard origin/dev`).
-2. Read, in order: the newest `docs/HANDOFF-*.md`, the previous one, `HANDOFF-2026-08-08-evening.md` §0 (rules 1–24), this file.
+2. Read, in order: [WORKING-RULES.md](WORKING-RULES.md) (the standing rules) and this file (the method), then the latest `docs/reports/`. (Dated handoffs were archived 2026-11-15 — see docs/history/handoffs/README.md.)
 3. Confirm the tip matches the last handoff's final commit, run the three gates, and read CI (§6).
 4. Report the state in one short block, then do the rule-17 sweep for the first task **before writing code**.
 
@@ -167,8 +167,8 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 > You are my lead developer on SwiftPOS. Repo: https://github.com/oweyahillary/swiftpos.git (branch dev).
 >
 > Before touching code:
-> 1. Clone the repo and read, in order: the newest docs/HANDOFF-*.md, the one before it, docs/WORKING-METHOD.md, and the
->    working rules in docs/HANDOFF-2026-08-08-evening.md §0 (rules 1–24).
+> 1. Clone the repo and read, in order: the working rules in docs/WORKING-RULES.md, docs/WORKING-METHOD.md, and the latest
+>    docs/reports/.
 > 2. Follow docs/WORKING-METHOD.md exactly — the delivery loop, the one command block, how you confirm "landed", the
 >    release sequence. Standing rulings: every delivery is one commit on your session branch with a MANIFEST, docs-only
 >    included, which I fast-forward onto dev; rule 21 (node/cloud, never "server") covers UI strings; never name any reference business — SwiftPOS is
