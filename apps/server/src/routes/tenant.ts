@@ -24,7 +24,8 @@ router.get('/:subdomain', async (req, res) => {
   res.set('Cache-Control', 'public, max-age=300');
   res.json({
     name:   found.tenant.name,
-    logo:   (brand as any)?.logo_png || (biz as any)?.logo_url || null,
+    // Prefer the unified Cloudinary URL (tiny to serve); fall back to the legacy base64 logo_png until migration completes.
+    logo:   (biz as any)?.logo_url || (brand as any)?.logo_png || null,
     accent: (brand as any)?.accent_hex || null,
   });
 });

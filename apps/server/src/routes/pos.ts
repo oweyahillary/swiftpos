@@ -472,7 +472,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
-      .select('type, name, currency, vat_rate, ctl_rate, status')
+      .select('type, name, currency, vat_rate, ctl_rate, status, logo_url')   // logo_url: the Cloudinary brand logo (unified; prefer over the legacy base64 branding.logo_png)
       .eq('id', req.businessId)
       .single(),
     // A304: client branding (accent + base64 logo) for this business, pulled to
@@ -627,6 +627,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // which the till reads as "leave the local (tech-set) value alone".
     branding: branding ? {
       accentHex: branding.accent_hex ?? null, logoPng: branding.logo_png ?? null,
+      // Cloudinary brand logo (unified). The till prefers logoUrl and caches its bytes for the offline lock screen;
+      // logoPng (base64) stays as the pre-migration fallback until every business's logo is on Cloudinary.
+      logoUrl: (business as { logo_url?: string | null } | null)?.logo_url ?? null,
       // A311: the receipt raster + the client's opt-in toggle ride the same pull.
       logoReceipt: branding.logo_receipt ?? null,
       receiptLogoEnabled: branding.receipt_logo_enabled === true,

@@ -68,7 +68,9 @@ ok('corporate layout: accent title, shaded table header, totals box, signature g
 ok('the window opens inside the click, then the logo is filled in (no popup block)', () => {
   const src = read('apps/dashboard/src/lib/printDocument.ts');
   assert.ok(src.indexOf("window.open('', '_blank'") < src.indexOf('void brandLogo().then('));
-  assert.match(src, /api\.get<\{ logo_png: string \| null \} \| null>\('\/api\/business\/branding'\)/);
+  assert.match(src, /api\.get<\{ logo_url\?: string \| null; logo_png\?: string \| null \} \| null>\('\/api\/business\/branding'\)/);
+  // prefers the unified Cloudinary URL, legacy base64 is the fallback
+  assert.match(src, /b\?\.logo_url \?\? b\?\.logo_png \?\? null/);
 });
 
 ok('the web end-of-day Z-report is headed by the logo', () => {

@@ -320,16 +320,19 @@ const BRANDING_COLUMNS = 'accent_hex, logo_png, logo_receipt, receipt_logo_enabl
 // The client branding row (accent + logo) for this business, or null when unset (A303).
 // Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
 router.get('/branding', requireAuth, async (req, res) => {
-  const [{ data, error }, enabled] = await Promise.all([
+  const [{ data, error }, enabled, { data: bizLogo }] = await Promise.all([
     selectBusinessBranding(req.businessId, BRANDING_COLUMNS),   // A597: falls back before migration 179
     themesEnabled(req.businessId),   // A325: the web shows the theme picker only when the business has themes
+    supabase.from('businesses').select('logo_url').eq('id', req.businessId).maybeSingle(),   // the unified Cloudinary logo
   ]);
   if (error) { sendError(res, error); return; }
   // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column. A597: + whether
   // this caller may choose the brand colours (the owner, signed in as themselves — the Branding page shows the fields).
+  // logo_url: the Cloudinary brand logo (unified); the page prefers it over the legacy base64 logo_png.
   const brandColoursEditable = req.isOwner === true && !req.isTill && req.webPartner !== true;
-  res.json(data ? { ...data, themes_enabled: enabled, brand_colours_editable: brandColoursEditable }
-    : (enabled ? { themes_enabled: true, brand_colours_editable: brandColoursEditable } : null));
+  const logoUrl = (bizLogo as { logo_url?: string | null } | null)?.logo_url ?? null;
+  res.json(data ? { ...data, logo_url: logoUrl, themes_enabled: enabled, brand_colours_editable: brandColoursEditable }
+    : (enabled || logoUrl ? { logo_url: logoUrl, themes_enabled: enabled, brand_colours_editable: brandColoursEditable } : null));
 });
 
 // PUT /api/business/branding
