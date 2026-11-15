@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLongPress } from '../../shop/useLongPress';
-import { signInWithPin } from '../../shop/pinSignIn';
+import { signInWithPin, PinRefused } from '../../shop/pinSignIn';
 import type { PosSession } from '../../shop/tillSession';
 import { PIN_MAX, PIN_MIN } from '../../shop/rules';
 import { applyShopBrand } from '../../shop/brandTheme';
@@ -17,6 +17,8 @@ import { beginOfflineSignIn, resolveOfflinePin, OfflinePinRefused, readRoster, t
 import { bcryptVerify } from '../../shop/pinVerify';
 import { holdPin, clearHeldPin } from '../../shop/offlineUpgrade';
 import { refreshRoster } from '../../shop/roster';
+import { verifyPinAtServer } from '../../shop/branchPin';
+import { readServerLink } from '../../shop/branchServer';
 
 /** The web POS screens keep the person's tokens here (apps/dashboard lib/api.ts TOKEN_KEYS). */
 const PERSON_TOKENS = ['swiftpos_pos_token', 'swiftpos_pos_refresh_token', 'swiftpos_access_token', 'swiftpos_refresh_token'];
@@ -49,11 +51,16 @@ export default function PinScreen({ till, version, online }: { till: PosSession;
   // to its one person LOCALLY (resolveOfflinePin, the bcrypt mirror of the cloud's /verify-pin), so the screen is a plain
   // PIN pad — PIN-first like online and like the desktop POS, never a name to pick (which would leak who works here).
   const [roster, setRoster] = useState<RosterStaff[]>([]);
+  // Till stage 3: whether this POS joined a branch server. When it did, the server verifies the PIN on the LAN (shop/
+  // branchPin.ts) — so a joined POS can sign in even offline with no cached roster yet (the "no staff saved" screen below
+  // is for a lone cloud POS only).
+  const [hasLink, setHasLink] = useState(false);
   const logo = readShopLogo();
   // A fresh PIN screen means the last person's turn is over (start, Lock, or Sign out): forget them, and drop any held
   // offline PIN so a reconnect never upgrades a signed-out session (shop/offlineUpgrade.ts).
   useEffect(() => { forgetLastPerson(); void clearHeldPin(); applyShopBrand(); }, []);
   useEffect(() => { void readRoster(till.branchId).then(setRoster).catch(() => {}); }, [till.branchId]);
+  useEffect(() => { void readServerLink().then((l) => setHasLink(!!l)).catch(() => {}); }, []);
 
   const press = (k: (typeof KEYS)[number]) => {
     setProblem('');
@@ -67,7 +74,16 @@ export default function PinScreen({ till, version, online }: { till: PosSession;
     setBusy(true); setProblem('');
     try {
       let session;
-      if (online) {
+      // Till stage 3, Slice C: a joined branch server checks the PIN on the LAN FIRST — its roster is the authority and
+      // works with no internet at either end. Only a 'no' from it is final; anything else (server down, old build, a
+      // throttle, no server joined) falls through to the cloud, then to the Stage-2 offline check (shop/branchPin.ts).
+      const viaServer = await verifyPinAtServer(pin, till);
+      if (viaServer.outcome === 'session') {
+        session = viaServer.session;
+        if (online) void refreshRoster();   // keep this POS's own cached verifiers fresh for the deepest (both-down) fallback
+      } else if (viaServer.outcome === 'refused') {
+        throw new PinRefused(viaServer.words);   // the LAN authority said no — final, never re-asked of the cloud
+      } else if (online) {
         session = await signInWithPin(pin, version);   // the cloud resolves the PIN to the person (Till stage 1)
         void refreshRoster();   // we are online with a working session — cache the branch roster so the NEXT sign-in works offline
       } else {
@@ -101,7 +117,7 @@ export default function PinScreen({ till, version, online }: { till: PosSession;
           : <span className="mark" aria-hidden="true">Z</span>}
         <span>{till.businessName}{till.branchName ? ` · ${till.branchName}` : ''}</span>
       </header>
-      {!online && roster.length === 0 ? (
+      {!online && roster.length === 0 && !hasLink ? (
         <>
           <h1>Offline</h1>
           <p className="note">No staff are saved on this POS yet. Connect it to the internet once and sign in while online — after that, staff can sign in here with no connection.</p>

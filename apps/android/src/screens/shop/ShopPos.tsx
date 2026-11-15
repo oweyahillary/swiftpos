@@ -9,7 +9,8 @@
  */
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { readTill, tillToken, type PosSession } from '../../shop/tillSession';
+import { readTill, tillToken, deviceId, setServerRefresh, type PosSession } from '../../shop/tillSession';
+import { refreshViaServer } from '../../shop/branchRefresh';
 import { shopPosHostFor } from '../../shop/printing';
 import { useOnline } from '../../shop/connection';
 import { makeBuffer, sweepRetention } from '../../shop/buffer';
@@ -19,6 +20,10 @@ import { refreshRoster } from '../../shop/roster';
 import { attemptUpgrade } from '../../shop/offlineUpgrade';
 import { OFFLINE_PENDING } from '../../shop/offlinePin';
 import { runReplay, cloudSender } from '../../shop/replay';
+import { gatewayFetch, checkServerHealth } from '../../shop/branchGateway';
+import { readServerLink } from '../../shop/branchServer';
+import * as branchTabs from '../../shop/branchTabs';
+import { enqueueOrderFor, drainToNode, makeNodeOutbox, type NodeOutbox } from '../../shop/branchSync';
 import { API_URL } from '../../config';
 import JoinScreen from './JoinScreen';
 import PinScreen from './PinScreen';
@@ -32,6 +37,48 @@ const Selling = lazy(() => import('@zaptill/dashboard-pos').then((m) => ({ defau
 async function startScreens(till: PosSession): Promise<void> {
   const pos = await import('@zaptill/dashboard-pos');
   pos.setShopPosHost(shopPosHostFor(till));
+  // Till stage 3b: when this POS joined a branch server, hand the web POS the shared-tabs host so a held order opened on
+  // one till is seen, locked and taken over from another. No server joined → null host → CashierScreen is local-only.
+  const link = await readServerLink();
+  pos.setBranchTabsHost(link ? {
+    listTabs: branchTabs.listTabs, registerTab: branchTabs.registerTab, claimTab: branchTabs.claimTab,
+    forceClaim: branchTabs.forceClaim, updateTab: branchTabs.updateTab, releaseTab: branchTabs.releaseTab,
+    deleteTab: branchTabs.deleteTab,
+  } : null);
+}
+
+/**
+ * Till stage 3 (docs/SCOPE-TILL-STAGE-3.md): the offline seam's branch-server adapter. When this POS has joined a branch
+ * server, a cloud call is tried through it first (`<server>/node/cloud/api/…`, A410) over pinned TLS; a Response here = the
+ * server forwarded the cloud's own answer. Any server problem returns null, so the seam falls back to the tablet's own
+ * cloud (online) or the Till-stage-2 buffer (offline) — A410 as a preference, not a lock-in.
+ */
+async function branchGatewayAdapter(fullUrl: string, method: string, body: string | undefined, headers: Record<string, string>): Promise<Response | null> {
+  try {
+    const r = await gatewayFetch(fullUrl, method, body, headers);
+    if (r.via !== 'gateway') return null;
+    return new Response(r.body ?? '', { status: r.status ?? 200, headers: { 'Content-Type': r.headers?.['content-type'] ?? 'application/json' } });
+  } catch { return null; }
+}
+
+/**
+ * Till stage 3 Slice B (docs/BUILD-TILL-STAGE-3B.md): push a completed sale to the joined branch server's outbox, then
+ * drain it. Best-effort; a no-op when no branch server is joined. The captured order body carries branch_id and
+ * idempotency_key (apps/dashboard PaymentModal buildOrderPayload), so branchSync needs nothing more than this device's id.
+ */
+async function pushOrderToBranch(outbox: NodeOutbox, body: string | undefined): Promise<void> {
+  try {
+    if (!body) return;
+    const link = await readServerLink();
+    if (!link) return;                       // no branch server — nothing to aggregate to
+    const parsed = JSON.parse(body) as Record<string, any>;
+    await enqueueOrderFor(outbox, parsed, {
+      deviceId: await deviceId(),
+      branchId: parsed.branch_id ?? null,
+      createdAt: parsed.created_at ?? new Date().toISOString(),
+    });
+    void drainToNode(outbox, { link }).catch(() => {});
+  } catch { /* best-effort */ }
 }
 
 type State = { kind: 'loading' } | { kind: 'join' } | { kind: 'ready'; till: PosSession } | { kind: 'failed'; message: string };
@@ -47,6 +94,9 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // Cold start: the read cache keeps the selling screen's catalogue (pos/init, tables, pumps, printers, order mode) from
   // the last online load, so the POS opens offline from a cold boot (shop/offlineReads.ts).
   const [reads] = useState(makeReadCache);
+  // Till stage 3 Slice B: a durable outbox of completed sales pushed to the branch server (branch reports + A19 relay),
+  // separate from the cloud buffer — two destinations, each with its own state.
+  const [nodeOutbox] = useState(makeNodeOutbox);
   const onlineRef = useRef(online);
   onlineRef.current = online;
   const replaying = useRef(false);
@@ -54,7 +104,20 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // Install the seam ONCE (wraps window.fetch; online or non-cloud calls pass straight through, so Till stage 1 selling is
   // unchanged). cloudBase is this app's API_URL — the same base the web POS calls, because main.tsx sets the dashboard's
   // apiUrl to it, so the two cannot drift. The read cache serves the catalogue on a cold offline boot.
-  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads }), [buffer, reads]);
+  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads,
+    gateway: branchGatewayAdapter, onOrder: (_u, _m, b) => { void pushOrderToBranch(nodeOutbox, b); } }), [buffer, reads, nodeOutbox]);
+
+  // Till stage 3 Slice D: route session renewal (A477) through the joined branch server when there is one. A setter, not an
+  // import, so branchRefresh → branchServer → tillSession cannot form a cycle. Unset → renewal stays cloud-direct.
+  useEffect(() => { setServerRefresh(refreshViaServer); return () => setServerRefresh(null); }, []);
+
+  // Till stage 3: ask the joined branch server what protocol it speaks (over the LAN, whether or not the cloud is
+  // reachable), on open and whenever the connection changes. No branch server joined → this is a quick no-op.
+  useEffect(() => { void checkServerHealth().catch(() => {}); }, [online]);
+
+  // Till stage 3 Slice B: drain the branch-sync outbox to the server on open and whenever the connection changes (it
+  // runs over the LAN even when the cloud is unreachable but the server is up). A no-op when nothing is waiting.
+  useEffect(() => { void drainToNode(nodeOutbox).catch(() => {}); }, [online, nodeOutbox]);
 
   // Drain the queue to the cloud on open and whenever the connection returns; never two drains at once.
   useEffect(() => {

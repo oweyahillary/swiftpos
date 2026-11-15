@@ -988,6 +988,50 @@ jobs:
       - name: ZapTill for Android, Till stage 2 (keeps selling offline)
         run: node --no-warnings tests/android-till-stage2.test.mjs
 
+      # Till stage 3 Slice A (docs/SCOPE-TILL-STAGE-3.md, docs/BUILD-TILL-STAGE-3A.md) — the branch-server GATEWAY: a
+      # joined Shop POS sends its cloud calls through the branch server (`<server>/node/cloud/api/…`, A410) over pinned
+      # TLS and falls back to its own cloud on any server problem (preference, not lock-in). Hermetic (native neighbours
+      # stubbed); in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice A (the branch-server gateway)
+        run: node --no-warnings tests/android-till-stage3.test.mjs
+
+      # Till stage 3 Slice B (docs/BUILD-TILL-STAGE-3B.md) — SELL through the branch server: a completed sale is reshaped
+      # from its captured cloud order body into the server's replicated orders row (+ lines, payments, and the verbatim
+      # _relayPayload for the A19 cloud relay) and pushed to POST /node/sync, with a durable outbox. Hermetic; in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice B (sell through the branch server)
+        run: node --no-warnings tests/android-till-stage3b.test.mjs
+
+      # Till stage 3 Slice C (docs/BUILD-TILL-STAGE-3C.md) — VERIFY A PIN at the branch server: a joined Shop POS checks a
+      # sign-in PIN at the branch server (POST /node/verify-pin, pinned TLS) first; the LAN roster is the authority. A 'no'
+      # (401) is FINAL, any other problem falls back to the cloud then the Stage-2 offline check. Hermetic; in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice C (verify a PIN at the branch server)
+        run: node --no-warnings tests/android-till-stage3c.test.mjs
+
+      # Till stage 3 Slice D (docs/BUILD-TILL-STAGE-3D.md) — SESSION REFRESH through the branch server: a joined Shop POS
+      # renews its session via POST /node/refresh[/ack] (pinned TLS), which proxies the cloud's /api/auth/refresh[/ack].
+      # The cloud's forwarded answer is used as-is (a 401 still drives sign-back-in); no answer / 404 / 503 renews
+      # cloud-direct. The branch router is injected via a setter, so no import cycle. Hermetic; in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice D (session refresh through the branch server)
+        run: node --no-warnings tests/android-till-stage3d.test.mjs
+
+      # Till stage 3b client (docs/BUILD-TILL-STAGE-3B-CLIENT.md) — the Shop POS's client for the branch node's shared held
+      # orders: list/register/claim/force-claim/update/release/delete over pinned TLS, the lock proven by the device.
+      # 404/503/no-link → unreachable so a server-less POS stays local-only. Hermetic (pure parsers + injected IO).
+      - name: ZapTill for Android, Till stage 3b client (shared held-order tabs)
+        run: node --no-warnings tests/android-till-tabs.test.mjs
+
+      # Till stage 3b CashierScreen wiring (docs/BUILD-TILL-STAGE-3B-CLIENT.md §Selling-screen) — the PURE shared-table
+      # decisions the selling screen uses: occupancy merge, tap routing, the claim/take-over outcomes, lease-lost drop.
+      - name: ZapTill shared tables, CashierScreen decisions
+        run: node --no-warnings tests/branch-tabs-ux.test.mjs
+
+      # Till stage 3b server (docs/BUILD-TILL-STAGE-3B-SERVER.md) — SHARED HELD ORDERS: the branch node's authoritative
+      # tab store (nodeTabs.ts) exposed as /node/tabs… routes. The atomic claim / 90s lease / lapsed-steal / clear-audit
+      # semantics AND the manager-approved force-claim of a live lock, under a SQLite stand-in. The live cross-till
+      # behaviour (two real tills racing) needs a two-till rig — not covered here.
+      - name: Shared held orders — node tab store (claim/lease/force-claim/audit)
+        run: node apps/desktop/test/node-tabs-claim.test.mjs
+
   # 2026-11-02 (owner: "11 min is a lot of time"): the server job ran its named steps, every migration test and the
   # loop over every tests/*.test.mjs one after the other (~10.5 minutes). The migration tests (two halves) and the loop
   # now run as jobs of their own, at the same time as the named steps — the same tests, about half the wait.
