@@ -6,8 +6,9 @@ rest. New docs: drop them in the right section below and add a line here.
 
 > Built 2026‑11‑15. The spec bulk was sorted into folders — **`designs/`** (agreed design docs, all 59 code references
 > updated) and **`tasks/`** (A‑register feature specs) — and the 348 per‑batch **manifests were archived out of the repo**
-> (zip in `C:\swiftpos\other files`; breadcrumb in [manifests/](manifests/)). The loose `HANDOFF-*`/`VERIFY-*`/`MORNING-*`
-> logs still sit at root (archive candidates — §11).
+> (zip in `C:\swiftpos\other files`; breadcrumb in [manifests/](manifests/)). The dated **handoffs were archived out too**
+> (same zip folder) — keeping only the two rules‑bearing ones — and the `VERIFY-*`/`MORNING-*` **logs swept into
+> `history/`** (§11).
 
 ---
 
@@ -59,5 +60,5 @@ The `A###-*.md` specs now live in **[tasks/](tasks/)** (`A59`, `A295`, `A612`, `
 
 ## 11. Folders & history / archive
 - **[designs/](designs/)** — agreed design docs · **[tasks/](tasks/)** — A‑register feature specs · **[manifests/](manifests/)** — the 348 per‑batch records are **archived** out (zip in `C:\swiftpos\other files`; see that folder's README).
-- [history/handoffs/](history/handoffs/) — dated session handoffs · [history/applied/](history/applied/) — applied‑patch notes · [reports/](reports/) — morning reports & release notes.
-- **Still loose at `docs/` root (archive candidates):** `HANDOFF-*.md` (30), `VERIFY-*.md` (30), `MORNING-*.md` (8) — not in the move scope; say the word to sweep them into `history/`.
+- [history/verify/](history/verify/) — swept `VERIFY-*` logs (30) · [history/mornings/](history/mornings/) — swept `MORNING-*` logs (8) · [history/applied/](history/applied/) — applied‑patch notes · [reports/](reports/) — current reports.
+- [history/handoffs/](history/handoffs/) — **handoff records archived** out (38, same zip folder; see that folder's README). **Kept at root:** the two rules‑bearing handoffs — `HANDOFF-2026-08-08-evening.md` (rules 1–24) and `HANDOFF-2026-09-22.md` (owner rulings).

@@ -945,7 +945,7 @@ jobs:
       - name: Admin portal POS options (A604)
         run: node --no-warnings tests/admin-pos-options-a604.test.mjs
 
-      # Android Stage 0 (docs/ANDROID-APP-DESIGN.md) — ZapTill for Android's update feed approved per business and per
+      # Android Stage 0 (docs/designs/ANDROID-APP-DESIGN.md) — ZapTill for Android's update feed approved per business and per
       # surface like the desktop's A348 (android-till = the Shop POS, mobile = the owner's phone; nothing approved by
       # default; a signed-in device's surface from its session, never the query); a release complete only with its APK
       # and GitHub's SHA-256; the admin portal's approve / hold (super admin, audited) and download link; crash reports
@@ -956,7 +956,7 @@ jobs:
           node --no-warnings tests/android-stage0.test.mjs
           node --no-warnings scripts/test-migration-189.mjs
 
-      # Android Till stage 1 (docs/ANDROID-APP-DESIGN.md §11) — the online Shop POS: the cloud's gates for an android-till
+      # Android Till stage 1 (docs/designs/ANDROID-APP-DESIGN.md §11) — the online Shop POS: the cloud's gates for an android-till
       # session (the A159 write guard, the A581 / A601 / A612 plan gates, the online licence, the POS seat — as a desktop
       # POS), every write the web POS screens make allowed for a PIN sign-in on a Shop POS only, the web POS screens inside a
       # Shop POS (its own drawer; tickets to the branch server, else straight to the printer; a browser unchanged), and the
@@ -964,7 +964,7 @@ jobs:
       - name: ZapTill for Android, Till stage 1 (the online Shop POS)
         run: node --no-warnings tests/android-till-stage1.test.mjs
 
-      # Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7, §4.8, §12) — keeps selling offline: the shared store-and-forward
+      # Till stage 2 (docs/designs/ANDROID-APP-DESIGN.md §4.7, §4.8, §12) — keeps selling offline: the shared store-and-forward
       # rules in @zaptill/core/tillBuffer (which writes may go offline, in-order idempotent replay that keeps an order
       # with its void, the ack handling that never loses a sale, the two retention clocks) and the app's offline layer
       # (buffer, replay, offline PIN, the opt-in offline-writes seam, the status bar — bundled with esbuild, Capacitor
@@ -1244,7 +1244,7 @@ jobs:
         run: node scripts/check-web-pos-green.mjs && node scripts/check-web-pos-green.mjs --self-test
 
       # A329 step 3 — no NEW raw green or blue in the back office: its actions are the fixed SwiftPOS teal (swift-*);
-      # what stays green/blue is status, money, data or info (docs/A329-back-office-colour-classification.md).
+      # what stays green/blue is status, money, data or info (docs/tasks/A329-back-office-colour-classification.md).
       - name: No new raw green or blue in the back office
         run: node scripts/check-back-office-colour.mjs && node scripts/check-back-office-colour.mjs --self-test
 
