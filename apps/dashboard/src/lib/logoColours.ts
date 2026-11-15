@@ -66,6 +66,8 @@ export function logoColoursFromPixels(data: ArrayLike<number>, width: number, he
 export async function logoColoursFromDataUri(uri: string, max = 5): Promise<LogoColours> {
   const img = new Image();
   img.decoding = 'async';
+  // A Cloudinary (https) URL needs CORS or the canvas taints and getImageData throws; harmless on a same-origin data-URI.
+  if (/^https?:/i.test(uri)) img.crossOrigin = 'anonymous';
   img.src = uri;
   await img.decode();
   const scale = Math.min(1, 160 / Math.max(img.naturalWidth, img.naturalHeight, 1));

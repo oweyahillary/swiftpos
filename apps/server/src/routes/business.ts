@@ -422,12 +422,29 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     }
   }
 
+  // The unified Cloudinary brand logo: an https URL kept on businesses.logo_url (the printed documents and the tenant login
+  // page read it too). When a URL is set, the base64 logo_png is dropped — the URL is the single source of the logo. null
+  // clears it. Any https image URL is accepted, as the existing "Logo image URL" field already is.
+  let logoUrlWrite: { set: boolean; value: string | null } = { set: false, value: null };
+  if (has('logo_url')) {
+    const u = req.body.logo_url;
+    if (u === null) { logoUrlWrite = { set: true, value: null }; }
+    else if (typeof u === 'string' && /^https:\/\/[^\s"'<>]{1,500}$/i.test(u.trim())) {
+      logoUrlWrite = { set: true, value: u.trim() };
+      row.logo_png = null;   // on Cloudinary — never keep the base64 blob alongside the URL (that was the egress cost)
+    } else { res.status(400).json({ error: 'logo_url must be an https image URL' }); return; }
+  }
+
   const upsert = (cols: string) => supabase.from('business_branding').upsert(row, { onConflict: 'business_id' }).select(cols).single();
   let { data, error } = await upsert(BRANDING_COLUMNS);
   // A597: a database before migration 179 — the same save without the colour columns (a colour write itself then fails).
   if (isMissingBrandColourColumn(error) && !colourFields.length) ({ data, error } = await upsert(withoutBrandColourColumns(BRANDING_COLUMNS)));
   if (error) { sendError(res, error); return; }
-  res.json(data);
+  if (logoUrlWrite.set) {
+    const { error: luErr } = await supabase.from('businesses').update({ logo_url: logoUrlWrite.value }).eq('id', req.businessId);
+    if (luErr) { sendError(res, luErr); return; }
+  }
+  res.json(logoUrlWrite.set ? { ...(data as object), logo_url: logoUrlWrite.value } : data);
 });
 
 // ── A544: per-branch branding ─────────────────────────────────────────────────────────────────────────────────────────

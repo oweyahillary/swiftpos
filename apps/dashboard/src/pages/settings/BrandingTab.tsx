@@ -6,6 +6,7 @@ import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
 import { accentWriteError, footerWriteError, normaliseHex, resolveBranchBranding, FOOTER_LINE_MAX, FOOTER_LINE_NARROW } from '@zaptill/core/branchBranding';   // A544
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, RECEIPT_LOGO_PRINT_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
+import { uploadImage } from '../../lib/upload';   // the logo goes to Cloudinary; the DB keeps the URL, not the base64
 import CustomerScreenSection from './CustomerScreenSection';   // A606
 import { money } from '../../lib/format';
 
@@ -115,13 +116,16 @@ function paintRaster(r: MonoRaster, c: HTMLCanvasElement): void {
 
 /** A605: what the page's form holds — compared with what was last loaded or saved, so the save bar shows only on a change. */
 interface BrandingDraft {
-  accentHex: string; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean;
+  accentHex: string; logoPng: string | null; logoUrl: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean;
   themeId: string | null; primary: string; secondary: string;
 }
 
 export default function BrandingTab() {
   const [accentHex, setAccentHex] = useState<string>('');     // '' = default
+  // logoPng: a data-URI, only from a FRESH file pick this session (preview + colour + raster). logoUrl: the saved/to-be-saved
+  // Cloudinary URL. The logo shown/used is logoPng ?? logoUrl; a logo EXISTS when either is set.
   const [logoPng, setLogoPng] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [logoReceipt, setLogoReceipt] = useState<string | null>(null);        // A313: mono1 raster string
   const [receiptLogoEnabled, setReceiptLogoEnabled] = useState(false);      // A313: opt-in toggle
   const [bizName, setBizName] = useState('Your business');
@@ -147,25 +151,30 @@ export default function BrandingTab() {
   const [logoColours, setLogoColours] = useState<LogoColours | null>(null);
 
   useEffect(() => {
-    api.get<{ accent_hex?: string | null; logo_png?: string | null; logo_receipt?: string | null; receipt_logo_enabled?: boolean; theme_id?: string | null; themes_enabled?: boolean;
+    api.get<{ accent_hex?: string | null; logo_png?: string | null; logo_url?: string | null; logo_receipt?: string | null; receipt_logo_enabled?: boolean; theme_id?: string | null; themes_enabled?: boolean;
       primary_hex?: string | null; secondary_hex?: string | null; brand_colours_editable?: boolean } | null>('/api/business/branding')
-      .then((b) => { setAccentHex(b?.accent_hex ?? ''); setLogoPng(b?.logo_png ?? null); setLogoReceipt(b?.logo_receipt ?? null); setReceiptLogoEnabled(b?.receipt_logo_enabled === true);
+      .then((b) => { setAccentHex(b?.accent_hex ?? ''); setLogoPng(b?.logo_png ?? null); setLogoUrl(b?.logo_url ?? null); setLogoReceipt(b?.logo_receipt ?? null); setReceiptLogoEnabled(b?.receipt_logo_enabled === true);
         setThemesEnabled(b?.themes_enabled === true); setThemeId(b?.theme_id ?? null);
         setPrimary(b?.primary_hex ?? ''); setSecondary(b?.secondary_hex ?? ''); setColoursEditable(b?.brand_colours_editable === true);
-        setSaved({ accentHex: b?.accent_hex ?? '', logoPng: b?.logo_png ?? null, logoReceipt: b?.logo_receipt ?? null, receiptLogoEnabled: b?.receipt_logo_enabled === true,
+        setSaved({ accentHex: b?.accent_hex ?? '', logoPng: b?.logo_png ?? null, logoUrl: b?.logo_url ?? null, logoReceipt: b?.logo_receipt ?? null, receiptLogoEnabled: b?.receipt_logo_enabled === true,
           themeId: b?.theme_id ?? null, primary: b?.primary_hex ?? '', secondary: b?.secondary_hex ?? '' }); })
       .then(() => api.get<{ name?: string }>('/api/business').then((biz) => { if (biz?.name) setBizName(biz.name); }).catch(() => {}))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
+  // The logo to show and act on: the fresh data-URI if one was picked this session, else the saved Cloudinary URL.
+  const logoSrc = logoPng ?? logoUrl;
+  const hasLogo = !!(logoPng || logoUrl);
+
   // A605: the logo's colours, read in the browser from its pixels (lib/logoColours.ts) — again whenever the logo changes.
+  // Works for a data-URI or a (CORS-enabled Cloudinary) URL; a tainted/failed read just yields no suggestion.
   useEffect(() => {
-    if (!logoPng) { setLogoColours(null); return; }
+    if (!logoSrc) { setLogoColours(null); return; }
     let live = true;
-    logoColoursFromDataUri(logoPng, 5).then((c) => { if (live) setLogoColours(c); }).catch(() => { if (live) setLogoColours(null); });
+    logoColoursFromDataUri(logoSrc, 5).then((c) => { if (live) setLogoColours(c); }).catch(() => { if (live) setLogoColours(null); });
     return () => { live = false; };
-  }, [logoPng]);
+  }, [logoSrc]);
 
   const custom = accentHex.trim() !== '' && !PALETTE.some((p) => p.hex.toLowerCase() === accentHex.trim().toLowerCase());
   // Exactly what a till will do with this value: its accent, or the default when it falls back.
@@ -192,7 +201,7 @@ export default function BrandingTab() {
   // A617: the free themes by name, from the one list (themes.ts FREE_THEME_IDS).
   const freeThemeNames = THEMES.filter((t) => isFreeThemeId(t.id)).map((t) => t.name).join(', ');
 
-  const draft: BrandingDraft = { accentHex, logoPng, logoReceipt, receiptLogoEnabled, themeId, primary, secondary };
+  const draft: BrandingDraft = { accentHex, logoPng, logoUrl, logoReceipt, receiptLogoEnabled, themeId, primary, secondary };
   const dirty = !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
   // A saved message stays in the bar a few seconds, then the bar goes (it shows again on the next change).
   useEffect(() => {
@@ -205,7 +214,15 @@ export default function BrandingTab() {
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (fileRef.current) fileRef.current.value = '';
     if (!f) return; say(''); setWarn('');
-    try { const { dataUri, warning } = await prepareLogo(f); setLogoPng(dataUri); if (warning) setWarn(warning); setLogoReceipt(await receiptRasterFor(dataUri)); }
+    try {
+      const { dataUri, warning } = await prepareLogo(f);
+      setLogoPng(dataUri); if (warning) setWarn(warning);
+      setLogoReceipt(await receiptRasterFor(dataUri));   // the mono thermal raster is still derived locally and stored
+      // Upload the image to Cloudinary; the DB keeps the URL, not the base64. If the upload fails, fall back to the base64
+      // (logoPng) so a logo is never lost to a flaky network.
+      try { setLogoUrl(await uploadImage(f)); }
+      catch { setLogoUrl(null); setWarn('Could not reach image hosting — the logo will be saved in the database for now.'); }
+    }
     catch (err: any) { say(String(err?.message ?? err), true); }
   };
 
@@ -214,9 +231,11 @@ export default function BrandingTab() {
     try {
       await api.put('/api/business/branding', {
         accent_hex: accentHex.trim() || null,
-        logo_png: logoPng,
-        logo_receipt: logoPng ? logoReceipt : null,           // A313: no logo → no raster
-        receipt_logo_enabled: !!logoPng && receiptLogoEnabled,
+        // On Cloudinary → store the URL and drop any base64; otherwise the base64 (a legacy or upload-failed logo) is the
+        // logo and any stale URL is cleared. logo_receipt + the toggle hang off whether a logo exists at all.
+        ...(logoUrl ? { logo_url: logoUrl, logo_png: null } : { logo_png: logoPng, logo_url: null }),
+        logo_receipt: hasLogo ? logoReceipt : null,           // A313: no logo → no raster
+        receipt_logo_enabled: hasLogo && receiptLogoEnabled,
         // A327: only when the business has themes — the cloud refuses a theme without the flag (A325); A617: a free one
         // (or the default) without it.
         ...(sendTheme ? { theme_id: theme?.id ?? null } : {}),
@@ -231,7 +250,7 @@ export default function BrandingTab() {
   };
   const discard = () => {
     if (!saved) return;
-    setAccentHex(saved.accentHex); setLogoPng(saved.logoPng); setLogoReceipt(saved.logoReceipt); setReceiptLogoEnabled(saved.receiptLogoEnabled);
+    setAccentHex(saved.accentHex); setLogoPng(saved.logoPng); setLogoUrl(saved.logoUrl); setLogoReceipt(saved.logoReceipt); setReceiptLogoEnabled(saved.receiptLogoEnabled);
     setThemeId(saved.themeId); setPrimary(saved.primary); setSecondary(saved.secondary); setWarn(''); say('');
   };
 
@@ -240,11 +259,11 @@ export default function BrandingTab() {
       && !window.confirm('Reset all branding to the ZapTill default? Your logo, colours and theme are removed.')) return;
     setBusy(true); say('');
     try {
-      await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, theme_id: null,   // A617: null is always allowed
+      await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_url: null, logo_receipt: null, receipt_logo_enabled: false, theme_id: null,   // A617: null is always allowed
         ...(sendColours ? { primary_hex: null, secondary_hex: null } : {}) });
-      setAccentHex(''); setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn(''); setThemeId(null);
+      setAccentHex(''); setLogoPng(null); setLogoUrl(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn(''); setThemeId(null);
       if (sendColours) { setPrimary(''); setSecondary(''); }
-      setSaved({ accentHex: '', logoPng: null, logoReceipt: null, receiptLogoEnabled: false, themeId: null,
+      setSaved({ accentHex: '', logoPng: null, logoUrl: null, logoReceipt: null, receiptLogoEnabled: false, themeId: null,
         primary: sendColours ? '' : primary, secondary: sendColours ? '' : secondary });
       window.dispatchEvent(new Event(BRANDING_SAVED_EVENT));
       say('Reset to the ZapTill default.');
@@ -264,15 +283,15 @@ export default function BrandingTab() {
         <Section title="Logo" hint="Shown on the dashboard menu, the POS lock screen and, if you choose, printed receipts.">
           <div className="flex flex-wrap items-center gap-4">
             <div className="h-20 w-20 rounded-xl logo-chip-light flex items-center justify-center overflow-hidden shrink-0">
-              {logoPng ? <img src={logoPng} alt="logo" className="max-h-full max-w-full object-contain" /> : <span className="text-[11px] text-gray-500">No logo</span>}
+              {logoSrc ? <img src={logoSrc} alt="logo" className="max-h-full max-w-full object-contain" /> : <span className="text-[11px] text-gray-500">No logo</span>}
             </div>
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <label className="cursor-pointer rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800">
-                  {logoPng ? 'Change logo' : 'Upload logo'}
+                  {logoSrc ? 'Change logo' : 'Upload logo'}
                   <input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={onPick} className="sr-only" />
                 </label>
-                {logoPng && <button type="button" onClick={() => { setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); }} className="text-sm text-gray-400 hover:text-gray-200 underline">Remove logo</button>}
+                {logoSrc && <button type="button" onClick={() => { setLogoPng(null); setLogoUrl(null); setLogoReceipt(null); setReceiptLogoEnabled(false); }} className="text-sm text-gray-400 hover:text-gray-200 underline">Remove logo</button>}
               </div>
               <p className="text-xs text-gray-500">PNG or JPEG. Shrunk to fit automatically (≤250 KB). SVG isn’t supported yet.</p>
               {warn && <p className="text-xs text-amber-600">{warn}</p>}
@@ -280,7 +299,7 @@ export default function BrandingTab() {
           </div>
           {/* A313: opt-in receipt logo */}
           <label className="flex items-center gap-2 mt-4 text-sm text-gray-300">
-            <input type="checkbox" checked={receiptLogoEnabled} disabled={!logoPng} onChange={(e) => setReceiptLogoEnabled(e.target.checked)} />
+            <input type="checkbox" checked={receiptLogoEnabled} disabled={!hasLogo} onChange={(e) => setReceiptLogoEnabled(e.target.checked)} />
             Print logo on customer receipts
           </label>
           <p className="text-xs text-gray-500 ml-6">Off by default. Check the receipt preview first — thermal printers are black-and-white.</p>
@@ -290,7 +309,7 @@ export default function BrandingTab() {
         {themesEnabled && (
           <BrandColoursField editable={coloursEditable} primary={primary} secondary={secondary}
             onPrimary={setPrimary} onSecondary={setSecondary} primaryHex={primaryHex} secondaryHex={secondaryHex} error={colourErr}
-            logoColours={logoPng ? logoColours : null} logo={logoPng} bizName={bizName} />
+            logoColours={hasLogo ? logoColours : null} logo={logoSrc} bizName={bizName} />
         )}
 
         {/* ── Lock screen ── */}
@@ -320,7 +339,7 @@ export default function BrandingTab() {
               )}
             </div>
             <div>
-              <LockPreview accent={lockShown} logo={logoPng} />
+              <LockPreview accent={lockShown} logo={logoSrc} />
               <p className="text-xs text-gray-500 mt-2">This is how the POS lock screen will look.</p>
             </div>
           </div>
@@ -380,8 +399,8 @@ export default function BrandingTab() {
         {/* ── Receipt (A313) ── */}
         <Section title="Receipt preview" hint="The exact black-and-white image a receipt printer prints.">
           {/* A530: the logo is stored up to 36 mm and shown at the 15 mm the receipt prints it (full size with the switch). */}
-          <ReceiptPreview raster={logoPng && receiptLogoEnabled ? fitStoredLogo(monoRasterFromString(logoReceipt)) : null} name={bizName} canvasRef={receiptRef} />
-          <p className="text-xs text-gray-500 mt-2">{logoPng && receiptLogoEnabled
+          <ReceiptPreview raster={hasLogo && receiptLogoEnabled ? fitStoredLogo(monoRasterFromString(logoReceipt)) : null} name={bizName} canvasRef={receiptRef} />
+          <p className="text-xs text-gray-500 mt-2">{hasLogo && receiptLogoEnabled
             ? 'Prints up to 15 mm tall (full size if ZapTill turns on Full-size logo). Solid marks print crisply; gradients and colour wash out. If it looks wrong, upload a cleaner mark or leave the toggle off.'
             : 'Turn on "Print logo on customer receipts" to see the logo here.'}</p>
         </Section>
