@@ -50,7 +50,8 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, oneBranchOnly } from '../middleware/rbac';
-import { getMpesaConfig, stkParties, type MpesaConfig } from '../lib/branchMpesa';   // A618: per branch, the business's as default
+import { getMpesaConfig, stkParties, type MpesaConfig, type MpesaEnvironment } from '../lib/branchMpesa';   // A618: per branch, the business's as default
+import { queryStkStatus } from '../lib/stkQuery';   // recover a lost/late STK callback by asking Safaricom the real outcome
 import { sendError }   from '../lib/sendError';
 import { maskCustomerContacts } from '../lib/personalData';   // A595
 import { normaliseKenyanPhone, stkAmount } from '@zaptill/core/customerDetails';   // A607
@@ -115,6 +116,10 @@ function isAllowedCallbackIp(ip: string | undefined): boolean {
 // read time (Daraja's STK prompt itself times out at ~60s), so no background
 // timer or in-process state is needed for correctness.
 const STK_TIMEOUT_MS = 70_000;
+// Recovery query (STK Push Query): ask Safaricom after ~25 s of no callback — well before the 70 s hard timeout — and at
+// most once per ~20 s per prompt (Daraja rate-limits the query, so never on every 3 s poll).
+const STK_QUERY_AFTER_MS = 25_000;
+const STK_QUERY_MIN_GAP_MS = 20_000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -428,6 +433,49 @@ async function settlePosPrompt(checkoutId: string, r: { ok: boolean; mpesaRef?: 
   return true;
 }
 
+/**
+ * Recover a pending STK prompt by asking Safaricom its real status (lib/stkQuery.ts), when no callback has settled it in
+ * time. An ATOMIC claim (set mpesa_queried_at only if still pending and not queried within the gap) guarantees ONE query
+ * per prompt per ~20 s even with several tills polling. The query returns only a ResultCode — no amount or receipt — so a
+ * confirmed SUCCESS completes the sale with a reconcile note (owner's decision, 2026-11-15; the prompt's amount is already
+ * the exact bill, so there is nothing to validate). A FAILURE settles it with Safaricom's reason. Anything unfinished is
+ * left for the callback or a later query, and the 70 s fallback still ends a prompt Safaricom cannot resolve. Never throws.
+ */
+async function recoverViaStkQuery(checkoutId: string, businessId: string, posPrompt: boolean, row: any): Promise<void> {
+  const table = posPrompt ? 'mpesa_stk_requests' : 'payments';
+  try {
+    // Atomic claim — only the poll that wins this conditional update runs the query.
+    const cutoff = new Date(Date.now() - STK_QUERY_MIN_GAP_MS).toISOString();
+    const { data: claimed } = await supabase.from(table)
+      .update({ mpesa_queried_at: new Date().toISOString() })
+      .eq('mpesa_checkout_id', checkoutId).eq('business_id', businessId).eq('status', 'pending')
+      .or(`mpesa_queried_at.is.null,mpesa_queried_at.lt.${cutoff}`)
+      .select('id');
+    if (!claimed || claimed.length === 0) return;   // another poll is already querying, or it is no longer pending
+
+    // The SAME Daraja details the push used (per branch, A618): the POS prompt kept its branch; a web order's is its order's.
+    const branchId = posPrompt ? (row.branch_id ?? null) : await orderBranch(businessId, row.order_id, null);
+    const config = await getMpesaConfig(businessId, branchId);
+    if (!config) return;   // config gone — leave it for the hard-timeout fallback
+
+    const outcome = await queryStkStatus(config, (config.environment ?? ENV) as MpesaEnvironment, checkoutId);
+    if (outcome.outcome === 'success') {
+      await supabase.from(table)
+        .update({ status: 'completed', mpesa_result_desc: 'Confirmed by Safaricom query — M-Pesa receipt reconciles later' })
+        .eq('mpesa_checkout_id', checkoutId).eq('business_id', businessId).eq('status', 'pending');
+      console.log(`[mpesa] STK query CONFIRMED paid without a callback: ${checkoutId} — receipt pending reconciliation`);
+    } else if (outcome.outcome === 'failed') {
+      await supabase.from(table)
+        .update({ status: 'failed', mpesa_result_desc: outcome.reason })
+        .eq('mpesa_checkout_id', checkoutId).eq('business_id', businessId).eq('status', 'pending');
+      console.log(`[mpesa] STK query says ${checkoutId} failed: ${outcome.reason}`);
+    }
+    // 'pending' (still processing / Safaricom unreachable) → leave it; a later poll re-queries, or the hard timeout ends it.
+  } catch (e: any) {
+    console.error(`[mpesa] STK recovery query error for ${checkoutId}:`, e?.message ?? e);
+  }
+}
+
 // ── POST /api/mpesa/callback ──────────────────────────────────────────────────
 // PUBLIC — no requireAuth. Daraja calls this directly. Source is authenticated
 // by IP allow-list (see isAllowedCallbackIp), amount is validated against the
@@ -627,7 +675,7 @@ router.get('/status/:checkoutId', requireAuth, maskCustomerContacts(), async (re
   // business so one tenant can't poll another's checkout id.
   const { data: payment } = await supabase
     .from('payments')
-    .select('status, reference, amount, mpesa_phone, mpesa_result_desc, mpesa_requested_at')
+    .select('status, reference, amount, mpesa_phone, mpesa_result_desc, mpesa_requested_at, order_id')   // order_id: resolve the branch's Daraja config for the recovery query
     .eq('mpesa_checkout_id', checkoutId)
     .eq('business_id', req.businessId)
     .maybeSingle();
@@ -638,7 +686,7 @@ router.get('/status/:checkoutId', requireAuth, maskCustomerContacts(), async (re
   if (!found) {
     const { data: req2 } = await supabase
       .from('mpesa_stk_requests')
-      .select('status, reference, amount, mpesa_phone, mpesa_result_desc, mpesa_requested_at')
+      .select('status, reference, amount, mpesa_phone, mpesa_result_desc, mpesa_requested_at, branch_id')   // branch_id: resolve the branch's Daraja config for the recovery query
       .eq('mpesa_checkout_id', checkoutId)
       .eq('business_id', req.businessId)
       .maybeSingle();
@@ -658,6 +706,10 @@ router.get('/status/:checkoutId', requireAuth, maskCustomerContacts(), async (re
   // write-back so the row doesn't linger as 'pending' forever.
   if (status === 'pending' && p.mpesa_requested_at) {
     const age = Date.now() - new Date(p.mpesa_requested_at).getTime();
+    // Recovery (STK Push Query): before the hard timeout ever concludes "failed", ask Safaricom the real outcome — a lost
+    // or late callback must not mark a customer who PAID as unpaid. Fire-and-forget behind an atomic claim (one query per
+    // ~20 s); the resolved state shows on the next poll. Only between the query threshold and the hard timeout.
+    if (age > STK_QUERY_AFTER_MS && age <= STK_TIMEOUT_MS) void recoverViaStkQuery(checkoutId, req.businessId, posPrompt, p);
     if (age > STK_TIMEOUT_MS) {
       status = 'failed';
       error  = error ?? 'Timeout — customer did not respond';

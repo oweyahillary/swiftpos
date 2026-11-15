@@ -903,6 +903,11 @@ jobs:
           TZ=UTC node --no-warnings tests/mpesa-c2b-a621.test.mjs
           node --no-warnings scripts/test-migration-188.mjs
 
+      # A623 — STK Push Query recovery: ask Safaricom the real outcome of a pending prompt (lib/stkQuery.ts) so a lost/late
+      # callback never marks a paid customer unpaid. The ResultCode→outcome mapper + the query it sends (injected fetch).
+      - name: M-Pesa STK Push Query recovery (A623)
+        run: node --no-warnings tests/stk-query.test.mjs
+
       # A599 — Attendance (premium, the 'attendance' flag set in the admin portal): punches only from a ZKTeco device
       # through the branch server, for everyone. The pairing (in / out alternately in time order, a night shift on the day
       # it started, an odd last punch a missing punch-out not counted, a 16 h gap never paired); flag off → every route
