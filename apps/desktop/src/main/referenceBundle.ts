@@ -45,6 +45,8 @@ export function cleanReceiptPay(label: unknown, number: unknown): ReceiptPay | n
 }
 /** A381 / A450: the business's branding as a pull carries it. */
 export interface PulledBranding { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null;
+  /** The Cloudinary brand logo (an https URL); undefined on the node/older-cloud path → the till keeps its cached bytes. */
+  logoUrl?: string | null;
   /** A597: the owner's brand colours (undefined = not said → the till keeps its own). */
   primaryHex?: string | null; secondaryHex?: string | null }
 
