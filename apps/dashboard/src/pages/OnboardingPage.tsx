@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
+import { uploadImage } from '../lib/upload';   // the logo goes to Cloudinary, not Supabase storage
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -151,20 +152,11 @@ export default function OnboardingPage() {
       if (signUpError) throw new Error(signUpError.message);
       if (!authData.session) throw new Error('Sign up succeeded but no session returned.');
 
-      // 2. Build logo URL if provided (upload to Supabase storage)
+      // 2. Upload the logo to Cloudinary; the business keeps the URL (businesses.logo_url), not a stored blob. Best-effort —
+      // onboarding never fails on a logo, and it can be set later in Settings → Branding.
       let logoUrl: string | undefined;
       if (form.logo) {
-        const ext = form.logo.name.split('.').pop();
-        const path = `logos/${authData.user!.id}.${ext}`;
-        const { error: uploadErr } = await supabase.storage
-          .from('business-assets')
-          .upload(path, form.logo, { upsert: true });
-        if (!uploadErr) {
-          const { data: urlData } = supabase.storage
-            .from('business-assets')
-            .getPublicUrl(path);
-          logoUrl = urlData.publicUrl;
-        }
+        try { logoUrl = await uploadImage(form.logo); } catch { /* keep going without a logo */ }
       }
 
       // 3. Call onboarding API route — creates business, branch, roles, user
