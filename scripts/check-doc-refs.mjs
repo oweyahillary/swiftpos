@@ -59,6 +59,31 @@ const ALLOW = new Set([
   'Something.md',
 ]);
 
+/**
+ * Dated session artifacts the project ARCHIVES OUT of the repo once their
+ * session closes — handoffs, manifests, verify logs, morning reports (see the
+ * archive commits that lifted the rules and swept the logs, 80f77532…4b687ea3).
+ * A citation to one is a historical breadcrumb — "recorded on that date" — not
+ * a live reference, exactly the reason docs/history/ counts as followable above.
+ *
+ * This is NARROW on purpose: it matches only these dated, disposable prefixes. A
+ * vanished design, plan or scope doc carries none of them, so A39's real fault —
+ * a specification cited by section that silently went missing — still fails here.
+ */
+const ARCHIVED_EPHEMERAL =
+  /^(HANDOFF|MANIFEST|SESSION|VERIFY(-[A-Z]+)?|MORNING(-[A-Z]+)?)-\d{4}-\d{2}-\d{2}\b/;
+
+/**
+ * Named docs that are ours but deliberately not in main's tree today — each a
+ * citation a reader cannot follow on main, justified individually. Kept SHORT:
+ * a doc that should simply be present belongs in the tree, not on this list.
+ */
+const ARCHIVED_DOCS = new Set([
+  'PLAN-web-print-parity.md',                  // completed plan, archived as a dead doc (1f43ba0d); cited as history in the register.
+  'OFFLINE-CLUSTER-verification-checklist.md', // archived dead doc (1f43ba0d); cited as history in the register.
+  'SCOPE-TILL-STAGE-3.md',                     // lives on android-till-3; lands on main when that branch merges (docs/README.md).
+]);
+
 function walk(dir, out = [], applySkips = true) {
   let entries;
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
@@ -100,6 +125,10 @@ for (const file of files) {
       if (/https?:\/\/[^\s]*$/.test(line.slice(0, m.index))) continue;
       citations++;
       if (present.has(doc)) continue;
+      // Resolves to a document deliberately archived out of the repo, or one
+      // that lands on main via a pending branch — a historical or forward
+      // reference, not a broken live citation.
+      if (ARCHIVED_EPHEMERAL.test(doc) || ARCHIVED_DOCS.has(doc)) continue;
       if (!missing.has(doc)) missing.set(doc, []);
       missing.get(doc).push(`${rel}:${i + 1}`);
     }
