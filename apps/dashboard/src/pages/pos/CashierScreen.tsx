@@ -662,7 +662,7 @@ export default function CashierScreen() {
     if (!tabsHost || !session?.branchId) { setNodeTabs([]); return; }
     let live = true;
     const branchId = session.branchId;
-    const load = () => { void tabsHost.listTabs(branchId).then((rows) => { if (live) setNodeTabs(rows); }).catch(() => {}); };
+    const load = () => { void tabsHost.listTabs(branchId).then((rows) => { if (live) setNodeTabs(rows); }).catch(() => { /* best-effort: a branch-server hiccup leaves the grid on local tabs (A410); the 5s poll retries */ }); };
     load();
     const t = setInterval(() => { if (view !== 'products') load(); }, 5000);
     return () => { live = false; clearInterval(t); };
@@ -677,7 +677,7 @@ export default function CashierScreen() {
     const h = setTimeout(() => {
       void tabsHost.updateTab(activeKey, cartRef.current, label).then((res) => {
         if (tabEditLost(res)) { showFreezeToast('This table was taken over on another POS.', 'warning'); goBackToSlotPicker(); }
-      }).catch(() => {});
+      }).catch(() => { /* best-effort: a failed lease renew retries on the next edit / the 60s heartbeat */ });
     }, 1500);
     return () => clearTimeout(h);
   }, [cart, activeKey]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -688,7 +688,7 @@ export default function CashierScreen() {
     const oo = openOrders[activeKey];
     if (!oo?.node) return;
     const label = oo.tableName;
-    const t = setInterval(() => { void tabsHost.updateTab(activeKey, cartRef.current, label).catch(() => {}); }, 60000);
+    const t = setInterval(() => { void tabsHost.updateTab(activeKey, cartRef.current, label).catch(() => { /* best-effort: the next heartbeat retries the lease */ }); }, 60000);
     return () => clearInterval(t);
   }, [activeKey]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2614,8 +2614,8 @@ export default function CashierScreen() {
         const total = items.reduce((sum, i) => sum + (i.lineTotal ?? 0), 0);
         const holder = tabHeldBy(heldTab);
         return (
-          <div style={s.overlay} className="animate-fade-in" onClick={closeHeld}>
-            <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 400, padding: 0, overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+          <div style={s.overlay} className="animate-fade-in">
+            <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 400, padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '18px 20px 16px', borderBottom: '1px solid var(--pos-border)', background: 'var(--pos-modal)' }}>
                 <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--pos-text)' }}>{heldTab.label || 'Table'}</div>
                 <div style={{ fontSize: 12, color: 'var(--pos-text3)', marginTop: 3 }}>
