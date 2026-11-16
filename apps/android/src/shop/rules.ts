@@ -162,6 +162,24 @@ export function notAnAddress(target: string): string {
 }
 
 /**
+ * A Bluetooth printer target: the receipt-printer name is "bt:<MAC>" (set by picking a paired printer in Printer settings,
+ * so an IP address and a Bluetooth printer share the one field). Returns the MAC when the target names a Bluetooth printer,
+ * null when it is not a Bluetooth target at all (an IP printer — the caller takes the network path), and { address: null }
+ * for a malformed one. Pure — tested without a device. A Bluetooth MAC is AA:BB:CC:DD:EE:FF.
+ */
+export function bluetoothTarget(target: string): { address: string | null } | null {
+  const name = String(target ?? '').replace(/^printer:/, '').trim();
+  if (!/^bt:/i.test(name)) return null;
+  const mac = name.slice(3).trim().toUpperCase();
+  return { address: /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac) ? mac : null };
+}
+
+/** Words when a Bluetooth printer target is set but malformed — pick it again. A setup mistake, not a retryable failure. */
+export function notABtPrinter(): string {
+  return 'This Bluetooth printer is not set up right — pick it again in Printer settings. The sale is saved.';
+}
+
+/**
  * The branch server's /node/print answer, as the web POS screens count prints. Anything but 200 printed nothing there, so
  * the tablet prints the ticket directly instead (shop/branchServer.ts) — the words say so.
  */

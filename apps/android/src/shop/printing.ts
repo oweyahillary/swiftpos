@@ -9,9 +9,9 @@
  * A printer that is off is said on the screen in words (the print notice) — the sale was already saved in the cloud before
  * anything printed, so nothing is lost; the cashier reprints from History.
  */
-import { RawPrinter } from '../native/plugins';
+import { RawPrinter, BtPrinter } from '../native/plugins';
 import { printThroughServer, readServerLink } from './branchServer';
-import { notAnAddress, printerAddress, SERVER_NOT_ANSWERING } from './rules';
+import { notAnAddress, printerAddress, bluetoothTarget, notABtPrinter, SERVER_NOT_ANSWERING } from './rules';
 import { makeRetryState, rememberRetry, clearRetry, canRetry, runRetry } from './printRetry';
 import type { PosSession } from './tillSession';
 
@@ -37,6 +37,23 @@ function base64(bytes: Uint8Array): string {
 
 /** ESC/POS bytes to the printer the web POS names. Throws (the web POS counts it as failed) after saying why. */
 async function printBytes(target: string, bytes: Uint8Array): Promise<void> {
+  // A Bluetooth printer ("bt:<MAC>", chosen in Printer settings) prints over the BtPrinter plugin; anything else is a
+  // network printer (RawPrinter, TCP 9100). A print failure arms Retry (switch the printer on, tap once); a malformed
+  // target is a setup mistake, so it does NOT arm Retry — fix it in Printer settings.
+  const bt = bluetoothTarget(target);
+  if (bt) {
+    if (!bt.address) { notePrintProblem(notABtPrinter()); throw new Error(notABtPrinter()); }
+    try {
+      await BtPrinter.print({ address: bt.address, data: base64(bytes) });
+      clearRetry(retryState);   // it printed — nothing to retry
+    } catch (e) {
+      const words = `${e instanceof Error ? e.message : String(e)} The sale is saved.`;
+      rememberRetry(retryState, () => printBytes(target, bytes));   // switch the printer on / bring it in range, then Retry
+      notePrintProblem(words);
+      throw new Error(words);
+    }
+    return;
+  }
   const addr = printerAddress(target);
   // A bad address is a setup mistake, not a retryable failure — fix the printer name/address, not Retry.
   if (!addr) { notePrintProblem(notAnAddress(target)); throw new Error(notAnAddress(target)); }
@@ -73,6 +90,9 @@ export function shopPosHostFor(till: PosSession) {
     terminal: { device_id: till.deviceId, terminal_code: null, device_label: till.posName },
     printBytes,
     printOrder,
+    // The web POS Printer-settings screen lists these so the cashier can pick a paired Bluetooth printer (Android only;
+    // null host on the browser/desktop → the screen hides the Bluetooth option).
+    listBtPrinters: () => BtPrinter.listPaired(),
   };
 }
 

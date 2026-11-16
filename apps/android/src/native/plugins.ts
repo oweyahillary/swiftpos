@@ -45,6 +45,15 @@ export interface RawPrinterPlugin {
   send(options: { host: string; port: number; data: string }): Promise<{ bytes: number }>;
 }
 
+export interface BtPrinterPlugin {
+  /** The PAIRED (bonded) Bluetooth devices this tablet can print to — the person pairs the printer in Android Settings
+   *  first. Asks for the Bluetooth permission the first time. Rejects BT_OFF (no/!enabled Bluetooth) or BT_PERMISSION. */
+  listPaired(): Promise<{ devices: Array<{ name: string; address: string }> }>;
+  /** ESC/POS bytes (base64) to a paired Bluetooth printer by its MAC. Rejects with code BT_PERMISSION, BT_OFF, BT_ADDRESS
+   *  (not a Bluetooth address), BT_UNREACHABLE (off / out of range / not paired) or BT_FAILED — each with words for the screen. */
+  print(options: { address: string; data: string }): Promise<{ bytes: number }>;
+}
+
 export interface BranchServerPlugin {
   /** Every UDP packet heard on the beacon port for ms milliseconds — the app keeps only real beacons (shop/branchServer.ts). */
   listen(options: { ms: number }): Promise<{ heard: Array<{ ip: string; text: string }> }>;
@@ -58,4 +67,5 @@ export interface BranchServerPlugin {
 export const ApkUpdater = registerPlugin<ApkUpdaterPlugin>('ApkUpdater');
 export const CrashReports = registerPlugin<CrashReportsPlugin>('CrashReports');
 export const RawPrinter = registerPlugin<RawPrinterPlugin>('RawPrinter');
+export const BtPrinter = registerPlugin<BtPrinterPlugin>('BtPrinter');
 export const BranchServer = registerPlugin<BranchServerPlugin>('BranchServer');
