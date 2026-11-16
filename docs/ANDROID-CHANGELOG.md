@@ -4,6 +4,23 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.4.8 — Away-from-branch-server notice + owner disable (kill-switch)
+**The Android side of "branch-server bind" (now live in the cloud).** A Shop POS joined to a branch server watches, on a
+~30 s cadence, whether that server is on the LAN — so a tablet carried to another, unpaid branch is noticed instead of
+quietly selling there.
+- **Away notice (amber strip):** when the tablet can't find its own branch server — its server isn't on the network, or a
+  *different* branch's server is — a banner tells the manager *"This tablet belongs to {branch}… sales are going straight to
+  the cloud."* **It keeps selling** — the notice only makes the move visible (the owner also sees it in the dashboard →
+  Devices → Terminals, with a "⚠ Away from branch server" badge).
+- **Owner disable (red strip):** the owner can disable a tablet from the dashboard (Terminals → Disable). That tablet then
+  **stops selling** and shows *"This tablet has been disabled by ZapTill. Contact support to re-enable it."* Enabling it in
+  the dashboard brings it straight back — no re-enrolment.
+- The away/disabled strip now **stacks above the sync status bar** instead of overlapping it.
+
+**Needs an on-device test:** join a tablet to a branch server → carry it off that network → the amber notice should appear
+within ~30 s and a badge show on the dashboard Terminals list; **Disable** it there → the tablet stops selling and shows the
+red notice; **Enable** → back to normal. Unchanged on a server-less tablet (no branch server joined → no notice).
+
 ## 0.4.7 — Set up and test a receipt printer, and retry a failed print
 **Setting up and testing a printer no longer needs a real sale.** Printer Settings (POS → ⋯ More → Printer settings) now has:
 - A **Receipt printer** field — the network address of a printer on this device's network (e.g. `192.168.1.50`, or

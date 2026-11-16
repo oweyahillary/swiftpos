@@ -131,7 +131,6 @@ button:disabled { opacity: 0.5; }
 
 /* Till stage 2: the sync status bar (online/offline, sales waiting, last synced, refusals). */
 .sync-bar {
-  position: fixed; left: 0; right: 0; top: 0; z-index: 900;
   display: flex; gap: 10px; align-items: center; padding: 6px calc(env(safe-area-inset-right) + 14px) 6px calc(env(safe-area-inset-left) + 14px);
   font-size: 14px; font-weight: 600; color: #04121a;
 }
@@ -144,9 +143,9 @@ button:disabled { opacity: 0.5; }
 .sync-bar .sync-stuck { color: #7f1d1d; background: #fecaca; border-radius: 8px; padding: 1px 8px; opacity: 1; }
 
 /* Branch-server bind (migration 192): the tablet is away from its own branch server (amber, still selling) or the owner
-   has disabled it (red, cannot sell). Sits at the very top, above the sync bar. */
+   has disabled it (red, cannot sell). Stacked ABOVE the sync bar in .top-stack so the two top strips never overlap. */
+.top-stack { position: fixed; top: 0; left: 0; right: 0; z-index: 950; display: flex; flex-direction: column; }
 .away-bar {
-  position: fixed; left: 0; right: 0; top: 0; z-index: 950;
   display: flex; gap: 10px; align-items: center;
   padding: 7px calc(env(safe-area-inset-right) + 14px) 7px calc(env(safe-area-inset-left) + 14px);
   font-size: 14px; font-weight: 700;
