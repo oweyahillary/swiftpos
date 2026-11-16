@@ -13,7 +13,7 @@ export function CreditApproversView({ view, rule, onChange, onSave, saving, save
   saving: boolean; saved: boolean; error: string;
 }) {
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-3xl" data-testid="credit-approvers">
+    <div className="p-4 sm:p-6 space-y-4 max-w-2xl" data-testid="credit-approvers">
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
         <div className="flex items-start justify-between gap-4">
           <div>

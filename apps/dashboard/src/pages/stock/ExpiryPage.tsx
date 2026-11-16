@@ -8,7 +8,7 @@ export default function ExpiryPage() {
   const { business } = useBusiness();
   const { activeBranchId } = useBranch();
   return (
-    <div className="p-4 sm:p-8">
+    <div className="p-4 sm:p-6">
       <Expiry client={api} branchId={activeBranchId}
         currency={(business as { currency?: string } | null)?.currency || 'KES'} />
     </div>
