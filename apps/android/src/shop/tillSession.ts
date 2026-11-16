@@ -1,5 +1,5 @@
 /**
- * tillSession.ts — the Shop POS's OWN sign-in (A415; Till stage 1, docs/ANDROID-APP-DESIGN.md §11): the tablet, its
+ * tillSession.ts — the Shop POS's OWN sign-in (A415; Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11): the tablet, its
  * business and its branch, and no person. Kept in the Keystore (device/secrets.ts 'pos.session', 'device.secret').
  *
  *   joinWithCode   the technician's enrolment code from the admin portal (A69) → POST /api/auth/enrol/redeem, naming the

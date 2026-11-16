@@ -1,5 +1,5 @@
 /**
- * offlineWrites.ts — Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7): the seam that catches the web POS screens' writes
+ * offlineWrites.ts — Till stage 2 (docs/designs/ANDROID-APP-DESIGN.md §4.7): the seam that catches the web POS screens' writes
  * while the Shop POS is offline and puts them in the buffer, handing the screens a provisional answer so the sale goes
  * through and prints. Online, nothing changes — the call reaches the cloud as in Till stage 1.
  *

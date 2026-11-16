@@ -1,7 +1,7 @@
 /**
  * test-migration-78.mjs — the receipt.manage grant, against real Postgres (PGlite).
  *
- * WHAT THIS PINS (register A59, A45, docs/A59-till-permission-keys.md)
+ * WHAT THIS PINS (register A59, A45, docs/tasks/A59-till-permission-keys.md)
  * ------------------------------------------------------------------
  * Migration 75 REGISTERED receipt.manage but granted it to no role, so the
  * narrow allow-list A45 added to POST /business/settings was unreachable and the

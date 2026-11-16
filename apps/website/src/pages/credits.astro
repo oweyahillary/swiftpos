@@ -8,7 +8,9 @@ import { WA_MESSAGES, SITE, telLink, waLink } from '../lib/site';
 // receipts, labels and videos are made with (2026-10-23). Owner, 2026-10-25: reachable by URL only (no header or footer
 // link), still in the sitemap; the only page that carries the short note about the demo businesses.
 const photos = credits.photos;
-const brands = brandData.brands;
+// Public scope (owner, 2026-11-13): credit only the food-service demo brands that appear on the public site; the
+// shop/petrol brands are used only on the parked (noindexed) vertical pages.
+const brands = brandData.brands.filter((b) => b.trade === 'restaurant' || b.trade === 'cafe');
 ---
 <Base
   title="Photo credits and demo businesses | ZapTill"

@@ -7,7 +7,7 @@ export interface FaqItem { q: string; a: string }
 export const FAQ_INTERNET: FaqItem = {
   q: 'Do I need internet?',
   a: `<p>Not to sell. Your points of sale keep selling and printing receipts with no internet, and a branch server keeps every
-point of sale in the shop in step. When the internet comes back, everything catches up by itself.</p>
+point of sale in the branch in step. When the internet comes back, everything catches up by itself.</p>
 <p>You need internet to see your numbers from somewhere else, and for the daily summary to reach you.</p>`,
 };
 
@@ -26,9 +26,8 @@ export const FAQ_HARDWARE: FaqItem = {
 <li>A receipt printer</li>
 <li>A UPS, recommended, so a short power cut doesn't stop the counter</li>
 </ul>
-<p>If you want them: a cash drawer, a kitchen printer or a kitchen screen, a barcode scanner, and a label printer (or
-use A4 sticker sheets on an office printer). If you already have hardware, we'll check it and use what fits. Anything
-new is quoted for your setup; an extra computer is from about KES 10,000.</p>`,
+<p>If you want them: a cash drawer, and a kitchen printer or a kitchen screen. If you already have hardware, we'll
+check it and use what fits. Anything new is quoted for your setup.</p>`,
 };
 
 export const FAQ_MPESA: FaqItem = {
@@ -88,8 +87,8 @@ export const FAQ_TILLS: FaqItem = {
   q: 'What is a branch, and can I have more points of sale?',
   // Owner, 2026-10-23: "10k, in fact the price might vary depending on the client, even installation costs".
   a: `<p>A branch is a two-computer setup: the branch server and a point of sale. A busy place can add more points of sale or a kitchen
-screen; each extra computer is from about KES 10,000, quoted for your setup. The branch setup is KES 30,000;
-installation can vary with the site, and we confirm the price before we start.</p>`,
+screen; each extra computer is quoted for your setup. The branch setup and installation vary with the site, and we
+confirm the price with you before we start.</p>`,
 };
 
 export const FAQ_SUPPORT: FaqItem = {

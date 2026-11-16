@@ -1,5 +1,5 @@
 /**
- * tillBuffer.ts — Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7, §4.8): the rules for a Shop POS that KEEPS SELLING
+ * tillBuffer.ts — Till stage 2 (docs/designs/ANDROID-APP-DESIGN.md §4.7, §4.8): the rules for a Shop POS that KEEPS SELLING
  * OFFLINE. Store-and-forward (Tier 1): the tablet's database is a BUFFER, not a mirror — it queues the writes a cashier
  * makes offline and replays them, in order, when the connection returns. Pure TypeScript, no IO, no native deps, so the
  * cloud, the desktop POS and the Android Shop POS can all share and test it (one rule, both POS — the owner's standing

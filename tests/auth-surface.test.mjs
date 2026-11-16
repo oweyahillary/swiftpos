@@ -90,7 +90,7 @@ ok('it does not mint web — this is the bug that hid four features', () => {
     'the desktop licence gate and requireWebSurface, all silently');
 });
 
-// Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): the builder takes the surface the joining POS names — a desktop names none
+// Till stage 1 (docs/designs/ANDROID-APP-DESIGN.md §11): the builder takes the surface the joining POS names — a desktop names none
 // and gets 'desktop'; only the Android Shop POS gets 'android-till' (lib/posSurface.ts deviceSurfaceOf).
 ok('it mints desktop (a desktop names no surface; deviceSurfaceOf gives it the desktop)', () => {
   assert.equal(mintedSurface(AUTH, '/enrol/redeem'), 'deviceSurfaceOf(c.surface)');

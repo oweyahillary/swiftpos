@@ -1,5 +1,5 @@
 /**
- * mode.ts — what this device is, chosen once at first launch (docs/ANDROID-APP-DESIGN.md §2).
+ * mode.ts — what this device is, chosen once at first launch (docs/designs/ANDROID-APP-DESIGN.md §2).
  *
  *   shop-pos      a shop tablet at the counter that sells; the cloud's surface 'android-till'
  *   owner-phone   a person's own phone or tablet, for reports and quick tasks; the surface 'mobile'

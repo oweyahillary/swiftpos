@@ -3,7 +3,7 @@
  *
  * Owner, 2026-10-30: "the owner should be the one who gets the invoice not individual branch" · "we itemize the items being
  * billed, give unit price and under note we add list of branches" · Cloud / Analytics / Attendance / Themes · "one premium
- * package that of 15000 that covers all the items" · ZapTill's details "in the admin panel". (docs/A612-per-branch-cloud.md)
+ * package that of 15000 that covers all the items" · ZapTill's details "in the admin panel". (docs/tasks/A612-per-branch-cloud.md)
  *
  *   cd apps/server && npm run build && cd ../.. && node --no-warnings tests/branch-billing-a612.test.mjs
  *

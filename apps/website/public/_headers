@@ -1,6 +1,7 @@
 # Cloudflare Pages headers (https://developers.cloudflare.com/pages/configuration/headers/).
-# Until zaptill.co.ke points here, the site lives on its pages.dev address with draft prices: keep search engines out
-# of every pages.dev copy (production and previews). The real domain is not matched, so it is indexed once it is live.
+# The marketing site's canonical home is www.zaptill.co.ke (app.zaptill.co.ke is the dashboard). Until www is attached
+# to this Pages project, the site lives on its pages.dev address: keep search engines out of every pages.dev copy
+# (production and previews). The real www domain is not matched, so the site is indexable the moment www is attached.
 https://:project.pages.dev/*
   X-Robots-Tag: noindex
 

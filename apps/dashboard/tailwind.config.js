@@ -7,7 +7,7 @@ module.exports = {
       colors: {
         // A328 (client branding Phase 2, slice 4b-1): the web POS + shared components' ACTION colour, driven by CSS
         // variables (src/index.css) that DEFAULT to Tailwind's exact greens — a business with themes OFF looks as before.
-        // Status, money and the back-office pages keep plain green (docs/A328-web-pos-green-classification.md).
+        // Status, money and the back-office pages keep plain green (docs/tasks/A328-web-pos-green-classification.md).
         action: {
           400: 'rgb(var(--action-400) / <alpha-value>)',
           500: 'rgb(var(--action-500) / <alpha-value>)',
@@ -17,7 +17,7 @@ module.exports = {
         // live in src/index.css (one place). Fills never change with the mode; only the text shades do (400 on dark,
         // 700 on white). Pick by job: `swift` fill + dark label · `swift-strong` fill + white label/knob/tick ·
         // `swift-light` / `swift-deep` their hovers · `swift-text` / `swift-text-hover` text and links · `swift-logo` the
-        // wordmark. docs/A329-back-office-colour-classification.md.
+        // wordmark. docs/tasks/A329-back-office-colour-classification.md.
         swift: {
           DEFAULT:      'rgb(var(--swift) / <alpha-value>)',
           light:        'rgb(var(--swift-light) / <alpha-value>)',

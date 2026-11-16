@@ -7,7 +7,7 @@
  * node), and acquiring the right to act on a tab is a single ATOMIC claim, never a
  * peer-to-peer race to reconcile.
  *
- * Model (owner decision, 2026-09-10 — see docs/D9-decision-brief.md):
+ * Model (owner decision, 2026-09-10 — see docs/designs/D9-decision-brief.md):
  *   - Any till may SEE every open tab (its own local tabs ∪ the node's).
  *   - To edit/charge/clear a tab a till must hold its LOCK. Claiming is atomic:
  *     one UPDATE ... WHERE (unlocked OR mine OR lease-expired) whose `.changes`

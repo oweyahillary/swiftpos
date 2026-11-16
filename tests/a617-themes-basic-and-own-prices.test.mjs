@@ -1,7 +1,7 @@
 /**
  * a617-themes-basic-and-own-prices.test.mjs — A617 (owner, 2026-11-01): current clients keep Themes, free; a branch's own
  * prices for an add-on or the package; ZapTill's default look and the Ocean, Teal and Sky themes free to everyone, the
- * rest premium. (docs/A617-themes-basic-and-own-prices.md; migration 185 has its own test, scripts/test-migration-185.mjs)
+ * rest premium. (docs/tasks/A617-themes-basic-and-own-prices.md; migration 185 has its own test, scripts/test-migration-185.mjs)
  *
  *   cd apps/server && npm run build && cd ../.. && node --no-warnings tests/a617-themes-basic-and-own-prices.test.mjs
  *

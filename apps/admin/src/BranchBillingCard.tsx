@@ -3,7 +3,7 @@
  *
  * Owner, 2026-10-30: "monthly subscription should be per branch for premium services or web — if a branch does not pay it
  * should not view its data" · invoices: one per business, to the owner · the items Cloud, Analytics, Attendance, Themes ·
- * "one premium package that of 15000 that covers all the items". (docs/A612-per-branch-cloud.md)
+ * "one premium package that of 15000 that covers all the items". (docs/tasks/A612-per-branch-cloud.md)
  *
  * Billed as one business: a note and (super admin) "Bill per branch" — every branch gets the business's plan and paid-until.
  * Billed per branch: each branch's plan, premium, package, "Disable", paid-until and where it stands; Record payment for the

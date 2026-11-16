@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Ready for the December rush</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{position:relative;overflow:hidden;color:#fff;font-family:var(--font-text);
+    background:
+      radial-gradient(80% 54% at 78% 8%, rgba(245,158,11,.30), transparent 56%),
+      radial-gradient(70% 46% at 50% 50%, rgba(20,184,166,.24), transparent 60%),
+      radial-gradient(100% 80% at 6% 112%, rgba(13,148,136,.26), transparent 60%),
+      linear-gradient(158deg,#0a2b28 0%,#07211f 52%,#05161a 100%);}
+  .board.square{width:1080px;height:1080px;}
+  .board.story{width:1080px;height:1920px;}
+  .frame{position:absolute;inset:76px;z-index:3;display:flex;flex-direction:column;}
+  .story .frame{inset:96px;}
+  .row-top{display:flex;justify-content:space-between;align-items:center;}
+  .logo{display:flex;align-items:center;gap:.5em;}
+  .logo img{width:52px;height:52px;border-radius:24%;display:block;}
+  .logo b{font-family:var(--font-display);font-weight:800;font-size:38px;letter-spacing:-.02em;}
+  .logo b i{font-style:normal;color:#5eead4;}
+  .tag{font-size:16px;letter-spacing:.24em;text-transform:uppercase;font-weight:800;color:#3a2606;
+    background:linear-gradient(92deg,#fbbf24,#f59e0b);border-radius:999px;padding:.6em 1.15em;}
+  .h{font-family:var(--font-display);font-weight:800;letter-spacing:-.022em;line-height:1.02;text-wrap:balance;color:#fff;}
+  .h em{font-style:normal;color:#fbbf24;}
+  .sub{line-height:1.5;color:#cfe7e2;font-weight:500;}
+  .device{position:absolute;z-index:3;padding:13px;border-radius:22px;background:#07131a;border:1px solid rgba(251,191,36,.28);
+    box-shadow:0 56px 120px -34px rgba(0,0,0,.8),0 0 90px -22px rgba(245,158,11,.42);}
+  .device img{width:100%;display:block;border-radius:12px;}
+  .spark{position:absolute;z-index:4;color:#fbbf24;pointer-events:none;filter:drop-shadow(0 0 10px rgba(251,191,36,.6));}
+  .spark svg{display:block;width:100%;height:100%;fill:currentColor;}
+  .foot{position:absolute;z-index:5;display:flex;justify-content:space-between;align-items:flex-end;gap:2em;}
+  .cta{display:inline-flex;align-items:center;gap:.4em;background:linear-gradient(92deg,#fbbf24,#f59e0b);color:#3a2606;font-weight:800;
+    padding:.75em 1.35em;border-radius:12px;box-shadow:0 16px 36px -12px rgba(245,158,11,.6);}
+  .handle{color:rgba(255,255,255,.82);font-weight:600;}
+  .feats{display:flex;flex-direction:column;}
+  .ft{display:flex;align-items:center;gap:20px;}
+  .ft .fi{width:66px;height:66px;border-radius:16px;flex:none;background:linear-gradient(150deg,#fbbf24,#f59e0b);display:grid;place-items:center;box-shadow:0 10px 26px -10px rgba(245,158,11,.55);}
+  .ft .fi svg{width:33px;height:33px;stroke:#3a2606;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
+  .ft b{font-weight:700;color:#fff;}
+  .square .feats{display:none;}
+
+  .square .h{font-size:66px;}
+  .square .copy{position:absolute;left:76px;top:150px;z-index:4;width:900px;}
+  .square .sub{font-size:25px;max-width:23em;margin-top:22px;}
+  .square .device{left:-44px;width:1168px;top:470px;transform:perspective(2600px) rotateX(5deg) rotate(-1deg);}
+  .square .foot{left:76px;right:76px;bottom:58px;font-size:24px;}
+  .square .s1{right:60px;top:138px;width:62px;height:62px;} .square .s2{left:64px;top:430px;width:40px;height:40px;}
+  .square .s3{right:360px;top:250px;width:30px;height:30px;}
+
+  .story .h{font-size:98px;}
+  .story .copy{position:absolute;left:96px;right:96px;top:216px;z-index:4;}
+  .story .sub{font-size:33px;max-width:21em;margin-top:32px;}
+  .story .feats{position:absolute;left:96px;right:96px;top:716px;z-index:4;gap:30px;}
+  .story .ft b{font-size:35px;}
+  .story .device{left:-54px;width:1188px;top:1146px;transform:perspective(2500px) rotateX(5deg) rotate(-1deg);}
+  .story .foot{left:96px;right:96px;bottom:108px;font-size:30px;}
+  .story .s1{right:120px;top:210px;width:76px;height:76px;} .story .s2{left:110px;top:980px;width:52px;height:52px;}
+  .story .s3{right:150px;bottom:360px;width:40px;height:40px;}
+</style>
+</head>
+<body>
+<div class="board square" id="feed"></div>
+<div class="board story" id="story"></div>
+
+<template id="tpl">
+  <span class="spark s1"><svg viewBox="0 0 24 24"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg></span>
+  <span class="spark s2"><svg viewBox="0 0 24 24"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg></span>
+  <span class="spark s3"><svg viewBox="0 0 24 24"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg></span>
+  <div class="frame">
+    <div class="row-top">
+      <span class="logo"><img src="assets/logo.png" alt="">Zap<b><i>Till</i></b></span>
+      <span class="tag">Festive ready</span>
+    </div>
+  </div>
+  <div class="copy">
+    <div class="h">Ready for the <em>December rush</em>?</div>
+    <div class="sub">Packed tables, back&#8209;to&#8209;back orders, M&#8209;Pesa flying in &mdash; ZapTill keeps every order, kitchen ticket and shilling in line. Even offline.</div>
+  </div>
+  <div class="feats">
+    <div class="ft"><span class="fi"><svg viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 4.17-2.65"/><path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76"/><path d="M5 13a10 10 0 0 1 5.24-2.76"/><path d="M12 20h.01"/></svg></span><b>Keeps selling offline</b></div>
+    <div class="ft"><span class="fi"><svg viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg></span><b>M&#8209;Pesa charged from the till</b></div>
+    <div class="ft"><span class="fi"><svg viewBox="0 0 24 24"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><path d="M6 17h12"/></svg></span><b>Orders straight to the kitchen</b></div>
+  </div>
+  <div class="device"><img src="assets/kds-screen.webp" alt="ZapTill kitchen display — orders in progress"></div>
+  <div class="foot">
+    <span class="cta">Book a demo&nbsp;&rarr;</span>
+    <span class="handle">zaptill.co.ke</span>
+  </div>
+</template>
+
+<script>
+  var tpl=document.getElementById('tpl').innerHTML;
+  document.getElementById('feed').innerHTML=tpl;document.getElementById('story').innerHTML=tpl;
+  var h=location.hash;
+  if(h==='#feed'||h==='#story'){document.body.style.cssText='margin:0;padding:0;gap:0;display:block';
+    document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});
+    var el=document.querySelector(h==='#feed'?'.square':'.story');if(el){el.style.display='block';el.style.margin='0';}}
+</script>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill vintage — social cuts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Oswald:wght@500;600;700&family=Yeseva+One&display=swap">
+<style>
+  :root{--paper:#efe3c2;--paper2:#f6edd3;--teal:#1e5e4f;--rust:#c1562e;--gold:#d49a2e;--maroon:#7c2b2b;
+    --crest:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/%3E%3C/svg%3E");}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;background:#20160e;font-family:'Oswald',sans-serif;}
+  .board{position:relative;overflow:hidden;color:var(--teal);
+    background:radial-gradient(120% 90% at 50% 40%, var(--paper2) 0%, var(--paper) 52%, #e4d4ac 100%);}
+  .board.feed{width:1080px;height:1080px;}
+  .board.story{width:1080px;height:1920px;}
+
+  .grain{position:absolute;inset:0;z-index:8;pointer-events:none;opacity:.13;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+  .vignette{position:absolute;inset:0;z-index:7;pointer-events:none;mix-blend-mode:multiply;
+    background:radial-gradient(125% 105% at 50% 46%, transparent 56%, rgba(60,42,28,.34) 100%);}
+  .frame{position:absolute;z-index:4;border:4px solid var(--teal);}
+  .frame::after{content:"";position:absolute;inset:9px;border:1.5px solid var(--teal);}
+  .corner{position:absolute;z-index:5;background:var(--rust);transform:rotate(45deg);}
+
+  .wrap{position:absolute;z-index:6;display:flex;flex-direction:column;align-items:center;text-align:center;}
+  .kicker{font-weight:600;text-transform:uppercase;color:var(--rust);display:flex;align-items:center;gap:16px;}
+  .kicker::before,.kicker::after{content:"";height:2px;background:var(--rust);}
+
+  .emblem{position:relative;}
+  .sun{position:absolute;inset:-6px;border-radius:50%;background:repeating-conic-gradient(from 4deg, var(--gold) 0deg 4.2deg, transparent 4.2deg 11deg);opacity:.55;
+    -webkit-mask:radial-gradient(circle,#000 60%,transparent 73%);mask:radial-gradient(circle,#000 60%,transparent 73%);}
+  .badge{position:absolute;inset:0;width:100%;height:100%;}
+  .badge .ring{fill:none;stroke:var(--teal);} .badge .disc{fill:var(--teal);} .badge .inner{fill:var(--paper2);}
+  .badge .dash{fill:none;stroke:var(--teal);} .badge .dot{fill:var(--gold);}
+  .arc{fill:var(--paper2);font-family:'Oswald';font-weight:600;letter-spacing:4px;}
+  .arc.t{font-size:30px;} .arc.b{font-size:25px;}
+  .chef{position:absolute;left:50%;top:43%;transform:translate(-50%,-50%);background:var(--teal);
+    -webkit-mask:var(--crest) center/contain no-repeat;mask:var(--crest) center/contain no-repeat;}
+  .estwrap{position:absolute;left:50%;bottom:20%;transform:translateX(-50%);}
+  .est{font-family:'Alfa Slab One';color:var(--rust);line-height:.9;}
+  .estlbl{font-weight:600;letter-spacing:5px;color:var(--teal);}
+
+  .head{font-family:'Alfa Slab One';line-height:.98;color:var(--teal);letter-spacing:.5px;}
+  .head .r{color:var(--rust);}
+  .flourish{font-family:'Yeseva One';color:var(--maroon);transform:rotate(-2deg);}
+  .ribbon{position:relative;background:var(--rust);color:var(--paper2);font-weight:600;letter-spacing:5px;text-transform:uppercase;
+    clip-path:polygon(28px 0, calc(100% - 28px) 0, 100% 50%, calc(100% - 28px) 100%, 28px 100%, 0 50%);}
+  .divider{display:flex;align-items:center;gap:20px;color:var(--rust);}
+  .divider::before,.divider::after{content:"";width:110px;height:2px;background:var(--teal);opacity:.55;}
+  .medals{display:flex;}
+  .medal{position:relative;border-radius:50%;border:3px solid var(--teal);background:var(--paper2);display:grid;place-items:center;box-shadow:inset 0 0 0 3px var(--paper);}
+  .medal i{background:var(--teal);display:block;-webkit-mask:var(--ic) center/contain no-repeat;mask:var(--ic) center/contain no-repeat;}
+  .mlbl{position:absolute;left:50%;transform:translateX(-50%);font-weight:600;letter-spacing:3px;color:var(--teal);}
+  .foot{display:flex;align-items:center;gap:18px;font-weight:700;letter-spacing:3px;color:var(--teal);}
+  .foot::before,.foot::after{content:"";height:2px;background:var(--teal);}
+  .foot b i{font-style:normal;color:var(--rust);}
+
+  /* ===== square (feed) ===== */
+  .feed .frame{inset:34px;} .feed .frame::after{inset:9px;}
+  .feed .corner{width:28px;height:28px;} .feed .corner.a{left:27px;top:27px;} .feed .corner.b{right:27px;top:27px;} .feed .corner.c{left:27px;bottom:27px;} .feed .corner.d{right:27px;bottom:27px;}
+  .feed .wrap{inset:70px;}
+  .feed .kicker{margin-top:8px;font-size:20px;letter-spacing:6px;} .feed .kicker::before,.feed .kicker::after{width:46px;}
+  .feed .emblem{width:324px;height:324px;margin-top:22px;}
+  .feed .chef{width:116px;height:116px;} .feed .est{font-size:26px;} .feed .estlbl{font-size:13px;}
+  .feed .head{font-size:62px;margin-top:28px;} .feed .flourish{font-size:32px;margin-top:10px;}
+  .feed .ribbon{font-size:21px;padding:13px 46px;margin-top:26px;}
+  .feed .divider{margin-top:32px;font-size:24px;} .feed .divider::before,.feed .divider::after{width:92px;}
+  .feed .medals{margin-top:30px;gap:46px;} .feed .medal{width:94px;height:94px;} .feed .medal i{width:48px;height:48px;} .feed .mlbl{bottom:-30px;font-size:16px;}
+  .feed .foot{margin-top:auto;font-size:24px;} .feed .foot::before,.feed .foot::after{width:60px;}
+
+  /* ===== story ===== */
+  .story .frame{inset:40px;} .story .frame::after{inset:9px;}
+  .story .corner{width:32px;height:32px;} .story .corner.a{left:31px;top:31px;} .story .corner.b{right:31px;top:31px;} .story .corner.c{left:31px;bottom:31px;} .story .corner.d{right:31px;bottom:31px;}
+  .story .wrap{inset:92px;}
+  .story .kicker{margin-top:18px;font-size:27px;letter-spacing:8px;} .story .kicker::before,.story .kicker::after{width:66px;}
+  .story .emblem{width:470px;height:470px;margin-top:52px;}
+  .story .chef{width:172px;height:172px;} .story .est{font-size:36px;} .story .estlbl{font-size:17px;}
+  .story .head{font-size:98px;margin-top:64px;} .story .flourish{font-size:50px;margin-top:20px;}
+  .story .ribbon{font-size:31px;padding:19px 70px;margin-top:56px;}
+  .story .divider{margin-top:66px;font-size:28px;} .story .medals{margin-top:48px;gap:56px;}
+  .story .medal{width:116px;height:116px;} .story .medal i{width:60px;height:60px;} .story .mlbl{bottom:-38px;font-size:19px;}
+  .story .foot{margin-top:auto;font-size:32px;} .story .foot::before,.story .foot::after{width:80px;}
+</style>
+</head>
+<body>
+
+<div class="board feed" id="feed">
+  <div class="frame"></div><span class="corner a"></span><span class="corner b"></span><span class="corner c"></span><span class="corner d"></span>
+  <div class="wrap">
+    <div class="kicker">Nairobi &middot; Kenya</div>
+    <div class="emblem">
+      <div class="sun"></div>
+      <svg class="badge" viewBox="0 0 460 460">
+        <circle class="ring" cx="230" cy="230" r="224" stroke-width="5"/><circle class="disc" cx="230" cy="230" r="216"/><circle class="inner" cx="230" cy="230" r="166"/><circle class="dash" cx="230" cy="230" r="166" stroke-width="2.5" stroke-dasharray="2 8"/>
+        <defs><path id="atf" d="M 56 230 A 174 174 0 0 1 404 230"/><path id="abf" d="M 64 230 A 166 166 0 0 0 396 230"/></defs>
+        <text class="arc t"><textPath href="#atf" startOffset="50%" text-anchor="middle">ZAPTILL &#183; RESTAURANT POS</textPath></text>
+        <text class="arc b"><textPath href="#abf" startOffset="50%" text-anchor="middle">ORDER &#183; COOK &#183; CHARGE &#183; COUNT</textPath></text>
+        <g class="dot"><circle cx="40" cy="230" r="6"/><circle cx="420" cy="230" r="6"/></g>
+      </svg>
+      <div class="chef"></div>
+      <div class="estwrap"><div class="estlbl">EST.</div><div class="est">2025</div></div>
+    </div>
+    <div class="head">ONE TILL,<br>THE <span class="r">WHOLE FLOOR</span></div>
+    <div class="flourish">runs the show</div>
+    <div class="ribbon">Offline &middot; M&#8209;Pesa &middot; Live reports</div>
+    <div class="divider">&#10022;</div>
+    <div class="medals">
+      <span class="medal"><i style="--ic:url(assets/resto/cloche.png)"></i><span class="mlbl">SERVE</span></span>
+      <span class="medal"><i style="--ic:url(assets/resto/cutlery-x.png)"></i><span class="mlbl">COOK</span></span>
+      <span class="medal"><i style="--ic:url(assets/resto/card.png)"></i><span class="mlbl">PAY</span></span>
+    </div>
+    <div class="foot"><b>zaptill<i>.co.ke</i></b></div>
+  </div>
+  <div class="vignette"></div><div class="grain"></div>
+</div>
+
+<div class="board story" id="story">
+  <div class="frame"></div><span class="corner a"></span><span class="corner b"></span><span class="corner c"></span><span class="corner d"></span>
+  <div class="wrap">
+    <div class="kicker">Nairobi &middot; Kenya</div>
+    <div class="emblem">
+      <div class="sun"></div>
+      <svg class="badge" viewBox="0 0 460 460">
+        <circle class="ring" cx="230" cy="230" r="224" stroke-width="5"/><circle class="disc" cx="230" cy="230" r="216"/><circle class="inner" cx="230" cy="230" r="166"/><circle class="dash" cx="230" cy="230" r="166" stroke-width="2.5" stroke-dasharray="2 8"/>
+        <defs><path id="ats" d="M 56 230 A 174 174 0 0 1 404 230"/><path id="abs" d="M 64 230 A 166 166 0 0 0 396 230"/></defs>
+        <text class="arc t"><textPath href="#ats" startOffset="50%" text-anchor="middle">ZAPTILL &#183; RESTAURANT POS</textPath></text>
+        <text class="arc b"><textPath href="#abs" startOffset="50%" text-anchor="middle">ORDER &#183; COOK &#183; CHARGE &#183; COUNT</textPath></text>
+        <g class="dot"><circle cx="40" cy="230" r="6"/><circle cx="420" cy="230" r="6"/></g>
+      </svg>
+      <div class="chef"></div>
+      <div class="estwrap"><div class="estlbl">EST.</div><div class="est">2025</div></div>
+    </div>
+    <div class="head">ONE TILL,<br>THE <span class="r">WHOLE FLOOR</span></div>
+    <div class="flourish">runs the show</div>
+    <div class="ribbon">Offline &middot; M&#8209;Pesa &middot; Live reports</div>
+    <div class="divider">&#10022;</div>
+    <div class="medals">
+      <span class="medal"><i style="--ic:url(assets/resto/cloche.png)"></i><span class="mlbl">SERVE</span></span>
+      <span class="medal"><i style="--ic:url(assets/resto/cutlery-x.png)"></i><span class="mlbl">COOK</span></span>
+      <span class="medal"><i style="--ic:url(assets/resto/card.png)"></i><span class="mlbl">PAY</span></span>
+    </div>
+    <div class="foot"><b>zaptill<i>.co.ke</i></b></div>
+  </div>
+  <div class="vignette"></div><div class="grain"></div>
+</div>
+
+<script>
+  var h=location.hash;
+  if(h==='#feed'||h==='#story'){document.body.style.cssText='margin:0;padding:0;gap:0;display:block';
+    document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});
+    var el=document.querySelector(h==='#feed'?'.feed':'.story');if(el){el.style.display='block';el.style.margin='0';}}
+</script>
+</body>
+</html>

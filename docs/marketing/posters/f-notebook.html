@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Still running on a notebook?</title>
+<link rel="stylesheet" href="posters.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&display=swap">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{position:relative;overflow:hidden;color:#fff;font-family:var(--font-text);
+    background:
+      radial-gradient(72% 48% at 50% 46%, rgba(20,184,166,.24), transparent 60%),
+      radial-gradient(120% 80% at 90% -10%, rgba(94,234,212,.18), transparent 54%),
+      radial-gradient(100% 80% at 6% 112%, rgba(13,148,136,.22), transparent 60%),
+      linear-gradient(158deg,#0a2a28 0%,#07211f 52%,#05161a 100%);}
+  .board.square{width:1080px;height:1080px;}
+  .board.story{width:1080px;height:1920px;}
+  .frame{position:absolute;inset:76px;z-index:6;display:flex;flex-direction:column;}
+  .story .frame{inset:96px;}
+  .row-top{display:flex;justify-content:space-between;align-items:center;}
+  .logo{display:flex;align-items:center;gap:.5em;}
+  .logo img{width:52px;height:52px;border-radius:24%;display:block;}
+  .logo b{font-family:var(--font-display);font-weight:800;font-size:38px;letter-spacing:-.02em;}
+  .logo b i{font-style:normal;color:#5eead4;}
+  .tag{font-size:16px;letter-spacing:.24em;text-transform:uppercase;font-weight:800;color:#3a2606;
+    background:linear-gradient(92deg,#fbbf24,#f59e0b);border-radius:999px;padding:.6em 1.1em;}
+  .h{font-family:var(--font-display);font-weight:800;letter-spacing:-.022em;line-height:1.02;text-wrap:balance;color:#fff;}
+  .h em{font-style:normal;color:#fb7185;}
+  .sub{line-height:1.5;color:#cfe7e2;font-weight:500;}
+
+  /* the handwritten notebook */
+  .note{position:absolute;z-index:3;background:#f2e8cd;border-radius:5px;color:#2b2a26;
+    transform:rotate(-5deg);box-shadow:0 44px 84px -30px rgba(0,0,0,.72),0 0 0 1px rgba(0,0,0,.06);
+    background-image:
+      linear-gradient(90deg, transparent 44px, rgba(192,57,43,.5) 44px, rgba(192,57,43,.5) 46px, transparent 46px),
+      repeating-linear-gradient(#f2e8cd, #f2e8cd 47px, #cdbf9a 48px);
+    font-family:'Caveat',cursive;line-height:48px;padding:14px 26px 24px 64px;}
+  .note .nl{font-size:34px;white-space:nowrap;}
+  .note .nl.hd{font-size:40px;font-weight:700;}
+  .note .st{text-decoration:line-through;text-decoration-color:#c0392b;}
+  .note .rd{color:#c0392b;font-weight:700;}
+  .note .q{color:#7a6f52;}
+  .note .stamp{position:absolute;right:-26px;bottom:34px;transform:rotate(-14deg);color:#c0392b;
+    border:4px solid #c0392b;border-radius:10px;padding:2px 14px;font-weight:700;font-size:38px;opacity:.82;
+    font-family:'Caveat',cursive;}
+
+  /* the clean ZapTill device */
+  .device{position:absolute;z-index:4;padding:12px;border-radius:20px;background:#07131a;border:1px solid rgba(45,212,191,.28);
+    box-shadow:0 56px 120px -34px rgba(0,0,0,.8),0 0 90px -20px rgba(20,184,166,.5);}
+  .device img{width:100%;display:block;border-radius:11px;}
+  .arrow{position:absolute;z-index:5;color:#5eead4;font-weight:800;filter:drop-shadow(0 4px 16px rgba(45,212,191,.5));}
+  .cap{position:absolute;z-index:5;font-weight:700;letter-spacing:.18em;text-transform:uppercase;}
+  .cap.bad{color:#efe5cd;} .cap.good{color:#5eead4;}
+
+  .foot{position:absolute;z-index:6;display:flex;justify-content:space-between;align-items:flex-end;gap:2em;}
+  .foot .fx{max-width:16em;} .foot .fx b{font-family:var(--font-display);font-weight:700;font-size:30px;color:#fff;display:block;line-height:1.1;}
+  .cta{display:inline-flex;align-items:center;gap:.4em;background:linear-gradient(92deg,#5eead4,#2dd4bf);color:#053029;font-weight:800;
+    padding:.75em 1.3em;border-radius:12px;box-shadow:0 16px 36px -12px rgba(45,212,191,.55);margin-top:18px;}
+  .handle{color:rgba(255,255,255,.82);font-weight:600;}
+
+  /* ===== square ===== */
+  .square .h{font-size:68px;}
+  .square .copy{position:absolute;left:76px;top:150px;z-index:6;width:840px;}
+  .square .sub{font-size:25px;max-width:22em;margin-top:22px;}
+  .square .note{left:60px;top:498px;width:392px;}
+  .square .note .nl{font-size:32px;} .square .note .nl.hd{font-size:38px;}
+  .square .arrow{left:474px;top:598px;font-size:92px;}
+  .square .device{right:-46px;top:500px;width:548px;transform:perspective(2200px) rotateY(-13deg) rotate(2deg);}
+  .square .cap.bad{left:86px;top:506px;font-size:26px;transform:rotate(-5deg);transform-origin:left center;} .square .cap.good{right:138px;top:460px;font-size:26px;transform:rotate(2deg);}
+  .square .foot{left:76px;right:76px;bottom:66px;font-size:24px;}
+
+  /* ===== story ===== */
+  .story .h{font-size:96px;}
+  .story .copy{position:absolute;left:96px;right:96px;top:220px;z-index:6;}
+  .story .sub{font-size:33px;max-width:20em;margin-top:30px;}
+  .story .note{left:96px;top:606px;width:520px;}
+  .story .note .nl{font-size:40px;} .story .note .nl.hd{font-size:46px;}
+  .story .arrow{display:block;left:50%;top:914px;transform:translateX(-50%) rotate(90deg);font-size:62px;}
+  .story .device{left:120px;right:120px;top:1044px;width:auto;transform:perspective(2600px) rotateX(3deg) rotate(-1deg);}
+  .story .cap.bad{left:128px;top:640px;font-size:32px;transform:rotate(-5deg);transform-origin:left center;}
+  .story .cap.good{left:50%;top:1000px;font-size:32px;transform:translateX(-50%);display:block;}
+  .story .foot{left:96px;right:96px;bottom:92px;font-size:30px;}
+</style>
+</head>
+<body>
+<div class="board square" id="feed"></div>
+<div class="board story" id="story"></div>
+
+<template id="tpl">
+  <div class="frame">
+    <div class="row-top">
+      <span class="logo"><img src="assets/logo.png" alt="">Zap<b><i>Till</i></b></span>
+      <span class="tag">Upgrade the till</span>
+    </div>
+  </div>
+  <div class="copy">
+    <div class="h">Still running on <em>a notebook</em>?</div>
+    <div class="sub">When the place is full, pen and paper lose orders, miss M&#8209;Pesa and never quite add up.</div>
+  </div>
+
+  <div class="note">
+    <div class="nl hd">Fri &mdash; packed!</div>
+    <div class="nl">Table 4 &middot; nyama x2 &middot; <span class="q">paid?</span></div>
+    <div class="nl st">T6 chicken 1,150</div>
+    <div class="nl rd">Mpesa 3,050 ??</div>
+    <div class="nl">order #12 &hellip; <span class="rd">LOST</span></div>
+    <span class="stamp">chaos!</span>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+  <div class="device"><img src="assets/till-pos.webp" alt="ZapTill point of sale"></div>
+  <span class="cap bad">The notebook</span>
+  <span class="cap good">ZapTill</span>
+
+  <div class="foot">
+    <span class="fx"><b>One screen keeps it all straight.</b><span class="cta">Book a demo&nbsp;&rarr;</span></span>
+    <span class="handle">zaptill.co.ke</span>
+  </div>
+</template>
+
+<script>
+  var tpl=document.getElementById('tpl').innerHTML;
+  document.getElementById('feed').innerHTML=tpl;document.getElementById('story').innerHTML=tpl;
+  var h=location.hash;
+  if(h==='#feed'||h==='#story'){document.body.style.cssText='margin:0;padding:0;gap:0;display:block';
+    document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});
+    var el=document.querySelector(h==='#feed'?'.square':'.story');if(el){el.style.display='block';el.style.margin='0';}}
+</script>
+</body>
+</html>

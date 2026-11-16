@@ -1,6 +1,6 @@
 /**
  * ShopPosScreens — the web POS screens as the ZapTill Android app's Shop POS opens them (Till stage 1,
- * docs/ANDROID-APP-DESIGN.md §11). The ONE way in from apps/android (its vite.config.ts maps '@zaptill/dashboard-pos'
+ * docs/designs/ANDROID-APP-DESIGN.md §11). The ONE way in from apps/android (its vite.config.ts maps '@zaptill/dashboard-pos'
  * here): the screens are the dashboard's own — CashierScreen and everything it opens (payment, split payments, the
  * after-payment screen, shifts with declared amounts and blind close, held orders, delivery and rider, discounts, kitchen
  * voids) — never copied (owner, 2026-11-04: one POS design, the desktop as its base).

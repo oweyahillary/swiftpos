@@ -29,7 +29,7 @@ import org.json.JSONObject;
 
 /**
  * BranchServer — the shop network's branch server, for joining through it and printing through it (Till stage 1,
- * docs/ANDROID-APP-DESIGN.md §4.3, §11). The same A427 / A489 flow as a desktop POS being installed:
+ * docs/designs/ANDROID-APP-DESIGN.md §4.3, §11). The same A427 / A489 flow as a desktop POS being installed:
  *
  *   listen({ ms })               the server's beacons on UDP 4199 → { heard: [{ ip, text }] } (the app parses them)
  *   readCert({ url })            GET /node/tls — the certificate is public, handed to anyone → { cert, code } | { old }

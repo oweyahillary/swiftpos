@@ -1,7 +1,7 @@
 /**
  * secrets.ts — the app's secrets, encrypted with keys held in the Android Keystore.
  *
- * Backed by @aparajita/capacitor-secure-storage (docs/ANDROID-APP-DESIGN.md "Stage 0 — built" says why): each value is
+ * Backed by @aparajita/capacitor-secure-storage (docs/designs/ANDROID-APP-DESIGN.md "Stage 0 — built" says why): each value is
  * encrypted with AES-256-GCM under a key that lives in the AndroidKeyStore and never leaves it; only the ciphertext is
  * stored, in the app's private preferences (and the app opts out of Android backups, AndroidManifest.xml). The honest
  * limit (§4.4, pinch point 8): it defeats a copied database, a stolen backup and a pulled flash chip — not code running as

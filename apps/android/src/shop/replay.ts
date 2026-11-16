@@ -1,5 +1,5 @@
 /**
- * replay.ts — Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7): drain the offline buffer when the connection returns.
+ * replay.ts — Till stage 2 (docs/designs/ANDROID-APP-DESIGN.md §4.7): drain the offline buffer when the connection returns.
  *
  * §4.7 reconnect: (3) push the queue IN CREATION ORDER, idempotent by the order uuid; (4) resolve automatically, asking a
  * person only where a sale's LINKAGE is contested (a dine-in table taken); (5) mark acknowledged rows synced. A sale is a

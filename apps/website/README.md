@@ -1,6 +1,6 @@
 # ZapTill website (`apps/website`)
 
-The public marketing site for ZapTill (`zaptill.co.ke`). A fully static [Astro](https://astro.build) site: no server,
+The public marketing site for ZapTill (`www.zaptill.co.ke`). A fully static [Astro](https://astro.build) site: no server,
 no database, no cookies. It is separate from the dashboard (`app.zaptill.co.ke`) and shares no code with the other apps.
 
 Plan and copy rules: [`docs/website/WORKPLAN.md`](../../docs/website/WORKPLAN.md) (§3 is the claims check: the site says

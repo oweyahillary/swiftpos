@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill feature — Owner dashboard</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{position:relative;overflow:hidden;color:#fff;font-family:var(--font-text);
+    background:linear-gradient(135deg,#071a2b 0%,#0c4a6e 36%,#0369a1 70%,#0ea5e9 100%);}
+  .board.square{width:1080px;height:1080px;}
+  .board.story{width:1080px;height:1920px;background:linear-gradient(160deg,#071a2b 0%,#0c4a6e 40%,#0369a1 74%,#0ea5e9 100%);}
+  .glowtop{position:absolute;z-index:0;border-radius:50%;background:radial-gradient(closest-side,rgba(94,234,212,.32),transparent 70%);}
+  .dots{position:absolute;z-index:0;opacity:.5;background-image:radial-gradient(#ffffff 2.6px,transparent 2.7px);background-size:30px 30px;}
+  .brand{display:flex;align-items:center;gap:.5em;font-family:var(--font-display);font-weight:700;font-size:33px;letter-spacing:-.01em;}
+  .brand img{width:48px;height:48px;border-radius:24%;} .brand i{font-style:italic;color:#5eead4;}
+  .tag{font-family:var(--font-text);font-size:17px;letter-spacing:.24em;text-transform:uppercase;font-weight:800;color:#04201d;background:#5eead4;border-radius:999px;padding:.6em 1.15em;}
+  .top{position:absolute;z-index:4;display:flex;justify-content:space-between;align-items:center;}
+  .h{font-family:var(--font-display);font-weight:800;letter-spacing:-.03em;line-height:.96;}
+  .h em{font-style:italic;color:#5eead4;}
+  .sub{line-height:1.5;color:#bae6fd;font-weight:500;}
+  .device{z-index:3;padding:13px;border-radius:24px;background:#0b1220;border:1px solid rgba(255,255,255,.14);box-shadow:0 60px 110px -34px rgba(0,0,0,.6),0 0 90px -20px rgba(94,234,212,.34);}
+  .device img{width:100%;display:block;border-radius:12px;}
+  .foot{position:absolute;z-index:4;display:flex;align-items:center;gap:20px;}
+  .cta{display:inline-flex;align-items:center;background:#5eead4;color:#04201d;font-weight:800;padding:.72em 1.45em;border-radius:999px;box-shadow:0 16px 36px -12px rgba(94,234,212,.5);}
+  .dom{color:#bae6fd;font-weight:600;}
+  .square .top{left:84px;right:84px;top:80px;}
+  .square .copy{position:absolute;left:84px;top:200px;z-index:4;width:560px;}
+  .square .h{font-size:94px;} .square .sub{font-size:26px;max-width:14em;margin-top:24px;}
+  .square .device{position:absolute;right:-130px;bottom:140px;width:740px;transform:perspective(2100px) rotateY(-16deg) rotate(-2deg);}
+  .square .foot{left:84px;bottom:76px;} .square .cta{font-size:22px;} .square .dom{font-size:21px;}
+  .square .glowtop{right:-160px;top:-160px;width:680px;height:680px;} .square .dots{left:84px;bottom:250px;width:190px;height:130px;}
+  .story .top{left:90px;right:90px;top:96px;}
+  .story .copy{position:absolute;left:90px;right:90px;top:300px;z-index:4;text-align:center;}
+  .story .h{font-size:110px;} .story .sub{font-size:31px;max-width:19em;margin:30px auto 0;}
+  .story .device{position:absolute;left:90px;right:90px;top:50%;transform:perspective(2400px) rotateX(3deg) rotate(-1.5deg);}
+  .story .foot{left:0;right:0;bottom:120px;justify-content:center;} .story .cta{font-size:27px;} .story .dom{font-size:26px;}
+  .story .glowtop{right:-180px;top:40px;width:760px;height:760px;} .story .dots{left:80px;bottom:360px;width:160px;height:150px;}
+</style>
+</head>
+<body>
+<div class="board square" id="feed"></div>
+<div class="board story" id="story"></div>
+<template id="tpl">
+  <div class="glowtop"></div><div class="dots"></div>
+  <div class="top"><span class="brand"><img src="assets/logo.png" alt="">Zap<i>Till</i></span><span class="tag">Owner dashboard</span></div>
+  <div class="copy">
+    <div class="h">Your restaurant, <em>on your phone</em>.</div>
+    <div class="sub">Today's takings, top sellers, open shifts and the money by method — live, from anywhere, as it happens.</div>
+  </div>
+  <div class="device"><img src="assets/dash-cockpit.webp" alt="The ZapTill owner dashboard — live sales and shifts"></div>
+  <div class="foot"><span class="cta">Book a demo&nbsp;→</span><span class="dom">zaptill.co.ke</span></div>
+</template>
+<script>
+  var tpl=document.getElementById('tpl').innerHTML;document.getElementById('feed').innerHTML=tpl;document.getElementById('story').innerHTML=tpl;
+  var h=location.hash;if(h==='#feed'||h==='#story'){document.body.style.cssText='margin:0;padding:0;gap:0;display:block';document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});var el=document.querySelector(h==='#feed'?'.square':'.story');if(el){el.style.display='block';el.style.margin='0';}}
+</script>
+</body>
+</html>

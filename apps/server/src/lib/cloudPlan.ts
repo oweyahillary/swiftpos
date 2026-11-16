@@ -345,7 +345,7 @@ export function cloudStanding(f: CloudFacts, now: number = Date.now(), cutoffAt:
 }
 
 // ── A612: the cloud billed per branch ─────────────────────────────────────────────────────────────────────────────────
-// Owner, 2026-10-30 (docs/A612-per-branch-cloud.md): "monthly subscription should be per branch … if a branch does not pay
+// Owner, 2026-10-30 (docs/tasks/A612-per-branch-cloud.md): "monthly subscription should be per branch … if a branch does not pay
 // it should not view its data and the owner should not see it too, it cuts across all users" · "if a branch has not paid
 // it's cut off completely, nothing syncs" · "even price change online should not sync".
 // A branch with its own plan row (branch_cloud_plans, migration 182) stands on its own paid-until — the SAME rules as a

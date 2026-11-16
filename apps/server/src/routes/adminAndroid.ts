@@ -1,5 +1,5 @@
 /**
- * adminAndroid.ts — the admin portal's "ZapTill for Android" card on a client's Updates tab (docs/ANDROID-APP-DESIGN.md,
+ * adminAndroid.ts — the admin portal's "ZapTill for Android" card on a client's Updates tab (docs/designs/ANDROID-APP-DESIGN.md,
  * Stage 0). The desktop's A348 approval and A570 download, for the Android app's two surfaces.
  *
  *   GET   /api/admin/android/releases?client=<id>&fresh=1

@@ -1900,7 +1900,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     return;
   }
 
-  // Till stage 1 (docs/ANDROID-APP-DESIGN.md §11): a Shop POS sells through the cloud only — it keeps nothing offline until
+  // Till stage 1 (docs/designs/ANDROID-APP-DESIGN.md §11): a Shop POS sells through the cloud only — it keeps nothing offline until
   // Till stage 2 — and a business without the online licence has its POS's sales refused from the A601 cut-off. So the
   // tablet needs the online licence, said here at the door instead of at the first payment. Owner decision pending (§11.6).
   if (req.surface === 'android-till' && !(await getWebAccess(req.businessId).catch(() => null))?.fullAccess) {

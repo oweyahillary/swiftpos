@@ -53,7 +53,7 @@ captures/
 .idea/navEditor.xml
 
 # Keystore files
-# Never in the repository: the release key is held by the owner only (docs/ANDROID-APP-DESIGN.md "Stage 0 — built").
+# Never in the repository: the release key is held by the owner only (docs/designs/ANDROID-APP-DESIGN.md "Stage 0 — built").
 *.jks
 *.keystore
 # EXCEPTION (owner, 2026-11-10): the DEBUG keystore IS committed on purpose — a fixed debug key keeps the till's

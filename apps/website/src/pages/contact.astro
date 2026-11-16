@@ -33,11 +33,10 @@ const isDev = import.meta.env.DEV;
         <p>Send us a message and a person replies. The message is written for you; change it as you like.</p>
         <WhatsAppButton message={WA_MESSAGES.general} />
         <p class="way__alt">
-          Or ask for a demo for your trade:
-          <a href={waLink(WA_MESSAGES.retail)} target="_blank" rel="noopener">a shop</a>,
+          Or ask for a demo for your place:
           <a href={waLink(WA_MESSAGES.restaurant)} target="_blank" rel="noopener">a restaurant</a>,
-          <a href={waLink(WA_MESSAGES.petrol)} target="_blank" rel="noopener">a petrol station</a> or
-          <a href={waLink(WA_MESSAGES.parking)} target="_blank" rel="noopener">a car park</a>.
+          <a href={waLink(WA_MESSAGES.bar)} target="_blank" rel="noopener">a bar</a> or
+          <a href={waLink(WA_MESSAGES.quickService)} target="_blank" rel="noopener">a takeaway</a>.
         </p>
       </article>
 
@@ -66,8 +65,8 @@ const isDev = import.meta.env.DEV;
       <ul class="visit__list">
         <li>
           <h3>We come to you.</h3>
-          <p>We look at your counter, your shelves, your kitchen or your pumps, and how you close the day, then show you
-            ZapTill set up for your own kind of business.</p>
+          <p>We look at your counter, your kitchen and how you close the day, then show you ZapTill set up for your own
+            kind of place.</p>
         </li>
         <li>
           <h3>Or see it running.</h3>

@@ -1,5 +1,5 @@
 /**
- * buffer.ts — Till stage 2 (docs/ANDROID-APP-DESIGN.md §4.7, §4.8): the Shop POS's offline BUFFER. The rules are the one
+ * buffer.ts — Till stage 2 (docs/designs/ANDROID-APP-DESIGN.md §4.7, §4.8): the Shop POS's offline BUFFER. The rules are the one
  * shared module @zaptill/core/tillBuffer; this wraps them with somewhere to keep the rows on the tablet.
  *
  * The buffer holds captured WRITE REQUESTS a cashier made offline (the exact call the online POS makes). `enqueue` is

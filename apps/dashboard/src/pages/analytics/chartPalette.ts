@@ -2,7 +2,7 @@
  * chartPalette.ts — A553 (Analytics v2): the ONE place the analytics charts take their colours from. PURE (no imports), so
  * tests/analytics-a553-charts.test.mjs reads it directly.
  *
- * Data colours, not actions (docs/A329-back-office-colour-classification.md): the back office's actions stay the SwiftPOS
+ * Data colours, not actions (docs/tasks/A329-back-office-colour-classification.md): the back office's actions stay the SwiftPOS
  * teal (swift-*); these hues only tell series apart, show magnitude or show a state. The values are the dataviz reference
  * palette, each mode SELECTED for its own surface (the dashboard's cards: white in light mode, gray-900 #111827 in dark)
  * and checked with the dataviz validator (2026-10-21):

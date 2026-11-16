@@ -365,7 +365,7 @@ never edited: `apps/desktop/src/renderer/pages/POSPage.tsx`, `components/PumpsVi
 `lib/posMode.ts`, `shared/menuFilter.ts`, `shared/businessTerms.ts`, `apps/server/src/lib/analyticsRules.ts` and
 `analyticsTerms.ts`, `routes/fueltanks.ts`, `routes/parking.ts`, `lib/lossAlertRules.ts`, the dashboard's
 `CashierScreen.tsx`, `PetrolSettingsPage.tsx`, `ParkingSettingsPage.tsx`, `ReportsPage.tsx`, `docs/AUDIT-REGISTER.md`
-(A564, A565, A574–A578, A580, A582) and `docs/PARKING-DESIGN.md`.
+(A564, A565, A574–A578, A580, A582) and `docs/designs/PARKING-DESIGN.md`.
 
 **Asked**
 - Owner: "the whole website markets more of restaurant than all the other businesses how can we sort this?" Balance the

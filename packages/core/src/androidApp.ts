@@ -1,5 +1,5 @@
 /**
- * androidApp.ts — the ZapTill Android app's shared rules (docs/ANDROID-APP-DESIGN.md, Stage 0).
+ * androidApp.ts — the ZapTill Android app's shared rules (docs/designs/ANDROID-APP-DESIGN.md, Stage 0).
  *
  * One APK, two modes chosen at first launch (§2): "Shop POS" (a shop tablet that sells — the cloud's surface
  * 'android-till') and "Owner / manager phone" (a person's own phone — the surface 'mobile'). Each surface's version is
@@ -38,7 +38,7 @@ export function compareAppVersions(a: string, b: string): number {
   return 0;
 }
 
-// ── Releases (GitHub Releases today; the planned VPS later — docs/ANDROID-APP-DESIGN.md "Stage 0 — built") ──────────
+// ── Releases (GitHub Releases today; the planned VPS later — docs/designs/ANDROID-APP-DESIGN.md "Stage 0 — built") ──────────
 
 /** An Android release is tagged android-v<x.y.z>, so it never mixes with the desktop's v<x.y.z> tags. */
 export const ANDROID_TAG_PREFIX = 'android-v';

@@ -18,7 +18,7 @@ const voids = demoCard(7);
 ---
 <Base
   title="How the ZapTill POS works: a day from open to close"
-  description="A day with ZapTill at a restaurant and the minimart next door: the float, the busy hour with M-Pesa, the kitchen and the scanner, the close, the owner's numbers."
+  description="A day with ZapTill at a restaurant: the float, the busy hour with M-Pesa, the kitchen, stock, the close and the owner's numbers."
   waMessage={WA_MESSAGES.demo}
   ogImage="/og/how-it-works.png"
 >
@@ -27,8 +27,7 @@ const voids = demoCard(7);
       <h1>A day with ZapTill</h1>
       <p class="lede">
         One day at Mama Lishe Grill, a made-up restaurant on Ngong Road, from the first PIN in the morning to the owner's
-        phone at night, and what the same moment looks like at Kijani Basket, a made-up shop, on the same ZapTill.
-        Every screen here is the real ZapTill, running on demo data.
+        phone at night. Every screen here is the real ZapTill, running on demo data.
       </p>
       <ol class="day-jump" aria-label="The day, in order">
         <li><a href="#open">07:55 Open</a></li>
@@ -53,8 +52,6 @@ const voids = demoCard(7);
             do. Before the first sale, Wanjiru counts the cash already in the drawer and enters it as her opening float.
           </p>
           <p>From now on, every shilling in that drawer is hers to account for, and the point of sale keeps the count.</p>
-          <p class="moment__also"><b>At the minimart:</b> Kevin does the same at 6:30, before the bread and milk
-            customers arrive.</p>
         </div>
         <div class="split__visual">
           <Monitor label="The point of sale asking the cashier to count her opening float">
@@ -78,8 +75,6 @@ const voids = demoCard(7);
             At the bill, Table 4 pays KES 2,000 by M-Pesa and the rest in cash. Wanjiru splits the payment at the point of sale,
             and your Buy Goods or Paybill number is printed large on the receipt.
           </p>
-          <p class="moment__also"><b>At the minimart:</b> the lunch queue scans through: milk, bread, flour, and beef
-            weighed on the POS keypad at 0.640 kg. <a href="/for/minimarts/">See the minimart point of sale</a></p>
         </div>
         <div class="split__visual">
           <Monitor label="Splitting the bill between cash and M-Pesa at the point of sale">
@@ -101,8 +96,6 @@ const voids = demoCard(7);
             cashier's note ("+ Extra Cheese", "** No onions") prints right under the dish it belongs to.
           </p>
           <p>Drinks skip the kitchen and go to dispatch, where the ticket lists everything for the tray.</p>
-          <p class="moment__also"><b>At the minimart:</b> there is no kitchen; the departments are big tabs on the point of sale,
-            and the products that came without a barcode carry a label ZapTill printed.</p>
         </div>
         <div class="split__visual kitchen-pair">
           <Monitor label="The kitchen display">
@@ -123,8 +116,6 @@ const voids = demoCard(7);
             arrived. The dropped chips are written off as wastage, with a reason and what they cost.
           </p>
           <p>Wastage is money too: it shows up in the day's figures and in Analytics, not just in the bin.</p>
-          <p class="moment__also"><b>At the minimart:</b> the milk delivery is received against the supplier's note,
-            and a crate of expired yoghurt is written off with its cost.</p>
         </div>
         <div class="split__visual">
           <Laptop label="Receiving a delivery and writing off wastage on the web dashboard">
@@ -144,7 +135,6 @@ const voids = demoCard(7);
             cashier, what should be in each drawer, what was counted and the difference, then confirms each shift.
           </p>
           <p>When every drawer is in, the branch is closed, from the point of sale or from the web.</p>
-          <p class="moment__also moment__also--night"><b>At the minimart:</b> the same close, drawer by drawer.</p>
         </div>
         <div class="split__visual close-pair">
           <figure class="screen-crop">
@@ -189,8 +179,6 @@ const voids = demoCard(7);
             Friday, what to have in for Saturday, who owes you. This one is a warning from the voids at the counter. It
             carries no shilling figure, because a void before payment is not always a loss: it is something to look into.
           </p>
-          <p class="moment__also"><b>At the minimart:</b> the first card says to order more milk before Friday, and the
-            next one to put the bread next to the milk, because people buy them together.</p>
           <p><a href="/analytics/">How Analytics works</a></p>
         </div>
         <div class="split__visual">
@@ -210,7 +198,7 @@ const voids = demoCard(7);
       </div>
       <p class="final__note">
         Variants such as "Spicy", pictures on the point of sale, offers and stock at the point of sale come with ZapTill Online. Analytics is
-        an add-on. <a href="/pricing/">See the packages</a>
+        an add-on. <a href="/pricing/">Build your quote</a>
       </p>
     </div>
   </section>

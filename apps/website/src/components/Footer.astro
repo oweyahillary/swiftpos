@@ -8,7 +8,7 @@ const year = new Date().getFullYear();
   <div class="wrap site-footer__grid">
     <div class="site-footer__brand">
       <Logo />
-      <p>The point of sale (POS) and the day close for shops, restaurants, bars, petrol stations and car parks in Kenya.</p>
+      <p>The point of sale (POS) and the daily close for restaurants, cafés and bars in Kenya.</p>
       <WhatsAppButton small />
     </div>
 
@@ -26,7 +26,6 @@ const year = new Date().getFullYear();
       <h2 class="site-footer__title">Who it's for</h2>
       <ul>
         {INDUSTRIES.map((i) => <li><a href={i.href}>{i.name}</a></li>)}
-        <li><a href="/who-its-for/#other">Other businesses</a></li>
       </ul>
     </nav>
 

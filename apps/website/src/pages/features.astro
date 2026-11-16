@@ -9,157 +9,117 @@ import Receipt from '../components/screens/Receipt.astro';
 import StockScreen from '../components/screens/StockScreen.astro';
 import DayCloseScreen from '../components/screens/DayCloseScreen.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
-import LabelSamples from '../components/screens/LabelSamples.astro';
-import { WA_MESSAGES, TRADES, type Trade } from '../lib/site';
+import { WA_MESSAGES } from '../lib/site';
 import { ROLES } from '../lib/roles';
 import { softwareApplication } from '../lib/schema';
-import { SHOP_CARDS } from '../lib/analyticsDemo';
 
-// 2026-10-23 (owner: the site "markets more of restaurant than all the other businesses"): every feature is tagged with
-// the business types it fits, and a filter at the top shows one type's features (?type=food|shop|petrol|parking). Without
-// JavaScript every feature shows. Shop features (barcodes, labels, weighed items, departments, stock, suppliers, credit,
-// other branches) come before the kitchen. Only what ships (WORKPLAN §3); petrol and parking checked against the code.
+// Public scope (owner, 2026-11-13): this page lists only the tested restaurant/hotel POS features — restaurants, cafés,
+// bars and quick service. The shop/petrol/parking features live in the code but are parked off the public site. Only
+// what ships (WORKPLAN §3). Roles are filtered to the food-service ones (the Fuel attendant is parked with the rest).
 const description =
-  'Every ZapTill POS feature, filtered by business: M-Pesa, barcodes and labels, stock, kitchen tickets, pumps and fuel, parking, the day close and branches.';
+  'Every ZapTill POS feature for restaurants, cafés and bars in Kenya: M-Pesa, menus and tables, orders to the kitchen, stock and recipes, the day close and branches.';
 
-const F: Trade = 'food', S: Trade = 'shop', P: Trade = 'petrol', K: Trade = 'parking';
-const ALL: Trade[] = [F, S, P, K];
-const NAMES: Record<Trade, string> = { food: 'Restaurants', shop: 'Shops', petrol: 'Petrol', parking: 'Car parks' };
-type Item = { t: string; types: Trade[] };
-const i = (t: string, types: Trade[] = ALL): Item => ({ t, types });
-
-const sell: Item[] = [
-  i('Your items as big buttons, with big tabs across the top: departments in a shop (Groceries, Beverages, Household), menus in a restaurant (Food, Drinks, Tea)', [F, S, P]),
-  i('Scan a barcode and the item is on the bill', [S, P]),
-  i('Items sold by weight: type the weight on a keypad, or scan the label your scale prints; the receipt says "0.640 kg @ 650/kg"', [S, P, F]),
-  i('Departments or menus by the hour: alcohol only in your licensed hours, breakfast only in the morning; a scan outside the hours is refused'),
-  i('Split a bill between cash, M-Pesa and card'),
-  i('Sales on account for regulars, within the credit limit you set, confirmed by a manager', [F, S, P]),
-  i('When an item runs out, you choose: keep selling, show it as sold out, or hide it until stock comes in', [F, S, P]),
-  i('Discounts and tips, for the staff you allow'),
-  i('Dine-in with tables, takeaway and delivery from the same screen', [F]),
-  i('Hold an order and pick it up again when the table wants more', [F]),
-  i('Notes for the kitchen, like "No onions"', [F]),
-  i('Reprint a receipt when a customer asks'),
+const sell = [
+  'Your menu as big buttons, with big tabs across the top: Food, Drinks, Tea',
+  'Dine-in with tables, takeaway and delivery from the same screen',
+  'Hold an order and pick it up again when the table wants more',
+  'Variants and combos on one line: "Chips Masala - Spicy"',
+  'Notes for the kitchen, like "No onions"',
+  'Split a bill between cash, M-Pesa and card',
+  'Sales on account for regulars, within the credit limit you set, confirmed by a manager',
+  'When a dish is off, you choose: keep selling, show it as sold out, or hide it until it is back',
+  'A menu by the hour: breakfast only in the morning, alcohol only in your licensed hours',
+  'Discounts and tips, for the staff you allow',
+  'Reprint a receipt when a customer asks',
 ];
-const labels: Item[] = [
-  i('Products without a barcode get one: an in-store code in your own numbering, never a code you already have', [S, P]),
-  i('The manufacturer\'s barcodes keep working as they are', [S, P]),
-  i('Print labels on a label printer (TSC, Xprinter, Zebra and others), any size', [S, P]),
-  i('Or on A4 sticker sheets from an office printer, starting at any sticker on a part-used sheet', [S, P]),
-  i('Or on the receipt printer', [S, P]),
-  i('Every label carries the barcode; the name, the price and your shop\'s name if you want them', [S, P]),
-  i('Print labels for one item, a department, or the items in a delivery', [S, P]),
+const stock = [
+  'Stock levels for every product, and every ingredient in the kitchen',
+  'Deliveries received against the supplier\'s note',
+  'Supplier bills and what you still owe each supplier',
+  'Stock counts, and the difference against what the system expected',
+  'Wastage and expired goods written off with a reason and their cost',
+  'Transfers between branches, sent by one and received by the other',
+  'See what your other branches hold, and ask one of them to send some',
+  'Low stock in the daily email',
+  'Recipes, so you know what each dish costs to make',
 ];
-const stock: Item[] = [
-  i('Stock levels for every product (and every ingredient in a kitchen)', [S, P, F]),
-  i('Deliveries received against the supplier\'s note', [S, P, F]),
-  i('Supplier bills and what you still owe each supplier', [S, P, F]),
-  i('Stock counts, and the difference against what the system expected', [S, P, F]),
-  i('Wastage and expired goods written off with a reason and their cost', [S, P, F]),
-  i('Transfers between branches, sent by one and received by the other', [S, P, F]),
-  i('See what your other branches hold, and ask one of them to send some', [S, P, F]),
-  i('Low stock in the daily email', [S, P, F]),
-  i('Recipes, so you know what each dish costs to make', [F]),
+const kitchen = [
+  'Kitchen tickets and dispatch (packing) tickets, printed as the order is sent',
+  'Each part of the menu to its own station: grill, kitchen, bar or dispatch',
+  'Variants on the dish\'s own line: "Chips Masala - Spicy"',
+  'Extras and the cashier\'s notes under the dish: "+ Extra Cheese", "** No onions"',
+  'Combos list their parts, so every piece is cooked and packed',
+  'A kitchen display: each order as a card with a timer, Pending to Ready',
+  'Items taken back after they reached the kitchen are recorded, with who approved it',
 ];
-const kitchen: Item[] = [
-  i('Kitchen tickets and dispatch (packing) tickets, printed as the order is sent', [F]),
-  i('Each part of the menu to its own station: grill, kitchen, bar or dispatch', [F]),
-  i('Variants on the dish\'s own line: "Chips Masala - Spicy"', [F]),
-  i('Extras and the cashier\'s notes under the dish: "+ Extra Cheese", "** No onions"', [F]),
-  i('Combos list their parts, so every piece is cooked and packed', [F]),
-  i('A kitchen display: each order as a card with a timer, Pending to Ready', [F]),
-  i('Items taken back after they reached the kitchen are recorded, with who approved it', [F]),
+const money = [
+  'An opening float counted by each cashier',
+  'Drawer counts, with over and short for each cashier',
+  'Each cashier\'s takings by payment method: cash, M-Pesa, card',
+  'A manager confirms every shift',
+  'The cashier\'s own slip shows what they declared, never what was expected',
+  'Cash paid out and expenses from the drawer, each with who approved it',
+  'Close the day and the branch, from the point of sale or from the web',
+  'Your Buy Goods or Paybill number, large on every receipt',
 ];
-const fuel: Item[] = [
-  i('The point of sale opens on your pumps, each with its grade and price a litre', [P]),
-  i('Sell by amount or by litres, or tap 500, 1,000, 2,000 or 5,000; the other is worked out', [P]),
-  i('Every fuel sale records its pump; fuel and shop items go on one sale', [P]),
-  i('Fuel grades priced a litre, and each branch can have its own price', [P]),
-  i('Tanks in litres: deliveries recorded, each sale taken off its tank, low tanks flagged', [P]),
-  i('Fuel sales by grade, by pump and by hour; the Pump Monitor; tank reconciliation; a delivery log', [P]),
-  i('The ready-made Fuel attendant role', [P]),
-  i('The pumps and their prices are on the desktop POS, so the forecourt sells with no internet', [P]),
+const staff = [
+  'Ready-made roles, so setting up staff takes minutes',
+  'A PIN for each person at the point of sale; every sale and void carries their name',
+  'A paid order can only be voided or refunded with a manager\'s PIN',
+  'Your partner and your accountant sign in to the web dashboard with their own logins, never yours',
+  'Sales and voids by cashier in the reports',
+  'The owner sets their own password at the first sign-in',
 ];
-const parking: Item[] = [
-  i('Parking bays on the web POS: open a bay with the number plate, the vehicle type and the rate an hour', [K]),
-  i('Each hour started is charged, at least one; paid by cash, M-Pesa or card', [K]),
-  i('A bay can\'t be opened twice; a vehicle that left without paying is recorded', [K]),
-  i('Bays laid out in zones; the Parking Overview shows free and occupied bays, the occupancy and every open session', [K]),
-  i('Car wash, permits and other items sold in your own groups', [K]),
+const branches = [
+  'Every branch on one web dashboard, side by side or one at a time',
+  'Stock in every branch: who has it, and a request to send some',
+  'A daily summary email, at the time you choose',
+  'Close a branch\'s day from the web',
+  'Your logo on the receipt; each branch can have its own colours on the point of sale and its own receipt footer',
+  'Add a branch later; it joins the same dashboard, with no second cloud fee',
 ];
-const money: Item[] = [
-  i('An opening float counted by each cashier', [F, S, P]),
-  i('Drawer counts, with over and short for each cashier', [F, S, P]),
-  i('Each cashier\'s takings by payment method: cash, M-Pesa, card', [F, S, P]),
-  i('A manager confirms every shift', [F, S, P]),
-  i('The cashier\'s own slip shows what they declared, never what was expected', [F, S, P]),
-  i('Cash paid out and expenses from the drawer, each with who approved it', [F, S, P]),
-  i('Close the day and the branch, from the point of sale or from the web', [F, S, P]),
-  i('Your Buy Goods or Paybill number, large on every receipt'),
+const analytics = [
+  '"Do this next": a short, ranked list in plain words: what to order before Friday, what to prep for a busy day, old credit to chase',
+  'What sells together, in a restaurant\'s words: a drink with a dish, a side with a main, a combo worth putting on the menu',
+  'Your week at a glance: what sells each day and at every hour',
+  'Stock between branches: "it sells fast at one branch and slowly at another: consider moving some"',
+  'The Watch list: voids, refunds, big discounts, short drawers and sales below the menu price, as warnings to look into',
+  'Products that still have no cost, so every margin is complete',
+  'Menu engineering: which dishes earn their place',
+  'Credit ageing: who owes you, and for how long',
+  'It never suggests raising your prices',
 ];
-const staff: Item[] = [
-  i('Ready-made roles, so setting up staff takes minutes'),
-  i('A PIN for each person at the point of sale; every sale and void carries their name'),
-  i('A paid order can only be voided or refunded with a manager\'s PIN'),
-  i('Your partner and your accountant sign in to the web dashboard with their own logins, never yours'),
-  i('Sales and voids by cashier in the reports'),
-  i('The owner sets their own password at the first sign-in'),
+const support = [
+  'Setup on site: your menu loaded, printers and screens set up, your staff trained',
+  'Updates install themselves, quietly, when the POS computer starts',
+  'Support can pull a point of sale\'s log remotely to see what went wrong',
+  'Support from 8 am to 7 pm, and 24 hours a day for priority clients',
+  'A "what to do when" help screen on the point of sale, which works with no internet',
+  'Reports download to Excel whenever you want them',
 ];
-const branches: Item[] = [
-  i('Every branch on one web dashboard, side by side or one at a time'),
-  i('Stock in every branch: who has it, and a request to send some', [F, S, P]),
-  i('A daily summary email, at the time you choose'),
-  i('Close a branch\'s day from the web', [F, S, P]),
-  i('Your logo on the receipt; each branch can have its own colours on the point of sale and its own receipt footer'),
-  i('Add a branch later; it joins the same dashboard, with no second cloud fee'),
-];
-const analytics: Item[] = [
-  i('"Do this next": a short, ranked list in plain words: what to order before Friday, what to have in for a busy day, old credit to chase', [F, S, P]),
-  i('What sells together, in your trade\'s words: "Put White bread next to Fresh milk", "Offer Water at the pumps", a combo in a restaurant', [F, S, P]),
-  i('Your week at a glance: what sells each day and at every hour', [F, S, P]),
-  i('Stock between branches: "it sells fast at one branch and slowly at another: consider moving some"', [F, S, P]),
-  i('The Watch list: voids, refunds, big discounts, short drawers and sales below the list price, as warnings to look into; at a car park, vehicles let out with no charge'),
-  i('Products that still have no cost, so every margin is complete', [F, S, P]),
-  i('Menu engineering: which dishes earn their place', [F]),
-  i('Credit ageing: who owes you, and for how long', [F, S, P]),
-  i('It never suggests raising your prices'),
-];
-const support: Item[] = [
-  i('Setup on site: your products or menu loaded, printers and screens set up, your staff trained'),
-  i('Updates install themselves, quietly, when the POS computer starts'),
-  i('Support can pull a point of sale\'s log remotely to see what went wrong'),
-  i('Support from 8 am to 7 pm, and 24 hours a day for priority clients'),
-  i('A "what to do when" help screen on the point of sale, which works with no internet', [F, S, P]),
-  i('Reports download to Excel whenever you want them'),
-];
-const offline: Item[] = [
-  i('Points of sale keep selling and printing with no internet: the scanner, the kitchen tickets and the pumps', [F, S, P]),
-  i('Staff still sign in with their PIN', [F, S, P]),
-  i('A branch server keeps every point of sale in the branch in step', [F, S, P]),
-  i('Everything catches up by itself when the line is back; nobody types anything in again', [F, S, P]),
-  i('The POS computer needs power like any computer; a small UPS keeps it going through a short cut', [F, S, P]),
+const offline = [
+  'Points of sale keep selling and printing with no internet: the counter and the kitchen tickets',
+  'Staff still sign in with their PIN',
+  'A branch server keeps every point of sale in the branch in step',
+  'Everything catches up by itself when the line is back; nobody types anything in again',
+  'The POS computer needs power like any computer; a small UPS keeps it going through a short cut',
 ];
 
 const groups = [
-  { id: 'sell', name: 'Sell', types: ALL },
-  { id: 'labels', name: 'Barcodes and labels', types: [S, P] },
-  { id: 'stock', name: 'Stock and suppliers', types: [S, P, F] },
-  { id: 'kitchen', name: 'Kitchen', types: [F] },
-  { id: 'fuel', name: 'Pumps and fuel', types: [P] },
-  { id: 'parking', name: 'Parking', types: [K] },
-  { id: 'money', name: 'Money and day close', types: ALL },
-  { id: 'staff', name: 'Staff and roles', types: ALL },
-  { id: 'branches', name: 'Branches and branding', types: ALL },
-  { id: 'analytics', name: 'Analytics', types: ALL },
-  { id: 'support', name: 'Support and updates', types: ALL },
-  { id: 'offline', name: 'Works offline', types: [F, S, P] },
+  { id: 'sell', name: 'Sell' },
+  { id: 'stock', name: 'Stock and recipes' },
+  { id: 'kitchen', name: 'Kitchen' },
+  { id: 'money', name: 'Money and day close' },
+  { id: 'staff', name: 'Staff and roles' },
+  { id: 'branches', name: 'Branches and branding' },
+  { id: 'analytics', name: 'Analytics' },
+  { id: 'support', name: 'Support and updates' },
+  { id: 'offline', name: 'Works offline' },
 ];
-const tags = (types: Trade[]) => (types.length === ALL.length ? [] : types.map((t) => NAMES[t]));
-const shopCard = SHOP_CARDS[1];
+const roles = ROLES.filter((r) => !r.petrol);
 ---
 <Base
-  title="POS features: M-Pesa, stock, barcodes, kitchen, pumps | ZapTill"
+  title="POS features for restaurants, cafés and bars | ZapTill"
   description={description}
   waMessage={WA_MESSAGES.features}
   ogImage="/og/features.png"
@@ -167,72 +127,41 @@ const shopCard = SHOP_CARDS[1];
 >
   <section class="page-head feat-head">
     <div class="wrap">
-      <h1>Everything it does, for every kind of business</h1>
+      <h1>Everything it does, for your restaurant</h1>
       <p class="lede">
-        ZapTill is a point of sale (POS) for the counter, the pumps or the kitchen, and a back office on the web that opens on your
-        phone. Each feature below says which businesses it is for; the screens are the real app, on made-up businesses.
+        ZapTill is a point of sale (POS) for the counter and the kitchen, and a back office on the web that opens on your
+        phone. The screens are the real app, on a made-up restaurant.
       </p>
-      <div class="feat-filter" data-filter hidden>
-        <p class="feat-filter__label" id="filter-label">Show the features for:</p>
-        <div class="feat-filter__btns" role="group" aria-labelledby="filter-label">
-          <button type="button" data-type="all" aria-pressed="true">Every business</button>
-          {TRADES.map((t) => <button type="button" data-type={t.id} aria-pressed="false">{t.name}</button>)}
-        </div>
-        <p class="visually-hidden" aria-live="polite" data-filter-status></p>
-      </div>
       <nav class="feat-jump" aria-label="Feature groups">
-        <ul>{groups.map((g) => <li data-types={g.types.join(' ')}><a href={`#${g.id}`}>{g.name}</a></li>)}</ul>
+        <ul>{groups.map((g) => <li><a href={`#${g.id}`}>{g.name}</a></li>)}</ul>
       </nav>
     </div>
   </section>
 
   <!-- Sell -->
-  <section class="band feat" id="sell" data-group aria-labelledby="sell-h">
+  <section class="band feat" id="sell" aria-labelledby="sell-h">
     <div class="wrap split">
       <div class="split__copy">
         <h2 id="sell-h">Sell</h2>
         <p>A counter point of sale that keeps up with a queue, and doesn't stop when the internet does.</p>
-        <ul class="ticks">{sell.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
+        <ul class="ticks">{sell.map((t) => <li>{t}</li>)}</ul>
       </div>
-      <div class="split__visual sell-pair">
-        <Monitor label="The ZapTill point of sale at a demo minimart">
-          <Shot src="/screens/till-shop.webp" eager width={1280} height={800}
-            alt="The real ZapTill point of sale at a demo minimart: departments as big tabs (All, Groceries, Beverages, Personal care), and a bill of milk, bread, maize flour, eggs and 0.640 kg of beef, total KES 1,246." />
+      <div class="split__visual">
+        <Monitor label="The ZapTill point of sale at a demo restaurant">
+          <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
+            alt="The real ZapTill point of sale at a demo restaurant: menu buttons and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
         </Monitor>
-        <figure class="sell-pair__inset">
-          <Shot src="/screens/till-pos.webp" width={1280} height={800}
-            alt="The same point of sale at a demo restaurant: menu buttons and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
-          <figcaption>The same point of sale, at a restaurant</figcaption>
-        </figure>
       </div>
     </div>
   </section>
 
-  <!-- Barcodes and labels -->
-  <section class="band band--white feat" id="labels" data-group aria-labelledby="labels-h">
-    <div class="wrap">
-      <div class="split split--top">
-        <div class="split__copy">
-          <h2 id="labels-h">Barcodes and labels</h2>
-          <p>Every product scannable, on whatever printer you have.</p>
-          <ul class="ticks">{labels.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
-          <p class="feat__note">Printing labels from the point of sale comes with ZapTill Online. When a price changes, print the label again.</p>
-        </div>
-        <div class="split__visual">
-          <LabelSamples />
-          <p class="feat__note">Drawn by ZapTill's own label code, for Kijani Basket, a demo minimart.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Stock and suppliers -->
-  <section class="band feat" id="stock" data-group aria-labelledby="stock-h">
+  <!-- Stock and recipes -->
+  <section class="band band--white feat" id="stock" aria-labelledby="stock-h">
     <div class="wrap split split--flip">
       <div class="split__copy">
-        <h2 id="stock-h">Stock and suppliers</h2>
-        <p>What came in, what went out, and what went in the bin, in shillings.</p>
-        <ul class="ticks">{stock.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
+        <h2 id="stock-h">Stock and recipes</h2>
+        <p>What came in, what went out, and what went in the bin, in shillings — down to the ingredient.</p>
+        <ul class="ticks">{stock.map((t) => <li>{t}</li>)}</ul>
         <p class="feat__note">Stock at the point of sale, and checking other branches from the point of sale, come with ZapTill Online.</p>
       </div>
       <div class="split__visual">
@@ -244,12 +173,12 @@ const shopCard = SHOP_CARDS[1];
   </section>
 
   <!-- Kitchen -->
-  <section class="band band--white feat" id="kitchen" data-group aria-labelledby="kitchen-h">
+  <section class="band feat" id="kitchen" aria-labelledby="kitchen-h">
     <div class="wrap split">
       <div class="split__copy">
         <h2 id="kitchen-h">Kitchen</h2>
         <p>For restaurants, cafés and bars: the order reaches the right cook the moment it's taken.</p>
-        <ul class="ticks">{kitchen.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
+        <ul class="ticks">{kitchen.map((t) => <li>{t}</li>)}</ul>
       </div>
       <div class="split__visual slips-pair">
         <Receipt kind="kitchen" paper={58} />
@@ -258,80 +187,38 @@ const shopCard = SHOP_CARDS[1];
     </div>
   </section>
 
-  <!-- Pumps and fuel -->
-  <section class="band feat" id="fuel" data-group aria-labelledby="fuel-h">
-    <div class="wrap split split--flip">
-      <div class="split__copy">
-        <h2 id="fuel-h">Pumps and fuel</h2>
-        <p>For petrol stations: every litre on a pump, every pump on the point of sale.</p>
-        <ul class="ticks">{fuel.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
-        <p class="feat__note">Not yet: pump meter readings and tank dips; tank levels are worked out from deliveries and
-          sales. <a href="/for/petrol-stations/">ZapTill for petrol stations</a></p>
-      </div>
-      <div class="split__visual">
-        <Monitor label="The ZapTill point of sale at a demo petrol station">
-          <Shot src="/screens/till-pumps.webp" width={1280} height={800}
-            alt="The real ZapTill point of sale at a demo petrol station: five pumps with their grade and price a litre, and a sale of 11.66 litres of diesel for KES 2,000 with engine oil and water, total KES 2,920." />
-        </Monitor>
-      </div>
-    </div>
-  </section>
-
-  <!-- Parking -->
-  <section class="band band--white feat" id="parking" data-group aria-labelledby="parking-h">
-    <div class="wrap split">
-      <div class="split__copy">
-        <h2 id="parking-h">Parking</h2>
-        <p>For car parks: every bay, every plate, every hour charged.</p>
-        <ul class="ticks">{parking.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
-        <p class="feat__note">Parking runs on the web POS, so it needs the internet. No entry tickets, plate cameras or
-          barriers. <a href="/for/parking/">ZapTill for car parks</a></p>
-      </div>
-      <div class="split__visual icon-panel" aria-hidden="true">
-        <svg viewBox="0 0 240 160" class="icon-art">
-          <rect x="20" y="20" width="200" height="120" rx="14" fill="#0b2529" stroke="#1d3c40" stroke-width="2" />
-          <rect x="44" y="40" width="44" height="80" rx="6" fill="none" stroke="#2dd4bf" stroke-width="4" />
-          <rect x="98" y="40" width="44" height="80" rx="6" fill="rgba(252,211,77,0.15)" stroke="#fcd34d" stroke-width="4" />
-          <rect x="152" y="40" width="44" height="80" rx="6" fill="none" stroke="#2dd4bf" stroke-width="4" />
-          <path d="M112 92V66h10a8 8 0 0 1 0 16h-10" fill="none" stroke="#fcd34d" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </div>
-    </div>
-  </section>
-
   <!-- Money and day close -->
-  <section class="band band--night feat" id="money" data-group aria-labelledby="money-h">
+  <section class="band band--night feat" id="money" aria-labelledby="money-h">
     <div class="wrap split split--flip">
       <div class="split__copy">
         <h2 id="money-h">Money and day close</h2>
         <p>Know at every close whose drawer is short, by how much, before anyone goes home.</p>
-        <ul class="ticks">{money.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
+        <ul class="ticks">{money.map((t) => <li>{t}</li>)}</ul>
       </div>
       <div class="split__visual money-pair">
         <figure class="screen-crop">
           <Shot src="/screens/till-shifts.webp" width={1200} height={253}
             alt="The real ZapTill shift report: Wanjiru's drawer expected KES 14,550, counted KES 14,200, difference KES -350; Otieno's drawer exact. Both awaiting a manager." />
         </figure>
-        <Receipt kind="shop" paper={58} class="money-pair__slip" />
+        <Receipt kind="sale" paper={58} class="money-pair__slip" />
       </div>
     </div>
   </section>
 
   <!-- Staff and roles -->
-  <section class="band feat" id="staff" data-group aria-labelledby="staff-h">
+  <section class="band band--white feat" id="staff" aria-labelledby="staff-h">
     <div class="wrap">
       <div class="split split--top">
         <div class="split__copy">
           <h2 id="staff-h">Staff and roles</h2>
           <p>Everyone gets their own PIN, and each role sees only what it should.</p>
-          <ul class="ticks">{staff.map((x) => <li data-types={x.types.join(' ')}>{x.t}</li>)}</ul>
-          <p class="feat__note">Waiter, Kitchen and Kitchen Manager are set up for restaurants and cafés; Fuel attendant
-            for petrol stations.</p>
+          <ul class="ticks">{staff.map((t) => <li>{t}</li>)}</ul>
+          <p class="feat__note">Waiter, Kitchen and Kitchen Manager are set up ready for restaurants and cafés.</p>
         </div>
         <div class="split__visual">
           <ul class="roles" aria-label="The ready-made roles">
-            {ROLES.map((r) => (
-              <li class:list={{ 'roles--petrol': r.petrol || r.food }}>
+            {roles.map((r) => (
+              <li class:list={{ 'roles--food': r.food }}>
                 <b>{r.name}</b>
                 <span>{r.does}</span>
               </li>
@@ -343,12 +230,12 @@ const shopCard = SHOP_CARDS[1];
   </section>
 
   <!-- Branches and branding -->
-  <section class="band band--white feat" id="branches" data-group aria-labelledby="branches-h">
+  <section class="band feat" id="branches" aria-labelledby="branches-h">
     <div class="wrap split">
       <div class="split__copy">
         <h2 id="branches-h">Branches and branding</h2>
         <p>Run every branch from one place, even when you're not there.</p>
-        <ul class="ticks">{branches.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
+        <ul class="ticks">{branches.map((t) => <li>{t}</li>)}</ul>
       </div>
       <div class="split__visual">
         <Laptop label="The day close on the web dashboard">
@@ -359,27 +246,27 @@ const shopCard = SHOP_CARDS[1];
   </section>
 
   <!-- Analytics -->
-  <section class="band feat" id="analytics" data-group aria-labelledby="analytics-h">
+  <section class="band band--white feat" id="analytics" aria-labelledby="analytics-h">
     <div class="wrap split split--flip">
       <div class="split__copy">
         <h2 id="analytics-h">Analytics</h2>
-        <p>An add-on that turns your sales into a short list of what to do next, in your trade's own words.</p>
-        <ul class="ticks">{analytics.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
-        <p><a href="/analytics/">See Analytics for a restaurant, a shop or a petrol station</a></p>
+        <p>An add-on that turns your sales into a short list of what to do next, in a restaurant's own words.</p>
+        <ul class="ticks">{analytics.map((t) => <li>{t}</li>)}</ul>
+        <p><a href="/analytics/">See Analytics for your restaurant</a></p>
       </div>
       <div class="split__visual">
-        <DoThisNextCard {...shopCard} who="a demo minimart" />
+        <DoThisNextCard who="a demo restaurant" />
       </div>
     </div>
   </section>
 
   <!-- Support and updates -->
-  <section class="band band--white feat" id="support" data-group aria-labelledby="support-h">
+  <section class="band feat" id="support" aria-labelledby="support-h">
     <div class="wrap split">
       <div class="split__copy">
         <h2 id="support-h">Support and updates</h2>
         <p>We set it up with you, and most problems are fixed without anyone driving to your place.</p>
-        <ul class="ticks">{support.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
+        <ul class="ticks">{support.map((t) => <li>{t}</li>)}</ul>
       </div>
       <div class="split__visual icon-panel" aria-hidden="true">
         <svg viewBox="0 0 240 160" class="icon-art">
@@ -392,13 +279,12 @@ const shopCard = SHOP_CARDS[1];
   </section>
 
   <!-- Works offline -->
-  <section class="band band--night feat" id="offline" data-group aria-labelledby="offline-h">
+  <section class="band band--night feat" id="offline" aria-labelledby="offline-h">
     <div class="wrap split split--flip">
       <div class="split__copy">
         <h2 id="offline-h">Works offline</h2>
         <p>When the internet goes, your points of sale don't.</p>
-        <ul class="ticks">{offline.map((x) => <li data-types={x.types.join(' ')}>{x.t}{tags(x.types).length > 0 && <span class="ftags">{tags(x.types).map((n) => <span>{n}</span>)}</span>}</li>)}</ul>
-        <p class="feat__note">Parking bays run on the web POS and need the internet.</p>
+        <ul class="ticks">{offline.map((t) => <li>{t}</li>)}</ul>
         <p><a href="/#offline">Read the busiest hour with no internet</a></p>
       </div>
       <div class="split__visual icon-panel" aria-hidden="true">
@@ -412,112 +298,37 @@ const shopCard = SHOP_CARDS[1];
     </div>
   </section>
 
-  <p class="feat-none wrap" data-none hidden>Nothing here for that business yet. <a href="/contact/">Ask us</a>.</p>
-
   <section class="band band--white final" aria-labelledby="ffinal-title">
     <div class="wrap">
-      <h2 id="ffinal-title">See the parts you need, running on your own products.</h2>
+      <h2 id="ffinal-title">See the parts you need, running on your own menu.</h2>
       <div class="actions">
         <WhatsAppButton message={WA_MESSAGES.features} />
         <VisitButton />
       </div>
       <p class="feat__note">
-        Pictures on the point of sale, variants, offers, stock and labels at the point of sale come with ZapTill Online; Analytics is an
+        Pictures on the point of sale, variants, offers and stock at the point of sale come with ZapTill Online; Analytics is an
         add-on.{' '}
-        <a href="/pricing/">See the packages</a>
+        <a href="/pricing/">Build your quote</a>
       </p>
     </div>
   </section>
 </Base>
 
-<script is:inline>
-  // The business-type filter: shows one type's features (and the groups that have any), remembers it in ?type=.
-  // Without JavaScript the filter stays hidden and every feature shows.
-  (function () {
-    var box = document.querySelector('[data-filter]');
-    if (!box) return;
-    var btns = Array.prototype.slice.call(box.querySelectorAll('[data-type]'));
-    var items = Array.prototype.slice.call(document.querySelectorAll('.feat li[data-types], .feat-jump li[data-types]'));
-    var groups = Array.prototype.slice.call(document.querySelectorAll('[data-group]'));
-    var none = document.querySelector('[data-none]');
-    var valid = btns.map(function (b) { return b.getAttribute('data-type'); });
-    function show(type, push) {
-      if (valid.indexOf(type) < 0) type = 'all';
-      btns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-type') === type)); });
-      items.forEach(function (li) { li.hidden = type !== 'all' && li.getAttribute('data-types').split(' ').indexOf(type) < 0; });
-      var shown = 0;
-      groups.forEach(function (g) {
-        var lis = g.querySelectorAll('li[data-types]');
-        var any = Array.prototype.some.call(lis, function (li) { return !li.hidden; });
-        g.hidden = !any; if (any) shown++;
-      });
-      if (none) none.hidden = shown > 0;
-      // Night 3: say what changed, for screen readers (the list below changes with no focus move).
-      var status = box.querySelector('[data-filter-status]');
-      if (status && push) {
-        var n = items.filter(function (li) { return !li.hidden && li.closest('.feat'); }).length;
-        var b = btns.filter(function (x) { return x.getAttribute('data-type') === type; })[0];
-        status.textContent = 'Showing ' + n + ' features for ' + (b ? b.textContent : 'every business') + '.';
-      }
-      if (push && window.history && history.replaceState) {
-        var u = new URL(window.location.href);
-        if (type === 'all') u.searchParams.delete('type'); else u.searchParams.set('type', type);
-        history.replaceState(null, '', u.toString());
-      }
-    }
-    btns.forEach(function (b) { b.addEventListener('click', function () { show(b.getAttribute('data-type'), true); }); });
-    box.hidden = false;
-    var start = 'all';
-    try { start = new URL(window.location.href).searchParams.get('type') || 'all'; } catch (e) {}
-    show(start, false);
-  })();
-</script>
-
 <style>
   .feat-head { background: var(--card); border-bottom: 1px solid var(--line); }
   .feat-head .lede { margin-bottom: var(--s-5); }
-  .feat-filter { margin-bottom: var(--s-5); }
-  .feat-filter[hidden] { display: none; }
-  .feat-filter__label { font-weight: 600; margin-bottom: var(--s-2); }
-  .feat-filter__btns { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-  .feat-filter__btns button {
-    font: 600 var(--fs-sm)/1.2 var(--font-text); padding: 0.5rem 1rem; border-radius: var(--r-pill);
-    border: 1px solid var(--line-strong); background: var(--card); color: var(--ink-2); cursor: pointer;
-  }
-  .feat-filter__btns button:hover { border-color: var(--teal-strong); color: var(--teal-strong); }
-  .feat-filter__btns button[aria-pressed='true'] { background: var(--teal-strong); border-color: var(--teal-strong); color: #fff; }
-  .feat-filter__btns button:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
   .feat-jump ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s-2); }
   .feat-jump a {
     display: inline-block; padding: 0.35rem 0.8rem; border: 1px solid var(--line-strong); border-radius: var(--r-pill);
     text-decoration: none; color: var(--ink-2); font-weight: 600; font-size: var(--fs-sm);
   }
   .feat-jump a:hover { border-color: var(--teal-strong); color: var(--teal-strong); }
-  .feat-jump li[hidden], .feat li[hidden], .feat[hidden] { display: none; }
 
   .feat { scroll-margin-top: 4rem; }
   .feat h2 { font-size: var(--fs-xl); }
   .feat .ticks { margin-bottom: var(--s-5); }
   .feat__note { font-size: var(--fs-sm); color: var(--muted); }
   .band--night .feat__note { color: var(--night-muted); }
-  .feat-none { padding-block: var(--s-7); }
-
-  .ftags { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; margin-left: 0.45rem; vertical-align: 0.1em; }
-  .ftags span {
-    font-size: 0.7rem; font-weight: 700; line-height: 1; letter-spacing: 0.02em;
-    padding: 0.22rem 0.45rem; border-radius: var(--r-pill);
-    background: var(--teal-wash); color: var(--teal-deep);
-  }
-  .band--night .ftags span { background: rgba(45, 212, 191, 0.14); color: #99f6e4; }
-
-  .sell-pair { position: relative; padding-bottom: var(--s-6); }
-  .sell-pair__inset {
-    position: absolute; margin: 0; right: -2%; bottom: -2%; width: 44%; max-width: 280px; transform: rotate(2deg);
-    background: #121c1f; border-radius: 10px; padding: 5px 5px 0;
-    box-shadow: inset 0 0 0 1px #2a3a3e, 0 24px 48px -20px rgba(0, 0, 0, 0.6);
-  }
-  .sell-pair__inset :global(.shot) { aspect-ratio: 16 / 10; height: auto; border-radius: 4px; }
-  .sell-pair__inset figcaption { font-size: 0.72rem; color: #9fb7b5; text-align: center; padding: 0.3rem 0 0.35rem; }
 
   .slips-pair { display: flex; gap: var(--s-4); align-items: flex-start; justify-content: center; }
   .slips-pair :global(.slip-wrap) { flex: 1 1 0; min-width: 0; --slip-fs: 0.8rem; }
@@ -536,7 +347,7 @@ const shopCard = SHOP_CARDS[1];
   .roles li { background: var(--card); padding: var(--s-3) var(--s-4); display: grid; gap: 0.1rem; }
   .roles b { font: 700 1rem/1.3 var(--font-display); }
   .roles span { color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
-  .roles .roles--petrol { background: var(--paper); }
+  .roles .roles--food { background: var(--paper); }
   @media (min-width: 560px) { .roles { grid-template-columns: 1fr 1fr; } }
 
   .icon-panel { display: flex; justify-content: center; }

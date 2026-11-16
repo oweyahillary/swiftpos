@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill poster — Introduction</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board.intro{overflow:hidden;background:#061a1e;}
+
+  /* depth, not effects: one considered glow (teal, a whisper of indigo) + a gentle vignette */
+  .glow{position:absolute;left:50%;top:45%;width:98%;height:74%;transform:translate(-50%,-50%);z-index:0;
+    background:
+      radial-gradient(closest-side, rgba(20,184,166,.30), rgba(13,148,136,.07) 56%, transparent 74%),
+      radial-gradient(58% 48% at 63% 38%, rgba(99,102,241,.13), transparent 72%);}
+  .vignette{position:absolute;inset:0;z-index:0;
+    background:radial-gradient(130% 100% at 50% 44%, transparent 52%, rgba(3,13,16,.64) 100%);}
+
+  /* keyline frame + corner registration marks — a deliberate print layout */
+  .keyline{position:absolute;inset:calc(var(--pad)*.62);z-index:2;border:1px solid rgba(120,200,190,.15);}
+  .corner{position:absolute;width:22px;height:22px;border:2px solid var(--teal-light);z-index:2;opacity:.8;}
+  .corner.tl{left:calc(var(--pad)*.62 - 1px);top:calc(var(--pad)*.62 - 1px);border-right:0;border-bottom:0;}
+  .corner.tr{right:calc(var(--pad)*.62 - 1px);top:calc(var(--pad)*.62 - 1px);border-left:0;border-bottom:0;}
+  .corner.bl{left:calc(var(--pad)*.62 - 1px);bottom:calc(var(--pad)*.62 - 1px);border-right:0;border-top:0;}
+  .corner.br{right:calc(var(--pad)*.62 - 1px);bottom:calc(var(--pad)*.62 - 1px);border-left:0;border-top:0;}
+
+  .ring{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);border-radius:50%;
+    border:1px solid rgba(120,200,190,.09);z-index:1;}
+
+  .kicker{position:absolute;left:50%;top:calc(var(--pad)*1.35);transform:translateX(-50%);z-index:4;
+    font-family:var(--font-text);font-size:calc(var(--sub)*.66);letter-spacing:.52em;text-transform:uppercase;
+    font-weight:700;color:var(--teal-light);padding-left:.52em;}
+
+  .hero{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);z-index:4;text-align:center;}
+  .zap{font-family:var(--font-display);font-weight:800;letter-spacing:-.035em;line-height:.78;
+    background:linear-gradient(135deg,#aef7e6 0%,#4fe3cb 24%,#22d3ee 50%,#5aa8ff 76%,#9b8cff 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 0 52px rgba(56,189,248,.4));}
+  .till{font-family:var(--font-display);font-weight:700;letter-spacing:.02em;line-height:.92;color:var(--text);opacity:.92;}
+  .kick2{font-family:var(--font-text);font-weight:500;color:var(--muted);letter-spacing:.01em;margin-left:auto;margin-right:auto;}
+
+  /* features: one consistent unit, mirrored around the centre, impeccably aligned */
+  .feat{position:absolute;transform:translate(-50%,-50%);z-index:3;display:flex;align-items:center;gap:.7em;white-space:nowrap;
+    font-family:var(--font-text);font-weight:600;color:#eaf6f3;letter-spacing:-.004em;}
+  .feat.l{flex-direction:row-reverse;}
+  .feat .i{width:2.3em;height:2.3em;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;color:var(--teal-light);
+    background:rgba(12,40,44,.88);border:1px solid rgba(94,234,212,.3);box-shadow:0 0 24px -8px rgba(45,212,191,.5);}
+  .feat .i svg{width:52%;height:52%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+  .foot{position:absolute;left:calc(var(--pad)*1.1);right:calc(var(--pad)*1.1);bottom:calc(var(--pad)*1.15);z-index:4;
+    display:flex;justify-content:space-between;align-items:center;
+    font-family:var(--font-text);font-size:calc(var(--sub)*.78);color:var(--muted);font-weight:500;}
+  .foot .brand{display:flex;align-items:center;gap:.55em;color:var(--text);font-weight:700;}
+  .foot .brand img{width:1.7em;height:1.7em;border-radius:26%;}
+  .foot .brand i{font-style:normal;color:var(--muted);font-weight:500;}
+
+  /* feed 1080x1080 */
+  .square .ring.r1{width:690px;height:690px;} .square .ring.r2{width:1000px;height:1000px;}
+  .square .zap{font-size:262px;} .square .till{font-size:72px;margin-top:.05em;} .square .kick2{font-size:25px;margin-top:1em;max-width:330px;}
+  .square .feat{font-size:25px;}
+  .square .f1{left:50%;top:13%} .square .f2{left:85%;top:30%} .square .f3{left:85%;top:62%}
+  .square .f4{left:50%;top:84%} .square .f5{left:15%;top:62%} .square .f6{left:15%;top:30%}
+
+  /* story 1080x1920 */
+  .story .glow{top:41%;height:52%;} .story .vignette{background:radial-gradient(120% 74% at 50% 40%, transparent 48%, rgba(3,13,16,.66) 100%);}
+  .story .ring,.story .hero{top:41%;}
+  .story .ring.r1{width:780px;height:780px;} .story .ring.r2{width:1044px;height:1044px;}
+  .story .zap{font-size:318px;} .story .till{font-size:88px;} .story .kick2{font-size:29px;max-width:420px;}
+  .story .feat{font-size:28px;}
+  .story .f1{left:50%;top:15%} .story .f2{left:80%;top:31%} .story .f3{left:80%;top:53%}
+  .story .f4{left:50%;top:69%} .story .f5{left:20%;top:53%} .story .f6{left:20%;top:31%}
+</style>
+</head>
+<body>
+
+<div class="board square intro" id="feed"></div>
+<div class="board story intro" id="story"></div>
+
+<template id="tpl">
+  <div class="glow"></div><div class="vignette"></div>
+  <div class="ring r1"></div><div class="ring r2"></div>
+  <div class="keyline"></div>
+  <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+
+  <div class="kicker">Introducing</div>
+  <div class="hero">
+    <div class="zap">Zap</div>
+    <div class="till">Till</div>
+    <div class="kick2">The restaurant point of sale, built for Kenya</div>
+  </div>
+
+  <div class="feat f1"><span class="i"><svg viewBox="0 0 24 24"><path d="M4.5 11.5a11 11 0 0 1 15 0"/><path d="M7.7 15a6.5 6.5 0 0 1 8.6 0"/><circle cx="12" cy="18.6" r="1.1" fill="currentColor" stroke="none"/></svg></span><span>Works offline</span></div>
+  <div class="feat f2"><span class="i"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg></span><span>M-Pesa &amp; cards</span></div>
+  <div class="feat f3"><span class="i"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg></span><span>Tables &amp; tabs</span></div>
+  <div class="feat f4"><span class="i"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-1.8-3 1.8-3-1.8-3 1.8z"/><path d="M9 8h6M9 12h6"/></svg></span><span>Kitchen tickets</span></div>
+  <div class="feat f5 l"><span class="i"><svg viewBox="0 0 24 24"><path d="M12 4v5"/><path d="M12 9l-5 5M12 9l5 5"/><path d="M4 20h5M15 20h5"/></svg></span><span>Split bills</span></div>
+  <div class="feat f6 l"><span class="i"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></span><span>Daily close</span></div>
+
+  <div class="foot">
+    <span class="brand"><img src="assets/logo.png" alt="">Zap<i>Till</i></span>
+    <span>zaptill.co.ke</span>
+  </div>
+</template>
+
+<script>
+  var tpl = document.getElementById('tpl').innerHTML;
+  document.getElementById('feed').innerHTML = tpl;
+  document.getElementById('story').innerHTML = tpl;
+</script>
+</body>
+</html>

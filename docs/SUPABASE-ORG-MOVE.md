@@ -108,10 +108,9 @@ The new project has a **new URL and new keys**, so every place below changes.
     - in Vercel, the `VITE_SUPABASE_*` values are **Config**, not Secret, and go only to that project's own environments.
 - **Dev, fresh instead (if the copy gives trouble):** the schema from our migrations, in order, with your migration
   runner pointed at the new database, then `scripts/dev-seed/attendance-demo.sql` and your usual test business.
-- **Prod:** a full copy is needed: the `public`, `auth` and `storage` schemas, so owners keep their passwords.
-  1. Use the Supabase CLI's dump (`supabase db dump` for the roles, the schema and the data).
-  2. Restore with `psql`, with the server in maintenance so nothing is written during the copy.
-  3. The exact commands go in a prod section of this file **after the dev rehearsal**, with what we learned.
+- **Prod:** a full copy is needed: the `public`, `auth` and `storage` schemas, so owners keep their passwords. The exact
+  commands, from the dev rehearsal, are in **§E — Prod Route B** at the foot of this file. Run them only if Route A is
+  refused, in a maintenance window, with the owner watching the output.
 
 ### B3. Point everything at it
 | Where | Settings |
@@ -139,7 +138,74 @@ The desktop POS need **nothing**: they talk only to the API on Render, never to 
 1. The dev move is done and checked (section C).
 2. Prod's logs are under ~33 MB a day:
    - A611 deployed;
-   - `BRANCH_DRAWERS_MEMO_S=300` on prod Render;
-   - KRUNCH & CO's two old day closes cancelled before their licence is restored.
+   - `BRANCH_DRAWERS_MEMO_S=300` on prod Render.
+   - (KRUNCH & CO **terminated** — desktop + cloud services off — so their two old day-closes no longer generate logs; nothing to cancel.)
 3. If prod needs Route B: the copy commands written into this file from the dev rehearsal, a maintenance window agreed,
    and a fresh nightly backup from that day.
+
+---
+
+## E. Prod — Route B commands (the fallback, only if the Transfer is refused)
+
+Prod carries owners' passwords (the `auth` schema) and possibly Storage buckets, so it is a fuller copy than dev. Run it
+in a **maintenance window after closing**, with a **fresh backup from that day** in hand, and **paste outputs as you go**
+— a prod copy error is costly, so we walk it together, not fire-and-forget. The POS keep selling offline throughout;
+anything they could not send lands when the API answers again. Route A avoids all of this — this is only for a refusal.
+
+### E0. Before you start
+- [ ] A fresh backup from **today** (GitHub Actions → `backup`, or Supabase → Database → Backups).
+- [ ] Old-org prod logs under ~33 MB/day (§D): **A611 deployed**, **`BRANCH_DRAWERS_MEMO_S=300`** on prod Render. (KRUNCH & CO **terminated** — desktop + cloud services off — so their two old day-closes are no longer a log source; nothing to cancel.)
+- [ ] New organisation (Free) → **New project**, region **eu-central-1** (as today). Note its URL, anon key, service-role key, JWT secret (Project Settings → API) — password manager, **never** chat or the repo.
+- [ ] Old project's **Storage** tab: logos live in the DB (as on dev, no buckets). If prod has **any bucket with files**, STOP and tell me first — those objects copy separately from the database.
+- [ ] Put the prod API in **maintenance** so nothing writes during the copy.
+
+### E1. Connection strings (Git Bash, PostgreSQL **18** tools, outside the repo)
+```bash
+PG="/c/Program Files/PostgreSQL/18/bin"
+read -rs OLD_PROD && export OLD_PROD   # OLD prod Session-pooler string (Project Settings › Database, port 5432), password URL-encoded
+read -rs NEW_PROD && export NEW_PROD   # NEW prod Session-pooler string
+mkdir -p ~/zaptill-prod-move && cd ~/zaptill-prod-move   # outside the repo — these files hold sign-in data
+```
+Dev lesson: a pasted connection string lost its last letter once — check it copied whole. A `@`, `:` or `/` in the password must be URL-encoded.
+
+### E2. Dump — roles + schema + data, including `auth` so passwords survive
+The Supabase CLI handles the `auth`/`storage` schemas that a raw `pg_dump --schema=public` misses:
+```bash
+supabase db dump --db-url "$OLD_PROD" --role-only -f roles.sql
+supabase db dump --db-url "$OLD_PROD"             -f schema.sql
+supabase db dump --db-url "$OLD_PROD" --data-only -f data.sql
+```
+(No `supabase` CLI? `npm i -g supabase` first. The CLI is cleaner than raw `pg_dump` here because of `auth`.)
+
+### E3. Restore into the new project (roles → schema → data; replica mode defers FK/trigger checks)
+```bash
+"$PG/psql" "$NEW_PROD" -v ON_ERROR_STOP=0 -f roles.sql        # ignore "role already exists" notices
+"$PG/psql" "$NEW_PROD" -v ON_ERROR_STOP=1 -f schema.sql       # expected: one "schema public already exists"
+"$PG/psql" "$NEW_PROD" -v ON_ERROR_STOP=1 -c "SET session_replication_role = replica" -f data.sql
+```
+
+### E4. Verify — must be IDENTICAL (same checks as dev, §B2.4–5)
+```bash
+"$PG/psql" "$OLD_PROD" -At -F' ' -f /c/swiftpos/pos/scripts/db-move/row-counts.sql > old.txt
+"$PG/psql" "$NEW_PROD" -At -F' ' -f /c/swiftpos/pos/scripts/db-move/row-counts.sql > new.txt
+diff old.txt new.txt && echo "IDENTICAL"
+```
+A difference only in `refresh_tokens` is fine (the old DB stayed live). Then re-revoke the auto-exposed `anon`/`authenticated` grants and diff the structure **exactly as §B2.5** (the `$G`/`$Q` blocks, `revoke-extra.sql`). `schema_migrations` must match.
+
+### E5. JWT keys
+New project → **JWT Keys**: the current key must be **Legacy HS256 (shared secret)** — the server verifies owner sign-ins with it. **Do not rotate** to the new signing keys.
+
+### E6. Re-point everything (§B3), then take the API out of maintenance
+| Where | Keys |
+|---|---|
+| Render (prod API) | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY` (where set), `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` |
+| Vercel (prod dashboard + admin) | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` → **Redeploy** |
+| GitHub Secrets | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `BACKUP_DATABASE_URL` (env `backup`), `DATABASE_URL` (env `production`) |
+| Migration runner | the new DB's connection string |
+
+The **desktop POS need nothing** — they talk to the API on Render, never to Supabase.
+
+### E7. After
+- Run the §C checks. Owners/managers **re-sign-in once** (new JWT secret). The POS kept working throughout.
+- `rm -rf ~/zaptill-prod-move` (it holds sign-in data).
+- Leave the OLD project **paused** (not deleted) for a few calm days, then delete it.

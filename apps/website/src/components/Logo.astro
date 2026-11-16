@@ -1,10 +1,21 @@
 ---
 // The ZapTill mark: the app icon's teal Z on its dark tile, plus the wordmark.
+// The Z is drawn as a lightning bolt (ZapTill = Zap) with an electric teal gradient,
+// echoing the v-lightning poster. Kept crisp and legible at header size (34px).
 ---
 <a class="logo" href="/" aria-label="ZapTill home">
   <svg class="logo__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="zapBolt" x1="9" y1="8" x2="22" y2="25" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#7cf5df" />
+        <stop offset="0.55" stop-color="#2dd4bf" />
+        <stop offset="1" stop-color="#0d9488" />
+      </linearGradient>
+    </defs>
     <rect x="1" y="1" width="30" height="30" rx="8" fill="#050d12" stroke="#5eead4" stroke-width="1.4" />
-    <path d="M10 9.5h12.5v3.2l-8.2 9.3h8.4v3.5H9.6v-3.2l8.2-9.3H10z" fill="#14b8a6" />
+    <path d="M10.6 9.7 H21.6 L15.7 15.6 L17.8 17.3 L10.4 23.3 H21.4"
+      fill="none" stroke="url(#zapBolt)" stroke-width="3.2"
+      stroke-linejoin="round" stroke-linecap="round" />
   </svg>
   <span class="logo__word">ZapTill</span>
 </a>

@@ -80,7 +80,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   ok('…and is mounted once, inside BusinessProvider', /<BusinessProvider>\s*<ThemeLayer \/>/.test(D('src/App.tsx')));
   ok('Branding fires the saved event after Save and after Reset', (D('src/pages/settings/BrandingTab.tsx').match(/window\.dispatchEvent\(new Event\(BRANDING_SAVED_EVENT\)\)/g) || []).length === 2);
 
-  // ── Part 2: the web POS's INLINE colours (docs/A328-web-pos-inline-colours.md) ──
+  // ── Part 2: the web POS's INLINE colours (docs/tasks/A328-web-pos-inline-colours.md) ──
   // Bench: Chromium, 94 rewritten uses × 4 contexts (dashboard dark/light, POS toggle dark/light): themes OFF identical to
   // each use's original; 7 themes: white labels ≥ 5.36, dark labels ≥ 4.96, text ≥ 5.36.
   ok('the inline aliases default to SwiftPOS teal (A329) — green and blue primaries alike are teal with themes OFF',

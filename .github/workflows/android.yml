@@ -1,4 +1,4 @@
-# ZapTill for Android — build the APK (docs/ANDROID-APP-DESIGN.md, "Stage 0 — built").
+# ZapTill for Android — build the APK (docs/designs/ANDROID-APP-DESIGN.md, "Stage 0 — built").
 #
 # Every push to the android branch, every pull request that touches the app, and on demand: type-check and build the
 # app's screens, run the native unit tests (the updater's SHA-256 and redirect checks), and build the APK.
@@ -7,7 +7,7 @@
 #   - When the release key is in the repository's secrets: the RELEASE APK signed with ZapTill's key, named
 #     ZapTill-<version>.apk, with its SHA-256 beside it. Not published anywhere yet: the release step (a GitHub release
 #     tagged android-v<version>, which the cloud's update feed reads) is added when the owner says the first version
-#     is ready (docs/ANDROID-APP-DESIGN.md says how).
+#     is ready (docs/designs/ANDROID-APP-DESIGN.md says how).
 #
 # The release key is held by the owner only. It reaches this job only as GitHub secrets, is decoded into the runner's
 # temporary folder for the build, and is deleted after it — never printed, never uploaded, never in the repository:

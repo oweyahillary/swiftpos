@@ -1,7 +1,7 @@
 /**
  * App — the first-launch question until the device has a mode, then that mode's screen: a Shop POS joins and sells (Till
- * stage 1, docs/ANDROID-APP-DESIGN.md §11); an owner's phone shows Stage 0's placeholder (updates, Reset app) until Owner
- * stage A. docs/ANDROID-APP-DESIGN.md §2 and "Stage 0 — built".
+ * stage 1, docs/designs/ANDROID-APP-DESIGN.md §11); an owner's phone shows Stage 0's placeholder (updates, Reset app) until Owner
+ * stage A. docs/designs/ANDROID-APP-DESIGN.md §2 and "Stage 0 — built".
  */
 import { useEffect, useState } from 'react';
 import { App as NativeApp } from '@capacitor/app';

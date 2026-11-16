@@ -1,5 +1,5 @@
 /**
- * branchBilling.ts — A612 phases 3 and 4: the cloud billed per branch, and premium per branch (docs/A612-per-branch-cloud.md).
+ * branchBilling.ts — A612 phases 3 and 4: the cloud billed per branch, and premium per branch (docs/tasks/A612-per-branch-cloud.md).
  *
  * Owner, 2026-10-30: "the owner should be the one who gets the invoice not individual branch" · "we itemize the items being
  * billed, give unit price and under note we add list of branches" · the items "Cloud - dashboard and, backup, remote till

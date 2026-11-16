@@ -13,7 +13,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * Downloads the approved APK and checks its SHA-256 while it streams (docs/ANDROID-APP-DESIGN.md §1.4). No Android
+ * Downloads the approved APK and checks its SHA-256 while it streams (docs/designs/ANDROID-APP-DESIGN.md §1.4). No Android
  * classes, so ApkDownloaderTest runs it on the build machine.
  *
  * The cloud answers the download with a redirect to the file's short-lived link on another host (GitHub today). The

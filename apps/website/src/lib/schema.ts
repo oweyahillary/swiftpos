@@ -5,17 +5,27 @@
 import { SITE } from './site.ts';
 import type { FaqItem } from './faq.ts';
 
-/** The business behind the site: in the layout on every page. */
+/**
+ * The business behind the site: in the layout on every page. ZapTill is a service-area local business — we set the point
+ * of sale up at the client's own premises across Kenya ("we come to you"), rather than a storefront people visit. Google
+ * advises marking a service-area business up as a LocalBusiness with `areaServed` and NO street address (the address is
+ * managed in a Google Business Profile instead), which is what we do here. Only truthful fields; no invented address,
+ * hours or social links.
+ */
 export function organization() {
   return {
     '@context': 'https://schema.org',
-    '@type': 'Organization',
+    '@type': 'LocalBusiness',
     '@id': `${SITE.url}/#organization`,
     name: 'ZapTill',
+    description:
+      'Point-of-sale system for restaurants, cafés and bars in Kenya: M-Pesa on every receipt, orders straight to the kitchen, drawers by cashier, and a desktop app that keeps selling offline.',
     url: SITE.url,
     logo: `${SITE.url}/favicon.png`,
+    image: `${SITE.url}/og-zaptill.png`,
     telephone: SITE.phoneIntl,
-    areaServed: 'KE',
+    areaServed: { '@type': 'Country', name: 'Kenya' },
+    knowsLanguage: ['en', 'sw'],
     contactPoint: {
       '@type': 'ContactPoint',
       telephone: SITE.phoneIntl,
@@ -23,19 +33,19 @@ export function organization() {
       areaServed: 'KE',
       availableLanguage: ['en', 'sw'],
     },
-    // TODO(owner): add "email" and "address" once the company email and office address are confirmed.
+    // TODO(owner): add "email", "address" and "openingHoursSpecification" once confirmed, "sameAs" (social-profile URLs)
+    // once the accounts exist, and — the biggest local-search win — a Google Business Profile for ZapTill.
   };
 }
 
-/** Who the product is for, in search engines' words. */
+/**
+ * Who the product is for, in search engines' words. Public scope (owner, 2026-11-13): only the tested restaurant/hotel
+ * POS is marketed publicly, so only the food-service audiences are named here. The other verticals are parked.
+ */
 export const AUDIENCES = [
-  'Retail shops and supermarkets',
-  'Minimarts',
   'Restaurants and cafés',
   'Bars and lounges',
   'Quick-service restaurants and takeaways',
-  'Petrol stations',
-  'Car parks',
 ];
 
 /** The product: on Home, Features and Analytics. */
@@ -50,7 +60,7 @@ export function softwareApplication(description: string) {
     description,
     url: SITE.url,
     publisher: { '@id': `${SITE.url}/#organization` },
-    // 2026-10-23: every business type ZapTill is set up for (shared/businessTerms.ts), not only food service.
+    // Public scope (owner, 2026-11-13): only the food-service audiences (AUDIENCES), the tested restaurant/hotel POS.
     audience: AUDIENCES.map((audienceType) => ({ '@type': 'BusinessAudience', audienceType, geographicArea: { '@type': 'Country', name: 'Kenya' } })),
     // TODO(owner): add an "offers" block (price, KES) once the prices are final; left out while they are a draft.
   };

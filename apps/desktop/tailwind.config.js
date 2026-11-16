@@ -7,7 +7,7 @@ module.exports = {
       // A326 (client branding Phase 2, slice 3): two themeable scales, driven by CSS variables set by
       // src/renderer/lib/themeVars.ts. Their DEFAULTS (src/renderer/index.css) are Tailwind's own green values,
       // so a till whose business has themes OFF renders exactly as before. Status (paid/success/online), money
-      // and the SwiftPOS wordmark keep plain `green-*` — see docs/A326-till-green-classification.md.
+      // and the SwiftPOS wordmark keep plain `green-*` — see docs/tasks/A326-till-green-classification.md.
       //   action  — buttons, selected states, links, focus rings  → the curated ACTION theme
       //   brand   — the in-app lock curtain                       → the business's own BRAND colour
       //   on-brand — text on a brand fill (black or white, whichever reads)

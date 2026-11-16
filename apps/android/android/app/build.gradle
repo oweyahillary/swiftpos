@@ -2,7 +2,7 @@ apply plugin: 'com.android.application'
 
 import groovy.json.JsonSlurper
 
-// ZapTill for Android (docs/ANDROID-APP-DESIGN.md). The version lives in ONE place, apps/android/package.json:
+// ZapTill for Android (docs/designs/ANDROID-APP-DESIGN.md). The version lives in ONE place, apps/android/package.json:
 // versionName "x.y.z", versionCode x*1000000 + y*1000 + z (each update must carry a higher code than the one installed).
 def appVersion = new JsonSlurper().parse(file('../../package.json')).version as String
 def versionParts = appVersion.tokenize('.').collect { it as int }

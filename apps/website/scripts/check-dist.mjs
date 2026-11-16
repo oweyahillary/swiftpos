@@ -54,7 +54,7 @@ for (const [url, { html, file }] of htmlByUrl) {
   // Head
   if (!/<title>[^<]{5,}<\/title>/.test(html)) err(url, 'no <title>');
   if (!/<meta name="description" content="[^"]{30,}"/.test(html)) err(url, 'no meta description');
-  if (!is404 && !/<link rel="canonical" href="https:\/\/zaptill\.co\.ke\/[^"]*"/.test(html)) err(url, 'no canonical link');
+  if (!is404 && !/<link rel="canonical" href="https:\/\/(?:www\.)?zaptill\.co\.ke\/[^"]*"/.test(html)) err(url, 'no canonical link');
   {
     const decode = (t) => t.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
     const t = decode((html.match(/<title>([^<]*)<\/title>/) || [])[1] || '');
@@ -104,7 +104,7 @@ for (const [url, { html, file }] of htmlByUrl) {
   const assets = new Set();
   for (const ref of refs) {
     if (/^(https?:|mailto:|tel:|data:)/.test(ref)) {
-      if (/^https?:\/\/(zaptill\.co\.ke)(\/|$)/.test(ref)) continue;   // canonical / og:url: our own absolute URLs
+      if (/^https?:\/\/(?:www\.)?zaptill\.co\.ke(\/|$)/.test(ref)) continue;   // canonical / og:url: our own absolute URLs
       external++;
       continue;
     }
@@ -129,7 +129,7 @@ for (const [url, { html, file }] of htmlByUrl) {
 // The sitemap lists exactly the pages search engines may index.
 {
   const smFiles = files.filter((f) => /sitemap-\d+\.xml$/.test(f));
-  const inSitemap = new Set(smFiles.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/<loc>https:\/\/zaptill\.co\.ke([^<]*)<\/loc>/g)].map((m) => m[1])));
+  const inSitemap = new Set(smFiles.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/<loc>https:\/\/(?:www\.)?zaptill\.co\.ke([^<]*)<\/loc>/g)].map((m) => m[1])));
   if (!smFiles.length) errors.push('no sitemap in dist/');
   for (const u of noindexed) if (inSitemap.has(u)) errors.push(`${u}: noindex but listed in the sitemap`);
   for (const u of indexed) if (!inSitemap.has(u)) errors.push(`${u}: indexable but missing from the sitemap`);

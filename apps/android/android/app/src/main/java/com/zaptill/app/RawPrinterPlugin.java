@@ -10,7 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * RawPrinter — ESC/POS bytes to a network printer over raw TCP (port 9100), Till stage 1 (docs/ANDROID-APP-DESIGN.md
+ * RawPrinter — ESC/POS bytes to a network printer over raw TCP (port 9100), Till stage 1 (docs/designs/ANDROID-APP-DESIGN.md
  * §4.6, §11). The bytes are rendered by shared/printing in the web POS screens; this only carries them. Never Android's
  * PrintManager (it rasterises; §4.6).
  *

@@ -1,7 +1,7 @@
 /**
  * PinScreen — the Shop POS's door: a person enters their PIN (Till stage 1, online; shop/pinSignIn.ts), and the web POS
  * screens open as them. Locking the POS (its 🔒 Lock) comes back here. Staff, managers and owners alike use their PIN on a
- * POS (docs/ANDROID-APP-DESIGN.md §2) — nobody signs in with an email here.
+ * POS (docs/designs/ANDROID-APP-DESIGN.md §2) — nobody signs in with an email here.
  *
  * Arriving here ends the last person's web POS sign-in on this tablet (their tokens are removed from the page's storage):
  * a person's sign-in never outlives their turn on a POS (A415).

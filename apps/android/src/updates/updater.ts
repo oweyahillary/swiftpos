@@ -1,5 +1,5 @@
 /**
- * updater.ts — the in-app updater (docs/ANDROID-APP-DESIGN.md §1.4): ask the cloud which version this business is
+ * updater.ts — the in-app updater (docs/designs/ANDROID-APP-DESIGN.md §1.4): ask the cloud which version this business is
  * approved for, download only that APK, check its SHA-256, and hand it to Android's installer. Android always shows its
  * own "Update this app?" prompt, and refuses an APK not signed with ZapTill's key.
  *

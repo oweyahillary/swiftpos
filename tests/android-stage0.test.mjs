@@ -1,5 +1,5 @@
 /**
- * android-stage0.test.mjs — the ZapTill Android app, Stage 0 (docs/ANDROID-APP-DESIGN.md, "Stage 0 — built"): the
+ * android-stage0.test.mjs — the ZapTill Android app, Stage 0 (docs/designs/ANDROID-APP-DESIGN.md, "Stage 0 — built"): the
  * app's update feed approved per business and surface like the desktop (A348), the admin portal's approval and download
  * link, and crash reports into the admin portal's alerts.
  *

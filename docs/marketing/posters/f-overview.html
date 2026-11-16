@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Everything your restaurant runs on</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{position:relative;overflow:hidden;color:var(--text);font-family:var(--font-text);
+    background:
+      radial-gradient(120% 78% at 86% -10%, rgba(20,184,166,.22), transparent 58%),
+      radial-gradient(95% 70% at 4% 112%, rgba(13,148,136,.20), transparent 55%),
+      linear-gradient(162deg,#0a2429 0%,#061a1d 54%,#04151a 100%);}
+  .board.square{width:1080px;height:1080px;}
+  .board.story{width:1080px;height:1920px;}
+  .logo{display:flex;align-items:center;gap:.5em;}
+  .logo img{width:52px;height:52px;border-radius:24%;display:block;}
+  .logo b{font-family:var(--font-display);font-weight:800;font-size:38px;letter-spacing:-.02em;}
+  .logo b i{font-style:normal;color:var(--teal-light);}
+  .tag{font-size:16px;letter-spacing:.26em;text-transform:uppercase;font-weight:700;color:var(--teal-light);
+    border:1.5px solid var(--night-line);border-radius:999px;padding:.6em 1.1em;}
+  .top{position:absolute;z-index:5;display:flex;justify-content:space-between;align-items:center;}
+  .h{font-family:var(--font-display);font-weight:800;letter-spacing:-.022em;line-height:1.03;text-wrap:balance;}
+  .h em{font-style:normal;color:var(--teal-light);}
+  .pill{display:flex;align-items:center;gap:16px;background:rgba(11,37,41,.66);border:1px solid var(--night-line);
+    border-radius:16px;padding:17px 22px;}
+  .pill .ck{width:42px;height:42px;border-radius:50%;background:rgba(20,184,166,.16);display:grid;place-items:center;flex:none;}
+  .pill .ck svg{width:22px;height:22px;stroke:var(--teal-light);fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;}
+  .pill .t{font-weight:700;color:var(--text);}
+  .dev{position:absolute;padding:12px;border-radius:22px;background:#07171b;border:1px solid rgba(45,212,191,.22);
+    box-shadow:0 56px 120px -36px rgba(0,0,0,.8),0 0 90px -24px rgba(20,184,166,.45);z-index:4;}
+  .dev img{width:100%;display:block;border-radius:12px;}
+  .food{position:absolute;border-radius:50%;overflow:hidden;z-index:6;border:5px solid var(--night);
+    box-shadow:0 30px 60px -22px rgba(0,0,0,.72);}
+  .food img{width:100%;height:100%;object-fit:cover;display:block;}
+  .foot{position:absolute;z-index:5;display:flex;justify-content:space-between;align-items:flex-end;gap:2em;}
+  .cta{display:inline-flex;align-items:center;gap:.4em;background:var(--teal);color:#042;font-weight:800;
+    padding:.75em 1.3em;border-radius:12px;}
+  .handle{color:var(--muted);font-weight:600;}
+
+  /* ---- square ---- */
+  .square .top{left:74px;right:74px;top:74px;}
+  .square .copy{position:absolute;left:74px;top:188px;width:498px;z-index:5;}
+  .square .h{font-size:62px;}
+  .square .pills{display:flex;flex-direction:column;gap:15px;margin-top:34px;}
+  .square .pill .t{font-size:23px;}
+  .square .dev{right:-34px;top:300px;width:512px;transform:perspective(2100px) rotateY(-15deg) rotate(-2deg);}
+  .square .food{right:52px;bottom:150px;width:188px;height:188px;}
+  .square .foot{left:74px;right:74px;bottom:66px;font-size:23px;}
+
+  /* ---- story ---- */
+  .story .top{left:96px;right:96px;top:96px;}
+  .story .copy{position:absolute;left:96px;right:96px;top:250px;z-index:5;}
+  .story .h{font-size:98px;}
+  .story .pills{display:flex;flex-direction:column;gap:22px;margin-top:52px;}
+  .story .pill{padding:24px 30px;border-radius:20px;}
+  .story .pill .ck{width:54px;height:54px;} .story .pill .ck svg{width:28px;height:28px;}
+  .story .pill .t{font-size:33px;}
+  .story .dev{left:96px;right:96px;bottom:250px;width:auto;transform:perspective(2400px) rotateX(3deg) rotate(-1deg);}
+  .story .food{right:150px;bottom:470px;width:230px;height:230px;}
+  .story .foot{left:96px;right:96px;bottom:120px;font-size:30px;}
+</style>
+</head>
+<body>
+<div class="board square" id="feed"></div>
+<div class="board story" id="story"></div>
+
+<template id="tpl">
+  <div class="top">
+    <span class="logo"><img src="assets/logo.png" alt="">Zap<b><i>Till</i></b></span>
+    <span class="tag">Restaurant POS</span>
+  </div>
+  <div class="copy">
+    <div class="h">Everything your restaurant <em>runs on</em>.</div>
+    <div class="pills">
+      <div class="pill"><span class="ck"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span class="t">Orders taken at the table</span></div>
+      <div class="pill"><span class="ck"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span class="t">Tickets fired to the kitchen</span></div>
+      <div class="pill"><span class="ck"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span class="t">M&#8209;Pesa charged from the till</span></div>
+      <div class="pill"><span class="ck"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span class="t">Keeps selling when the internet drops</span></div>
+      <div class="pill"><span class="ck"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span class="t">One live dashboard for the owner</span></div>
+    </div>
+  </div>
+  <div class="dev"><img src="assets/till-pos.webp" alt="ZapTill point of sale"></div>
+  <div class="food"><img src="assets/food-nyamachoma.webp" alt=""></div>
+  <div class="foot">
+    <span class="cta">Book a demo&nbsp;&rarr;</span>
+    <span class="handle">zaptill.co.ke</span>
+  </div>
+</template>
+
+<script>
+  var tpl=document.getElementById('tpl').innerHTML;
+  document.getElementById('feed').innerHTML=tpl;document.getElementById('story').innerHTML=tpl;
+  var h=location.hash;
+  if(h==='#feed'||h==='#story'){document.body.style.cssText='margin:0;padding:0;gap:0;display:block';
+    document.querySelectorAll('.board').forEach(function(b){b.style.display='none';});
+    var el=document.querySelector(h==='#feed'?'.square':'.story');if(el){el.style.display='block';el.style.margin='0';}}
+</script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — vintage poster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Oswald:wght@500;600;700&family=Yeseva+One&display=swap">
+<style>
+  :root{--paper:#efe3c2;--paper2:#f6edd3;--teal:#1e5e4f;--teal-d:#164a3e;--rust:#c1562e;--gold:#d49a2e;--brown:#3c2a1c;--maroon:#7c2b2b;
+    --crest:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/%3E%3C/svg%3E");}
+  [data-theme="navy"]{--paper:#eae1cd;--paper2:#f2ead7;--teal:#1b3a5c;--teal-d:#132b45;--rust:#c69a3c;--gold:#e3ba55;--brown:#241b10;--maroon:#8a6a24;}
+  [data-theme="oxblood"]{--paper:#efe4d0;--paper2:#f5ecda;--teal:#7a2733;--teal-d:#5a1b26;--rust:#c2983a;--gold:#dca83f;--brown:#241410;--maroon:#5a1e26;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{display:flex;justify-content:center;padding:30px;background:#20160e;font-family:'Oswald',sans-serif;}
+  .poster{position:relative;width:1080px;height:1440px;overflow:hidden;color:var(--teal);
+    background:radial-gradient(120% 90% at 50% 38%, var(--paper2) 0%, var(--paper) 52%, #e4d4ac 100%);}
+
+  /* paper grain + vignette */
+  .grain{position:absolute;inset:0;z-index:8;pointer-events:none;opacity:.13;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+  .vignette{position:absolute;inset:0;z-index:7;pointer-events:none;mix-blend-mode:multiply;
+    background:radial-gradient(125% 105% at 50% 44%, transparent 56%, rgba(60,42,28,.34) 100%);}
+
+  /* ornate double border */
+  .frame{position:absolute;inset:38px;z-index:4;border:4px solid var(--teal);}
+  .frame::after{content:"";position:absolute;inset:9px;border:1.5px solid var(--teal);}
+  .corner{position:absolute;z-index:5;width:30px;height:30px;background:var(--rust);transform:rotate(45deg);}
+  .corner.tl{left:30px;top:30px;} .corner.tr{right:30px;top:30px;} .corner.bl{left:30px;bottom:30px;} .corner.br{right:30px;bottom:30px;}
+
+  .wrap{position:absolute;inset:78px;z-index:6;display:flex;flex-direction:column;align-items:center;text-align:center;}
+
+  .kicker{margin-top:16px;font-weight:600;font-size:25px;letter-spacing:7px;text-transform:uppercase;color:var(--rust);
+    display:flex;align-items:center;gap:16px;}
+  .kicker::before,.kicker::after{content:"";width:60px;height:2px;background:var(--rust);}
+
+  /* emblem */
+  .emblem{position:relative;width:460px;height:460px;margin-top:30px;}
+  .sun{position:absolute;inset:-6px;border-radius:50%;
+    background:repeating-conic-gradient(from 4deg, var(--gold) 0deg 4.2deg, transparent 4.2deg 11deg);opacity:.55;
+    -webkit-mask:radial-gradient(circle, #000 60%, transparent 73%);mask:radial-gradient(circle,#000 60%,transparent 73%);}
+  .badge{position:absolute;inset:0;}
+  .badge .ring{fill:none;stroke:var(--teal);} .badge .disc{fill:var(--teal);} .badge .inner{fill:var(--paper2);}
+  .badge .dash{fill:none;stroke:var(--teal);} .badge .dot{fill:var(--gold);}
+  .arc{fill:var(--paper2);font-family:'Oswald';font-weight:600;letter-spacing:4px;}
+  .arc.t{font-size:30px;} .arc.b{font-size:25px;}
+  .chef{position:absolute;left:50%;top:43%;transform:translate(-50%,-50%);width:150px;height:150px;
+    background:var(--teal);-webkit-mask:var(--crest) center/contain no-repeat;mask:var(--crest) center/contain no-repeat;}
+  .estwrap{position:absolute;left:50%;bottom:20%;transform:translateX(-50%);text-align:center;}
+  .est{font-family:'Alfa Slab One';font-size:34px;color:var(--rust);line-height:.9;}
+  .estlbl{font-weight:600;font-size:16px;letter-spacing:5px;color:var(--teal);}
+
+  .head{margin-top:36px;font-family:'Alfa Slab One';font-size:84px;line-height:.98;color:var(--teal);letter-spacing:.5px;}
+  .head .r{color:var(--rust);}
+  .flourish{margin-top:14px;font-family:'Yeseva One';font-size:40px;color:var(--maroon);transform:rotate(-2deg);}
+
+  .ribbon{margin-top:30px;position:relative;background:var(--rust);color:var(--paper2);
+    font-weight:600;font-size:27px;letter-spacing:5px;text-transform:uppercase;padding:16px 60px;
+    clip-path:polygon(28px 0, calc(100% - 28px) 0, 100% 50%, calc(100% - 28px) 100%, 28px 100%, 0 50%);
+    box-shadow:0 10px 0 -4px rgba(60,42,28,.18);}
+
+  .divider{margin-top:42px;display:flex;align-items:center;gap:20px;color:var(--rust);font-size:26px;}
+  .divider::before,.divider::after{content:"";width:110px;height:2px;background:var(--teal);opacity:.55;}
+  .medals{margin-top:36px;display:flex;gap:50px;}
+  .medal{position:relative;width:104px;height:104px;border-radius:50%;border:3px solid var(--teal);background:var(--paper2);
+    display:grid;place-items:center;box-shadow:inset 0 0 0 3px var(--paper);}
+  .medal i{width:54px;height:54px;background:var(--teal);display:block;
+    -webkit-mask:var(--ic) center/contain no-repeat;mask:var(--ic) center/contain no-repeat;}
+  .mlbl{position:absolute;bottom:-34px;left:50%;transform:translateX(-50%);font-weight:600;font-size:17px;letter-spacing:3px;color:var(--teal);}
+
+  .foot{margin-top:auto;display:flex;align-items:center;gap:18px;font-weight:700;font-size:30px;letter-spacing:3px;color:var(--teal);}
+  .foot::before,.foot::after{content:"";width:70px;height:2px;background:var(--teal);}
+  .foot b{font-weight:700;} .foot b i{font-style:normal;color:var(--rust);}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="frame"></div>
+  <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+
+  <div class="wrap">
+    <div class="kicker">Nairobi &middot; Kenya</div>
+
+    <div class="emblem">
+      <div class="sun"></div>
+      <svg class="badge" viewBox="0 0 460 460">
+        <circle class="ring" cx="230" cy="230" r="224" stroke-width="5"/>
+        <circle class="disc" cx="230" cy="230" r="216"/>
+        <circle class="inner" cx="230" cy="230" r="166"/>
+        <circle class="dash" cx="230" cy="230" r="166" stroke-width="2.5" stroke-dasharray="2 8"/>
+        <defs>
+          <path id="at" d="M 56 230 A 174 174 0 0 1 404 230"/>
+          <path id="ab" d="M 64 230 A 166 166 0 0 0 396 230"/>
+        </defs>
+        <text class="arc t"><textPath href="#at" startOffset="50%" text-anchor="middle">ZAPTILL &#183; RESTAURANT POS</textPath></text>
+        <text class="arc b"><textPath href="#ab" startOffset="50%" text-anchor="middle">ORDER &#183; COOK &#183; CHARGE &#183; COUNT</textPath></text>
+        <g class="dot"><circle cx="40" cy="230" r="6"/><circle cx="420" cy="230" r="6"/></g>
+      </svg>
+      <div class="chef"></div>
+      <div class="estwrap"><div class="estlbl">EST.</div><div class="est">2025</div></div>
+    </div>
+
+    <div class="head">ONE TILL,<br>THE <span class="r">WHOLE FLOOR</span></div>
+    <div class="flourish">runs the show</div>
+
+    <div class="ribbon">Offline &middot; M&#8209;Pesa &middot; Live reports</div>
+
+    <div class="divider">&#10022;</div>
+    <div class="medals">
+      <span class="medal"><i style="--ic:url(assets/resto/cloche.png)"></i><span class="mlbl">SERVE</span></span>
+      <span class="medal"><i style="--ic:url(assets/resto/cutlery-x.png)"></i><span class="mlbl">COOK</span></span>
+      <span class="medal"><i style="--ic:url(assets/resto/card.png)"></i><span class="mlbl">PAY</span></span>
+    </div>
+
+    <div class="foot"><b>zaptill<i>.co.ke</i></b></div>
+  </div>
+
+  <div class="vignette"></div>
+  <div class="grain"></div>
+</div>
+<script>
+  var parts=location.hash.replace('#','').split('-');
+  if(parts[0]) document.documentElement.setAttribute('data-theme',parts[0]);
+  if(parts.indexOf('cloche')>=0) document.documentElement.style.setProperty('--crest','url(assets/resto/cloche.png)');
+  if(parts.indexOf('cutlery')>=0) document.documentElement.style.setProperty('--crest','url(assets/resto/cutlery-x.png)');
+</script>
+</body>
+</html>

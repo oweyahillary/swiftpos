@@ -1,5 +1,5 @@
 // The dashboard's Tailwind theme, unchanged (one POS design) — only where to look for classes differs: the web POS screens
-// and the shared pieces the Shop POS bundles (Till stage 1, docs/ANDROID-APP-DESIGN.md §11).
+// and the shared pieces the Shop POS bundles (Till stage 1, docs/designs/ANDROID-APP-DESIGN.md §11).
 const path = require('path');
 const dashboard = require('../dashboard/tailwind.config.js');
 

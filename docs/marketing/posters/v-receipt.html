@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Receipt</title>
+<link rel="stylesheet" href="posters.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+  body{display:flex;flex-wrap:wrap;gap:40px;padding:40px;}
+  .board{width:1080px;height:1080px;position:relative;overflow:hidden;color:var(--text);
+    background:radial-gradient(58% 52% at 50% 44%, #2c2013 0%, #1b1309 46%, #120b05 100%);}
+  .spot{position:absolute;left:50%;top:44%;width:720px;height:820px;transform:translate(-50%,-50%);z-index:0;
+    background:radial-gradient(closest-side, rgba(251,191,36,.3), rgba(245,158,11,.12) 55%, transparent 74%);}
+  .brandline{position:absolute;left:0;right:0;top:70px;z-index:3;display:flex;justify-content:center;align-items:center;gap:.5em;
+    font-family:var(--font-display);font-weight:800;font-size:30px;letter-spacing:-.02em;color:#d9ece9;}
+  .brandline img{width:42px;height:42px;border-radius:24%;} .brandline i{font-style:normal;color:#fbbf24;}
+  .foot{position:absolute;left:0;right:0;bottom:60px;z-index:3;text-align:center;
+    font-family:var(--font-text);color:var(--muted);font-size:23px;font-weight:500;letter-spacing:.02em;}
+
+  .receipt{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-1.4deg);z-index:2;
+    width:430px;background:#fbfaf2;color:#161512;padding:40px 40px 34px;
+    font-family:'Space Mono',monospace;box-shadow:0 50px 90px -30px rgba(0,0,0,.72),0 0 70px -20px rgba(45,212,191,.5);}
+  .receipt::before,.receipt::after{content:"";position:absolute;left:0;right:0;height:18px;
+    background:linear-gradient(135deg,#fbfaf2 9px,transparent 0) repeat-x, linear-gradient(-135deg,#fbfaf2 9px,transparent 0) repeat-x;
+    background-size:18px 18px;}
+  .receipt::before{top:-16px;} .receipt::after{bottom:-16px;transform:scaleY(-1);}
+
+  .rc-head{text-align:center;}
+  .rc-logo{width:56px;height:56px;border-radius:26%;display:inline-grid;place-items:center;margin-bottom:12px;
+    background:linear-gradient(145deg,#f59e0b,#b45309);}
+  .rc-logo b{font-family:var(--font-display);font-weight:800;font-size:38px;color:#fbfaf2;line-height:1;}
+  .rc-name{font-family:var(--font-display);font-weight:800;font-size:34px;letter-spacing:-.01em;}
+  .rc-sub{font-size:14px;letter-spacing:.24em;margin-top:4px;color:#4a4740;}
+  .rc-meta{display:flex;justify-content:space-between;font-size:14px;color:#6a675d;margin-top:18px;}
+  .dash{border-top:2px dashed #cfccbe;margin:16px 0;}
+  .li{display:flex;align-items:baseline;gap:8px;font-size:19px;margin:11px 0;}
+  .li .nm{font-weight:700;} .li .dots{flex:1;border-bottom:2px dotted #cbc8bb;transform:translateY(-4px);}
+  .li .ok{color:#b45309;font-weight:700;}
+  .total{display:flex;justify-content:space-between;align-items:center;font-size:22px;font-weight:700;margin:6px 0 2px;}
+  .total .big{font-family:var(--font-display);font-size:26px;}
+  .stamp{margin:16px auto 6px;width:fit-content;border:3px solid #b45309;color:#b45309;border-radius:10px;
+    padding:6px 16px;font-weight:700;font-size:18px;letter-spacing:.08em;transform:rotate(-4deg);}
+  .barcode{height:52px;margin:16px 0 8px;
+    background:repeating-linear-gradient(90deg,#161512 0 3px,transparent 3px 5px,#161512 5px 7px,transparent 7px 12px,#161512 12px 14px,transparent 14px 18px);}
+  .bc-txt{text-align:center;font-size:15px;letter-spacing:.3em;color:#3a382f;}
+</style>
+</head>
+<body>
+<div class="board">
+  <div class="spot"></div>
+  <div class="brandline"><img src="assets/logo.png" alt="">Zap<i>Till</i></div>
+
+  <div class="receipt">
+    <div class="rc-head">
+      <div class="rc-logo"><b>Z</b></div>
+      <div class="rc-name">ZapTill</div>
+      <div class="rc-sub">RESTAURANT&nbsp;POS&nbsp;·&nbsp;KENYA</div>
+    </div>
+    <div class="rc-meta"><span>RCPT #0001</span><span>TABLE · T4</span></div>
+    <div class="dash"></div>
+    <div class="li"><span class="nm">Works offline</span><span class="dots"></span><span class="ok">✓</span></div>
+    <div class="li"><span class="nm">M-Pesa &amp; cards</span><span class="dots"></span><span class="ok">✓</span></div>
+    <div class="li"><span class="nm">Tables &amp; tabs</span><span class="dots"></span><span class="ok">✓</span></div>
+    <div class="li"><span class="nm">Kitchen tickets</span><span class="dots"></span><span class="ok">✓</span></div>
+    <div class="li"><span class="nm">Split bills</span><span class="dots"></span><span class="ok">✓</span></div>
+    <div class="li"><span class="nm">Daily close</span><span class="dots"></span><span class="ok">✓</span></div>
+    <div class="dash"></div>
+    <div class="total"><span>TOTAL</span><span class="big">All of it.</span></div>
+    <div class="stamp">PAID · M-PESA</div>
+    <div class="barcode"></div>
+    <div class="bc-txt">ZAPTILL.CO.KE</div>
+  </div>
+
+  <div class="foot">Everything your restaurant runs on — on one receipt.</div>
+</div>
+</body>
+</html>

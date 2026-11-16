@@ -1,18 +1,14 @@
 ---
-// Guide 4 (night 3, DRAFT for the owner): setup vs monthly. Every ZapTill figure comes from PRICES in src/lib/site.ts
-// through zaptillCost() in src/lib/guides.ts (tested), so it follows the pricing page. No other supplier is named or
-// priced; the only outside figures are the reader's own.
+// Guide 4 (night 3, DRAFT for the owner): setup vs monthly. Prices are off the public site (owner, 2026-11-13), so this
+// guide teaches how to compare POS pricing without printing ZapTill's own numbers; it points to the quote selector
+// (/pricing/) instead. The only figures are the reader's own and one illustrative per-sale example. Re-add ZapTill
+// numbers here only when the owner puts pricing back on the public site.
 import Guide from '../../layouts/Guide.astro';
-import { WA_MESSAGES, PRICES, kes } from '../../lib/site';
-import { zaptillCost } from '../../lib/guides';
-
-const one = zaptillCost({ branches: 1, years: 3 });
-const two = zaptillCost({ branches: 2, years: 3 });
-const cloudMonths = 36 - PRICES.trialMonths;
+import { WA_MESSAGES } from '../../lib/site';
 ---
 <Guide slug="pos-pricing-setup-vs-monthly" waMessage={WA_MESSAGES.guidePricing} ctaTitle="Get a quote for your business, in writing."
   ctaText="Tell us how many branches and counters you have and what you sell. We will send you the setup, the monthly fee and any hardware, itemised.">
-  <p class="draft-banner">Draft — ZapTill prices being finalised</p>
+  <p class="draft-banner">Draft — in review</p>
   <p>
     Point of sale prices are hard to compare. One supplier asks for a large amount up front. Another asks for nothing
     up front and a monthly fee. A third says it is free. A fourth takes a small percentage of every sale. They are all
@@ -38,37 +34,21 @@ const cloudMonths = 36 - PRICES.trialMonths;
     about KES 6,000 a month, every month, forever.
   </p>
 
-  <h2>What ZapTill costs, added up</h2>
+  <h2>How ZapTill is priced</h2>
   <p>
-    ZapTill is paid once per branch for the point of sale, KES {kes(PRICES.setup)}, and then KES {kes(PRICES.monthly)} a
-    month for the cloud for the whole business, however many branches. The first month of the cloud is free. Over three
-    years, before hardware:
-  </p>
-  <div class="table-scroll">
-    <table>
-      <caption class="visually-hidden">ZapTill over three years, from the draft prices</caption>
-      <thead>
-        <tr><th scope="col">Over 3 years</th><th scope="col" class="num">One branch</th><th scope="col" class="num">Two branches</th></tr>
-      </thead>
-      <tbody>
-        <tr><th scope="row">Setup, once per branch</th><td class="num">KES {kes(one.setup)}</td><td class="num">KES {kes(two.setup)}</td></tr>
-        <tr><th scope="row">The cloud, {cloudMonths} paid months (the first is free), one fee for the business</th><td class="num">KES {kes(one.cloud)}</td><td class="num">KES {kes(two.cloud)}</td></tr>
-      </tbody>
-      <tfoot>
-        <tr><td>Total</td><td class="num">KES {kes(one.total)}</td><td class="num">KES {kes(two.total)}</td></tr>
-        <tr><td>About a day</td><td class="num">KES {kes(one.perDay)}</td><td class="num">KES {kes(two.perDay)}</td></tr>
-      </tfoot>
-    </table>
-  </div>
-  <p>
-    The second branch adds its setup, not a second monthly fee. ZapTill Analytics, if you want it, is about
-    KES {kes(PRICES.analyticsMonthly)} a month on top, for the whole business; take it when the cloud has shown you
-    what your numbers look like. Hardware is quoted separately, or you bring your own and we check it; each
-    extra computer, such as a second counter or a kitchen screen, is from about KES {kes(PRICES.extraComputerFrom)}.
+    ZapTill is paid once per branch for the point of sale — once it is paid, it is yours. The cloud is a single monthly
+    fee for the whole business, not per branch, and the first month is free. Nothing is taken per sale: sell more and
+    the fee stays the same. A second branch adds its own setup, not a second monthly fee.
   </p>
   <p>
-    Now do the same sum for any other quote you have. Put your own numbers in, and the cheapest option is usually
-    obvious.
+    Because every place is different — branches, counters, kitchen screens — we build the figure around your setup
+    rather than print one number. Tell us what you have and we send it back itemised: the setup, the monthly cloud fee
+    and any hardware. Analytics, if you want it, is an add-on for the whole business, taken once the cloud has shown you
+    what your numbers look like. Hardware is quoted separately, or you bring your own and we check it.
+  </p>
+  <p>
+    Then run the three-year sum above against our quote and against any other you have. <a href="/pricing/">Build your
+    quote</a> in a minute, or send us your numbers and we will do it with you.
   </p>
 
   <h2>What the setup should buy you</h2>
@@ -84,7 +64,7 @@ const cloudMonths = 36 - PRICES.trialMonths;
     <li><strong>Your logo and colours</strong> on the receipt.</li>
     <li><strong>The first day close, together,</strong> so the first one is right.</li>
   </ul>
-  <p>ZapTill's branch setup includes all of these. The full list is on the <a href="/pricing/">pricing page</a>.</p>
+  <p>ZapTill's branch setup includes all of these. The full list is on the <a href="/pricing/">quote page</a>.</p>
 
   <h2>What the monthly fee should buy you</h2>
   <p>
@@ -120,7 +100,6 @@ const cloudMonths = 36 - PRICES.trialMonths;
     <li>When can I get support, and is there a cost?</li>
   </ol>
   <p>
-    For a side-by-side look at what you get from a cash book, a basic point of sale and ZapTill, see
-    <a href="/pricing/#compare-title">the comparison on the pricing page</a>.
+    When you have your answers, <a href="/pricing/">build your quote</a> and put ZapTill's figure beside the rest.
   </p>
 </Guide>
