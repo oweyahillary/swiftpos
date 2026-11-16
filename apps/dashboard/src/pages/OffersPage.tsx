@@ -165,7 +165,7 @@ function OfferForm({ draft, onChange, onSave, onCancel, saving, error, products,
   const chosenBranches = draft.branch_ids ?? [];
 
   return (
-    <div className="space-y-5 max-w-2xl" data-testid="offer-form">
+    <div className="p-4 sm:p-6 space-y-5 max-w-2xl" data-testid="offer-form">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-white">{draft.id ? 'Edit offer' : 'New offer'}</h1>
         <button onClick={onCancel} className="text-sm text-gray-400 hover:text-white">Cancel</button>
