@@ -1405,6 +1405,13 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/theme-pull.test.mjs
 
+      # The brand logo shows the Cloudinary URL directly when online (stored eagerly, so a byte-cache failure does not lose
+      # the on-screen logo — the regression after the base64→Cloudinary move), with the cached base64 as the offline
+      # fallback. Real compiled localDb (applyPulledBranding / getBranding) + a source check of the three screens.
+      - name: Desktop brand logo (Cloudinary URL + offline fallback)
+        working-directory: apps/desktop
+        run: node --no-warnings test/brand-logo-url.test.mjs
+
       # A334 — the till joins a drawer the web POS opened as it (same id, its trading day) and its close
       # includes the web's cash (real compiled shiftService on SQLite).
       - name: Desktop shared drawer with the web POS
