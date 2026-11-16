@@ -69,6 +69,13 @@ jobs:
 
       - name: Type-check and build the screens, copy them into the Android project
         run: npm run sync
+        # Owner stage A: the owner/manager phone mode signs in through Supabase (shop/supabaseReal.ts). These are the PUBLIC
+        # client keys (RLS protects the data), so they are repo VARIABLES, not secrets. Set vars.VITE_SUPABASE_URL and
+        # vars.VITE_SUPABASE_ANON_KEY (dev values) for owner sign-in to reach the cloud; unset → a placeholder, the build
+        # still succeeds and the Shop POS is unaffected (it never calls Supabase).
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
       # chmod: a commit from Windows may not carry gradlew's executable bit. Till stage 1 adds RawPrinterSpoolTest (one
       # ticket at a time per printer, the jittered retry, nothing sent twice) and PinnedTlsTest (the branch server's

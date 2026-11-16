@@ -370,9 +370,14 @@ await ok('the receipt printer set on the tablet is the one the web POS screens p
 await ok('the web POS screens\' fetch goes through the native HTTP stack (no CORS entry for the app)', () => {
   assert.match(read('apps/android/capacitor.config.ts'), /CapacitorHttp: \{ enabled: true \}/);
 });
-await ok('no Supabase in the Shop POS: the dashboard\'s client is swapped for a stub with no address or key', () => {
-  assert.match(read('apps/android/vite.config.ts'), /return target === SUPABASE_CLIENT \? SUPABASE_STUB : null;/);
-  assert.doesNotMatch(read('apps/android/src/shop/supabaseStub.ts'), /createClient|VITE_SUPABASE/);
+await ok('the build uses the REAL Supabase client for owner mode (keyed from env); the Shop POS never signs in via it (A415)', () => {
+  // Owner stage A: the owner/manager phone mode signs in through Supabase, so the one Android build swaps the dashboard's
+  // client to shop/supabaseReal.ts (keyed from VITE_SUPABASE_* at build time — the PUBLIC anon key, not a hardcoded secret,
+  // with a safe fallback so a key-less build does not crash). The Shop POS shares the bundle but has NO Supabase sign-in UI
+  // — its session is its own (deviceGrant / the staff PIN), so no owner session is ever created on a till.
+  assert.match(read('apps/android/vite.config.ts'), /return target === SUPABASE_CLIENT \? SUPABASE_REAL : null;/);
+  assert.match(read('apps/android/src/shop/supabaseReal.ts'), /VITE_SUPABASE_URL/);
+  assert.match(read('apps/android/src/shop/supabaseReal.ts'), /VITE_SUPABASE_ANON_KEY/);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

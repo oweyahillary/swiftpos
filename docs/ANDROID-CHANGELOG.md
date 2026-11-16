@@ -4,6 +4,19 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.5.0 — Owner / manager phone: the dashboard on your phone (reports, overview, analytics)
+**The owner/manager mode is now live** (it was a "coming soon" placeholder before). Set a device up as **"Owner / manager
+phone"** and the app opens the **ZapTill dashboard itself** — sign in as yourself and see **today's sales, overview,
+reports and analytics, by branch, from anywhere** — the same screens as the web dashboard, loaded not copied (the one
+dashboard, like the one-POS rule for the till).
+- Sign-in is your normal **owner / manager login** (email + password).
+- It reads from **dev-api** for now (like the Shop POS), until the app is flipped to production.
+- The **Shop POS (till) mode is unchanged** — it still has no owner sign-in.
+
+**Build note:** owner mode needs the Supabase keys set in the build — `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (the
+public client keys, safe in the APK); without them sign-in can't reach the cloud. **Needs an on-device test:** choose
+Owner / manager phone → sign in → open Reports / Analytics / Overview.
+
 ## 0.4.9 — Bluetooth receipt printing
 **The third receipt-printer transport, after a network (IP) printer and a USB printer on a connected PC.** Many handheld
 setups use a **Bluetooth thermal printer**; the app can now print to one directly.
