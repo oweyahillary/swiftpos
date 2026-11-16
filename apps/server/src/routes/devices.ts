@@ -124,6 +124,7 @@ router.get('/fleet', requirePermission('devices.view'), async (req, res) => {   
       id, device_label, device_id, status, app_version, schema_version,
       last_seen_at, last_sync_at,
       terminal_code, device_role, branch_id, mac_address, retired_at, retired_by,
+      disabled_at, away_state, away_since, away_last_at, away_seen,
       role_conflict_at, role_conflict_with, device_secret_hash,
       users!user_devices_user_id_fkey ( name )
     `)
@@ -211,6 +212,13 @@ router.get('/fleet', requirePermission('devices.view'), async (req, res) => {   
     // A477: a till with no device secret cannot sign itself back in if its session is ever refused (it is handed one on
     // its next renewal). Only whether it has one — never the hash.
     noDeviceSecret:  !!d.device_id && !d.device_secret_hash,
+    // Branch-server bind (migration 192): the owner kill-switch and the tablet's last branch-server presence report.
+    disabled:   !!d.disabled_at,
+    disabledAt: d.disabled_at ?? null,
+    awayState:  d.away_state ?? null,   // null | 'home' | 'away_no_server' | 'away_foreign'
+    awaySince:  d.away_since ?? null,
+    awayLastAt: d.away_last_at ?? null,
+    awaySeen:   d.away_seen ?? null,
   }));
 
   // Never-synced sorts first, then longest-silent. The device needing attention
@@ -288,6 +296,46 @@ router.patch('/:id/unretire', requirePermission('devices.retire'), async (req, r
   if (error) { sendError(res, error); return; }
 
   res.json({ id: req.params.id, retired: false });
+});
+
+// ── PATCH /api/devices/:id/disable ── Branch-server bind: the owner kill-switch ──
+// Pauses a LIVE tablet (migration 192 disabled_at): every request from it is then refused (403 DEVICE_DISABLED) and it
+// stops selling, until /enable clears it — no re-enrolment. Distinct from retire (decommission, keeps history out of the
+// fleet): this is a reversible pause the owner flips when a tablet is operating away from its branch server (escaping the
+// branch implementation fee). Owner-scoped (devices.retire), tenant-guarded. The /devices write forgets the till cache
+// (index.ts forgetOnWrite), so the block takes effect on the tablet's next request.
+router.patch('/:id/disable', requirePermission('devices.retire'), async (req, res) => {
+  const { data: device } = await supabase
+    .from('user_devices').select('id, business_id, disabled_at, branch_id, user_id')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
+  if ((device as any).disabled_at) { res.status(409).json({ error: 'Tablet is already disabled.' }); return; }
+
+  const { error } = await supabase
+    .from('user_devices')
+    .update({ disabled_at: new Date().toISOString(), disabled_by: req.userId })
+    .eq('id', req.params.id);
+  if (error) { sendError(res, error); return; }
+
+  res.json({ id: req.params.id, disabled: true });
+});
+
+// ── PATCH /api/devices/:id/enable ── Branch-server bind: lift the kill-switch ──
+router.patch('/:id/enable', requirePermission('devices.retire'), async (req, res) => {
+  const { data: device } = await supabase
+    .from('user_devices').select('id, business_id, branch_id, user_id')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
+
+  const { error } = await supabase
+    .from('user_devices')
+    .update({ disabled_at: null, disabled_by: null })
+    .eq('id', req.params.id);
+  if (error) { sendError(res, error); return; }
+
+  res.json({ id: req.params.id, disabled: false });
 });
 
 // ── PATCH /api/devices/:id/approve ───────────────────────────────────────────

@@ -78,7 +78,7 @@ export default function ScaleLabelsTab() {
   const preset = SCALE_PRESETS.find((p) => p.id === settings.preset);
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl space-y-5" data-testid="scale-labels">
+    <div className="p-4 sm:p-6 max-w-2xl space-y-5" data-testid="scale-labels">
       <div>
         <h2 className="text-lg font-bold text-white">Scale labels</h2>
         <p className="text-sm text-gray-500 mt-1">

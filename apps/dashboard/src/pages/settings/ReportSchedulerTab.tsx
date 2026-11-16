@@ -139,7 +139,7 @@ export default function ReportSchedulerTab() {
   if (loading) return <div className="py-8 text-gray-500 text-sm">Loading…</div>;
 
   return (
-    <div className="max-w-xl space-y-6">
+    <div className="max-w-2xl space-y-6">
       <div>
         <h3 className="text-white font-semibold mb-1">Daily Report Email</h3>
         <p className="text-gray-500 text-sm">Automatically email a full DSR to your inbox every night.</p>

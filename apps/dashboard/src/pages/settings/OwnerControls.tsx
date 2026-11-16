@@ -119,7 +119,7 @@ export function PosOptionsTab() {
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl space-y-4" data-testid="pos-options">
+    <div className="p-4 sm:p-6 max-w-2xl space-y-4" data-testid="pos-options">
       <div>
         <h2 className="text-lg font-semibold text-white">POS options</h2>
         <p className="text-sm text-gray-400">How the desktop POS and the web POS work for this business. Each desktop POS follows on its next sync.</p>

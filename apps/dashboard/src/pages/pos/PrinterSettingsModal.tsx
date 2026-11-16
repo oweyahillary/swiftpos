@@ -6,13 +6,20 @@
  * Settings persist in localStorage per device.
  */
 
+import { useState } from 'react';
 import type { PrinterSettings } from '../../hooks/usePrinterSettings';
+import { posTestPrint } from '../../lib/posTestPrint';
+import { renderEscPos } from '../../lib/escposRenderer';
+import { printBytesToServer } from '../../lib/localPrintServer';
+import { shopPosHost, serverPrintOrder } from '../../lib/shopPos';
 
 interface Props {
   settings: PrinterSettings;
   onSave: (updates: Partial<PrinterSettings>) => void;
   onReset: () => void;
   onClose: () => void;
+  /** The business name, printed on the test receipt. */
+  businessName?: string;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -61,7 +68,41 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
   );
 }
 
-export default function PrinterSettingsModal({ settings, onSave, onReset, onClose }: Props) {
+export default function PrinterSettingsModal({ settings, onSave, onReset, onClose, businessName }: Props) {
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      // When this POS has joined a branch server (the PC with the printer), test THROUGH it — that is where receipts
+      // really print. null from printOrder means no server is joined/reachable, so posTestPrint falls back to the address.
+      const host = shopPosHost();
+      const printViaServer = host
+        ? () => host.printOrder('receipt', serverPrintOrder({
+            orderNumber: 'TEST', orderType: 'counter', cashierName: 'Test print', total: 100,
+            cart: [{ product: { id: 'test', name: 'Test item' }, quantity: 1, unitPrice: 100, lineTotal: 100 }],
+            payments: [{ method: 'cash', amount: 100 }], change: 0, orderNote: 'Printer test — not a sale',
+          })).catch(() => null)
+        : undefined;
+      const r = await posTestPrint(
+        { address: settings.receiptPrinterName, paperWidth: settings.paperWidth, businessName, footerMessage: settings.footerMessage },
+        { render: renderEscPos, send: printBytesToServer, printViaServer },
+      );
+      setTestMsg({
+        ok: true,
+        text: r.via === 'branch-server'
+          ? 'Test receipt sent to the connected computer’s printer. Check it.'
+          : `Test receipt sent to ${r.printer}. Check the printer.`,
+      });
+    } catch (e) {
+      setTestMsg({ ok: false, text: e instanceof Error ? e.message : 'Test print failed.' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <>
       <div className="fixed inset-0 bg-black/60 z-50 animate-fade-in" onClick={onClose} />
@@ -127,6 +168,38 @@ export default function PrinterSettingsModal({ settings, onSave, onReset, onClos
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-action-500"
               />
               <p className="text-gray-600 text-xs mt-1">Printed at the bottom of every receipt</p>
+            </div>
+
+            <div className="py-3 border-t border-gray-800 mt-1">
+              <label htmlFor="receipt-printer-addr" className="block text-gray-300 text-sm mb-2">Receipt printer</label>
+              <input
+                id="receipt-printer-addr"
+                type="text"
+                value={settings.receiptPrinterName ?? ''}
+                onChange={e => { onSave({ receiptPrinterName: e.target.value }); setTestMsg(null); }}
+                placeholder="e.g. 192.168.1.50"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-action-500"
+              />
+              <p className="text-gray-600 text-xs mt-1">
+                The network address of this device’s printer. Leave blank if receipts print through a connected computer.
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  onClick={runTest}
+                  disabled={testing}
+                  className="px-4 py-2 bg-gray-800 border border-gray-700 hover:border-action-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+                >
+                  {testing ? 'Printing…' : 'Test print'}
+                </button>
+                {testMsg && (
+                  <output className={`text-xs ${testMsg.ok ? 'text-action-400' : 'text-red-400'}`}>
+                    {testMsg.text}
+                  </output>
+                )}
+              </div>
             </div>
           </div>
 

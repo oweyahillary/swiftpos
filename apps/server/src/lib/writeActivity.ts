@@ -27,7 +27,7 @@ let clock: () => number = () => Date.now();
 const MAX = 20_000;
 
 /** Paths whose writes touch nothing a remembered answer holds. */
-const NOT_A_WRITE = /^\/api\/(auth\/(refresh|refresh\/ack|logout|verify-pin|login|pos-login|device-token|enrol\/redeem|otp\/[a-z/]+|password\/(forgot|reset))$|support\/|desktop-update\/|ops\/events|notifications\/)/;
+const NOT_A_WRITE = /^\/api\/(auth\/(refresh|refresh\/ack|logout|verify-pin|login|pos-login|device-token|enrol\/redeem|otp\/[a-z/]+|password\/(forgot|reset))$|support\/|desktop-update\/|ops\/events|notifications\/|pos\/server-presence$)/;
 /** Read-only POSTs (a body too long for a query string): a drawer's web sales and cash, a confirmer's PIN check. */
 const READ_POST = /^\/api\/shifts\/([^/]+\/(foreign-orders|foreign-cash)|confirmer)$/;
 

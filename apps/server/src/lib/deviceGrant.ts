@@ -91,9 +91,13 @@ export function isOwnerEraTillPayload(p: { surface?: unknown; pinSignIn?: unknow
 }
 
 /** Why a till may not use its session, or null when it may. The row is its user_devices row (null = not found). */
-export function tillBlockReason(row: { status?: string | null; retired_at?: string | null } | null | undefined): 'unknown' | 'blocked' | 'retired' | null {
+export function tillBlockReason(row: { status?: string | null; retired_at?: string | null; disabled_at?: string | null } | null | undefined): 'unknown' | 'blocked' | 'retired' | 'disabled' | null {
   if (!row) return 'unknown';
   if (row.retired_at) return 'retired';
+  // Branch-server bind (migration 192): the owner's reversible kill-switch. A live, approved device the owner has paused —
+  // refused every request (403 DEVICE_DISABLED) until the owner clears disabled_at. Checked before 'blocked' so the owner's
+  // own pause reads as 'disabled', not the generic access refusal.
+  if (row.disabled_at) return 'disabled';
   if (!isDeviceGrantable(row.status)) return 'blocked';
   return null;
 }

@@ -153,7 +153,7 @@ export default function EtimsSettingsPage() {
   if (!branchId) return <div className="p-4 sm:p-6 text-gray-400">Select a branch to configure eTIMS.</div>;
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl">
+    <div className="p-4 sm:p-6 max-w-2xl">
       <h1 className="text-xl font-bold text-white mb-1">KRA eTIMS</h1>
       <p className="text-sm text-gray-400 mb-6">Fiscalisation settings for {activeBranch?.name}.</p>
 

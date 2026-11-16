@@ -169,7 +169,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
 
   if (!allowed) {
     return (
-      <div className="p-4 sm:p-8 text-gray-400">
+      <div className="p-4 sm:p-6 text-gray-400">
         You don't have permission to view orders. Ask an owner to enable
         "View all orders" for your role.
       </div>

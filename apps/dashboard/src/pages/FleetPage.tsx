@@ -57,6 +57,13 @@ interface FleetDevice {
   conflictAt?: string | null;
   // A477 — holds no device secret (cannot sign itself back in until its next renewal hands one over)
   noDeviceSecret?: boolean;
+  // Branch-server bind (migration 192) — the owner kill-switch and the tablet's last branch-server presence report.
+  disabled?: boolean;
+  disabledAt?: string | null;
+  awayState?: 'home' | 'away_no_server' | 'away_foreign' | null;
+  awaySince?: string | null;
+  awayLastAt?: string | null;
+  awaySeen?: { business: string | null; server: string | null } | null;
 }
 
 interface FleetResponse {
@@ -88,6 +95,16 @@ const TONE: Record<string, string> = {
   alert: 'text-red-600 dark:text-red-400',
   unknown: 'text-gray-400',
 };
+
+/** Branch-server bind: the hover explanation for the "away from branch server" badge. */
+function awayTitle(d: FleetDevice): string {
+  const belongs = `This tablet belongs to ${d.branchName ?? 'another branch'}`;
+  if (d.awayState === 'away_foreign') {
+    const where = d.awaySeen?.server || d.awaySeen?.business;
+    return `${belongs} but is on a network with a different branch server${where ? ` (${where})` : ''}. It may have moved branch. Sales still reach the cloud — disable it if this is not allowed.`;
+  }
+  return `${belongs} but its branch server is not on its network. It may have moved branch. Sales still reach the cloud — disable it if this is not allowed.`;
+}
 
 export default function FleetPage() {
   const [data, setData] = useState<FleetResponse | null>(null);
@@ -123,6 +140,25 @@ export default function FleetPage() {
       setData(prev => prev ? { ...prev, fleet: prev.fleet.filter(f => f.id !== id) } : prev);
     } catch (e: any) {
       setError(e?.message ?? (retire ? 'Could not retire the terminal' : 'Could not restore the terminal'));
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
+  // Branch-server bind (migration 192) — the owner kill-switch. Unlike retire, the row STAYS in the list (it is a live,
+  // paused tablet, not a decommissioned one): flip the flag in place. A disabled tablet is refused every request and stops
+  // selling at once; enabling brings it straight back with no re-enrolment.
+  const setDisabled = useCallback(async (id: string, disable: boolean, name: string) => {
+    if (disable && !confirm(`Disable ${name}? It stops selling immediately and shows "disabled by ZapTill" until you enable it again. Use this when a tablet is operating away from its branch server.`)) return;
+    setBusyId(id);
+    setError('');
+    try {
+      await api.patch(`/api/devices/${id}/${disable ? 'disable' : 'enable'}`, {});
+      setData(prev => prev
+        ? { ...prev, fleet: prev.fleet.map(f => f.id === id ? { ...f, disabled: disable, disabledAt: disable ? new Date().toISOString() : null } : f) }
+        : prev);
+    } catch (e: any) {
+      setError(e?.message ?? (disable ? 'Could not disable the tablet' : 'Could not enable the tablet'));
     } finally {
       setBusyId(null);
     }
@@ -329,6 +365,19 @@ export default function FleetPage() {
                           No device secret
                         </div>
                       )}
+                      {/* Branch-server bind (migration 192) — the owner kill-switch and the away-from-branch-server telemetry. */}
+                      {d.disabled && (
+                        <div className="mt-1 inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/40"
+                          title={d.disabledAt ? `Disabled ${dateTime(d.disabledAt)}. This tablet cannot sell until you enable it.` : 'This tablet cannot sell until you enable it.'}>
+                          ⛔ Disabled — cannot sell
+                        </div>
+                      )}
+                      {!d.disabled && (d.awayState === 'away_no_server' || d.awayState === 'away_foreign') && (
+                        <div className="mt-1 inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/40"
+                          title={awayTitle(d)}>
+                          ⚠ Away from branch server{d.awaySince ? ` · since ${dateTime(d.awaySince)}` : ''}
+                        </div>
+                      )}
                       <ViewMore open={more.isOpen(d.id)} onClick={() => more.toggle(d.id)} />
                     </td>
                     <td className={`px-4 py-3 ${DESK}`}>
@@ -353,7 +402,7 @@ export default function FleetPage() {
                       {seenCell}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {/* A184 Tier 3 — retire a dead till (reversible from the Retired tab). */}
+                      {/* A184 Tier 3 — retire a dead till. Branch-server bind — disable/enable a live tablet (the kill-switch). */}
                       {showRetired ? (
                         <button
                           onClick={() => void setRetired(d.id, false)}
@@ -361,11 +410,19 @@ export default function FleetPage() {
                           className="text-xs text-swift-text hover:text-swift-text-hover disabled:opacity-40"
                         >{busyId === d.id ? '…' : 'Restore'}</button>
                       ) : (
-                        <button
-                          onClick={() => { if (confirm(`Retire ${d.label ?? d.terminalCode ?? 'this terminal'}? It leaves the health view but keeps its history. You can restore it later.`)) void setRetired(d.id, true); }}
-                          disabled={busyId === d.id}
-                          className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-40"
-                        >{busyId === d.id ? '…' : 'Retire'}</button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            onClick={() => void setDisabled(d.id, !d.disabled, d.label ?? d.terminalCode ?? 'this tablet')}
+                            disabled={busyId === d.id}
+                            className={`text-xs disabled:opacity-40 ${d.disabled ? 'text-swift-text hover:text-swift-text-hover' : 'text-gray-400 hover:text-red-500'}`}
+                            title={d.disabled ? 'Re-enable this tablet so it can sell again.' : 'Disable this tablet — it stops selling until you enable it again.'}
+                          >{busyId === d.id ? '…' : (d.disabled ? 'Enable' : 'Disable')}</button>
+                          <button
+                            onClick={() => { if (confirm(`Retire ${d.label ?? d.terminalCode ?? 'this terminal'}? It leaves the health view but keeps its history. You can restore it later.`)) void setRetired(d.id, true); }}
+                            disabled={busyId === d.id}
+                            className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-40"
+                          >{busyId === d.id ? '…' : 'Retire'}</button>
+                        </div>
                       )}
                     </td>
                   </tr>

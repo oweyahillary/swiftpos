@@ -33,7 +33,7 @@ export const AUTH_TTL_MS = 30_000;
 export const AUTH_QUIET_TTL_MS = QUIET_MAX_MS;
 const MAX_ENTRIES = 5_000;
 
-export interface TillRow { status?: string | null; retired_at?: string | null; branch_id?: string | null }
+export interface TillRow { status?: string | null; retired_at?: string | null; disabled_at?: string | null; branch_id?: string | null }
 export interface UserRow { permissions_version?: number | null; status?: string | null; business_id?: string | null }
 
 interface Entry<T> { value: T; at: number; businessId: string; gen?: string }
@@ -80,7 +80,7 @@ export function cachedTill(businessId: string, deviceId: string, read: () => Pro
 export function readTill(businessId: string, deviceId: string) {
   return cachedTill(businessId, deviceId, async () => await supabase
     .from('user_devices')
-    .select('status, retired_at, branch_id')
+    .select('status, retired_at, disabled_at, branch_id')
     .eq('business_id', businessId)
     .eq('device_id', deviceId)
     .maybeSingle(), (row) => !tillBlockReason(row));
