@@ -46,7 +46,7 @@ function bundle(tag, entryTs) {
   return createRequire(import.meta.url)(path.join(tmp, 'out.cjs'));
 }
 
-const P = bundle('bind-presence', 'apps/android/src/shop/serverPresence.ts');
+const P = bundle('bind-presence', 'apps/android/src/shop/serverPresenceCore.ts');
 const D = bundle('bind-grant', 'apps/server/src/lib/deviceGrant.ts');
 
 const run = async () => {
@@ -70,50 +70,54 @@ const run = async () => {
     void link;
   }
 
-  console.log('\ncheckPresence (DI — no device)');
+  console.log('\nrunPresence (DI — no device)');
   {
     const link = { url: 'http://a', cert: 'C' };
-    const base = () => { const reports = []; const rebinds = []; return { reports, rebinds,
-      deps: {
+    const base = () => {
+      const reports = []; const rebinds = [];
+      return { reports, rebinds, deps: {
         readLink: async () => link,
-        report: async (state, seen) => { reports.push({ state, seen }); },
+        reachOwn: async () => false,
+        scan: async () => [],
         rebind: async (u) => { rebinds.push(u); },
-      } }; };
+        report: async (state, seen) => { reports.push({ state, seen }); },
+      } };
+    };
 
     P._resetPresence();
     { // unbound
-      const r = await P.checkPresence({ readLink: async () => null, report: async () => { throw new Error('should not report'); } });
+      const r = await P.runPresence({ readLink: async () => null, reachOwn: async () => false, scan: async () => [], rebind: async () => {}, report: async () => { throw new Error('should not report'); } });
       ok('unbound reports nothing and is null', r === null && P.presenceState() === null);
     }
 
     P._resetPresence();
     { // home, then steady home
       const t = base();
-      await P.checkPresence({ ...t.deps, reachOwn: async () => true, scan: async () => { throw new Error('no scan when reachable'); } });
+      await P.runPresence({ ...t.deps, reachOwn: async () => true, scan: async () => { throw new Error('no scan when reachable'); } });
       ok('reachable → home', P.presenceState() === 'home');
       ok('coming home is reported once (clears away_since server-side)', t.reports.length === 1 && t.reports[0].state === 'home');
-      await P.checkPresence({ ...t.deps, reachOwn: async () => true, scan: async () => [] });
+      await P.runPresence({ ...t.deps, reachOwn: async () => true, scan: async () => [] });
       ok('a steady home is not re-sent', t.reports.length === 1);
     }
 
     P._resetPresence();
     { // away_no_server reports
       const t = base();
-      await P.checkPresence({ ...t.deps, reachOwn: async () => false, scan: async () => [] });
+      await P.runPresence({ ...t.deps, reachOwn: async () => false, scan: async () => [] });
       ok('no server heard → away_no_server, reported', P.presenceState() === 'away_no_server' && t.reports.at(-1)?.state === 'away_no_server');
     }
 
     P._resetPresence();
     { // away_foreign reports with seen
       const t = base();
-      await P.checkPresence({ ...t.deps, reachOwn: async () => false, scan: async () => [{ url: 'http://x', business: 'B', server: 'S', certMatches: false }] });
+      await P.runPresence({ ...t.deps, reachOwn: async () => false, scan: async () => [{ url: 'http://x', business: 'B', server: 'S', certMatches: false }] });
       ok('foreign server → away_foreign, reported with what it saw', P.presenceState() === 'away_foreign' && t.reports.at(-1)?.seen?.server === 'S');
     }
 
     P._resetPresence();
     { // re-pin on a moved own server
       const t = base();
-      await P.checkPresence({ ...t.deps, reachOwn: async () => false, scan: async () => [{ url: 'http://moved', business: null, server: null, certMatches: true }] });
+      await P.runPresence({ ...t.deps, reachOwn: async () => false, scan: async () => [{ url: 'http://moved', business: null, server: null, certMatches: true }] });
       ok('own server found at a new IP → home and re-pinned', P.presenceState() === 'home' && t.rebinds[0] === 'http://moved');
     }
   }
@@ -143,6 +147,7 @@ const run = async () => {
     const mig = read('migrations/192_user_devices_server_bind.sql');
     ok('migration 192 adds disabled_at + away_state', /ADD COLUMN IF NOT EXISTS disabled_at/.test(mig) && /ADD COLUMN IF NOT EXISTS away_state/.test(mig));
     ok('schema index carries the new columns', /"disabled_at"/.test(read('scripts/schema-index.json')) && /"away_state"/.test(read('scripts/schema-index.json')));
+    ok('the presence core is import-free (so CI bundles it without Capacitor installed)', !/^import /m.test(read('apps/android/src/shop/serverPresenceCore.ts')));
 
     const mw = read('apps/server/src/middleware/auth.ts');
     ok('middleware 403s a disabled till as DEVICE_DISABLED', /tillBlock === 'disabled'[\s\S]*?DEVICE_DISABLED/.test(mw));
