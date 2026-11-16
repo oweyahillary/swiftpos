@@ -1,6 +1,6 @@
 {
   "name": "zaptill-android",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "private": true,
   "description": "ZapTill for Android: one Capacitor app, two modes (Shop POS / Owner or manager phone). docs/designs/ANDROID-APP-DESIGN.md",
   "type": "module",
