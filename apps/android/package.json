@@ -23,9 +23,13 @@
     "@zaptill/core": "file:../../packages/core",
     "@zaptill/ui": "file:../../packages/ui",
     "bcryptjs": "2.4.3",
+    "pdfjs-dist": "^4.10.38",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.4"
+    "react-is": "^18.3.1",
+    "react-router-dom": "^7.18.4",
+    "recharts": "^3.10.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.0",
