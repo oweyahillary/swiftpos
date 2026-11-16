@@ -821,7 +821,10 @@ declare global {
         html: (opts: { html: string; deviceName: string; paperWidthMm: 58 | 80; copies: number }) => Promise<{ ok: boolean; error?: string }>;
       };
       branding: {
-        get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null;
+        get: () => Promise<{ accentHex: string | null; logoPng: string | null;
+                             /** The Cloudinary brand-logo URL — the screens render it directly when online; logoPng is the cached offline fallback. */
+                             logoUrl?: string | null;
+                             logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null;
                              /** A544: this till's branch's override (null = none) and the look resolved branch → business → default. */
                              branch?: { branchId: string; themeId: string | null; accentHex: string | null; receiptFooter: string | null } | null;
                              /** A597: + the owner's brand colours the screens wear (none while themes are off or a branch theme overrides). */
