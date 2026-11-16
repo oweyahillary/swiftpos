@@ -8,7 +8,7 @@ export default function WastagePage() {
   const { business } = useBusiness();
   const { activeBranchId, branches } = useBranch();
   return (
-    <div className="p-4 sm:p-8">
+    <div className="p-4 sm:p-6">
       <Wastage client={api} branchId={activeBranchId} branches={branches}
         currency={(business as { currency?: string } | null)?.currency || 'KES'} />
     </div>

@@ -121,7 +121,7 @@ export default function CategoriesPage() {
   useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
-    <div className="p-4 sm:p-8">
+    <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">{term('categories')}</h1>

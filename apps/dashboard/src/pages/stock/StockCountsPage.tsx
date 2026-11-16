@@ -10,7 +10,7 @@ export default function StockCountsPage() {
   const { activeBranchId, branches } = useBranch();
   const { permissionKeys } = usePermissions();
   return (
-    <div className="p-4 sm:p-8">
+    <div className="p-4 sm:p-6">
       <StockCounts client={api} branchId={activeBranchId} branches={branches} business={business}
         currency={(business as { currency?: string } | null)?.currency || 'KES'} isOwner={permissionKeys.has('*')} />
     </div>

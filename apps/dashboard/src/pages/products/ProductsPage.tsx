@@ -365,7 +365,7 @@ export default function ProductsPage() {
   const isPetrol = bizType === 'petrol_station';
 
   return (
-    <div className="p-4 sm:p-8">
+    <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">{term('products')}<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>

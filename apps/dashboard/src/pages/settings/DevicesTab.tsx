@@ -161,7 +161,7 @@ export default function DevicesTab() {
   useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-2xl">
       <Toast toast={toast} />
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
 
