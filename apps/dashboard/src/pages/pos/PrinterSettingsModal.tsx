@@ -72,6 +72,34 @@ export default function PrinterSettingsModal({ settings, onSave, onReset, onClos
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Bluetooth printer picker — only inside the Android Shop POS (the host lists the tablet's paired printers); on the
+  // browser/desktop there is no Bluetooth, so this stays hidden. A chosen printer is stored as "bt:<MAC>" in the one
+  // receipt-printer setting, so the Test print + real receipts route to it through printBytes (apps/android printing.ts).
+  const [btDevices, setBtDevices] = useState<Array<{ name: string; address: string }>>([]);
+  const [btBusy, setBtBusy] = useState(false);
+  const [btErr, setBtErr] = useState('');
+  const [btName, setBtName] = useState('');
+  const canBluetooth = !!shopPosHost()?.listBtPrinters;
+  const current = settings.receiptPrinterName ?? '';
+  const isBt = current.toLowerCase().startsWith('bt:');
+
+  const findBt = async () => {
+    const host = shopPosHost();
+    if (!host?.listBtPrinters) return;
+    setBtBusy(true); setBtErr('');
+    try {
+      const r = await host.listBtPrinters();
+      setBtDevices(r.devices);
+      if (!r.devices.length) setBtErr('No paired Bluetooth printers found. Pair the printer in Android Settings → Bluetooth first.');
+    } catch (e) {
+      setBtErr(e instanceof Error ? e.message : 'Could not read Bluetooth printers.');
+    } finally {
+      setBtBusy(false);
+    }
+  };
+  const pickBt = (d: { name: string; address: string }) => { onSave({ receiptPrinterName: 'bt:' + d.address }); setBtName(d.name); setBtDevices([]); setTestMsg(null); };
+  const clearBt = () => { onSave({ receiptPrinterName: '' }); setBtName(''); setBtDevices([]); setTestMsg(null); };
+
   const runTest = async () => {
     setTesting(true);
     setTestMsg(null);
@@ -175,9 +203,9 @@ export default function PrinterSettingsModal({ settings, onSave, onReset, onClos
               <input
                 id="receipt-printer-addr"
                 type="text"
-                value={settings.receiptPrinterName ?? ''}
-                onChange={e => { onSave({ receiptPrinterName: e.target.value }); setTestMsg(null); }}
-                placeholder="e.g. 192.168.1.50"
+                value={isBt ? '' : current}
+                onChange={e => { onSave({ receiptPrinterName: e.target.value }); setBtName(''); setTestMsg(null); }}
+                placeholder={isBt ? 'Using a Bluetooth printer (below)' : 'e.g. 192.168.1.50'}
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
@@ -200,6 +228,44 @@ export default function PrinterSettingsModal({ settings, onSave, onReset, onClos
                   </output>
                 )}
               </div>
+
+              {/* Bluetooth printer (Android Shop POS only) — pair the printer in Android Settings, then pick it here. */}
+              {canBluetooth && (
+                <div className="mt-4 pt-3 border-t border-gray-800">
+                  <label className="block text-gray-300 text-sm mb-2">Bluetooth printer</label>
+                  {isBt ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-action-400 text-sm">✓ {btName || current.slice(3)}</span>
+                      <button onClick={clearBt} className="text-gray-500 hover:text-gray-300 text-xs">Remove</button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={findBt}
+                        disabled={btBusy}
+                        className="px-4 py-2 bg-gray-800 border border-gray-700 hover:border-action-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+                      >
+                        {btBusy ? 'Searching…' : 'Find Bluetooth printers'}
+                      </button>
+                      {btDevices.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {btDevices.map(d => (
+                            <button
+                              key={d.address}
+                              onClick={() => pickBt(d)}
+                              className="w-full text-left px-3 py-2 bg-gray-800 border border-gray-700 hover:border-action-500 rounded-lg text-white text-sm transition-colors"
+                            >
+                              {d.name} <span className="text-gray-500 text-xs">{d.address}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {btErr && <p className="text-red-400 text-xs mt-2">{btErr}</p>}
+                  <p className="text-gray-600 text-xs mt-1">Pair the printer in Android Settings → Bluetooth first, then pick it here. Test print uses whichever printer is set.</p>
+                </div>
+              )}
             </div>
           </div>
 

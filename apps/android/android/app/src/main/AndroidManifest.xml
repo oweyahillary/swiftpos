@@ -53,4 +53,11 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Receipt printing to a PAIRED Bluetooth thermal printer (BtPrinterPlugin, Bluetooth Classic SPP). Bonded devices
+         only (the person pairs the printer in Android Settings), so no scanning and no location: on API 31+ the one runtime
+         permission is BLUETOOTH_CONNECT; on API ≤ 30 the old install-time BLUETOOTH / BLUETOOTH_ADMIN. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 </manifest>

@@ -22,6 +22,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ApkUpdaterPlugin.class);
         registerPlugin(CrashReportsPlugin.class);
         registerPlugin(RawPrinterPlugin.class);
+        registerPlugin(BtPrinterPlugin.class);
         registerPlugin(BranchServerPlugin.class);
         super.onCreate(savedInstanceState);
         fitContentInsideSystemBars();

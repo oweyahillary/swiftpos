@@ -28,6 +28,9 @@ export interface ShopPosHost {
   printBytes: (target: string, bytes: Uint8Array) => Promise<void>;
   /** null = no branch server to print through (none joined, or not reachable): print directly. */
   printOrder: (job: ServerPrintJob, order: Record<string, unknown>) => Promise<ServerPrintAnswer | null>;
+  /** Till stage 1: the paired Bluetooth printers the Android app can print to, for the Printer-settings picker. Absent on
+   *  the browser/desktop (no Bluetooth there), so the screen hides the Bluetooth option when this is undefined. */
+  listBtPrinters?: () => Promise<{ devices: Array<{ name: string; address: string }> }>;
 }
 
 let host: ShopPosHost | null = null;

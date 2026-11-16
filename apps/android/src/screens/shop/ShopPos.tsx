@@ -195,8 +195,12 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
         <Route path="*" element={<Navigate to="/pos" replace />} />
       </Routes>
       <PrintNotice />
-      <SyncStatusBar store={buffer} />
-      <AwayNotice branchName={till.branchName ?? null} />
+      {/* The away/disabled notice stacks ABOVE the sync status bar (shop/serverPresence + Till-stage-2 buffer) so the two
+          top strips never overlap; each renders null when it has nothing to say, so the stack is empty when all is well. */}
+      <div className="top-stack">
+        <AwayNotice branchName={till.branchName ?? null} />
+        <SyncStatusBar store={buffer} />
+      </div>
     </BrowserRouter>
   );
 }
