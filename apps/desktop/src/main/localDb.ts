@@ -1415,6 +1415,9 @@ function migrateColumns(db: Database.Database, table: string, cols: [string, str
 export interface BrandingRow {
   accentHex: string | null;
   logoPng: string | null;
+  /** The Cloudinary brand-logo URL (unified). The screens render it directly when online; logoPng is the cached OFFLINE
+   *  fallback. null = none / not migrated. */
+  logoUrl?: string | null;
   /** A310/A311: `mono1:w:h:base64` raster string, or null. Decoded by shared/printing only. */
   logoReceipt: string | null;
   /** A311: the client's opt-in toggle. The print path prints the logo only when this is true. */
@@ -1459,8 +1462,8 @@ function getBrandColours(): { primary_hex: string | null; secondary_hex: string 
 export function getBranding(): BrandingRow | null {
   try {
     const row = getLocalDb().prepare(
-      `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`).get() as
-      { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null; theme_id: string | null } | undefined;
+      `SELECT accent_hex, logo_png, logo_url, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`).get() as
+      { accent_hex: string | null; logo_png: string | null; logo_url: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null; theme_id: string | null } | undefined;
     if (!row) return null;
     const branch = getBranchBranding();
     const colours = getBrandColours();
@@ -1469,6 +1472,7 @@ export function getBranding(): BrandingRow | null {
     return {
       accentHex: row.accent_hex ?? null,
       logoPng: row.logo_png ?? null,
+      logoUrl: row.logo_url ?? null,
       logoReceipt: row.logo_receipt ?? null,
       receiptLogoEnabled: row.receipt_logo_enabled === 1,
       themeId: row.theme_id ?? null,
@@ -1644,7 +1648,11 @@ export function applyPulledBranding(b: {
   ).run(sess.business_id, b.accentHex, b.logoPng, lr, en, now, logoKeep, lrKeep, enKeep, en);
   // The cloud cleared the logo → forget which URL the cache came from, so a new URL later re-fetches.
   if (b.logoUrl === null) db.prepare(`UPDATE branding SET logo_url = NULL WHERE business_id = ?`).run(sess.business_id);
-  // Fetch the Cloudinary bytes once and cache them as logo_png for the offline lock screen (best-effort, never blocks).
+  // Store the Cloudinary URL NOW — not only after the byte cache below succeeds. The screens render it directly when online
+  // (getBranding → PinPage/LockCurtain/ManagerPage), with the cached logo_png as the OFFLINE fallback. This is what makes
+  // the logo appear even when the one-time byte cache failed — the regression after the base64→Cloudinary move.
+  else if (hasUrl) db.prepare(`UPDATE branding SET logo_url = ? WHERE business_id = ?`).run((b.logoUrl as string).trim(), sess.business_id);
+  // Cache the bytes once as logo_png for the OFFLINE screens (best-effort, never blocks; skipped when already cached).
   if (hasUrl) void cacheLogoFromUrl(sess.business_id, b.logoUrl);
   // A597: the brand colours — their own write, remote-wins, only when the cloud said (undefined = keep). Anything but a
   // #rrggbb colour is stored as null (none). The row exists: the write above made it.

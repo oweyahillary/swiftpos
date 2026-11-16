@@ -1919,16 +1919,22 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // 0.6.25 (owner: "Where its b foods can we add the logo there"): the client's logo beside the business name, read like the
   // PIN and lock screens read it (branding:get, refreshed when a pull lands). None → the report icon, as before.
-  const [brandLogo, setBrandLogo] = useState<string | null>(null);
+  const [brandLogoPng, setBrandLogoPng] = useState<string | null>(null);   // cached base64 — the OFFLINE fallback
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);   // Cloudinary brand-logo URL — shown when online
+  const [brandLogoUrlFailed, setBrandLogoUrlFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      posApi.branding.get().then((b) => { if (!cancelled) setBrandLogo(b?.logoPng ?? null); }).catch(() => { /* keep what is shown */ });
+      posApi.branding.get().then((b) => {
+        if (cancelled) return;
+        setBrandLogoPng(b?.logoPng ?? null); setBrandLogoUrl(b?.logoUrl ?? null); setBrandLogoUrlFailed(false);
+      }).catch(() => { /* keep what is shown */ });
     };
     load();
     const unsubscribe = posApi.pos.onCatalogueChanged(load);
     return () => { cancelled = true; unsubscribe(); };
   }, []);
+  const brandLogoSrc = brandLogoUrl && !brandLogoUrlFailed ? brandLogoUrl : brandLogoPng;
 
   // A363: a neutral "Last synced" — information, not an alarm (the red notice on the POS is for refusals only).
   const [lastSynced, setLastSynced] = useState<string | null | undefined>(undefined);
@@ -2154,12 +2160,14 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       {/* A326: tinted by the business's brand colour (or theme) when themes are ON; the fallback IS gray-900, so OFF is unchanged. */}
       <aside style={{ backgroundColor: 'var(--sidebar-tint, #111827)' }} className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-200 flex-shrink-0 ${sidebarOpen ? 'w-52' : 'w-16'}`}>
         {/* Header */}
-        <div className={`flex items-center gap-3 border-b border-gray-800 flex-shrink-0 ${brandLogo ? 'px-3 h-20' : 'px-4 h-16'}`}>
-          {brandLogo ? (
+        <div className={`flex items-center gap-3 border-b border-gray-800 flex-shrink-0 ${brandLogoSrc ? 'px-3 h-20' : 'px-4 h-16'}`}>
+          {brandLogoSrc ? (
             // The logo on a small white tile (logos are made for a light background), visible even when collapsed.
             <span data-testid="sidebar-logo" className="flex-shrink-0 bg-white rounded-lg flex items-center justify-center"
                   style={{ width: sidebarOpen ? 52 : 40, height: sidebarOpen ? 52 : 40, padding: 3 }}>
-              <img src={brandLogo} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
+              <img src={brandLogoSrc} alt=""
+                   onError={() => { if (brandLogoUrl && !brandLogoUrlFailed) setBrandLogoUrlFailed(true); }}
+                   style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
             </span>
           ) : (
             <span className="flex-shrink-0 text-blue-400">

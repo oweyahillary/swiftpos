@@ -43,7 +43,9 @@ export default function PinPage({ businessName, onStaffLogin, onTechUnlock, onHe
   // green look inside the new layout. Wire accentHex / logoDataUri to branding:get
   // when that slice ships — nothing else here changes.
   const [accentHex, setAccentHex] = useState<string | null>(null);
-  const [logoDataUri, setLogoDataUri] = useState<string | null>(null);
+  const [logoDataUri, setLogoDataUri] = useState<string | null>(null);   // the cached base64 — the OFFLINE fallback
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);           // the Cloudinary brand-logo URL — shown when online
+  const [logoUrlFailed, setLogoUrlFailed] = useState(false);             // the URL could not load (offline) → use the cache
   // A321: read on mount AND whenever a background pull lands. This read once and never listened, so a
   // till waiting on the PIN screen kept the old colour/logo until someone signed in and out (VERIFY A2;
   // owner 2026-09-23). A cleared branding (null) now returns the screen to the default instead of
@@ -61,6 +63,8 @@ export default function PinPage({ businessName, onStaffLogin, onTechUnlock, onHe
         const primary = theme ? brandPalette(b?.effective?.primaryHex ?? null) : null;   // A605: the same palette as the web
         setAccentHex(accent ?? (primary ? primary.layer : theme ? resolveTheme(theme).shades[500] : null));
         setLogoDataUri(b?.logoPng ?? null);
+        setLogoUrl(b?.logoUrl ?? null);
+        setLogoUrlFailed(false);
       }).catch(() => { /* keep what is on screen; first paint falls back to the ZapTill default */ });
     };
     load();
@@ -278,11 +282,14 @@ export default function PinPage({ businessName, onStaffLogin, onTechUnlock, onHe
             onPointerUp={cancelPress}
             onPointerLeave={cancelPress}
           >
-            {logoDataUri ? (
+            {(logoUrl && !logoUrlFailed ? logoUrl : logoDataUri) ? (
               // 0.6.25 (owner: "increase the size of the logo … the white space is big"): up to 160 × 240 on a tighter
               // card — as tall as the SwiftPOS default mark; was 88 × 220, which left a square logo small in its card.
+              // The Cloudinary URL is shown when online; if it fails to load (offline) we fall back to the cached base64.
               <span data-testid="pin-logo" className="inline-flex items-center justify-center bg-white rounded-xl" style={{ padding: '8px 10px' }}>
-                <img src={logoDataUri} alt="" style={{ maxHeight: 160, maxWidth: 240, objectFit: 'contain', display: 'block' }} />
+                <img src={logoUrl && !logoUrlFailed ? logoUrl : logoDataUri} alt=""
+                  onError={() => { if (logoUrl && !logoUrlFailed) setLogoUrlFailed(true); }}
+                  style={{ maxHeight: 160, maxWidth: 240, objectFit: 'contain', display: 'block' }} />
               </span>
             ) : (
               // No client logo -> the SwiftPOS default mark. Its wordmark is dark

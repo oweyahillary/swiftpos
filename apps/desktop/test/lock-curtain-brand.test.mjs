@@ -25,14 +25,14 @@ const src = fs.readFileSync(path.join(DESKTOP, 'src/renderer/components/LockCurt
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log(`  ✓ ${name}`); };
 
-test('reads the client logo (branding:get)', () => {
-  assert.match(src, /posApi\.branding\.get\(\)\.then\(\(b\) => \{ if \(!cancelled\) setLogo\(b\?\.logoPng \?\? null\); \}\)/);
+test('reads the client logo (branding:get) — the Cloudinary URL + the cached base64', () => {
+  assert.match(src, /posApi\.branding\.get\(\)\.then\(\(b\) => \{[\s\S]{0,120}setLogoPng\(b\?\.logoPng \?\? null\); setLogoUrl\(b\?\.logoUrl \?\? null\);/);
 });
 test('refreshed when a pull lands, like the PIN screen', () => {
   assert.match(src, /const unsubscribe = posApi\.pos\.onCatalogueChanged\(load\);/);
 });
 test('shows the logo on a white card; the padlock only without one', () => {
-  assert.match(src, /\{logo \? \([\s\S]{0,300}data-testid="lock-logo"[\s\S]{0,200}bg-white[\s\S]{0,200}<img src=\{logo\}/);
+  assert.match(src, /data-testid="lock-logo"[\s\S]{0,220}bg-white[\s\S]{0,220}<img src=\{logoUrl && !logoUrlFailed \? logoUrl : logoPng\}/);
   assert.match(src, /\) : \(\s*<div className="w-16 h-16[\s\S]{0,300}<rect x="3" y="11"/);
 });
 test('the background is opaque (nothing shows through the text)', () => {
@@ -47,12 +47,12 @@ test('the small text is brighter and larger', () => {
 // 0.6.25 (owner, PIN screen screenshot: "increase the size of the logo abit … the white space is big").
 const pin = fs.readFileSync(path.join(DESKTOP, 'src/renderer/pages/PinPage.tsx'), 'utf8');
 test('0.6.25: the PIN screen logo is up to 160 × 240 on a tight card', () => {
-  assert.match(pin, /data-testid="pin-logo" className="inline-flex items-center justify-center bg-white rounded-xl" style=\{\{ padding: '8px 10px' \}\}>\s*<img src=\{logoDataUri\} alt="" style=\{\{ maxHeight: 160, maxWidth: 240,/);
+  assert.match(pin, /data-testid="pin-logo" className="inline-flex items-center justify-center bg-white rounded-xl" style=\{\{ padding: '8px 10px' \}\}>\s*<img src=\{logoUrl && !logoUrlFailed \? logoUrl : logoDataUri\} alt=""[\s\S]{0,160}maxHeight: 160, maxWidth: 240,/);
 });
 // 2026-11-09 (owner: "exactly like that screenshot but centred"): the single centred column — logo above the time, the
 // day, "POS locked", the named PIN prompt — sized so the whole column (keypad and all) centres without scrolling.
 test('2026-11-09: the lock screen is centred and compact — logo above the time (up to 100 × 200), the named PIN prompt', () => {
-  assert.match(src, /style=\{\{ padding: '8px 12px' \}\}>\s*<img src=\{logo\} alt="" style=\{\{ maxHeight: 100, maxWidth: 200,/);
+  assert.match(src, /style=\{\{ padding: '8px 12px' \}\}>\s*<img src=\{logoUrl && !logoUrlFailed \? logoUrl : logoPng\} alt=""[\s\S]{0,160}maxHeight: 100, maxWidth: 200,/);
   assert.match(src, /<h1 className="text-lg font-semibold text-white mt-5">POS locked<\/h1>/);
   assert.match(src, /Enter \{staffName\}&apos;s PIN to continue/);
 });
@@ -60,8 +60,8 @@ test('2026-11-09: the lock screen is centred and compact — logo above the time
 // 0.6.25 (owner, manager screenshot: "Where its b foods can we add the logo there").
 const mgr = fs.readFileSync(path.join(DESKTOP, 'src/renderer/pages/ManagerPage.tsx'), 'utf8');
 test('0.6.25: the manager sidebar shows the logo beside the business name (icon only without one)', () => {
-  assert.match(mgr, /posApi\.branding\.get\(\)\.then\(\(b\) => \{ if \(!cancelled\) setBrandLogo\(b\?\.logoPng \?\? null\); \}\)/);
-  assert.match(mgr, /\{brandLogo \? \([\s\S]{0,250}data-testid="sidebar-logo"[\s\S]{0,300}<img src=\{brandLogo\}/);
+  assert.match(mgr, /posApi\.branding\.get\(\)\.then\(\(b\) => \{[\s\S]{0,120}setBrandLogoPng\(b\?\.logoPng \?\? null\); setBrandLogoUrl\(b\?\.logoUrl \?\? null\);/);
+  assert.match(mgr, /data-testid="sidebar-logo"[\s\S]{0,300}<img src=\{brandLogoSrc\}/);
   assert.match(mgr, /width: sidebarOpen \? 52 : 40/);   // fits the collapsed 64 px sidebar
 });
 // 0.6.25 (owner: "the size on the printer should not be too small").

@@ -52,11 +52,16 @@ export default function LockCurtain({
   const [busy, setBusy]       = useState(false);
   // 0.6.24 (owner: "add the organization logo where the till is"): the client's logo, read like the PIN screen reads
   // it (branding:get, refreshed when a pull lands). None → the padlock, as before.
-  const [logo, setLogo]       = useState<string | null>(null);
+  const [logoPng, setLogoPng] = useState<string | null>(null);   // cached base64 — the OFFLINE fallback
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);   // Cloudinary brand-logo URL — shown when online
+  const [logoUrlFailed, setLogoUrlFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      posApi.branding.get().then((b) => { if (!cancelled) setLogo(b?.logoPng ?? null); }).catch(() => { /* keep what is shown */ });
+      posApi.branding.get().then((b) => {
+        if (cancelled) return;
+        setLogoPng(b?.logoPng ?? null); setLogoUrl(b?.logoUrl ?? null); setLogoUrlFailed(false);
+      }).catch(() => { /* keep what is shown */ });
     };
     load();
     const unsubscribe = posApi.pos.onCatalogueChanged(load);
@@ -128,10 +133,12 @@ export default function LockCurtain({
       <div className="m-auto w-full max-w-sm px-6 py-8 text-center">
         {/* The client's logo on a white card (logos are made for a light background); the padlock only when there is none. */}
         <div className="flex justify-center mb-5">
-          {logo ? (
+          {(logoUrl && !logoUrlFailed ? logoUrl : logoPng) ? (
             <span data-testid="lock-logo" className="inline-flex items-center justify-center bg-white rounded-xl shadow-lg shadow-black/30"
                   style={{ padding: '8px 12px' }}>
-              <img src={logo} alt="" style={{ maxHeight: 100, maxWidth: 200, objectFit: 'contain', display: 'block' }} />
+              <img src={logoUrl && !logoUrlFailed ? logoUrl : logoPng} alt=""
+                   onError={() => { if (logoUrl && !logoUrlFailed) setLogoUrlFailed(true); }}
+                   style={{ maxHeight: 100, maxWidth: 200, objectFit: 'contain', display: 'block' }} />
             </span>
           ) : (
             <div className="w-16 h-16 rounded-2xl bg-gray-900 flex items-center justify-center">
