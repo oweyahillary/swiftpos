@@ -12,9 +12,17 @@
 import { RawPrinter } from '../native/plugins';
 import { printThroughServer, readServerLink } from './branchServer';
 import { notAnAddress, printerAddress, SERVER_NOT_ANSWERING } from './rules';
+import { makeRetryState, rememberRetry, clearRetry, canRetry, runRetry } from './printRetry';
 import type { PosSession } from './tillSession';
 
 export const PRINT_PROBLEM_EVENT = 'zaptill:print-problem';
+
+// The last FAILED print, so PrintNotice can offer one-tap Retry once the printer is back on (shop/printRetry.ts).
+const retryState = makeRetryState();
+/** PrintNotice: is there a failed print to retry? */
+export function canRetryLastPrint(): boolean { return canRetry(retryState); }
+/** PrintNotice: redo the last failed print (the printer is on now). Throws again, and re-arms, if it still fails. */
+export async function retryLastPrint(): Promise<void> { await runRetry(retryState); }
 
 /** Tell the screen (components/PrintNotice). */
 export function notePrintProblem(words: string): void {
@@ -30,11 +38,14 @@ function base64(bytes: Uint8Array): string {
 /** ESC/POS bytes to the printer the web POS names. Throws (the web POS counts it as failed) after saying why. */
 async function printBytes(target: string, bytes: Uint8Array): Promise<void> {
   const addr = printerAddress(target);
+  // A bad address is a setup mistake, not a retryable failure — fix the printer name/address, not Retry.
   if (!addr) { notePrintProblem(notAnAddress(target)); throw new Error(notAnAddress(target)); }
   try {
     await RawPrinter.send({ host: addr.host, port: addr.port, data: base64(bytes) });
+    clearRetry(retryState);   // it printed — nothing to retry
   } catch (e) {
     const words = `${e instanceof Error ? e.message : String(e)} The sale is saved.`;
+    rememberRetry(retryState, () => printBytes(target, bytes));   // switch the printer on, then Retry
     notePrintProblem(words);
     throw new Error(words);
   }
@@ -45,11 +56,14 @@ let toldServerDown = 0;
 /** Through the branch server when this POS joined one; null = print directly. "Not answering" is said once a minute. */
 async function printOrder(job: string, order: Record<string, unknown>) {
   let said = false;   // the server's own words (a refusal, printing off there) beat the general "not answering"
-  const r = await printThroughServer(job, order, (words) => { said = true; notePrintProblem(words); });
+  const armRetry = () => rememberRetry(retryState, async () => { await printOrder(job, order); });
+  const r = await printThroughServer(job, order, (words) => { said = true; armRetry(); notePrintProblem(words); });
   if (r === null && !said && (await readServerLink()) && Date.now() - toldServerDown > 60_000) {
     toldServerDown = Date.now();
+    armRetry();   // the server is up but silent — retry once it answers
     notePrintProblem(SERVER_NOT_ANSWERING);
   }
+  if (!said && r !== null) clearRetry(retryState);   // the branch server printed (or had nothing to print) — nothing to retry
   return r;
 }
 

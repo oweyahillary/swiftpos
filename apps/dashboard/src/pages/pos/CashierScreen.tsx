@@ -3268,6 +3268,7 @@ Signature: _______________`;
           onSave={savePrinterSettings}
           onReset={resetPrinterSettings}
           onClose={() => setShowPrinterSettings(false)}
+          businessName={business?.name}
         />
       )}
 

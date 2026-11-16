@@ -4,6 +4,27 @@ The version shows on the PIN screen (`ZapTill v<x.y.z>`) and in the APK filename
 in one place — `apps/android/package.json` `version` — and bumped per build the owner tests, so one install is never
 mistaken for the next. Newest first.
 
+## 0.4.7 — Set up and test a receipt printer, and retry a failed print
+**Setting up and testing a printer no longer needs a real sale.** Printer Settings (POS → ⋯ More → Printer settings) now has:
+- A **Receipt printer** field — the network address of a printer on this device's network (e.g. `192.168.1.50`, or
+  `192.168.1.50:9100`). Leave it blank when receipts print through a connected computer (a joined branch server).
+- A **Test print** button that prints a small, clearly-marked test receipt the SAME way a real receipt prints, so a pass
+  proves the real path — and names which path printed:
+  - joined to a **branch server** (the computer with a **USB/IP printer**) → it prints there, on that computer's printer;
+  - otherwise → straight to the **IP printer** at the address above.
+  Clear, actionable messages on failure (no address entered · the computer has no printer set up · received but nothing
+  printed — check it is on and has paper).
+
+**Retry a failed print in one tap.** When a print fails because the printer was off, the on-screen notice now offers
+**Retry** — switch the printer on and tap once; no need to re-ring the sale or find it in History. A bad printer
+*address* is a setup mistake, not a retryable failure, so it does not offer Retry (fix the address instead). The sale was
+always saved before anything printed, so nothing was ever at risk.
+
+Covers both printer kinds the owner runs: **IP printers** (direct) and **USB printers on a PC** (through the branch
+server). Bluetooth printers are a separate, not-yet-built transport (see the morning report). Unchanged on the browser and
+the desktop. **Needs an on-device test with a real printer** (the rendering and dispatch are checked headless, but the
+actual bytes reaching a printer can only be confirmed on the hardware).
+
 ## 0.4.6 — Till stage 3b (manager take-over of a held table)
 **Closes the 0.4.5 flagged follow-up.** A manager can now take over a table another waiter is *actively* holding — the
 force-steal that the 90 s idle-auto-takeover does not cover:
