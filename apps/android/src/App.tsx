@@ -12,6 +12,7 @@ import { forgetDownloads } from './updates/updater';
 import ChooseMode from './screens/ChooseMode';
 import ModeHome from './screens/ModeHome';
 import ShopPos from './screens/shop/ShopPos';
+import OwnerPhone from './screens/OwnerPhone';
 
 /** The installed APK's version (its versionName); the build's own in a browser preview. */
 async function installedVersion(): Promise<string> {
@@ -65,7 +66,9 @@ export default function App() {
     window.history.replaceState(null, '', '/');
     setState({ kind: 'choose', version: state.version });
   };
-  // Till stage 1: a Shop POS joins, takes PINs and sells (screens/shop); the owner's phone is still Stage 0's placeholder.
+  // A Shop POS joins, takes PINs and sells (screens/shop). The owner / manager phone opens the dashboard itself — sign in
+  // and see reports, overview and analytics, by branch (Owner stage A, screens/OwnerPhone). ModeHome stays as a safety net.
   if (state.mode === 'shop-pos') return <ShopPos version={state.version} onReset={onReset} />;
+  if (state.mode === 'owner-phone') return <OwnerPhone version={state.version} onReset={onReset} />;
   return <ModeHome mode={state.mode} version={state.version} onReset={onReset} />;
 }

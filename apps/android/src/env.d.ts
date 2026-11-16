@@ -38,3 +38,13 @@ declare module '@zaptill/dashboard-pos' {
     deleteTab: (id: string, reason: 'charged' | 'cleared') => Promise<void>;
   } | null): void;
 }
+
+/**
+ * Owner stage A: the dashboard itself (apps/dashboard/src/ownerPhone/OwnerPhoneScreens.tsx), mapped by vite.config.ts.
+ * Declared narrowly so this app's strict type-check never reaches into the dashboard's own files (checked with its own
+ * settings). tests/android-owner-reports.test.mjs checks the dashboard file exports this.
+ */
+declare module '@zaptill/dashboard-owner' {
+  import type { ComponentType } from 'react';
+  export const OwnerDashboard: ComponentType;
+}

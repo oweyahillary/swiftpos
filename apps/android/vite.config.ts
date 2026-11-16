@@ -8,9 +8,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_SRC = path.resolve(HERE, '../dashboard/src');
 /** Till stage 1: the web POS screens, entered through ONE dashboard file (docs/designs/ANDROID-APP-DESIGN.md §11.1). */
 const SHOP_POS_ENTRY = path.join(DASHBOARD_SRC, 'shopPos/ShopPosScreens.tsx');
-/** The dashboard's Supabase client is for the owner's web sign-in, never a Shop POS (its sign-in is its own, A415). */
+/** Owner stage A: the dashboard itself (sign-in, overview, reports, analytics) for the owner/manager phone mode. */
+const OWNER_ENTRY = path.join(DASHBOARD_SRC, 'ownerPhone/OwnerPhoneScreens.tsx');
+/** The dashboard's Supabase client. The Shop POS never signs an owner in, so its bundle gets the stub; the OWNER bundle
+ *  gets the REAL client (shop/supabaseReal.ts, keyed from VITE_SUPABASE_* at build time) so owner sign-in works as on the
+ *  web. One build, so both entries resolve lib/supabase to the real client — the POS simply never calls it (A415). */
 const SUPABASE_CLIENT = path.join(DASHBOARD_SRC, 'lib/supabase');
-const SUPABASE_STUB = path.resolve(HERE, 'src/shop/supabaseStub.ts');
+const SUPABASE_REAL = path.resolve(HERE, 'src/shop/supabaseReal.ts');
 
 const isBare = (s: string) => !s.startsWith('.') && !s.startsWith('/') && !s.startsWith('\0') && !path.isAbsolute(s);
 const inDashboard = (file: string | undefined) => !!file && path.resolve(file.split('?')[0]).startsWith(DASHBOARD_SRC);
@@ -27,10 +31,11 @@ function webPosScreens(): Plugin {
     enforce: 'pre',
     async resolveId(source, importer, options) {
       if (source === '@zaptill/dashboard-pos') return SHOP_POS_ENTRY;
+      if (source === '@zaptill/dashboard-owner') return OWNER_ENTRY;
       if (!inDashboard(importer)) return null;
       if (isBare(source)) return this.resolve(source, path.join(HERE, 'src/main.tsx'), { ...options, skipSelf: true });
       const target = path.resolve(path.dirname(importer!.split('?')[0]), source).replace(/\.ts$/, '');
-      return target === SUPABASE_CLIENT ? SUPABASE_STUB : null;
+      return target === SUPABASE_CLIENT ? SUPABASE_REAL : null;
     },
   };
 }
