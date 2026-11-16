@@ -5,6 +5,7 @@ import '@fontsource-variable/source-sans-3';
 import './styles.css';
 import App from './App';
 import { listenForErrors } from './errors/reporter';
+import { applyShopBrand } from './shop/brandTheme';
 import { API_URL } from './config';
 
 // The status bar must NOT overlay the web view (Android 15 draws edge-to-edge by default, so the screens' top bar ran
@@ -26,5 +27,8 @@ void setupStatusBar();
 (window as unknown as { __SWIFTPOS_CONFIG__?: { apiUrl?: string } }).__SWIFTPOS_CONFIG__ = { apiUrl: API_URL };
 
 listenForErrors();
+
+// Wear the client's brand colours on the shell from the first paint (cached at registration / each sign-in — brandTheme.ts).
+applyShopBrand();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

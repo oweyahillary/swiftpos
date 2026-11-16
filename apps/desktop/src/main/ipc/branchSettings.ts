@@ -12,8 +12,9 @@ import { tillBranchId } from '../deviceConfig';   // A446
 import { signedIn as sessionPerson, personKeys, hasMarker, isOwnerRole } from '../tillAccess';
 import { maySetMpesa } from '@zaptill/core/permissions';   // A492
 import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
-import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getCashierHistoryMethods, setCashierHistoryMethods, getPaymentMethodsEnabled, setPaymentMethodsEnabled, getPlatformPricing, getCategoryLayout, setCategoryLayout } from '../deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getCashierHistoryMethods, setCashierHistoryMethods, getPaymentMethodsEnabled, setPaymentMethodsEnabled, getPlatformPricing, getCategoryLayout, setCategoryLayout, getOnscreenKeyboard, setOnscreenKeyboard } from '../deviceConfig';
 import { CATEGORY_LAYOUT_KEY, CATEGORY_LAYOUT_PERMISSIONS, categoryLayoutSettingValue } from '@zaptill/core/categoryLayout';   // 8n
+import { ONSCREEN_KEYBOARD_KEY, ONSCREEN_KEYBOARD_PERMISSIONS, onscreenKeyboardSettingValue } from '@zaptill/core/onscreenKeyboard';   // owner 2026-11-09
 import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
 import { type IpcShared } from './shared';
 
@@ -139,6 +140,23 @@ export function registerBranchSettingsHandlers(ctx: IpcShared) {
     if (!branchId) throw new Error('This POS does not know its branch yet — sign in once with a staff PIN, then try again.');
     const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: CATEGORY_LAYOUT_KEY, value: layout });
     setCategoryLayout(layout);
+    return out;
+  });
+  // Owner, 2026-11-09 ("the in app keyboard can we have it as the menu category it can be turned on or off"): whether this
+  // branch's desktop POS opens ZapTill's own on-screen keyboard when a field is tapped. The same branch-setting pattern as
+  // the category layout above. Anyone signed in reads it (OnScreenKeyboard.tsx, offline too — the cached value); a manager
+  // with settings.pos_layout or settings.branches (the owner: everything) changes it for THIS branch — the cloud checks the
+  // value, the permission and the branch again. This POS uses the new value at once; the branch's other POS take it from
+  // the change log (after a reload), the web / Android POS ignore it (they use the native keyboard).
+  handle('pos:onscreenKeyboard', async () => ({ value: getOnscreenKeyboard() }));
+  handle('manage:setOnscreenKeyboard', async (_e, raw) => {
+    requireKey([...ONSCREEN_KEYBOARD_PERMISSIONS], 'Your role does not change the on-screen keyboard.');
+    const value = onscreenKeyboardSettingValue(raw);
+    if (value === null) throw new Error('Choose on or off.');
+    const branchId = tillBranchId();
+    if (!branchId) throw new Error('This POS does not know its branch yet — sign in once with a staff PIN, then try again.');
+    const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: ONSCREEN_KEYBOARD_KEY, value });
+    setOnscreenKeyboard(value);
     return out;
   });
   // A492: the branch's M-Pesa number (Buy Goods till number, or Paybill + account) — set HERE, on the till, by its manager

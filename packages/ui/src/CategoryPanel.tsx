@@ -52,15 +52,18 @@ function writePrefs(p: PanelPrefs): void {
  * The panel's state: open (collapsed at every start — A554), the pin (this session) and the chosen menu (remembered).
  * `layout` is the branch's choice (8n): with 'top' the ☰ toggle, the chip and the panel draw nothing and CategoryBar shows.
  */
-export function useCategoryPanel(layout: CategoryLayout = DEFAULT_CATEGORY_LAYOUT) {
+export function useCategoryPanel(layout: CategoryLayout = DEFAULT_CATEGORY_LAYOUT, pinnable = true) {
   const [prefs, setPrefs] = useState<PanelPrefs>(() => readPrefs());
   const [open, setOpen] = useState<boolean>(() => panelStartsOpen());   // A554: collapsed at every start and sign-in
   const save = useCallback((next: PanelPrefs) => { setPrefs(next); writePrefs(next); }, []);
   const setPinned = useCallback((pinned: boolean) => { save({ ...prefs, pinned }); if (pinned) setOpen(true); }, [prefs, save]);
   const setMenu = useCallback((menu: string) => save({ ...prefs, menu }), [prefs, save]);
-  /** After a category is picked: an unpinned panel closes. */
-  const picked = useCallback(() => setOpen(panelOpenAfterPick(prefs)), [prefs]);
-  return { prefs, open, setOpen, setPinned, setMenu, picked, layout };
+  /** After a category is picked: an unpinned panel closes. The Android Shop POS has no pin (pinnable=false), so it always
+   *  closes after a pick — a small counter screen is never left with a panel stuck open by a past session's pin. */
+  const picked = useCallback(() => setOpen(pinnable ? panelOpenAfterPick(prefs) : false), [prefs, pinnable]);
+  // With pinning off, the panel is never pinned, whatever a past session saved (the pin button is hidden too).
+  const prefsSeen = pinnable ? prefs : { ...prefs, pinned: false };
+  return { prefs: prefsSeen, open, setOpen, setPinned, setMenu, picked, layout, pinnable };
 }
 export type CategoryPanelState = ReturnType<typeof useCategoryPanel>;
 
@@ -332,10 +335,12 @@ export default function CategoryPanel({ panel, categories, menus, products, acti
     <aside data-testid="category-panel" aria-label="Categories" {...painted(look.panel(overlay))}>
       <div {...painted(look.header)}>
         <span {...painted(look.title)}>Categories</span>
-        <button type="button" data-testid="category-panel-pin" aria-pressed={panel.prefs.pinned}
-          onClick={() => panel.setPinned(!panel.prefs.pinned)}
-          title={panel.prefs.pinned ? 'Pinned — stays open' : 'Pin — keep it open'}
-          {...painted(look.pin(panel.prefs.pinned))}>📌</button>
+        {panel.pinnable && (
+          <button type="button" data-testid="category-panel-pin" aria-pressed={panel.prefs.pinned}
+            onClick={() => panel.setPinned(!panel.prefs.pinned)}
+            title={panel.prefs.pinned ? 'Pinned — stays open' : 'Pin — keep it open'}
+            {...painted(look.pin(panel.prefs.pinned))}>📌</button>
+        )}
         <button type="button" data-testid="category-panel-close" aria-label="Close the categories" onClick={() => panel.setOpen(false)}
           {...painted(look.close)}>✕</button>
       </div>

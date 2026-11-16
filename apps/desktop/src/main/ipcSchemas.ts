@@ -36,6 +36,7 @@
  */
 import type { Schema } from './ipcValidate';
 import { CATEGORY_LAYOUTS } from '@zaptill/core/categoryLayout';   // 8n
+import { ONSCREEN_KEYBOARD_VALUES } from '@zaptill/core/onscreenKeyboard';   // owner 2026-11-09
 
 export const NO_PAYLOAD = Symbol('NO_PAYLOAD');
 
@@ -334,6 +335,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
                                        account: { t: 'string', optional: true }, clear: { t: 'boolean', optional: true } },   // A492
   'pos:categoryLayout':             NO_PAYLOAD,                                            // 8n
   'manage:setCategoryLayout':       { kind: 'enum', values: CATEGORY_LAYOUTS },              // 8n: 'panel' | 'top'
+  'pos:onscreenKeyboard':           NO_PAYLOAD,                                            // owner 2026-11-09
+  'manage:setOnscreenKeyboard':     { kind: 'enum', values: ONSCREEN_KEYBOARD_VALUES },      // owner 2026-11-09: 'on' | 'off'
   'manage:getCashierHistoryMethods': NO_PAYLOAD,                                            // 0.6.37 (A387)
   'manage:setCashierHistoryMethods': { kind: 'stringArray' },
 

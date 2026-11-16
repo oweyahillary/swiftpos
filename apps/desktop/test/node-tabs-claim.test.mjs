@@ -14,6 +14,7 @@
  */
 import assert from 'assert';
 import { createRequire } from 'module';
+import { readFileSync } from 'fs';
 
 let db;
 try {
@@ -59,6 +60,15 @@ function claim(id, who, expOverride) {
     .run({ who, exp: expOverride ?? leaseUntil(), id, at }).changes;
   if (changes === 1) return { ok: true, tab: getTab(id), stole };
   return { ok: false, code: 409, lockedBy: getTab(id)?.locked_by ?? '?' };
+}
+// force-claim: the exact atomic UPDATE from nodeTabs.ts — overrides even a LIVE lock (manager-approved steal)
+function forceClaim(id, who) {
+  const before = getTab(id);
+  if (!before) return { ok: false, code: 409 };
+  const previousHolder = before.locked_by && before.locked_by !== who ? before.locked_by : null;
+  db.prepare(`UPDATE node_tabs SET locked_by=@who, lock_expires=@exp, last_changed_by=COALESCE(last_changed_by,@who) WHERE id=@id`)
+    .run({ who, exp: leaseUntil(), id });
+  return { ok: true, tab: getTab(id), previousHolder };
 }
 function updateTab(id, who, cart) {
   const t = getTab(id);
@@ -142,6 +152,53 @@ registerTab({ ...base, id: 'tab6' });
 claim('tab6', 'till-1');
 const clrDenied = deleteTab('tab6', 'till-2', 'cleared');
 ok('a non-holder cannot clear a tab (423)', clrDenied.ok === false && clrDenied.code === 423);
+
+// 9. a MANAGER force-claim takes an ACTIVELY-held tab (owner 2026-11-14: "see it, then take over")
+registerTab({ ...base, id: 'tab7', opened_by: 'Jane' });
+claim('tab7', 'till-1');                           // till-1 holds a LIVE lease
+const normalDenied = claim('tab7', 'till-2');
+ok('a normal claim still 409s on a LIVE foreign lock', normalDenied.ok === false && normalDenied.code === 409);
+const fc = forceClaim('tab7', 'till-2');           // manager-approved force-steal of the live lock
+ok('force-claim takes a live lock', fc.ok === true && getTab('tab7').locked_by === 'till-2');
+ok('force-claim reports the previous holder (for the audit)', fc.previousHolder === 'till-1');
+const fcMine = forceClaim('tab7', 'till-2');       // already mine → nothing stolen
+ok('force-claim on my own tab reports no previous holder', fcMine.ok === true && fcMine.previousHolder === null);
+const fcGone = forceClaim('does-not-exist', 'till-2');
+ok('force-claim on a gone tab → 409', fcGone.ok === false && fcGone.code === 409);
+
+// 10. the MANAGER-TAKE-OVER GATE (owner 2026-11-15): a force-claim is allowed only for a node-VERIFIED manager who holds
+//     the take-over permission. Mirrors nodeTabs.ts::forceClaimVerdict VERBATIM (same hand-sync convention as the SQL
+//     above — the register-delivery guard checks they match). This is the one rule that stops a till stealing a live tab.
+function forceClaimVerdict(verdict, canTakeOver) {
+  if (!verdict.ok) return { allow: false, status: verdict.reason === 'unavailable' ? 503 : 401, reason: verdict.reason, message: verdict.message };
+  if (!canTakeOver(verdict.staff)) return { allow: false, status: 403, reason: 'forbidden', message: `${verdict.staff.name} is not allowed to take over another waiter’s table.` };
+  return { allow: true, staff: verdict.staff };
+}
+const holdsIt = () => true, holdsNot = () => false;
+const mgr = { ok: true, staff: { staffId: 'm1', name: 'Mary', roleName: 'manager', permissions: { 'tables.manage': true } } };
+const gAllow = forceClaimVerdict(mgr, holdsIt);
+ok('a verified manager WITH tables.manage is allowed', gAllow.allow === true && gAllow.staff.name === 'Mary');
+const gPerm = forceClaimVerdict(mgr, holdsNot);
+ok('a verified staff WITHOUT tables.manage → 403 (not allowed), forceClaim never runs',
+   gPerm.allow === false && gPerm.status === 403 && gPerm.reason === 'forbidden' && /Mary/.test(gPerm.message));
+const gBad = forceClaimVerdict({ ok: false, reason: 'no_match', message: 'PIN not recognised.' }, holdsIt);
+ok('a wrong PIN → 401 FINAL (never a take-over)', gBad.allow === false && gBad.status === 401);
+const gAmb = forceClaimVerdict({ ok: false, reason: 'ambiguous', message: 'shared PIN' }, holdsIt);
+ok('a shared/ambiguous PIN → 401 (never guessed into a take-over)', gAmb.allow === false && gAmb.status === 401);
+const gDown = forceClaimVerdict({ ok: false, reason: 'unavailable', message: 'roster unreadable' }, holdsIt);
+ok('only a roster-read failure is retryable (503), not a refusal', gDown.allow === false && gDown.status === 503);
+
+// 11. the ROUTE WIRING (source assertion): the gate decision above only protects a live lock if the /node/tabs
+//     force-claim route actually VERIFIES the PIN, runs it through forceClaimVerdict with tables.manage, and calls
+//     forceClaim only once the gate allows. Mutating any of these out of nodeServer.ts removes the protection — this bites.
+const nsSrc = readFileSync(new URL('../src/main/nodeServer.ts', import.meta.url), 'utf8');
+const fcBlock = nsSrc.slice(nsSrc.indexOf("action === 'force-claim'"), nsSrc.indexOf("action === 'release'"));
+ok('force-claim route verifies the PIN at the node', /verifyPinAtNodeAsync\(/.test(fcBlock));
+ok('force-claim route runs the pure gate', /forceClaimVerdict\(/.test(fcBlock));
+ok('force-claim route gates on tables.manage via personCan (the KEY, not just a comment)',
+   /personCan\([^;]*['"]tables\.manage['"]\s*\)/.test(fcBlock));
+ok('forceClaim runs only AFTER the gate allows (ordering)',
+   fcBlock.includes('gate.allow') && fcBlock.indexOf('gate.allow') < fcBlock.indexOf('forceClaim(getLocalDb()'));
 
 console.log(`\n${fail === 0 ? `All ${pass} checks passed. The atomic claim/lease/audit semantics hold.` : `${fail} FAILED (${pass} passed)`}`);
 console.log('NOTE: live cross-till behaviour (poll lag, offline mid-charge, real race) needs a two-till rig — not covered here.');

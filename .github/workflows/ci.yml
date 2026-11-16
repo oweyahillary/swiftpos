@@ -143,15 +143,19 @@ jobs:
           fi
           echo "No tracked .env files."
 
-      # Android Stage 0: ZapTill's Android release key is the owner's alone and reaches CI only as secrets
-      # (.github/workflows/android.yml). A keystore in the repository would hand anyone the power to sign "ZapTill".
-      - name: Assert no committed keystore files
+      # Android Stage 0: ZapTill's Android RELEASE key is the owner's alone and reaches CI only as secrets
+      # (.github/workflows/android.yml). A release keystore in the repository would hand anyone the power to sign "ZapTill".
+      # THE ONE EXCEPTION is the DEBUG keystore (owner, 2026-11-10): it is committed on purpose so every debug build shares
+      # one signing key, which keeps the till's Settings.Secure.ANDROID_ID (and so its device_id) stable across rebuilds —
+      # that is what lets a reinstalled test POS rejoin the same seat. It holds the STANDARD public Android debug credentials
+      # and CANNOT sign a release build, so it gives away nothing. Any OTHER keystore still fails this gate.
+      - name: Assert no committed keystore files (the fixed debug key excepted)
         run: |
-          found=$(git ls-files | grep -Ei '\.(jks|keystore|p12)$' || true)
+          found=$(git ls-files | grep -Ei '\.(jks|keystore|p12)$' | grep -vxF 'apps/android/android/app/debug.keystore' || true)
           if [ -n "$found" ]; then
-            echo "::error::Keystore file(s) tracked in git:"; echo "$found"; exit 1
+            echo "::error::Non-debug keystore file(s) tracked in git:"; echo "$found"; exit 1
           fi
-          echo "No tracked keystore files."
+          echo "No tracked keystore files (debug key excepted)."
 
       # This repo previously leaked a hardcoded Ed25519 signing key to a public
       # remote (see handoffs/handoff-14-07-2026.md §1), and a service-role key in
@@ -777,6 +781,11 @@ jobs:
       - name: Brand palette (A605)
         run: node --no-warnings tests/brand-palette-a605.test.mjs
 
+      # Cloudinary logos — the per-row decision in the base64→Cloudinary backfill (scripts/backfill-logos-to-cloudinary.mjs):
+      # a migrated business is skipped (idempotent), a non-raster logo_png is skipped, a png/jpeg base64 is uploaded.
+      - name: Cloudinary logo backfill decision
+        run: node --no-warnings tests/backfill-logos.test.mjs
+
       # A606 — the customer screen (a dual-screen POS): the owner's slideshow (up to 10 uploaded JPEG / PNG / WebP images,
       # 3–60 s each), the owner's alone and part of the online licence (a manager, a POS 403; no licence 403, emptying
       # allowed), served with /pos/init and the 'setup' change; the generic settings write refuses the key; the web POS's
@@ -903,6 +912,11 @@ jobs:
           TZ=UTC node --no-warnings tests/mpesa-c2b-a621.test.mjs
           node --no-warnings scripts/test-migration-188.mjs
 
+      # A623 — STK Push Query recovery: ask Safaricom the real outcome of a pending prompt (lib/stkQuery.ts) so a lost/late
+      # callback never marks a paid customer unpaid. The ResultCode→outcome mapper + the query it sends (injected fetch).
+      - name: M-Pesa STK Push Query recovery (A623)
+        run: node --no-warnings tests/stk-query.test.mjs
+
       # A599 — Attendance (premium, the 'attendance' flag set in the admin portal): punches only from a ZKTeco device
       # through the branch server, for everyone. The pairing (in / out alternately in time order, a night shift on the day
       # it started, an odd last punch a missing punch-out not counted, a 16 h gap never paired); flag off → every route
@@ -973,6 +987,50 @@ jobs:
         run: node --no-warnings tests/till-buffer-stage2.test.mjs
       - name: ZapTill for Android, Till stage 2 (keeps selling offline)
         run: node --no-warnings tests/android-till-stage2.test.mjs
+
+      # Till stage 3 Slice A (docs/SCOPE-TILL-STAGE-3.md, docs/BUILD-TILL-STAGE-3A.md) — the branch-server GATEWAY: a
+      # joined Shop POS sends its cloud calls through the branch server (`<server>/node/cloud/api/…`, A410) over pinned
+      # TLS and falls back to its own cloud on any server problem (preference, not lock-in). Hermetic (native neighbours
+      # stubbed); in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice A (the branch-server gateway)
+        run: node --no-warnings tests/android-till-stage3.test.mjs
+
+      # Till stage 3 Slice B (docs/BUILD-TILL-STAGE-3B.md) — SELL through the branch server: a completed sale is reshaped
+      # from its captured cloud order body into the server's replicated orders row (+ lines, payments, and the verbatim
+      # _relayPayload for the A19 cloud relay) and pushed to POST /node/sync, with a durable outbox. Hermetic; in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice B (sell through the branch server)
+        run: node --no-warnings tests/android-till-stage3b.test.mjs
+
+      # Till stage 3 Slice C (docs/BUILD-TILL-STAGE-3C.md) — VERIFY A PIN at the branch server: a joined Shop POS checks a
+      # sign-in PIN at the branch server (POST /node/verify-pin, pinned TLS) first; the LAN roster is the authority. A 'no'
+      # (401) is FINAL, any other problem falls back to the cloud then the Stage-2 offline check. Hermetic; in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice C (verify a PIN at the branch server)
+        run: node --no-warnings tests/android-till-stage3c.test.mjs
+
+      # Till stage 3 Slice D (docs/BUILD-TILL-STAGE-3D.md) — SESSION REFRESH through the branch server: a joined Shop POS
+      # renews its session via POST /node/refresh[/ack] (pinned TLS), which proxies the cloud's /api/auth/refresh[/ack].
+      # The cloud's forwarded answer is used as-is (a 401 still drives sign-back-in); no answer / 404 / 503 renews
+      # cloud-direct. The branch router is injected via a setter, so no import cycle. Hermetic; in the loop too.
+      - name: ZapTill for Android, Till stage 3 Slice D (session refresh through the branch server)
+        run: node --no-warnings tests/android-till-stage3d.test.mjs
+
+      # Till stage 3b client (docs/BUILD-TILL-STAGE-3B-CLIENT.md) — the Shop POS's client for the branch node's shared held
+      # orders: list/register/claim/force-claim/update/release/delete over pinned TLS, the lock proven by the device.
+      # 404/503/no-link → unreachable so a server-less POS stays local-only. Hermetic (pure parsers + injected IO).
+      - name: ZapTill for Android, Till stage 3b client (shared held-order tabs)
+        run: node --no-warnings tests/android-till-tabs.test.mjs
+
+      # Till stage 3b CashierScreen wiring (docs/BUILD-TILL-STAGE-3B-CLIENT.md §Selling-screen) — the PURE shared-table
+      # decisions the selling screen uses: occupancy merge, tap routing, the claim/take-over outcomes, lease-lost drop.
+      - name: ZapTill shared tables, CashierScreen decisions
+        run: node --no-warnings tests/branch-tabs-ux.test.mjs
+
+      # Till stage 3b server (docs/BUILD-TILL-STAGE-3B-SERVER.md) — SHARED HELD ORDERS: the branch node's authoritative
+      # tab store (nodeTabs.ts) exposed as /node/tabs… routes. The atomic claim / 90s lease / lapsed-steal / clear-audit
+      # semantics AND the manager-approved force-claim of a live lock, under a SQLite stand-in. The live cross-till
+      # behaviour (two real tills racing) needs a two-till rig — not covered here.
+      - name: Shared held orders — node tab store (claim/lease/force-claim/audit)
+        run: node apps/desktop/test/node-tabs-claim.test.mjs
 
   # 2026-11-02 (owner: "11 min is a lot of time"): the server job ran its named steps, every migration test and the
   # loop over every tests/*.test.mjs one after the other (~10.5 minutes). The migration tests (two halves) and the loop
@@ -1952,6 +2010,14 @@ jobs:
       - name: Desktop category layout per branch (8n)
         working-directory: apps/desktop
         run: node --no-warnings test/category-layout-8n.test.mjs
+
+      # On-screen keyboard on/off per branch (owner, 2026-11-09) — the till's in-app keyboard is a branch setting that
+      # mirrors the 8n category layout end to end: pulled with pos/init, kept offline (maintenance_state), carried by the
+      # change log's setup topic, relayed by the branch server; Manager › Settings toggles it (settings.pos_layout /
+      # settings.branches, on / off only) and the desktop OSK reads it (off → never opens). Web/Android use native keyboards.
+      - name: Desktop on-screen keyboard toggle per branch
+        working-directory: apps/desktop
+        run: node --no-warnings test/onscreen-keyboard-toggle.test.mjs
 
       # A597 — the owner's brand colours on the till: pulled with the branding (no schema bump), an older cloud leaves them,
       # none with themes off or under a branch's own theme, a database without the columns reads as none, the branch

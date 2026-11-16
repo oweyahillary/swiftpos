@@ -6,6 +6,7 @@ import ReversalRulesPanel from './ReversalRulesPanel';
 import CashierHistoryPanel from './CashierHistoryPanel';
 import MpesaPanel from './MpesaPanel';   // A492
 import CategoryLayoutPanel from './CategoryLayoutPanel';   // 8n
+import OnscreenKeyboardPanel from './OnscreenKeyboardPanel';   // owner 2026-11-09
 
 // The till's Settings screen (A104) — business-wide options plus the payment
 // methods manager moved in here. 24-hour operation controls whether an unclosed
@@ -94,6 +95,11 @@ export default function SettingsPanel({ canBusiness = false, canPayments = false
       {/* 8n: the categories in the side panel or across the top — this branch's POS (and its web POS). */}
       {canPosLayout && <section className="border-t border-gray-800 pt-6">
         <CategoryLayoutPanel canEdit={canPosLayout} />
+      </section>}
+
+      {/* Owner 2026-11-09: ZapTill's own on-screen keyboard on/off for this branch's desktop POS (same keys as the layout). */}
+      {canPosLayout && <section className="border-t border-gray-800 pt-6">
+        <OnscreenKeyboardPanel canEdit={canPosLayout} />
       </section>}
 
       {/* A492: the number this branch's customers pay to by M-Pesa — set here by its manager. */}

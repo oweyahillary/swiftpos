@@ -84,6 +84,8 @@ export interface POSInitResponse {
   receiptHeader?: string;
   /** A304/A311: branding from /pos/init; null when the business has no row. */
   branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean;
+    /** The unified Cloudinary brand logo; preferred over the legacy base64 logoPng. */
+    logoUrl?: string | null;
     /** A597: the owner's brand colours (null while themes are off). */
     primaryHex?: string | null; secondaryHex?: string | null } | null;
   receiptFooter?: string;

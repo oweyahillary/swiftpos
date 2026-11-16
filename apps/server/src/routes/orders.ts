@@ -3010,7 +3010,8 @@ router.post('/:id/pay', sells, async (req, res) => {
 // Body: { course } — fires all 'held' items of that course to the kitchen.
 // Marks them fired and (re)issues a kitchen ticket so the line sees them.
 router.post('/:id/fire-course', sells, async (req, res) => {
-  const { id } = req.params;
+  // A335: the till knows the order by ITS own id (idempotency_key) — resolve it so a course fired OFFLINE replays here.
+  const id = await cloudOrderId(req.params.id, req.businessId!);
   const { course } = req.body;
   if (!course) { res.status(400).json({ error: 'course is required' }); return; }
 
@@ -3044,8 +3045,10 @@ router.post('/:id/fire-course', sells, async (req, res) => {
 router.post('/:id/move-table', sells, async (req, res) => {
   const table = typeof req.body?.table_number === 'string' ? req.body.table_number.trim().slice(0, 50) : '';
   if (!table) { res.status(400).json({ error: 'Choose the table to move to.' }); return; }
+  // A335: resolve the till's own order id (idempotency_key) so a table moved OFFLINE replays here, not just the web's id.
+  const orderId = await cloudOrderId(req.params.id, req.businessId!);
   const { data: order, error } = await supabase
-    .from('orders').select('id, branch_id, status, order_type').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+    .from('orders').select('id, branch_id, status, order_type').eq('id', orderId).eq('business_id', req.businessId).maybeSingle();
   if (error) { sendError(res, error); return; }
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
   if (!assertBranchAccess(req, order.branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }

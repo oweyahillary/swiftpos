@@ -248,7 +248,7 @@ const call = (ch, payload) => said(() => H[ch]({}, payload));
     && (await call('backup:restore', { token: 'x', confirm: 'RESTORE' })) === B.RESTORE_REFUSAL);
   signIn('Manager', fine('shifts.close_branch', 'reports.sales'));
   const st = await H['backup:status']({});
-  ok('a manager (closes the branch) sees the panel and may back up now', st?.dir === backupsDir && st.can_restore === false
+  ok('a manager (closes the branch) may still make a copy at the handler, though the manager UI is gone (2026-11-09)', st?.dir === backupsDir && st.can_restore === false
     && (await call('backup:now')) === 'OK');
   ok('…but may not restore', (await call('backup:chooseRestoreFile')) === B.RESTORE_REFUSAL);
   ok('"Use the default folder" (dir null) gets past the payload check — on the Tech page too', (await call('backup:setDir', { dir: null })) === 'OK'
@@ -257,20 +257,23 @@ const call = (ch, payload) => said(() => H[ch]({}, payload));
   ok('someone with the business settings may too', (await H['backup:status']({}))?.can_restore === false);
   signIn('owner', {});
   ok('the owner may restore', (await H['backup:status']({}))?.can_restore === true);
-  ok('the screens: Manager › Settings › Backup for the owner or a manager; the Tech page keeps its button',
-    /canBackup: hasAny\('settings\.business', 'shifts\.close_branch'\)/.test(src('renderer/pages/ManagerPage.tsx'))
-    && /case 'backup':\s+return (?:<>)?<BackupPanel/.test(src('renderer/pages/ManagerPage.tsx'))
-    && /a\.canBackup \? \[\{ key: 'backup'/.test(src('renderer/lib/managerNav.ts'))
-    && /posApi\.tech\.backupNow\(\)/.test(src('renderer/pages/TechPage.tsx')));
-  const panel = src('renderer/components/BackupPanel.tsx');
-  ok('the panel: last time and size, the red warning, Back up now, Choose folder, the same-disk line, RESTORE typed',
-    /data-testid="backup-last"/.test(panel) && /data-testid="backup-warning"/.test(panel) && /data-testid="backup-now"/.test(panel)
-    && /data-testid="backup-choose-dir"/.test(panel) && /USB stick or a second disk/.test(panel) && /Type RESTORE to confirm/.test(panel));
-  ok('the panel (A600 follow-up): every 6 hours and after the day is closed, the 10 most recent kept, the space the copies use, the 12-hour and 2-day warnings, the red free-space warning',
-    /Backed up every 6 hours and after the day is closed; the \{st\.keep\} most recent copies are kept\./.test(panel)
-    && /'No backup in the last 12 hours'/.test(panel) && /'No backup in the last 2 days'/.test(panel)
-    && /data-testid="backup-space-warning"[\s\S]{0,200}st\.space_short\.message/.test(panel) && /using \$\{size\(st\.copies_bytes\)\}/.test(panel)
-    && !/every night at 3 am/.test(panel));
+  // Owner, 2026-11-09 ("move restore to tech — a manager should not handle such works, they can mess big time"): the
+  // Manager Backup panel is gone entirely (BackupPanel.tsx deleted). The manager has no backup/restore UI at all; the
+  // backup buttons AND restore live only in Technician mode. (The handlers above still authorise a manager to make a
+  // copy, but nothing in the manager screen reaches them; restore stays owner/tech-only, as the handler tests show.)
+  const mgr = src('renderer/pages/ManagerPage.tsx');
+  const nav = src('renderer/lib/managerNav.ts');
+  ok('the manager has no Backup any more (no canBackup, no case, no BackupPanel import), and the component is deleted',
+    !/canBackup/.test(mgr) && !/case 'backup'/.test(mgr) && !/BackupPanel/.test(mgr)
+    && !/canBackup/.test(nav) && !/key: 'backup'/.test(nav)
+    && !fs.existsSync(path.join(here, '..', 'src', 'renderer', 'components', 'BackupPanel.tsx')));
+  const tech = src('renderer/pages/TechPage.tsx');
+  ok('the Tech page keeps Back up now and the folder, and now holds restore (choose a file, RESTORE typed, restart)',
+    /posApi\.tech\.backupNow\(\)/.test(tech) && /data-testid="choose-backup-dir"/.test(tech)
+    && /data-testid="tech-restore-pick"/.test(tech) && /posApi\.backup\.chooseRestoreFile\(\)/.test(tech)
+    && /Type RESTORE to confirm/.test(tech) && /data-testid="tech-restore-confirm"/.test(tech)
+    && /data-testid="tech-restore-go"/.test(tech) && /posApi\.backup\.restore\(/.test(tech)
+    && /Restore and restart/.test(tech));
 }
 
 // ── 2b. A backup right after the day is closed ───────────────────────────────────────────────────────────────────────

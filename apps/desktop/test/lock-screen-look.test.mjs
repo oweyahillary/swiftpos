@@ -31,6 +31,11 @@ ok('…and holds still under reduced motion', /\.animate-bump, \.animate-shake,/
 ok('OK shows a busy ring and "Checking…" while the PIN is checked',
   src.includes('{busy ? <><span className="btn-spinner" aria-hidden />Checking…</> : \'OK\'}'));
 ok('the time and the day are shown', src.includes('data-testid="lock-clock"') && src.includes("hour12: false"));
+ok('centred and compact — logo, time, name, then the keypad reachable without scrolling (owner, 2026-11-09)',
+  src.includes('className="m-auto w-full max-w-sm px-6 py-8 text-center"')
+  && /maxHeight: 100, maxWidth: 200/.test(src)
+  && src.includes('<h1 className="text-lg font-semibold text-white mt-5">POS locked</h1>')
+  && /Enter \{staffName\}&apos;s PIN to continue/.test(src));
 ok('the keys press (A470)', src.includes("const key = 'press h-14 rounded-xl"));
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -250,7 +250,10 @@ export function registerJoinHandlers(ctx: IpcShared) {
   });
 
   // The server: who is waiting, and the answer. Allow fetches a one-time code from the cloud for this branch.
-  handle('node:joinRequests', async () => (isNodeRole(getDeviceConfig()?.device_role)
+  // A490 → owner, 2026-11-09 ("tech only — they are the only one who gets a join request"): a pending join is shown ONLY
+  // while a technician session is open on the branch server. No tech session → nothing pending is returned, so the
+  // JoinPrompt modal (App root) never pops for a cashier or a manager; a POS asking to join waits until a technician is in.
+  handle('node:joinRequests', async () => (isNodeRole(getDeviceConfig()?.device_role) && getActiveSession()
     ? pendingJoins().map((r) => ({ ...r, securityCode: serverSecurityCode() })) : []));   // A489: compared with the till's screen
 
   // A489: this till's connection to its branch server (Tech page), or — on the server — its own security code.
@@ -355,8 +358,10 @@ export function registerJoinHandlers(ctx: IpcShared) {
   handle('node:answerJoin', async (_event, payload) => {
     const { id, allow } = assertPayload<{ id: string; allow: boolean }>({ id: { t: 'string', min: 1 }, allow: { t: 'boolean' } }, payload);
     if (!isNodeRole(getDeviceConfig()?.device_role)) throw new Error('Only the branch server answers join requests.');
-    // A490: adding a till to the branch is devices.approve (the cloud's Tills and devices), or a technician.
-    if (!getActiveSession() && !signedInCan('devices.approve')) throw new Error('Only someone who approves points of sale (or a technician) can answer a POS asking to join.');
+    // A490 → owner, 2026-11-09 ("tech only — they are the only one who gets a join request"): adding a POS to the branch
+    // is a technician's job alone now. The devices.approve path (a manager, from the cloud's Tills and devices key) was
+    // dropped, so a manager can neither see a join request (node:joinRequests above) nor answer one here.
+    if (!getActiveSession()) throw new Error('Only a technician can answer a POS asking to join.');
     const out = await answerJoin(id, allow, async () => {
       let res: Response;
       try { res = await tillFetch('/api/pos/join-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); }

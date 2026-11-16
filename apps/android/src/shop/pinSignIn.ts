@@ -6,7 +6,7 @@
  */
 import { CloudError, cloudPost } from '../cloud/client';
 import { cashierSessionFrom, pinRefusal } from './rules';
-import { tillToken } from './tillSession';
+import { tillToken, type PosSession } from './tillSession';
 
 interface VerifyPinAnswer {
   accessToken?: string; token?: string; refreshToken?: string;
@@ -27,5 +27,22 @@ export async function signInWithPin(pin: string, appVersion: string) {
   } catch (e) {
     if (e instanceof CloudError) throw new PinRefused(pinRefusal(e.status, e.code, e.message));
     throw e;
+  }
+}
+
+/**
+ * Till stage 2: verify a HELD offline PIN when the connection returns, as the raw answer upgradeDecision reads (never
+ * throwing) — the same /auth/verify-pin call as a live sign-in, with the POS's own token. A refusal is the body/status the
+ * upgrade needs to tell "a PIN changed on the web" (reject) from "the cloud was busy" (retry).
+ */
+export async function verifyPinRaw(pin: string, till: PosSession, token: string, appVersion: string): Promise<{ status: number; body: VerifyPinAnswer | { error?: string } | null }> {
+  try {
+    const body = await cloudPost<VerifyPinAnswer>('/auth/verify-pin', {
+      pin, branch_id: till.branchId, device_id: till.deviceId, device_name: till.posName, device_role: 'till', app_version: appVersion,
+    }, token, { 'x-device-id': till.deviceId });
+    return { status: 200, body };
+  } catch (e) {
+    if (e instanceof CloudError) return { status: e.status, body: { error: e.message } };
+    return { status: 0, body: null };   // no answer / transport failure → the upgrade retries, the session carries on
   }
 }

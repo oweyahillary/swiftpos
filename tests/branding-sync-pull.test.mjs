@@ -105,13 +105,13 @@ if (db) {
     // The bind DERIVATION is the source's own JS, not a copy — extracted from the `const lr =`
     // block and executed. A test that recomputed lrKeep/enKeep itself passed with those lines
     // mutated (found by mutation-check; rule 24), because it never ran them.
-    const derivM = /(const lr = [\s\S]*?const enKeep = [^\n]*;)/.exec(fnSrc);
+    const derivM = /(const lr = [\s\S]*?const logoKeep = [^\n]*;)/.exec(fnSrc);   // through the Cloudinary logoKeep bind
     ok('A311: found the bind-derivation block in source', !!derivM);
-    const derive = new Function('b', `${derivM ? derivM[1] : ''}; return { lr, lrKeep, en, enKeep };`);
+    const derive = new Function('b', `${derivM ? derivM[1] : ''}; return { lr, lrKeep, en, enKeep, logoKeep };`);
     const run = (b) => {
-      const { lr, lrKeep, en, enKeep } = derive(b);
-      // Same bind order as the source: (business_id, accentHex, logoPng, lr, en, now, lrKeep, enKeep, en)
-      stmt.run('B1', b.accentHex, b.logoPng, lr, en, 'now', lrKeep, enKeep, en);
+      const { lr, lrKeep, en, enKeep, logoKeep } = derive(b);
+      // Same bind order as the source: (business_id, accentHex, logoPng, lr, en, now, logoKeep, lrKeep, enKeep, en)
+      stmt.run('B1', b.accentHex, b.logoPng, lr, en, 'now', logoKeep, lrKeep, enKeep, en);
     };
     const read = () => d2.prepare(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding WHERE business_id='B1'`).get();
 
@@ -123,6 +123,13 @@ if (db) {
     ok('A311: cloud toggle OFF wins (remote-wins)', read().receipt_logo_enabled === 0);
     run({ accentHex: '#0d9488', logoPng: 'p', logoReceipt: null, receiptLogoEnabled: true });
     ok('A311: cloud null raster CLEARS it while the toggle can be on (prints nothing, never throws)', (() => { const r = read(); return r.logo_receipt === null && r.receipt_logo_enabled === 1; })());
+    // Cloudinary logo: a pull that carries a URL (and no base64) KEEPS the locally-cached logo_png — the offline lock
+    // screen must not go blank between the URL arriving and cacheLogoFromUrl fetching the bytes. logo_png here is 'p'.
+    run({ accentHex: '#0d9488', logoPng: null, logoUrl: 'https://res.cloudinary.com/x/logo.png', logoReceipt: 'mono1:8:1:AA==', receiptLogoEnabled: true });
+    ok('Cloudinary URL keeps the cached logo_png (a null base64 push does not blank it)', read().logo_png === 'p');
+    // No URL + a base64 is still remote-wins (the legacy path): a new base64 replaces it.
+    run({ accentHex: '#0d9488', logoPng: 'q' });
+    ok('without a URL, a base64 push still replaces logo_png (remote-wins)', read().logo_png === 'q');
     ok('A311: still one row', d2.prepare(`SELECT count(*) c FROM branding`).get().c === 1);
     d2.close();
   }

@@ -27,8 +27,6 @@ import CreditSalesTab from '../components/CreditSalesTab';   // A545
 import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';   // A441
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
-import BackupPanel from '../components/BackupPanel';   // A600
-import HistoryUploadPanel from '../components/HistoryUploadPanel';   // A602
 import CustomerScreenPanel from '../components/CustomerScreenPanel';   // A606
 import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
 import { can, canAny, isOwner as isOwnerSession, mayMoveMoney, mayMpesa, SELL_REFUSAL } from '../lib/access';   // A490: the one rule (+ A492)
@@ -2060,7 +2058,6 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canSettings: hasAny('settings.business', 'settings.payments', 'settings.pos_layout', 'settings.branches') || mayMpesa(staff),   // A492: the branch's M-Pesa number; 8n: its POS layout
     canPrinting: has('stations.manage') || canManageReceipt,
     canStaff: hasAny('staff.view', 'staff.edit'),
-    canBackup: hasAny('settings.business', 'shifts.close_branch'),   // A600: the owner or a manager
     showStock,
     canWaste: has('inventory.waste'),   // A414
     online,   // A460
@@ -2123,7 +2120,6 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'combos':  return online ? <CombosTab  currency={currency} /> : <RetailOverview currency={currency} />;   // A460
       case 'import':  return <ImportTab  currency={currency} what={words.importWhat} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} canEdit={has('staff.edit')} />;   // A490
-      case 'backup':  return <><BackupPanel /><HistoryUploadPanel /></>;   // A600: the nightly backup on this PC, the folder and restore; A602: the history upload
       case 'settings': return <><SettingsPanel canBusiness={has('settings.business')} canPayments={has('settings.payments')}
                                              canMpesa={mayMpesa(staff)} canPosLayout={hasAny(...CATEGORY_LAYOUT_PERMISSIONS)} isOwner={isOwnerSession(staff)} />{/* 0.6.30; A490: each panel by its key */}
         {has('settings.business') && <CustomerScreenPanel className="max-w-xl mt-6" />}{/* A606: this PC's customer screen */}</>;

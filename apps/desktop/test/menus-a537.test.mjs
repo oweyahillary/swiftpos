@@ -195,7 +195,7 @@ try {
     /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/.test(panel)
     && /try \{ return parsePanelPrefs\(window\.localStorage\.getItem\(PANEL_PREFS_KEY\)\); \} catch/.test(panel)
     && /try \{ window\.localStorage\.setItem\(PANEL_PREFS_KEY, panelPrefsText\(p\)\); \} catch/.test(panel)
-    && /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/.test(panel)
+    && /const picked = useCallback\(\(\) => setOpen\(pinnable \? panelOpenAfterPick\(prefs\) : false\)/.test(panel)
     && /^import SharedCategoryPanel, \{[^}]*\} from '@zaptill\/ui\/CategoryPanel';$/m.test(look) && /^export default withLook<CategoryPanelProps>\(SharedCategoryPanel, LOOK\);$/m.test(look));
   ok('touch first: 48 px rows, 40+ px pin / close / tabs, nothing on hover only (the panel uses the action colours)',
     /min-h-\[48px\]/.test(look) && (look.match(/min-h-\[40px\]/g) || []).length >= 3 && /bg-action-500/.test(look) && !/onMouseEnter|onMouseOver/.test(panel));

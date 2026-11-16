@@ -34,6 +34,22 @@ export default function App() {
     })().catch((e) => setState({ kind: 'failed', message: e instanceof Error ? e.message : String(e) }));
   }, []);
 
+  // Android hardware back: close the topmost open POS overlay (apps/dashboard hooks/useBackDismiss dispatches on this
+  // event), else leave the tech page. On the PIN pad or the selling screen it does nothing — a stray press must never sign
+  // a cashier out or exit the app; they lock deliberately with the in-app Lock button.
+  const shopPosReady = state.kind === 'ready' && state.mode === 'shop-pos';
+  useEffect(() => {
+    if (!shopPosReady) return;
+    let handle: { remove: () => void } | undefined;
+    void NativeApp.addListener('backButton', () => {
+      const ev = new CustomEvent('zaptill:back', { cancelable: true });
+      window.dispatchEvent(ev);
+      if (ev.defaultPrevented) return;   // an overlay consumed the press
+      if (window.location.pathname === '/pos/device') { window.history.back(); return; }   // leave This device → PIN pad
+    }).then((h) => { handle = h; });
+    return () => { handle?.remove(); };
+  }, [shopPosReady]);
+
   if (state.kind === 'loading') return <main className="screen centre"><p className="note">Starting ZapTill…</p></main>;
   if (state.kind === 'failed') return <main className="screen"><h1>ZapTill could not start</h1><p className="problem">{state.message}</p></main>;
   if (state.kind === 'choose') {

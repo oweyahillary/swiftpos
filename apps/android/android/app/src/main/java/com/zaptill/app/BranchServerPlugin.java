@@ -141,6 +141,15 @@ public class BranchServerPlugin extends Plugin {
                 JSObject out = new JSObject();
                 out.put("status", status);
                 out.put("body", in == null ? "" : readCapped(in));
+                // Till stage 3: hand back the response headers (lowercased) so a caller can read the branch gateway's
+                // marks — x-node-gateway (a real cloud forward) and x-node-uplink (the server's own internet is down).
+                // The status line comes back under a null key; skip it.
+                JSObject resHeaders = new JSObject();
+                for (java.util.Map.Entry<String, java.util.List<String>> h : c.getHeaderFields().entrySet()) {
+                    if (h.getKey() == null || h.getValue() == null || h.getValue().isEmpty()) continue;
+                    resHeaders.put(h.getKey().toLowerCase(java.util.Locale.ROOT), h.getValue().get(0));
+                }
+                out.put("headers", resHeaders);
                 call.resolve(out);
             } catch (javax.net.ssl.SSLException e) {
                 call.reject("The branch server's identity changed — it is not the server this POS joined. A technician joins it again.", "IDENTITY_CHANGED");

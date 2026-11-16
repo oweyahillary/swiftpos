@@ -33,6 +33,28 @@ export async function readServerLink(): Promise<ServerLink | null> {
 
 export async function forgetServerLink(): Promise<void> { await removeSecret('branch.server'); }
 
+/** Raw answer from a joined branch server over its pinned TLS: status, body text, and response headers (Till stage 3). */
+export interface NodeResponse { status: number; body: string; headers: Record<string, string> }
+
+/**
+ * One request to the joined branch server over its pinned TLS (shared by branchGateway and branchSync). `path` is a full
+ * `/node/*` path; the branch access code is sent for you, the caller adds its own device headers (x-device-id,
+ * x-device-token). Returns null when the server did not answer or its identity changed — the caller treats that as
+ * "server unreachable" and falls back.
+ */
+export async function nodeRequest(link: ServerLink, method: 'GET' | 'POST', path: string,
+  body?: string, headers: Record<string, string> = {}, timeoutMs = 8000): Promise<NodeResponse | null> {
+  try {
+    const r = await BranchServer.request({
+      url: `${link.url}${path}`, method, cert: link.cert,
+      headers: { 'X-Node-Secret': link.nodeSecret, ...headers },
+      ...(body !== undefined ? { body } : {}),
+      timeoutMs,
+    });
+    return { status: r.status, body: r.body ?? '', headers: r.headers ?? {} };
+  } catch { return null; }
+}
+
 /** Listen for a few seconds; [] when none answered (most clients today — the technician then enters the code). */
 export async function findServers(ms = 6000): Promise<FoundServer[]> {
   try { return serversHeard((await BranchServer.listen({ ms })).heard); } catch { return []; }

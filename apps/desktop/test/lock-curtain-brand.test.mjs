@@ -41,7 +41,7 @@ test('the background is opaque (nothing shows through the text)', () => {
 });
 test('the small text is brighter and larger', () => {
   assert.match(src, /<p className="text-base text-gray-200 mt-1">/);
-  assert.match(src, /<p className="text-sm text-gray-400 mt-3">/);
+  assert.match(src, /<p className="text-sm text-gray-400 mt-1 mb-5">\s*Nothing was lost/);
 });
 
 // 0.6.25 (owner, PIN screen screenshot: "increase the size of the logo abit … the white space is big").
@@ -49,8 +49,12 @@ const pin = fs.readFileSync(path.join(DESKTOP, 'src/renderer/pages/PinPage.tsx')
 test('0.6.25: the PIN screen logo is up to 160 × 240 on a tight card', () => {
   assert.match(pin, /data-testid="pin-logo" className="inline-flex items-center justify-center bg-white rounded-xl" style=\{\{ padding: '8px 10px' \}\}>\s*<img src=\{logoDataUri\} alt="" style=\{\{ maxHeight: 160, maxWidth: 240,/);
 });
-test('0.6.25: the lock screen logo matches (up to 150 × 240)', () => {
-  assert.match(src, /style=\{\{ padding: '8px 10px' \}\}>\s*<img src=\{logo\} alt="" style=\{\{ maxHeight: 150, maxWidth: 240,/);
+// 2026-11-09 (owner: "exactly like that screenshot but centred"): the single centred column — logo above the time, the
+// day, "POS locked", the named PIN prompt — sized so the whole column (keypad and all) centres without scrolling.
+test('2026-11-09: the lock screen is centred and compact — logo above the time (up to 100 × 200), the named PIN prompt', () => {
+  assert.match(src, /style=\{\{ padding: '8px 12px' \}\}>\s*<img src=\{logo\} alt="" style=\{\{ maxHeight: 100, maxWidth: 200,/);
+  assert.match(src, /<h1 className="text-lg font-semibold text-white mt-5">POS locked<\/h1>/);
+  assert.match(src, /Enter \{staffName\}&apos;s PIN to continue/);
 });
 
 // 0.6.25 (owner, manager screenshot: "Where its b foods can we add the logo there").

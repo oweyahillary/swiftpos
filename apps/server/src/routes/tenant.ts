@@ -21,10 +21,11 @@ router.get('/:subdomain', async (req, res) => {
     supabase.from('businesses').select('logo_url').eq('id', found.tenant.id).maybeSingle(),
   ]);
   // A few minutes in the browser: the page loads it on every visit; a logo change shows within five minutes.
+  // logo: prefer the unified Cloudinary URL (tiny to serve); the legacy base64 logo_png is the fallback until migration.
   res.set('Cache-Control', 'public, max-age=300');
   res.json({
     name:   found.tenant.name,
-    logo:   (brand as any)?.logo_png || (biz as any)?.logo_url || null,
+    logo:   (biz as any)?.logo_url || (brand as any)?.logo_png || null,
     accent: (brand as any)?.accent_hex || null,
   });
 });

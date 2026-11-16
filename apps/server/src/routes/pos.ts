@@ -14,6 +14,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { isNodeRole } from '../lib/deviceRegistry';
+import { isPosDeviceSurface } from '../lib/posSurface';   // Till stage 2: the branch-staff roster goes to any POS device (desktop or android-till)
 import { checkDeviceBranch } from '../lib/deviceBinding';   // A446
 import { createHash } from 'crypto';   // A446
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
@@ -44,6 +45,7 @@ import { branchCreditEnabled, branchLimitsAt, owedByCustomerAt } from '../lib/br
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '@zaptill/core/scaleBarcode';   // A577
 import { slidesFromWire, CUSTOMER_SCREEN_KEY } from '@zaptill/core/customerScreen';   // A606
 import { CATEGORY_LAYOUT_KEY, categoryLayoutOf } from '@zaptill/core/categoryLayout';   // 8n
+import { ONSCREEN_KEYBOARD_KEY, onscreenKeyboardOf } from '@zaptill/core/onscreenKeyboard';   // owner 2026-11-09
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
 import { standingFor, cloudBackupWire } from '../lib/cloudPlan';   // A601
@@ -224,13 +226,17 @@ function rememberRoster(key: string, v: { staffVersion: number; version: string;
 }
 
 // active products (with category colour), active categories, main branch id, and variant groups.
-// GET /api/pos/branch-staff — hands a branch NODE its staff roster with bcrypt
-// PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17). This is
+// GET /api/pos/branch-staff — hands a POS DEVICE its branch's staff roster with bcrypt
+// PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17; Till stage 2). This is
 // the one route that gives a machine the branch's PIN hashes, so the guard is
-// four conditions: the desktop surface, the caller's own business, a device
-// registered as a node/office, and that device's own branch. bcrypt only.
+// four conditions: a POS DEVICE surface (the desktop POS or the Android Shop POS — posSurface.ts:
+// the cloud's gates treat the two alike), the caller's own business, a device registered as a
+// till/node, and that device's own branch. bcrypt only.
 router.get('/branch-staff', async (req, res) => {
-  if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
+  // Till stage 2: the Android Shop POS (surface 'android-till') pulls this roster for its OWN offline sign-in, exactly as
+  // the desktop POS does — so the gate is "is this a POS device?", not "is this the desktop?" (an android-till surface was
+  // silently 403'd here, leaving the tablet's offline roster empty: "No staff are saved on this POS yet").
+  if (!isPosDeviceSurface(req.surface)) { res.status(403).json({ error: 'POS device surface only' }); return; }
   // A494: the PIN hashes go to a TILL's own session only, for itself — never a person's sign-in (a cashier's token is not
   // a till), and never for another device named in a header. The till (staffRoster.ts, syncEngine.ts) asks with its own
   // session and its own id in X-Device-Id.
@@ -467,11 +473,11 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
           .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
-            CATEGORY_LAYOUT_KEY])   // 8n: the branch's own only — there is no business-wide value
+            CATEGORY_LAYOUT_KEY, ONSCREEN_KEYBOARD_KEY])   // 8n + owner 2026-11-09: the branch's own only — there is no business-wide value
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
-      .select('type, name, currency, vat_rate, ctl_rate, status')
+      .select('type, name, currency, vat_rate, ctl_rate, status, logo_url')   // logo_url: the Cloudinary brand logo (unified; prefer over the legacy base64 branding.logo_png)
       .eq('id', req.businessId)
       .single(),
     // A304: client branding (accent + base64 logo) for this business, pulled to
@@ -626,6 +632,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // which the till reads as "leave the local (tech-set) value alone".
     branding: branding ? {
       accentHex: branding.accent_hex ?? null, logoPng: branding.logo_png ?? null,
+      // Cloudinary brand logo (unified). The till prefers logoUrl and caches its bytes for the offline lock screen;
+      // logoPng (base64) stays as the pre-migration fallback until every business's logo is on Cloudinary.
+      logoUrl: (business as { logo_url?: string | null } | null)?.logo_url ?? null,
       // A311: the receipt raster + the client's opt-in toggle ride the same pull.
       logoReceipt: branding.logo_receipt ?? null,
       receiptLogoEnabled: branding.receipt_logo_enabled === true,
@@ -662,6 +671,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // 8n (owner, 2026-11-05): how this branch's POS shows its categories — 'panel' (☰, the standard; also when the branch
     // never chose) or 'top' (pills across the top). Always sent; older POSs ignore it.
     posCategoryLayout: categoryLayoutOf(branchText[CATEGORY_LAYOUT_KEY]),
+    // Owner, 2026-11-09: the branch's on-screen keyboard on/off — 'on' (the standard; also when the branch never chose) or
+    // 'off'. Desktop only (the web and Android POS use the native keyboard and ignore it). Always sent; older POSs ignore it.
+    posOnscreenKeyboard: onscreenKeyboardOf(branchText[ONSCREEN_KEYBOARD_KEY]),
     // 0.6.35 (A384): the tech allocated to this client (admin portal) — their name and number on the till's Help.
     // Always sent: null = no tech → the Help shows SwiftPOS support's numbers (shared/support.ts). Older tills ignore it.
     support: await getSupportContact(req.businessId),

@@ -320,16 +320,19 @@ const BRANDING_COLUMNS = 'accent_hex, logo_png, logo_receipt, receipt_logo_enabl
 // The client branding row (accent + logo) for this business, or null when unset (A303).
 // Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
 router.get('/branding', requireAuth, async (req, res) => {
-  const [{ data, error }, enabled] = await Promise.all([
+  const [{ data, error }, enabled, { data: bizLogo }] = await Promise.all([
     selectBusinessBranding(req.businessId, BRANDING_COLUMNS),   // A597: falls back before migration 179
     themesEnabled(req.businessId),   // A325: the web shows the theme picker only when the business has themes
+    supabase.from('businesses').select('logo_url').eq('id', req.businessId).maybeSingle(),   // the unified Cloudinary logo
   ]);
   if (error) { sendError(res, error); return; }
   // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column. A597: + whether
   // this caller may choose the brand colours (the owner, signed in as themselves — the Branding page shows the fields).
+  // logo_url: the Cloudinary brand logo (unified); the page prefers it over the legacy base64 logo_png.
   const brandColoursEditable = req.isOwner === true && !req.isTill && req.webPartner !== true;
-  res.json(data ? { ...data, themes_enabled: enabled, brand_colours_editable: brandColoursEditable }
-    : (enabled ? { themes_enabled: true, brand_colours_editable: brandColoursEditable } : null));
+  const logoUrl = (bizLogo as { logo_url?: string | null } | null)?.logo_url ?? null;
+  res.json(data ? { ...data, logo_url: logoUrl, themes_enabled: enabled, brand_colours_editable: brandColoursEditable }
+    : (enabled || logoUrl ? { logo_url: logoUrl, themes_enabled: enabled, brand_colours_editable: brandColoursEditable } : null));
 });
 
 // PUT /api/business/branding
@@ -419,12 +422,29 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     }
   }
 
+  // The unified Cloudinary brand logo: an https URL kept on businesses.logo_url (the printed documents and the tenant login
+  // page read it too). When a URL is set, the base64 logo_png is dropped — the URL is the single source of the logo. null
+  // clears it. Any https image URL is accepted, as the existing "Logo image URL" field already is.
+  let logoUrlWrite: { set: boolean; value: string | null } = { set: false, value: null };
+  if (has('logo_url')) {
+    const u = req.body.logo_url;
+    if (u === null) { logoUrlWrite = { set: true, value: null }; }
+    else if (typeof u === 'string' && /^https:\/\/[^\s"'<>]{1,500}$/i.test(u.trim())) {
+      logoUrlWrite = { set: true, value: u.trim() };
+      row.logo_png = null;   // on Cloudinary — never keep the base64 blob alongside the URL (that was the egress cost)
+    } else { res.status(400).json({ error: 'logo_url must be an https image URL' }); return; }
+  }
+
   const upsert = (cols: string) => supabase.from('business_branding').upsert(row, { onConflict: 'business_id' }).select(cols).single();
   let { data, error } = await upsert(BRANDING_COLUMNS);
   // A597: a database before migration 179 — the same save without the colour columns (a colour write itself then fails).
   if (isMissingBrandColourColumn(error) && !colourFields.length) ({ data, error } = await upsert(withoutBrandColourColumns(BRANDING_COLUMNS)));
   if (error) { sendError(res, error); return; }
-  res.json(data);
+  if (logoUrlWrite.set) {
+    const { error: luErr } = await supabase.from('businesses').update({ logo_url: logoUrlWrite.value }).eq('id', req.businessId);
+    if (luErr) { sendError(res, luErr); return; }
+  }
+  res.json(logoUrlWrite.set ? { ...(data as object), logo_url: logoUrlWrite.value } : data);
 });
 
 // ── A544: per-branch branding ─────────────────────────────────────────────────────────────────────────────────────────

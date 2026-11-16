@@ -15,6 +15,8 @@ import { resolveTheme, isFreeThemeId, themeTokens, resolveBrandLayer, brandPalet
 export interface BrandingForTheme {
   theme_id?: string | null; themes_enabled?: boolean;
   primary_hex?: string | null; secondary_hex?: string | null; logo_png?: string | null;
+  /** The unified Cloudinary brand logo (an https URL); preferred over the legacy base64 logo_png. */
+  logo_url?: string | null;
 }
 /** A597 / A605: the brand layer's variables — the primary's palette (shared themes.ts brandPalette) by mode (-l light, -d
  *  dark), its identity band, and the secondary's few. index.css `:root[data-brand]` maps the back office's swift-*, the
@@ -137,7 +139,11 @@ export interface BrandLook {
 export function brandLookFor(b: BrandingForTheme | null | undefined): BrandLook | null {
   if (!b || b.themes_enabled !== true) return null;
   const primary = cleanBrandHex(b.primary_hex), secondary = cleanBrandHex(b.secondary_hex);
-  const logo = typeof b.logo_png === 'string' && /^data:image\/(?:png|jpeg);base64,/i.test(b.logo_png) ? b.logo_png : null;
+  // Prefer the unified Cloudinary URL; fall back to the legacy base64 data-URI until migration completes. Both go in an
+  // <img src>, so either is safe to render.
+  const urlLogo = typeof b.logo_url === 'string' && /^https:\/\//i.test(b.logo_url) ? b.logo_url : null;
+  const dataLogo = typeof b.logo_png === 'string' && /^data:image\/(?:png|jpeg);base64,/i.test(b.logo_png) ? b.logo_png : null;
+  const logo = urlLogo || dataLogo;
   return primary || secondary || logo ? { logo, primary, secondary } : null;
 }
 /** A605: the identity band at the top of the menu — the primary exactly as chosen (else the secondary), ONE colour. PURE. */

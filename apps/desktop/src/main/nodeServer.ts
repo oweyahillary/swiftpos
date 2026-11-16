@@ -64,6 +64,8 @@ import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from
 import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents, retryRefusedAfterEvents,
   checkDeviceKey, isKnownTill, issueDeviceKey, joinVerdict, prepareDeviceEnrolment, type DeviceKeyVerdict } from './nodeIngest';
 import { verifyPinAtNodeAsync, readBranchStaffForServe, vetRelayedStaffChanges } from './branchStaff';
+import { ensureNodeTabs, registerTab, listOpenTabs, claimTab, forceClaim, forceClaimVerdict, updateTab, releaseTab, deleteTab, getTab, stealAudit } from './nodeTabs';   // Till stage 3b: shared held orders
+import { personCan } from './personAccess';   // Till stage 3b: a manager force-steal is gated on tables.manage (A490)
 import { logLine } from './logFile';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 import { buildReferenceBundle } from './referenceBundle';
@@ -329,6 +331,9 @@ export function startNodeServer(): void {
   console.log(`[node] branch access code: ${secret}`);
   // A496: write down the tills known before device keys, before anything can ask to record a key.
   try { prepareDeviceEnrolment(); } catch (e: any) { logLine('node', `could not note the known tills: ${e?.message ?? e}`); }
+  // Till stage 3b: the node-authoritative store of OPEN held orders (tabs), so a tab opened on one till is seen, locked,
+  // edited and charged from another. Idempotent CREATE … IF NOT EXISTS.
+  try { ensureNodeTabs(getLocalDb()); } catch (e: any) { logLine('node', `could not ensure the shared tabs store: ${e?.message ?? e}`); }
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse) => {
     try {
@@ -665,6 +670,109 @@ export function startNodeServer(): void {
         if (!requireProven(req, res, '/node/since', deviceId)) return;   // A496: the branch's rows only to a proven till
         const out = collectDistribution(deviceId, body?.cursors ?? {}, Number(body?.limit) || 500);
         return json(res, 200, out);
+      }
+
+      // Till stage 3b (docs/BUILD-TILL-STAGE-3B-SERVER.md): the branch's SHARED HELD ORDERS (tabs), node-authoritative
+      // (nodeTabs.ts). The decided model (D9): every till SEES every open tab; to edit/charge/clear one a till must hold
+      // its LOCK — a single atomic claim, a 90s lease renewed on each edit. A lapsed lease auto-steals (audited); an
+      // ACTIVE lock is taken only by a manager-approved force-claim (audited). CLEAR is audited; a CHARGE is routine.
+      // Branch-scoped + X-Node-Secret (central) + proven-till (requireProven) like every /node/* route. The LOCK is held
+      // by the proven DEVICE (two tills can never both hold it); the staff display name rides in opened_by for the floor.
+      if (url === '/node/tabs' || url.startsWith('/node/tabs/')) {
+        const c = getDeviceConfig();
+        // List every open tab for the branch.
+        if (req.method === 'GET' && url === '/node/tabs') {
+          const q = new URL(req.url ?? '', 'http://node').searchParams;
+          if (c?.branch_id && q.get('branch_id') && q.get('branch_id') !== c.branch_id) return json(res, 403, { error: 'branch mismatch' });
+          if (!requireProven(req, res, '/node/tabs')) return;
+          const branchId = String(q.get('branch_id') ?? c?.branch_id ?? '');
+          if (!branchId) return json(res, 400, { error: 'branch_id is required' });
+          return json(res, 200, { tabs: listOpenTabs(getLocalDb(), branchId) });
+        }
+        // Register / upsert an opened tab from the owning till.
+        if (req.method === 'POST' && url === '/node/tabs') {
+          const body = await readBody(req);
+          if (c?.branch_id && body?.branch_id && body.branch_id !== c.branch_id) return json(res, 403, { error: 'branch mismatch' });
+          const me = requireProven(req, res, '/node/tabs', body?.device_id); if (!me) return;
+          const branchId = String(body?.branch_id ?? c?.branch_id ?? '');
+          if (!branchId || !body?.id || !body?.order_number) return json(res, 400, { error: 'id, order_number and branch_id are required' });
+          const tab = registerTab(getLocalDb(), {
+            id: String(body.id), branch_id: branchId, order_number: String(body.order_number),
+            label: String(body.label ?? ''), order_type: String(body.order_type ?? 'dine_in'),
+            table_number: body.table_number != null ? String(body.table_number) : '',
+            delivery_person: body.delivery_person != null ? String(body.delivery_person) : null,
+            cart: body.cart ?? [], opened_by: String(body.opened_by ?? ''),   // the staff display name, for the floor
+          });
+          return json(res, 200, { tab });
+        }
+        // Per-tab actions: /node/tabs/:id (edit) · /:id/claim · /:id/force-claim · /:id/release · /:id/delete
+        if (url.startsWith('/node/tabs/')) {
+          if (req.method !== 'POST') return json(res, 405, { error: 'POST required' });
+          const parts = url.slice('/node/tabs/'.length).split('/');
+          const id = decodeURIComponent(parts[0] ?? '');
+          const action = parts[1] ?? '';
+          if (!id) return json(res, 400, { error: 'a tab id is required' });
+          const body = await readBody(req);
+          const me = requireProven(req, res, `/node/tabs/${action || 'edit'}`, body?.device_id); if (!me) return;
+          const who = me.device;   // the lock holder is the proven device — never a value the caller supplies
+
+          if (action === 'claim') {
+            const before = getTab(getLocalDb(), id);   // captured for a steal audit
+            const r = claimTab(getLocalDb(), id, who);
+            if (!r.ok) return json(res, r.code, { ok: false, code: r.code, lockedBy: r.lockedBy });
+            let audit: Record<string, unknown> | null = null;
+            if (r.stole && before) { audit = stealAudit(before, who); logLine('node', `/node/tabs: ${who} took over tab ${id} on a lapsed lease (was ${before.locked_by ?? '?'})`); }
+            return json(res, 200, { ok: true, tab: r.tab, stole: r.stole, audit });
+          }
+          if (action === 'force-claim') {
+            // A manager-approved steal of an ACTIVE lease (owner 2026-11-15): the NODE verifies the manager's PIN and that
+            // they hold tables.manage BEFORE overriding a live holder — the till never decides this, it only relays the PIN
+            // the manager typed. Same node-authority path as /node/verify-pin (A17): THIS node's roster is the source of
+            // truth, not the caller. Unlocked / lapsed tabs take the plain `claim` above and never reach here.
+            const branchId = String(body?.branch_id ?? c?.branch_id ?? '');
+            const pin = String(body?.pin ?? '');
+            if (!pin) return json(res, 400, { ok: false, reason: 'pin_required', error: 'A manager’s PIN is needed to take over a table someone is still holding.' });
+            if (!branchId) return json(res, 400, { ok: false, error: 'branch_id is required' });
+            // A force-claim is a PIN attempt — the same rate limit as /node/verify-pin (F16/A496), by device AND by address.
+            if (!pinAttemptAllowed(`dev:${who ?? lanAddress(req)}`) || !pinAttemptAllowed(`ip:${lanAddress(req)}`)) {
+              logLine('node', `force-claim: too many PIN attempts from ${who} — refused for a minute`);
+              return json(res, 429, { ok: false, reason: 'rate_limited', error: 'Too many PIN attempts — wait a minute and try again.' });
+            }
+            // The node verifies the PIN against its own roster, then the pure gate decides: a bad PIN is final (401), a
+            // roster-read failure retryable (503), a verified staff without tables.manage is 403 (A490; the owner's role
+            // holds it via '*'). Permissions come from THIS node's roster, never the caller. forceClaim runs only on allow.
+            const verdict = await verifyPinAtNodeAsync(pin, branchId);
+            const gate = forceClaimVerdict(verdict, (s) => personCan({ roleName: s.roleName, permissions: s.permissions }, 'tables.manage'));
+            if (!gate.allow) {
+              if (gate.status === 403) logLine('node', `force-claim: a staff member without tables.manage was refused tab ${id}`);
+              return json(res, gate.status, { ok: false, reason: gate.reason, error: gate.message });
+            }
+            const before = getTab(getLocalDb(), id);
+            const r = forceClaim(getLocalDb(), id, who);
+            if (!r.ok) return json(res, r.code, { ok: false, code: r.code });
+            let audit: Record<string, unknown> | null = null;
+            if (r.previousHolder && before) {
+              audit = { ...stealAudit(before, who), forced: true, approved_by: gate.staff.name, approved_by_id: gate.staff.staffId };
+              logLine('node', `/node/tabs: MANAGER force-steal — ${who} took tab ${id} from ${r.previousHolder}, approved by ${gate.staff.name}`);
+            }
+            return json(res, 200, { ok: true, tab: r.tab, stole: !!r.previousHolder, previousHolder: r.previousHolder, approvedBy: gate.staff.name, audit });
+          }
+          if (action === 'release') {
+            return json(res, 200, { ok: releaseTab(getLocalDb(), id, who).ok });
+          }
+          if (action === 'delete') {
+            const reason = body?.reason === 'cleared' ? 'cleared' : 'charged';
+            const r = deleteTab(getLocalDb(), id, who, reason);
+            if (!r.ok) return json(res, r.code, { ok: false, code: r.code, lockedBy: r.lockedBy });
+            if (r.audit) logLine('node', `/node/tabs: ${who} CLEARED tab ${id} (opened by ${r.audit.opened_by}, last changed by ${r.audit.last_changed_by ?? '—'})`);
+            return json(res, 200, { ok: true, audit: r.audit });
+          }
+          if (!action) {   // POST /node/tabs/:id → save edits (renews the lease; holder only)
+            const r = updateTab(getLocalDb(), id, who, body?.cart ?? [], body?.label != null ? String(body.label) : undefined);
+            return json(res, r.ok ? 200 : r.code, r.ok ? { ok: true, tab: r.tab } : { ok: false, code: r.code, lockedBy: r.lockedBy });
+          }
+          return json(res, 404, { error: `unknown tab action '${action}'` });
+        }
       }
 
       // A24 — DOWNSTREAM reference snapshot. A peer pulls the branch's catalogue,

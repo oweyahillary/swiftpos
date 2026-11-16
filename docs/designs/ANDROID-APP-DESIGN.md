@@ -481,6 +481,11 @@ the cloud exactly once.
 
 - Local buffer and cache (§4.7); offline PIN check with Keystore verifiers; in-order, idempotent replay; stock as
   deltas; manual M-Pesa offline; retention (§4.8).
+- **Cold start:** the selling screen's catalogue reads — `pos/init`, tables/bays, pumps, printers, the restaurant
+  order-mode setting — are cached the last time each loaded online (shop/offlineReads.ts, the read half of the offline
+  seam), so the POS OPENS and sells from a cold boot with no connection, not only after a mid-shift disconnect. One row
+  per path+query, last-known-good; nothing outside that whitelist is kept. (Offline PIN sign-in from the cached roster is
+  the other half of cold start — offlinePin.ts.)
 - A status bar: online/offline, sales waiting, last synced; refusals visible to managers.
 
 **Tests on hardware:** unplug the router mid-shift, sell 50 orders, reconnect — exactly 50 arrive; kill the app while

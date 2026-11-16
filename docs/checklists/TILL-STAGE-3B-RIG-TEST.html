@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZapTill — Till Stage 3b shared tables + manager take-over: two-till rig test</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+@media print{h2{break-after:avoid}table,blockquote{break-inside:avoid}}
+</style></head>
+<body><div class="wrap">
+<h1>ZapTill — Till Stage 3b shared tables + manager take-over: two-till rig test</h1>
+<p><strong>What this closes:</strong> Till Stage 3b — shared restaurant tables across tills (held orders on the branch node) <strong>and</strong> the v0.4.6 <strong>manager take-over</strong> of an actively-held table. All of it is <strong>built and bench-green</strong> (<code>branch-tabs-ux</code> 26/0, <code>android-till-tabs</code> 44/0, <code>node-tabs-claim</code> 31/0 including the force-claim gate; desktop, android and dashboard type-checks clean). It was held from the floor because the *live cross-till* behaviour — poll lag, a till dropping mid-service, two tills racing for one table, a manager stealing a live lock — is exactly what a bench test cannot prove (rule 16). <strong>This hardware pass turns Stage 3b from BUILT into CLOSED.</strong></p>
+<p><strong>You need:</strong> a <strong>branch node</strong> (a desktop running as the branch server) on the LAN; <strong>two Shop POS tablets on v0.4.6</strong>, both <strong>joined to that branch</strong> (branch access code), business type <strong>restaurant</strong>; in the roster synced to the node, a <strong>manager</strong> — someone whose role has <strong>Manage tables</strong> (<code>tables.manage</code>; the owner's role always qualifies) — <strong>and</strong> a plain <strong>cashier</strong> whose role does <strong>not</strong> (know both PINs); and a way to take <strong>one tablet off the network</strong> (Wi-Fi off) while the node stays on the LAN.</p>
+<blockquote>If a test <strong>FAILS</strong>, stop and send me the exact on-screen message <strong>and</strong> the node log line (Technician then View log) — for example <code>/node/tabs: MANAGER force-steal ...</code> or <code>force-claim: ... refused</code>. That is a real bug, not a checklist gap (rule 11: errors verbatim). Nothing here needs new code.</blockquote>
+<h2>Setup — do this first</h2>
+<ol><li>Node online on the LAN; <strong>both tablets joined</strong> and <strong>synced once</strong> so each has the branch roster and catalogue.</li><li>On each tablet, confirm the version on the PIN screen reads <strong>ZapTill v0.4.6</strong>.</li><li>Open the <strong>node's log</strong> (Technician then View log) and leave it visible to watch the <code>node</code> / <code>/node/tabs</code> lines.</li><li>Sanity: both tablets show the <strong>same restaurant table grid</strong>.</li></ol>
+<h2>Test 1 — See: a table opened on A shows on B</h2>
+<ul><li>On <strong>tablet A</strong>: sign in, open a shift, open <strong>Table 5</strong>, add two items.</li><li>Watch <strong>tablet B's</strong> table grid (stay on the grid).</li><li><strong>Expect:</strong> within <strong>about 5 seconds</strong> Table 5 reads <strong>occupied</strong> on B, labelled <strong>"Held by (A's cashier)"</strong>. Pass / Fail.</li></ul>
+<h2>Test 2 — Lock: B cannot edit A's live table (read-only)</h2>
+<ul><li>On <strong>B</strong>, tap <strong>Table 5</strong>.</li><li><strong>Expect:</strong> a <strong>read-only "Held by (name)"</strong> overlay showing A's items and total — no way to add to it or charge it. Pass / Fail.</li></ul>
+<h2>Test 3 — Idle auto-takeover (no manager needed)</h2>
+<ul><li>Leave <strong>A's Table 5 untouched for more than 90 seconds</strong> (do not tap it). Then on <strong>B</strong>, tap Table 5.</li><li><strong>Expect:</strong> B <strong>auto-claims</strong> it, opens with the cart, and shows a <strong>"took over an idle table"</strong> toast; no PIN is asked. On A's next action it is dropped to the grid. Pass / Fail.</li></ul>
+<h2>Test 4 — Manager take-over of a LIVE table (the v0.4.6 feature)</h2>
+<ul><li>On <strong>A</strong>: open <strong>Table 6</strong>, add items, and <strong>keep it live</strong> — tap or edit it within the last 90 seconds so its lease has <strong>not</strong> lapsed.</li><li>On <strong>B</strong>: tap Table 6, then on the read-only overlay tap <strong>Take over</strong>, type the <strong>manager's PIN</strong>, and confirm.</li><li><strong>Expect, all of these:</strong><ul><li>B <strong>opens Table 6</strong> with A's cart and a toast <strong>"Took over Table 6 — approved by (manager)"</strong>.</li><li><strong>A's screen</strong> shows <strong>"This table was taken over on another POS"</strong> and returns A to the table grid; <strong>A's unsent additions are gone</strong> (B's copy is now the live one).</li><li>Node log shows <strong>`/node/tabs: MANAGER force-steal — ... approved by (manager)`</strong>.</li><li>Pass / Fail.</li></ul></li></ul>
+<h2>Test 5 — A wrong PIN is refused (no take-over)</h2>
+<ul><li>Set up A holding <strong>Table 6</strong> live again (as in Test 4). On <strong>B</strong>, Take over, type a <strong>wrong PIN</strong>.</li><li><strong>Expect:</strong> refused, with the message shown <strong>under the field</strong> ("That PIN was not recognised" or similar); <strong>Table 6 stays with A</strong> — A is <strong>not</strong> dropped and can keep editing. Pass / Fail.</li></ul>
+<h2>Test 6 — A non-manager is refused (the permission gate)</h2>
+<ul><li>A still holding <strong>Table 6</strong> live. On <strong>B</strong>, Take over, type the <strong>plain cashier's</strong> PIN (the role <strong>without</strong> Manage tables).</li><li><strong>Expect:</strong> refused — <strong>"(name) is not allowed to take over another waiter's table."</strong> Table 6 stays with A. Pass / Fail.</li></ul>
+<h2>Test 7 — Rate limit on PIN guessing (optional)</h2>
+<ul><li>On <strong>B</strong>, Take over, type a wrong PIN <strong>about 11 times quickly</strong>.</li><li><strong>Expect:</strong> after about 10 tries, <strong>"Too many PIN attempts — wait a minute and try again."</strong> Pass / Fail.</li></ul>
+<h2>Test 8 — Charge and clear remove the shared tab on both</h2>
+<ul><li>Take a held table (for example Table 6, now on B) to payment and <strong>charge</strong> it.</li><li><strong>Expect:</strong> it disappears from <strong>both</strong> grids. Pass / Fail.</li><li>On another held table, <strong>clear or fully void</strong> it.</li><li><strong>Expect:</strong> gone on both; the node log shows the <strong>clear audit</strong> (who opened, who changed, who cleared). Pass / Fail.</li></ul>
+<h2>Test 9 — Never blocks a sale (offline fallback)</h2>
+<ul><li>Turn <strong>tablet B's Wi-Fi off</strong> (the node stays on the LAN). On B, tap a table and ring a sale.</li><li><strong>Expect:</strong> B falls back to its <strong>own local tables</strong>, selling continues, <strong>no crash</strong>. Turn Wi-Fi back on and B re-syncs — the shared grid returns. Pass / Fail.</li></ul>
+<h2>Regression sanity — the important negatives</h2>
+<ul><li>A <strong>server-less</strong> tablet (not joined to any branch) and the <strong>browser</strong> POS behave <strong>exactly as before</strong> — no shared-tables overlay, no "Held by", no Take-over button. Pass / Fail.</li><li>A <strong>non-restaurant</strong> business (for example retail or minimart) on a joined tablet shows <strong>no</strong> shared-table behaviour at all. Pass / Fail.</li><li><strong>Two tills never both hold one table:</strong> have A and B tap the <strong>same free table</strong> at nearly the same instant — <strong>exactly one</strong> gets it, the other sees "Held by ...". No double-open, no double-charge. Pass / Fail.</li></ul>
+<h2>Copy this back to close Stage 3b</h2>
+<p>Fill in the result and a note for each; build tested is <strong>v0.4.6</strong>.</p>
+<table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Note</th></tr></thead><tbody><tr><td>T1</td><td>See: table on A shows occupied / "Held by" on B (about 5 s)</td><td>PASS / FAIL</td><td></td></tr><tr><td>T2</td><td>Lock: B gets read-only "Held by", cannot edit</td><td>PASS / FAIL</td><td></td></tr><tr><td>T3</td><td>Idle over 90 s auto-takeover, no PIN, "idle" toast</td><td>PASS / FAIL</td><td></td></tr><tr><td>T4</td><td>Manager take-over of a LIVE table, holder dropped, node log</td><td>PASS / FAIL</td><td></td></tr><tr><td>T5</td><td>Wrong PIN refused, table stays with the holder</td><td>PASS / FAIL</td><td></td></tr><tr><td>T6</td><td>Non-manager (no <code>tables.manage</code>) refused</td><td>PASS / FAIL</td><td></td></tr><tr><td>T7</td><td>Rate limit after about 10 PIN tries (optional)</td><td>PASS / FAIL</td><td></td></tr><tr><td>T8</td><td>Charge and clear remove the tab on both, clear audited</td><td>PASS / FAIL</td><td></td></tr><tr><td>T9</td><td>B offline falls back to local, no crash, re-syncs</td><td>PASS / FAIL</td><td></td></tr><tr><td>REG1</td><td>Server-less / browser / non-restaurant unchanged</td><td>PASS / FAIL</td><td></td></tr><tr><td>REG2</td><td>Never two holders on one table (no double-charge)</td><td>PASS / FAIL</td><td></td></tr></tbody></table>
+<p><strong>Scope note (by design, not a gap):</strong> only <strong>restaurant tables</strong> are shared in v1 — parked <strong>retail, petrol pump and parking bay</strong> orders stay local to the till that opened them (owner decision). Once every test above passes, Stage 3b is <strong>CLOSED</strong> and clear for the floor.</p>
+</div></body></html>

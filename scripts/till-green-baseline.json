@@ -19,7 +19,7 @@
   "pages/POSPage.tsx": 8,
   "pages/PrintersTab.tsx": 2,
   "pages/ShiftPanel.tsx": 4,
-  "pages/TechPage.tsx": 6,
+  "pages/TechPage.tsx": 7,
   "pages/UpdateBanner.tsx": 3,
   "screens/PrinterSetupScreen.tsx": 2
  }

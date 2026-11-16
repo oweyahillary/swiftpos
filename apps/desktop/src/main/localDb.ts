@@ -160,7 +160,8 @@ function initSchema(db: Database.Database) {
       receipt_logo_enabled INTEGER NOT NULL DEFAULT 0,
       theme_id      TEXT,
       primary_hex   TEXT,
-      secondary_hex TEXT
+      secondary_hex TEXT,
+      logo_url      TEXT          -- the Cloudinary URL whose bytes are cached in logo_png for the offline lock screen, else null
     );
 
     -- ── Active staff (PIN login) — singleton, layered on top of till session ─
@@ -1132,6 +1133,7 @@ function initSchema(db: Database.Database) {
   // are pulled only, never pushed (nothing the cloud stores goes unsent), and migrateColumns adds them on every start —
   // a database without them reads as "none" (getBranding's fallback), which is today's look.
   migrateColumns(db, 'branding', [['primary_hex', 'TEXT'], ['secondary_hex', 'TEXT']]);
+  migrateColumns(db, 'branding', [['logo_url', 'TEXT']]);   // Cloudinary logo: the URL whose bytes are cached in logo_png
   migrateColumns(db, 'device_config', [
     ['device_id', 'TEXT'],
     ['device_role', "TEXT NOT NULL DEFAULT 'till'"],
@@ -1608,6 +1610,9 @@ export function applyPulledBranding(b: {
   accentHex: string | null; logoPng: string | null;
   /** A311: absent on an older cloud → keep the local value (COALESCE below), not clear it. */
   logoReceipt?: string | null; receiptLogoEnabled?: boolean | null;
+  /** The Cloudinary brand logo (an https URL). When set, logo_png keeps the locally-cached bytes and cacheLogoFromUrl
+   *  refreshes them; absent (older cloud) → keep; explicit null → clear the cache marker. */
+  logoUrl?: string | null;
   /** A597: the owner's brand colours. Absent (an older cloud, or a branch server on an older build) → keep. */
   primaryHex?: string | null; secondaryHex?: string | null;
 }): void {
@@ -1623,19 +1628,57 @@ export function applyPulledBranding(b: {
   const lrKeep = b.logoReceipt === undefined ? 1 : 0;
   const en = b.receiptLogoEnabled === undefined || b.receiptLogoEnabled === null ? null : (b.receiptLogoEnabled ? 1 : 0);
   const enKeep = b.receiptLogoEnabled === undefined ? 1 : 0;
+  // When the cloud serves a Cloudinary URL, the base64 logo_png is no longer pushed — keep the locally-cached bytes (the
+  // offline lock screen reads them) and let cacheLogoFromUrl below refresh them. Without a URL, logo_png is remote-wins.
+  const hasUrl = typeof b.logoUrl === 'string' && /^https:\/\//i.test(b.logoUrl);
+  const logoKeep = hasUrl ? 1 : 0;
   db.prepare(
     `INSERT INTO branding (business_id, accent_hex, logo_png, logo_receipt, receipt_logo_enabled, synced_at)
      VALUES (?, ?, ?, ?, COALESCE(?, 0), ?)
      ON CONFLICT(business_id) DO UPDATE SET
        accent_hex = excluded.accent_hex,
-       logo_png   = excluded.logo_png,
+       logo_png   = CASE WHEN ? = 1 THEN branding.logo_png ELSE excluded.logo_png END,
        logo_receipt = CASE WHEN ? = 1 THEN branding.logo_receipt ELSE excluded.logo_receipt END,
        receipt_logo_enabled = CASE WHEN ? = 1 THEN branding.receipt_logo_enabled ELSE COALESCE(?, 0) END,
        synced_at  = excluded.synced_at`,
-  ).run(sess.business_id, b.accentHex, b.logoPng, lr, en, now, lrKeep, enKeep, en);
+  ).run(sess.business_id, b.accentHex, b.logoPng, lr, en, now, logoKeep, lrKeep, enKeep, en);
+  // The cloud cleared the logo → forget which URL the cache came from, so a new URL later re-fetches.
+  if (b.logoUrl === null) db.prepare(`UPDATE branding SET logo_url = NULL WHERE business_id = ?`).run(sess.business_id);
+  // Fetch the Cloudinary bytes once and cache them as logo_png for the offline lock screen (best-effort, never blocks).
+  if (hasUrl) void cacheLogoFromUrl(sess.business_id, b.logoUrl);
   // A597: the brand colours — their own write, remote-wins, only when the cloud said (undefined = keep). Anything but a
   // #rrggbb colour is stored as null (none). The row exists: the write above made it.
   const hex = (v: unknown) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
   if (b.primaryHex !== undefined) db.prepare(`UPDATE branding SET primary_hex = ? WHERE business_id = ?`).run(hex(b.primaryHex), sess.business_id);
   if (b.secondaryHex !== undefined) db.prepare(`UPDATE branding SET secondary_hex = ? WHERE business_id = ?`).run(hex(b.secondaryHex), sess.business_id);
+}
+
+/**
+ * Fetch the business's Cloudinary brand logo ONCE and cache its bytes as the local branding.logo_png, so the offline lock
+ * screen renders it without the network (the colour logo moved from a 145 KB base64 in the DB to a Cloudinary URL). The
+ * URL the bytes came from is remembered in branding.logo_url: a pull with the same URL and bytes already cached does
+ * nothing, a changed URL re-fetches, and a fetch that fails (offline) leaves the current cached logo in place. Only a
+ * PNG/JPEG under a sane cap is taken (the lock screen's <img> and brandingGuard's RASTER contract). Best-effort — never
+ * throws into the pull; the lock screen keeps whatever it last had until a fetch succeeds.
+ */
+export async function cacheLogoFromUrl(businessId: string, url: string | null | undefined): Promise<void> {
+  if (!businessId) return;
+  const want = typeof url === 'string' && /^https:\/\//i.test(url.trim()) ? url.trim() : null;
+  if (!want) return;   // no URL → the legacy base64 path (applyPulledBranding) owns logo_png
+  const db = getLocalDb();
+  const row = db.prepare(`SELECT logo_png, logo_url FROM branding WHERE business_id = ?`).get(businessId) as
+    { logo_png: string | null; logo_url: string | null } | undefined;
+  if (row && row.logo_url === want && row.logo_png) return;   // already cached for this exact URL
+  try {
+    const res = await fetch(want, { signal: AbortSignal.timeout(12_000) });
+    if (!res.ok) return;   // leave the cached logo; the next pull tries again
+    const ct = (res.headers.get('content-type') ?? '').toLowerCase();
+    if (!/^image\/(png|jpe?g)/.test(ct)) return;   // only the raster the lock screen + raster path expect
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0 || buf.length > 512 * 1024) return;   // a logo is small; an untrusted URL blob is not cached unbounded
+    const mime = /jpe?g/.test(ct) ? 'image/jpeg' : 'image/png';
+    const dataUri = `data:${mime};base64,${buf.toString('base64')}`;
+    db.prepare(`UPDATE branding SET logo_png = ?, logo_url = ?, synced_at = ? WHERE business_id = ?`)
+      .run(dataUri, want, new Date().toISOString(), businessId);
+  } catch { /* offline / fetch failed / timeout — keep the cached logo */ }
 }
