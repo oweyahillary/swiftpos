@@ -93,6 +93,7 @@ export const PIN_MAX = 6;
 /** The cloud's refusal of a PIN, in words for the person at the counter. */
 export function pinRefusal(status: number, code: string | null, fallback: string): string {
   if (code === 'OFFLINE') return NO_CONNECTION;
+  if (code === 'DEVICE_DISABLED') return DEVICE_DISABLED_WORDS;   // Branch-server bind: the owner's kill-switch (migration 192)
   if (code === 'ONLINE_LICENCE_REQUIRED' || code === 'BRANCH_NOT_LICENSED' || code === 'PIN_NOT_UNIQUE') return fallback;
   if (status === 429) return 'Too many PIN attempts — wait a minute and try again.';
   if (status === 401) return 'That PIN is not right.';
@@ -100,6 +101,22 @@ export function pinRefusal(status: number, code: string | null, fallback: string
 }
 
 export const NO_CONNECTION = "No connection — can't sell. Check the shop Wi-Fi or the internet; this POS sells only while online.";
+
+/** Branch-server bind: the words shown when the owner has disabled this tablet (user_devices.disabled_at → 403 DEVICE_DISABLED). */
+export const DEVICE_DISABLED_WORDS = 'This tablet has been disabled by ZapTill. Contact support to re-enable it.';
+
+/**
+ * Branch-server bind (migration 192): what a manager is told when this tablet is operating AWAY from its own branch server.
+ * Non-blocking — the tablet keeps selling (the sale goes straight to the cloud); this only makes the move visible so a
+ * tablet carried to another, unpaid branch is noticed. Pure.
+ */
+export function awayWords(state: 'away_no_server' | 'away_foreign', branchName: string | null): string {
+  const belongs = branchName ? `This tablet belongs to ${branchName}.` : 'This tablet belongs to another branch.';
+  const tail = ' Sales are going straight to the cloud. If it has moved branch, tell ZapTill.';
+  return state === 'away_foreign'
+    ? `${belongs} It is not on its own branch server.${tail}`
+    : `${belongs} Its branch server isn't on this network.${tail}`;
+}
 
 /** What the web POS screens are handed after a PIN sign-in (their CashierSession). Pure. */
 export function cashierSessionFrom(a: {

@@ -33,6 +33,18 @@ export async function readServerLink(): Promise<ServerLink | null> {
 
 export async function forgetServerLink(): Promise<void> { await removeSecret('branch.server'); }
 
+/**
+ * Re-pin the joined server at a new address — same certificate, new URL. The branch server's IP can change on the LAN
+ * (DHCP), which makes its fixed `url` look unreachable; serverPresence.ts re-finds it by beacon + matching this cert and
+ * calls this so the gateway/print path follow it to the new address. The cert (the identity A489 trusts) is unchanged, so
+ * nothing about trust moves — only where to reach it. A no-op if nothing is joined.
+ */
+export async function updateServerLinkUrl(url: string): Promise<void> {
+  const link = await readServerLink();
+  if (!link || !url || url === link.url) return;
+  await saveSecret('branch.server', JSON.stringify({ ...link, url } satisfies ServerLink));
+}
+
 /** Raw answer from a joined branch server over its pinned TLS: status, body text, and response headers (Till stage 3). */
 export interface NodeResponse { status: number; body: string; headers: Record<string, string> }
 

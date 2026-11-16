@@ -224,7 +224,17 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         });
         return;
       }
-      if (tillBlockReason(tillRow as { status?: string; retired_at?: string } | null)) {
+      const tillBlock = tillBlockReason(tillRow as { status?: string; retired_at?: string; disabled_at?: string } | null);
+      if (tillBlock === 'disabled') {
+        // Branch-server bind: the owner's kill-switch (user_devices.disabled_at). A distinct code + 403 so the Android app
+        // shows the "disabled by ZapTill" message and stops selling, rather than the generic "rejoin" prompt.
+        res.status(403).json({
+          error: 'This tablet has been disabled by ZapTill. Contact support to re-enable it.',
+          code:  'DEVICE_DISABLED',
+        });
+        return;
+      }
+      if (tillBlock) {
         res.status(401).json({
           error: 'This POS is no longer joined to the business. A technician can rejoin it.',
           code:  'DEVICE_BLOCKED',

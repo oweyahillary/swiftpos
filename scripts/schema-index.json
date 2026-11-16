@@ -1923,7 +1923,13 @@
     "security_alert_at": "\"timestamp with time zone\"",
     "security_alert_reason": "\"text\"",
     "update_state": "\"jsonb\"",
-    "update_state_at": "\"timestamp with time zone\""
+    "update_state_at": "\"timestamp with time zone\"",
+    "disabled_at": "\"timestamp with time zone\"",
+    "disabled_by": "\"uuid\"",
+    "away_state": "\"text\"",
+    "away_since": "\"timestamp with time zone\"",
+    "away_last_at": "\"timestamp with time zone\"",
+    "away_seen": "\"jsonb\""
   },
   "user_permissions": {
     "id": "\"uuid\" NOT NULL",

@@ -1051,7 +1051,7 @@ router.post('/device-token', async (req, res) => {
 
   const { data: dev, error: devErr } = await supabase
     .from('user_devices')
-    .select('id, device_id, business_id, branch_id, status, retired_at, device_secret_hash')
+    .select('id, device_id, business_id, branch_id, status, retired_at, disabled_at, device_secret_hash')
     .eq('business_id', businessId)
     .eq('device_id', deviceId)
     .maybeSingle();
@@ -1059,10 +1059,16 @@ router.post('/device-token', async (req, res) => {
 
   // Uniform failure — never reveal which check failed (unknown device, wrong
   // secret, or a revoked/retired/pending till all look identical to a caller).
-  const blocked = tillBlockReason(dev as { status?: string; retired_at?: string } | null);
+  const blocked = tillBlockReason(dev as { status?: string; retired_at?: string; disabled_at?: string } | null);
   if (blocked || !verifyDeviceSecret(secret, (dev as any).device_secret_hash)) {
     // A407: a till ZapTill blocked or retired is not "lost" — no alert for a deliberate block.
     if (dev && !blocked) await markTillSessionLost(businessId, deviceId, 'Its sign-in was refused and its device secret was not accepted');
+    // Branch-server bind: a disabled tablet presenting its OWN secret learns it is disabled (the app shows the kill-switch
+    // message and stops selling); every other failure stays uniform, so a caller without the secret never learns which check failed.
+    if (blocked === 'disabled' && verifyDeviceSecret(secret, (dev as any).device_secret_hash)) {
+      res.status(403).json({ error: 'This tablet has been disabled by ZapTill. Contact support to re-enable it.', code: 'DEVICE_DISABLED' });
+      return;
+    }
     res.status(401).json({ error: 'Device grant refused', code: 'DEVICE_GRANT_INVALID' });
     return;
   }

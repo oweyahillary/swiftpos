@@ -61,6 +61,13 @@ export function refuseResponse(): Response {
     { status: 503, headers: { 'Content-Type': 'application/json' } });
 }
 
+/** Branch-server bind: a synthetic refusal for a write while the owner has disabled this tablet (migration 192). 403 +
+ *  DEVICE_DISABLED so the screens show the reason, matching the server's own refusal of every request. */
+export function disabledResponse(): Response {
+  return new Response(JSON.stringify({ error: 'This tablet has been disabled by ZapTill. Contact support to re-enable it.', code: 'DEVICE_DISABLED' }),
+    { status: 403, headers: { 'Content-Type': 'application/json' } });
+}
+
 /** The URL of a fetch input. */
 function urlOf(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
@@ -101,6 +108,10 @@ export interface OfflineWritesDeps {
   store: BufferStore;
   /** True while there is no usable connection (shop/connection.ts useOnline, read live). */
   isOffline: () => boolean;
+  /** Branch-server bind: true when the owner has disabled this tablet (shop/serverPresence.isTabletDisabled). A write is then
+   *  refused locally (403 DEVICE_DISABLED) so a disabled tablet rings up nothing — the server refuses it too; this just stops
+   *  the sale before it is buffered or sent. Omit it and nothing is gated. */
+  isDisabled?: () => boolean;
   /** The cloud base the screens call, so only those requests are considered (config API_URL). */
   cloudBase: string;
   /** The cold-start read cache (shop/offlineReads.ts). When given, the selling screen's catalogue GETs are cached online
@@ -164,6 +175,10 @@ export function installOfflineWrites(deps: OfflineWritesDeps): () => void {
     if (!url.startsWith(deps.cloudBase)) return original(input as RequestInfo, init);   // not the cloud: untouched
     const path = url.slice(deps.cloudBase.length);
     const m = method.toUpperCase();
+
+    // Branch-server bind: a disabled tablet takes no writes at all — refuse before buffering or sending, so nothing is rung
+    // up or queued. Reads pass through (they fail server-side with the same code, and the banner shows the reason).
+    if (m !== 'GET' && m !== 'HEAD' && deps.isDisabled?.()) return disabledResponse();
 
     const fromServer = await viaBranch(url, m, init, input);                  // the joined branch server, when present
     if (m === 'GET' || m === 'HEAD') return serveRead(m, path, init, input, fromServer);
