@@ -142,3 +142,16 @@ button:disabled { opacity: 0.5; }
 .sync-syncing { background: #38bdf8; }
 .sync-online { background: #34d399; }
 .sync-bar .sync-stuck { color: #7f1d1d; background: #fecaca; border-radius: 8px; padding: 1px 8px; opacity: 1; }
+
+/* Branch-server bind (migration 192): the tablet is away from its own branch server (amber, still selling) or the owner
+   has disabled it (red, cannot sell). Sits at the very top, above the sync bar. */
+.away-bar {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 950;
+  display: flex; gap: 10px; align-items: center;
+  padding: 7px calc(env(safe-area-inset-right) + 14px) 7px calc(env(safe-area-inset-left) + 14px);
+  font-size: 14px; font-weight: 700;
+}
+.away-bar .away-dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.away-bar .away-text { flex: 1 1 auto; }
+.away-adrift { background: #fb923c; color: #3a1a02; }
+.away-disabled { background: #b91c1c; color: #ffffff; }

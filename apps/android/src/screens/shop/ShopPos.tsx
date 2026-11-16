@@ -22,6 +22,7 @@ import { OFFLINE_PENDING } from '../../shop/offlinePin';
 import { runReplay, cloudSender } from '../../shop/replay';
 import { gatewayFetch, checkServerHealth } from '../../shop/branchGateway';
 import { readServerLink } from '../../shop/branchServer';
+import { startPresenceMonitor, isTabletDisabled } from '../../shop/serverPresence';
 import * as branchTabs from '../../shop/branchTabs';
 import { enqueueOrderFor, drainToNode, makeNodeOutbox, type NodeOutbox } from '../../shop/branchSync';
 import { API_URL } from '../../config';
@@ -30,6 +31,7 @@ import PinScreen from './PinScreen';
 import ShopDevice from './ShopDevice';
 import PrintNotice from './PrintNotice';
 import SyncStatusBar from './SyncStatusBar';
+import AwayNotice from './AwayNotice';
 
 const Selling = lazy(() => import('@zaptill/dashboard-pos').then((m) => ({ default: m.ShopPosSelling })));
 
@@ -104,8 +106,8 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // Install the seam ONCE (wraps window.fetch; online or non-cloud calls pass straight through, so Till stage 1 selling is
   // unchanged). cloudBase is this app's API_URL — the same base the web POS calls, because main.tsx sets the dashboard's
   // apiUrl to it, so the two cannot drift. The read cache serves the catalogue on a cold offline boot.
-  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, cloudBase: API_URL, reads,
-    gateway: branchGatewayAdapter, onOrder: (_u, _m, b) => { void pushOrderToBranch(nodeOutbox, b); } }), [buffer, reads, nodeOutbox]);
+  useEffect(() => installOfflineWrites({ store: buffer, isOffline: () => !onlineRef.current, isDisabled: () => isTabletDisabled(),
+    cloudBase: API_URL, reads, gateway: branchGatewayAdapter, onOrder: (_u, _m, b) => { void pushOrderToBranch(nodeOutbox, b); } }), [buffer, reads, nodeOutbox]);
 
   // Till stage 3 Slice D: route session renewal (A477) through the joined branch server when there is one. A setter, not an
   // import, so branchRefresh → branchServer → tillSession cannot form a cycle. Unset → renewal stays cloud-direct.
@@ -114,6 +116,11 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
   // Till stage 3: ask the joined branch server what protocol it speaks (over the LAN, whether or not the cloud is
   // reachable), on open and whenever the connection changes. No branch server joined → this is a quick no-op.
   useEffect(() => { void checkServerHealth().catch(() => {}); }, [online]);
+
+  // Branch-server bind (migration 192): while the Shop POS is mounted, report whether this tablet's branch server is on the
+  // LAN (shop/serverPresence.ts) — so a tablet carried to another, unpaid branch is seen by the owner (FleetPage) — and
+  // learn the owner's kill-switch. A no-op per tick when no branch server is joined. Runs on open, on reconnect, on a cadence.
+  useEffect(() => startPresenceMonitor(() => onlineRef.current), []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Till stage 3 Slice B: drain the branch-sync outbox to the server on open and whenever the connection changes (it
   // runs over the LAN even when the cloud is unreachable but the server is up). A no-op when nothing is waiting.
@@ -189,6 +196,7 @@ export default function ShopPos({ version, onReset }: { version: string; onReset
       </Routes>
       <PrintNotice />
       <SyncStatusBar store={buffer} />
+      <AwayNotice branchName={till.branchName ?? null} />
     </BrowserRouter>
   );
 }

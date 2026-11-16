@@ -217,6 +217,47 @@ router.post('/join-code', async (req, res) => {
   });
 });
 
+// POST /api/pos/server-presence — Branch-server bind (migration 192): an android-till reports whether its OWN branch server
+// is on the LAN right now — 'home' (reachable, pinned cert matches), 'away_no_server' (no server heard) or 'away_foreign'
+// (another ZapTill server heard, not this tablet's). Telemetry only: the tablet keeps selling regardless (owner decision —
+// keep-selling + kill-switch, not auto-block). This is what the owner SEES on FleetPage, so a tablet carried to another,
+// unpaid branch does not escape the implementation fee unnoticed. The response carries the owner's kill-switch (disabled),
+// so the tablet learns a disable within one heartbeat rather than waiting for its next token renewal.
+router.post('/server-presence', async (req, res) => {
+  if (!req.isTill || !req.deviceId) {
+    res.status(403).json({ error: 'Only a POS can report its branch server.', code: 'not_a_till' }); return;
+  }
+  const state = String(req.body?.state ?? '');
+  if (state !== 'home' && state !== 'away_no_server' && state !== 'away_foreign') {
+    res.status(400).json({ error: 'Unknown presence state.', code: 'bad_state' }); return;
+  }
+  const clip = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);
+  const seenRaw = req.body?.seen as { business?: unknown; server?: unknown } | null | undefined;
+  const seen = seenRaw && typeof seenRaw === 'object'
+    ? { business: clip(seenRaw.business), server: clip(seenRaw.server) }
+    : null;
+  const now = new Date().toISOString();
+
+  const { data: device } = await supabase.from('user_devices')
+    .select('id, away_state, disabled_at')
+    .eq('business_id', req.businessId).eq('device_id', req.deviceId).maybeSingle();
+  if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+
+  // away_since marks when it FIRST went away and persists across away_no_server <-> away_foreign; it is set only on the
+  // transition INTO an away state (from home/unknown) and cleared when it comes home.
+  const was = (device as { away_state?: string | null }).away_state ?? null;
+  const patch: Record<string, unknown> = { away_state: state, away_last_at: now };
+  if (state === 'home') { patch.away_since = null; patch.away_seen = null; }
+  else {
+    patch.away_seen = seen;
+    if (was === null || was === 'home') patch.away_since = now;
+  }
+  const { error } = await supabase.from('user_devices').update(patch).eq('id', (device as { id: string }).id);
+  if (error) { sendError(res, error); return; }
+
+  res.json({ ok: true, disabled: !!(device as { disabled_at?: string | null }).disabled_at });
+});
+
 // A528: per business and branch, the staff version and the list's own version this server last answered.
 const ROSTER_MAX_AGE_MS = 10 * 60_000;
 const rosterAnswers = new Map<string, { staffVersion: number; version: string; at: number }>();
