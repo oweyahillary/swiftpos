@@ -38,6 +38,9 @@ interface WebSession {
   branchIds:    string[] | null;
   /** A568: the owner still has the password they were given — /change-password first. */
   mustChangePassword?: boolean;
+  /** Owner, 2026-11-22: does this person see the "Open POS" shortcut in the Android phone app? (Phone only; the browser
+   *  dashboard is unaffected.) Absent on an older cloud → treated as true, so nothing is hidden. */
+  phonePos?: boolean;
 }
 
 interface PermissionsContextType {
@@ -53,6 +56,8 @@ interface PermissionsContextType {
   mustChangePassword: boolean;
   /** A568: the forced page set a new password — let them in without waiting for the session to be read again. */
   passwordChanged: () => void;
+  /** Owner, 2026-11-22: does this person see "Open POS" in the Android phone app? Default true until the session is read. */
+  phonePos: boolean;
 }
 
 const PermissionsContext = createContext<PermissionsContextType | null>(null);
@@ -62,6 +67,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const [permissionKeys,  setPermissionKeys]  = useState<Set<string>>(new Set());
   const [isPartner,       setIsPartner]       = useState(false);
   const [mustChange,      setMustChange]      = useState(false);
+  const [phonePos,        setPhonePos]        = useState(true);   // Owner, 2026-11-22: default true until the session says
   const [loading,         setLoading]         = useState(true);
   const [tick,            setTick]            = useState(0);
 
@@ -71,6 +77,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       setPermissionKeys(new Set());
       setIsPartner(false);
       setMustChange(false);
+      setPhonePos(true);
       setLoading(false);
       return;
     }
@@ -85,12 +92,14 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         const partner = s?.partner === true && s?.owner !== true;
         setIsPartner(partner);
         setMustChange(!partner && s?.mustChangePassword === true);
+        setPhonePos(s?.phonePos !== false);   // Owner, 2026-11-22: only an explicit false hides Open POS on the phone
         setPermissionKeys(partner ? expandMap(s.permissions ?? {}) : new Set(['*']));
       })
       .catch(() => {
         // An older cloud without /session, or a blip: the owner's dashboard as before (the cloud still refuses a partner).
         if (!live) return;
         setIsPartner(false);
+        setPhonePos(true);
         setPermissionKeys(new Set(['*']));
       })
       .finally(() => { if (live) setLoading(false); });
@@ -111,7 +120,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   return (
     <PermissionsContext.Provider
       value={{ permissionKeys, can, isOwner: !isPartner, isPartner, loading, refresh,
-        mustChangePassword: mustChange, passwordChanged }}
+        mustChangePassword: mustChange, passwordChanged, phonePos }}
     >
       {children}
     </PermissionsContext.Provider>

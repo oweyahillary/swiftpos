@@ -50,6 +50,7 @@ import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import { refreshHandshakeDecision, type HandshakeDecision, type HandshakeSuccessor } from '../lib/refreshHandshake';   // A477
 import { checkTillIdentity, resetTillIdentity, IDENTITY_COLS } from '../lib/tillIdentity';   // A477 (A593: IDENTITY_COLS)
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A398
+import { readPhonePosMap, phonePosFor } from '../lib/phonePosRoles';   // Owner, 2026-11-22: who sees Open POS on the phone app
 import { sessionKind, revokeBrowserSessions, markTillSessionLost, clearTillSessionLost, markTillSecurityAlert } from '../lib/tillSessions';   // A407, A477
 import { cleanEmail, passwordProblem, signInAccountForEmail, sendResetCode, checkResetCode, setOwnerPassword } from '../lib/passwordReset';   // A402, A550
 import { otpGate, needsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
@@ -2279,6 +2280,11 @@ router.get('/session', requireAuth, async (req, res) => {
     ? await supabase.from('users').select('name, must_change_password').eq('id', req.userId).eq('business_id', req.businessId).maybeSingle()
     : { data: null };
   const owner = req.isOwner === true;
+  // Owner, 2026-11-22: does this person see the "Open POS" shortcut in the OWNER / MANAGER PHONE app? Presentational only
+  // (the browser dashboard is not affected, and the POS still enforces the sell right). Per-role, the owner's choice; the
+  // default is a selling role that is not the owner shows it.
+  const phoneMap = await readPhonePosMap(req.businessId);
+  const sells = owner || hasPermission(new Set(req.permissionKeys ?? []), SELL_KEY);
   res.json({
     owner,
     partner: req.webPartner === true,
@@ -2289,6 +2295,7 @@ router.get('/session', requireAuth, async (req, res) => {
     permissions: owner ? { '*': true } : clientPermissionMap(new Set(req.permissionKeys ?? [])),
     allBranches: owner || req.allBranches === true,
     branchIds: owner ? null : (req.webPartner ? req.partnerBranches : (req.branchId ? [req.branchId] : [])),
+    phonePos: phonePosFor(phoneMap, req.roleId ?? null, owner, sells),
   });
 });
 
