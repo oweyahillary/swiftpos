@@ -5,6 +5,7 @@ import { useTheme }    from '../context/ThemeContext';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
+import { isNativeApp } from '../lib/config';   // Owner, 2026-11-22: phone-app only rules (Open POS)
 import BranchSelector from './BranchSelector';
 import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
@@ -313,18 +314,28 @@ export default function DashboardLayout() {
   // A605: the logo on the surface that suits it — a light logo (on a transparent background) on a dark chip, else white.
   const logoChip = look?.logoChip === 'dark' ? 'logo-chip-dark' : 'logo-chip-light';
   const { activeBranchId } = useBranch();
-  const { can, isOwner, isPartner } = usePermissions();   // A550
+  const { can, isOwner, isPartner, phonePos } = usePermissions();   // A550; phonePos: Open POS on the phone app (2026-11-22)
   // A599: the business's 'attendance' flag (ZapTill's, premium) — read once per business; until it is known, off (hidden).
   const [attendanceOn, setAttendanceOn] = useState(false);
+  // The owner's "Online (web) POS" toggle (Settings › POS options, default ON). Off → the "Open POS" menu item is hidden
+  // here and on the owner phone; the DESKTOP POS is a separate app and is never affected by this.
+  const [webPosOn, setWebPosOn] = useState(true);
   useEffect(() => {
     let live = true;
     setAttendanceOn(false);
-    if (business?.id) api.get<Record<string, boolean>>('/api/flags').then((f) => { if (live) setAttendanceOn(f?.attendance === true); }).catch(() => {});
+    setWebPosOn(true);
+    if (business?.id) api.get<Record<string, boolean>>('/api/flags').then((f) => { if (live) { setAttendanceOn(f?.attendance === true); setWebPosOn(f?.web_pos !== false); } }).catch(() => {});
     return () => { live = false; };
   }, [business?.id]);
   const mayOpen = (to: string): boolean => {
     const path = to.split('?')[0];
     if (path === '/dashboard/attendance') return showAttendanceNav({ flagOn: attendanceOn, isOwner, isPartner, can });
+    if (path === '/dashboard/pos') {
+      if (!webPosOn) return false;   // the owner turned the online (web) POS off for the business — Settings › POS options
+      // Owner, 2026-11-22: in the Android phone app, hide "Open POS" for the roles the owner did not choose (owner and
+      // senior management by default). The browser dashboard and the desktop POS are unaffected.
+      if (isNativeApp() && !phonePos) return false;
+    }
     const keys = NAV_KEYS[path];
     return !keys || keys.some((k) => can(k));
   };

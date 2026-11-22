@@ -24,7 +24,9 @@ void setupStatusBar();
 
 // Till stage 1: the web POS screens find the cloud the way the dashboard is told at run time (apps/dashboard
 // src/lib/config.ts, window.__SWIFTPOS_CONFIG__) — the same address as this app's own calls (config.ts).
-(window as unknown as { __SWIFTPOS_CONFIG__?: { apiUrl?: string } }).__SWIFTPOS_CONFIG__ = { apiUrl: API_URL };
+// Owner, 2026-11-22: native:true marks "inside the Android app" so the embedded dashboard (owner / manager phone mode)
+// applies phone-only rules — e.g. hiding the "Open POS" shortcut for the roles the owner chose (config.ts isNativeApp).
+(window as unknown as { __SWIFTPOS_CONFIG__?: { apiUrl?: string; native?: boolean } }).__SWIFTPOS_CONFIG__ = { apiUrl: API_URL, native: true };
 
 listenForErrors();
 

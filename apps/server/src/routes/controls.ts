@@ -26,6 +26,8 @@ import { requirePermission, can } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
+import { isOwnerRoleName } from '../lib/ownerRole';
+import { PHONE_POS_SETTING_KEY, readPhonePosMap, phonePosFor, asPhonePosMap, type PhonePosMap } from '../lib/phonePosRoles';
 import { PAYMENT_METHODS_ENABLED_KEY, enabledFromSetting } from '@zaptill/core/paymentCatalogue';
 import { STOCK_ZERO_KEYS, STANDARD_POS_FEATURES } from '@zaptill/core/posFeatures';   // A563; A604
 import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '@zaptill/core/stockGate';   // A563
@@ -34,9 +36,12 @@ import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '@zaptill/core
 // A594 (owner, 2026-10-26: "some items can be permissions … I like your proposal"): + approval_pin (A562 — was the admin
 // portal's), the owner's alone like login_codes.
 // Owner, 2026-11-04: + rooms (Charge to room only for a business with rooms).
-export const OWNER_POS_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'] as const;
-/** The options only the real owner (signed in as themselves) changes — account security and who approves with what. */
-export const OWNER_ONLY_POS_KEYS = ['login_codes', 'approval_pin'] as const;
+// Owner, 2026-11-22: + web_pos — show/hide the online (web) POS for the whole business (the "Open POS" menu item on the web
+// dashboard and the owner phone). Default ON; the DESKTOP POS is a separate app and is never affected. Owner-controlled.
+export const OWNER_POS_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms', 'web_pos'] as const;
+/** The options only the real owner (signed in as themselves) changes — account security, who approves with what, and
+ *  whether the business offers the online (web) POS at all. */
+export const OWNER_ONLY_POS_KEYS = ['login_codes', 'approval_pin', 'web_pos'] as const;
 /** The cashier switches A490 retired — now permissions per role (sales.history_all, sales.reprint; A594: cash in / cash out /
  *  expenses as shifts.cash_movements, shifts.cash_out, expenses.record). */
 export const RETIRED_SWITCHES = ['cashier_own_history', 'cashier_no_money_out', 'cashier_no_reprint'] as const;
@@ -83,6 +88,24 @@ async function readSetting(businessId: string, key: string): Promise<unknown> {
   return (data as { value?: unknown } | null)?.value ?? null;
 }
 
+/** Write one business setting (text value), the established select-then-update-or-insert way (routes/business.ts). */
+async function writeSetting(businessId: string, key: string, value: string): Promise<{ message?: string } | null> {
+  const { data: existing } = await supabase.from('business_settings').select('id').eq('business_id', businessId).eq('key', key).maybeSingle();
+  const { error } = existing
+    ? await supabase.from('business_settings').update({ value, updated_at: new Date().toISOString() }).eq('id', (existing as { id: string }).id)
+    : await supabase.from('business_settings').insert({ business_id: businessId, key, value });
+  return error ?? null;
+}
+
+// web_pos: does this business offer the online (web) POS at all? Default ON — only an explicit off hides it. It is NOT a
+// shared POS_FEATURE (it never reaches the till rules, and the DESKTOP POS is a separate app it never touches), so it is
+// read straight from feature_flags here rather than through businessPosFeatures, which only returns POS_FEATURE_KEYS.
+async function webPosEnabled(businessId: string | undefined): Promise<boolean> {
+  if (!businessId) return true;
+  const { data } = await supabase.from('feature_flags').select('enabled').eq('business_id', businessId).eq('key', 'web_pos').maybeSingle();
+  return (data as { enabled?: boolean } | null)?.enabled !== false;
+}
+
 // GET /api/controls — what this person may see of the owner's options.
 router.get('/', async (req, res) => {
   const out: Record<string, unknown> = {};
@@ -90,12 +113,16 @@ router.get('/', async (req, res) => {
   try {
     if (pos) {
       const f = await businessPosFeatures(req.businessId) as unknown as Record<string, boolean>;
-      out.pos = Object.fromEntries(OWNER_POS_KEYS.map((k) => [k, f[k] === true]));
+      const posOut = Object.fromEntries(OWNER_POS_KEYS.map((k) => [k, f[k] === true])) as Record<string, boolean>;
       out.stock = { when_zero: outOfStockMode(f) };   // A563
-      const [{ data: loy }, rate] = await Promise.all([
+      const [{ data: loy }, rate, webPos] = await Promise.all([
         supabase.from('feature_flags').select('enabled').eq('business_id', req.businessId).eq('key', 'loyalty_enabled').maybeSingle(),
         readSetting(req.businessId, 'loyalty_earn_rate'),
+        webPosEnabled(req.businessId),
       ]);
+      // web_pos is default-ON, so it is read straight from feature_flags (webPosEnabled), not the === true above.
+      posOut.web_pos = webPos;
+      out.pos = posOut;
       const n = Number(rate);
       out.loyalty = { enabled: (loy as { enabled?: boolean } | null)?.enabled === true, earn_rate: Number.isFinite(n) && n > 0 ? n : 1 };
     }
@@ -115,11 +142,17 @@ router.put('/pos/:key', requirePermission('settings.pos'), async (req, res) => {
   // everyone's back-office sign-in, and a till's own token is not a person.
   // A594: the separate approval PIN (A562) likewise — it decides how every manager's approval is given.
   if ((OWNER_ONLY_POS_KEYS as readonly string[]).includes(key) && (!req.isOwner || req.isTill)) {
-    res.status(403).json({ error: key === 'login_codes' ? 'Only the owner can change sign-in codes.' : 'Only the owner can change the approval PIN option.', code: 'OWNER_ONLY' }); return;
+    const ownerOnly = key === 'login_codes' ? 'Only the owner can change sign-in codes.'
+      : key === 'web_pos' ? 'Only the owner can turn the online (web) POS on or off.'
+      : 'Only the owner can change the approval PIN option.';
+    res.status(403).json({ error: ownerOnly, code: 'OWNER_ONLY' }); return;
   }
   const enabled = req.body?.enabled;
   if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled (true or false) is required' }); return; }
-  const before = ((await businessPosFeatures(req.businessId)) as unknown as Record<string, boolean>)[key] === true;
+  // web_pos is default-ON and not a businessPosFeatures key, so its before-value is read straight from feature_flags.
+  const before = key === 'web_pos'
+    ? await webPosEnabled(req.businessId)
+    : ((await businessPosFeatures(req.businessId)) as unknown as Record<string, boolean>)[key] === true;
   const err = await setFlag(req.businessId, key, enabled);
   if (err) { sendError(res, err as Error); return; }
   audit(req, `pos.${key}`, before, enabled);
@@ -170,6 +203,49 @@ router.put('/stock-zero', requirePermission('settings.pos'), async (req, res) =>
   }
   audit(req, 'pos.stock_zero', before, mode);
   res.json({ mode });
+});
+
+// ── Who sees "Open POS" in the OWNER / MANAGER PHONE app ── Owner, 2026-11-22 ──────────────────────────────────────────
+// "on the mobile app remove pos on the menu on the owner and other senior management, only the hotel manager and cashier
+//  should have that option" — a per-role switch (lib/phonePosRoles.ts). Owner-only: it decides the owner's own and senior
+// management's visibility. Presentational only — the POS still enforces orders.create, and the browser dashboard and the
+// desktop POS are never touched. Each role's resolved value = the owner's explicit choice, else the default (a selling
+// role that is not the owner shows it; the owner and back-office roles do not).
+router.get('/phone-pos', requirePermission('settings.pos'), async (req, res) => {
+  if (!req.isOwner || req.isTill) { res.status(403).json({ error: 'Only the owner sets who sees the online POS on the phone.', code: 'OWNER_ONLY' }); return; }
+  try {
+    const [{ data: roleRows }, map] = await Promise.all([
+      supabase.from('roles').select('id, name, role_permissions ( permissions ( key ) )').eq('business_id', req.businessId),
+      readPhonePosMap(req.businessId),
+    ]);
+    const roles = ((roleRows ?? []) as Array<{ id: string; name: string | null; role_permissions?: Array<{ permissions?: { key?: string } | null }> }>)
+      .map((r) => {
+        const owner = isOwnerRoleName(r.name);
+        const keys = new Set((r.role_permissions ?? []).map((rp) => rp.permissions?.key).filter(Boolean) as string[]);
+        const sells = owner || keys.has('orders.create');
+        return { id: r.id, name: r.name ?? '', is_owner_role: owner, sells, enabled: phonePosFor(map, r.id, owner, sells) };
+      })
+      .sort((a, b) => (a.is_owner_role === b.is_owner_role ? a.name.localeCompare(b.name) : a.is_owner_role ? -1 : 1));
+    res.json({ roles });
+  } catch (e) { sendError(res, e as Error); return; }
+});
+
+// PUT /api/controls/phone-pos { map: { [roleId]: boolean } } — owner-only. Explicit per-role overrides; a role left out
+// uses the default. Stale or foreign role ids are dropped.
+router.put('/phone-pos', requirePermission('settings.pos'), async (req, res) => {
+  if (!req.isOwner || req.isTill) { res.status(403).json({ error: 'Only the owner sets who sees the online POS on the phone.', code: 'OWNER_ONLY' }); return; }
+  const raw = req.body?.map;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { res.status(400).json({ error: 'map ({ roleId: true/false }) is required' }); return; }
+  const wanted: PhonePosMap = asPhonePosMap(raw);
+  const { data: roleRows } = await supabase.from('roles').select('id').eq('business_id', req.businessId);
+  const valid = new Set(((roleRows ?? []) as Array<{ id: string }>).map((r) => r.id));
+  const clean: PhonePosMap = {};
+  for (const [k, v] of Object.entries(wanted)) if (valid.has(k)) clean[k] = v;
+  const before = await readPhonePosMap(req.businessId);
+  const err = await writeSetting(req.businessId, PHONE_POS_SETTING_KEY, JSON.stringify(clean));
+  if (err) { sendError(res, err as Error); return; }
+  audit(req, 'pos.phone_pos_roles', before, clean);
+  res.json({ map: clean });
 });
 
 // PUT /api/controls/updates — A493: refused. ZapTill (the admin portal) approves or holds a client's till version; a

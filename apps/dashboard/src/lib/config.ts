@@ -22,17 +22,27 @@ declare global {
   interface Window {
     __SWIFTPOS_CONFIG__?: {
       apiUrl?: string;
+      /** Owner, 2026-11-22: true when this dashboard runs INSIDE the Android app (owner / manager phone mode) — set by
+       *  apps/android/src/main.tsx. Lets the dashboard apply phone-only rules (e.g. who sees the "Open POS" shortcut). */
+      native?: boolean;
     };
   }
 }
 
+/** Owner, 2026-11-22: is this dashboard running inside the Android owner / manager phone app (not a web browser)? */
+export function isNativeApp(): boolean {
+  try { return window.__SWIFTPOS_CONFIG__?.native === true; } catch { return false; }
+}
+
 function resolveApiUrl(): string {
-  // 1. Runtime injection (offline installs, Docker, multi-env deploys)
-  const runtimeUrl = window.__SWIFTPOS_CONFIG__?.apiUrl;
+  // 1. Runtime injection (offline installs, Docker, multi-env deploys). Guarded so this module is safe to load outside a
+  //    browser (Node / react-dom/server — e.g. the sidebar render tests bundle this via isNativeApp).
+  const runtimeUrl = typeof window !== 'undefined' ? window.__SWIFTPOS_CONFIG__?.apiUrl : undefined;
   if (runtimeUrl) return runtimeUrl.replace(/\/$/, ''); // strip trailing slash
 
-  // 2. Compile-time env var (standard cloud deploy)
-  const buildUrl = import.meta.env.VITE_API_URL as string | undefined;
+  // 2. Compile-time env var (standard cloud deploy). `import.meta.env` is Vite's — undefined in a plain Node bundle, so
+  //    read it optionally (same reason as the window guard above).
+  const buildUrl = import.meta.env?.VITE_API_URL as string | undefined;
   if (buildUrl) return buildUrl.replace(/\/$/, '');
 
   // 3. Local development fallback

@@ -25,9 +25,11 @@ import BranchPaymentMethods from './BranchPaymentMethods';
 
 /** The switches the owner sets here (the admin portal shows them read-only). A594: + approval_pin (was the admin portal's). */
 // Owner, 2026-11-04: + rooms (Charge to room only for a business with rooms; any business type — a lodge's shop too).
-export const POS_OPTION_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'] as const;
-/** A594: only the owner changes these (the cloud refuses anyone else, OWNER_ONLY). */
-export const OWNER_ONLY_POS_OPTION_KEYS: readonly PosOptionKey[] = ['login_codes', 'approval_pin'];
+// Owner, 2026-11-22: web_pos first — the headline online-POS switch (turns the web POS off for the whole business; the
+// desktop POS is separate and never affected). web_pos is not a shared POS_FEATURE, so its words are set below.
+export const POS_OPTION_KEYS = ['web_pos', 'delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'] as const;
+/** A594: only the owner changes these (the cloud refuses anyone else, OWNER_ONLY). Owner, 2026-11-22: + web_pos. */
+export const OWNER_ONLY_POS_OPTION_KEYS: readonly PosOptionKey[] = ['login_codes', 'approval_pin', 'web_pos'];
 export type PosOptionKey = (typeof POS_OPTION_KEYS)[number];
 
 export interface Controls {
@@ -48,8 +50,13 @@ export function posOptionShown(key: PosOptionKey, businessType: string | null | 
   return on || !KITCHEN_POS_OPTION_KEYS.includes(key) || foodAreas(businessType).kitchenOptions;
 }
 
-/** The words for a switch — shared/posFeatures.ts (the same the admin portal shows). */
+/** The words for a switch — shared/posFeatures.ts (the same the admin portal shows). web_pos is dashboard-only (not a
+ *  shared POS_FEATURE, to avoid a core rebuild), so its words live here. */
 export function posOptionWords(key: PosOptionKey): { label: string; description: string } {
+  if (key === 'web_pos') return {
+    label: 'Online (web) POS',
+    description: 'Lets staff open and sell on the online POS — the “Open POS” link on this dashboard and in the owner / manager phone app. Turn it off to run on the desktop POS only; the desktop POS is a separate app and is never affected.',
+  };
   const f = POS_FEATURES.find((x) => x.key === key);
   return { label: f?.label ?? key, description: f?.description ?? '' };
 }
@@ -75,6 +82,68 @@ function Switch({ on, onClick, label, disabled, testid }: { on: boolean; onClick
 }
 
 const card = 'rounded-xl border border-gray-800 bg-gray-900';
+
+// ── Open POS on the phone app (per role) ───────────────────────────────────────
+// Owner, 2026-11-22: "on the mobile app remove pos on the menu on the owner and other senior management, only the hotel
+// manager and cashier should have that option" → a per-role switch. Owner-only. Presentational: it hides the "Open POS"
+// shortcut in the Android owner / manager phone app for the roles the owner turns off. It does NOT touch the web browser
+// dashboard or the desktop POS, and the POS still checks the Sell permission (GET/PUT /api/controls/phone-pos).
+
+interface PhonePosRole { id: string; name: string; is_owner_role: boolean; sells: boolean; enabled: boolean; }
+
+export function PhonePosRolesCard() {
+  const [roles, setRoles] = useState<PhonePosRole[] | null>(null);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState('');
+  useEffect(() => {
+    let live = true;
+    api.get<{ roles: PhonePosRole[] }>('/api/controls/phone-pos')
+      .then((d) => { if (live) setRoles(d?.roles ?? []); })
+      .catch((e: any) => { if (live) setErr(e?.message ?? 'Could not load the roles'); });
+    return () => { live = false; };
+  }, []);
+
+  const flip = async (id: string) => {
+    if (!roles) return;
+    const prev = roles;
+    const next = roles.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r));
+    setRoles(next); setErr(''); setSaved(''); setBusy(true);
+    const map = Object.fromEntries(next.map((r) => [r.id, r.enabled]));
+    try { await api.put('/api/controls/phone-pos', { map }); setSaved('Saved — each phone follows on the next sign-in.'); }
+    catch (e: any) { setErr(e?.message ?? 'Could not save'); setRoles(prev); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className={`${card} px-4 py-3`} data-testid="phone-pos-roles">
+      <div className="text-sm font-medium text-white">Open POS on the phone app</div>
+      <div className="mt-0.5 text-xs leading-relaxed text-gray-400">
+        Who sees the “Open POS” shortcut in the owner / manager phone app. Turn it off for the roles that only view reports
+        (the owner and senior management). This does not change the web browser dashboard or the desktop POS, and the POS
+        still checks the Sell permission.
+      </div>
+      {!roles && !err && <p className="mt-3 text-sm text-gray-500">Loading…</p>}
+      {roles && (
+        <div className="mt-3 divide-y divide-gray-800 rounded-lg border border-gray-800">
+          {roles.map((r) => (
+            <div key={r.id} className="flex items-center justify-between gap-4 px-3 py-2.5">
+              <div className="min-w-0">
+                <span className="text-sm text-white capitalize">{r.name || 'Role'}</span>
+                {r.is_owner_role && <span className="ml-2 text-[10px] uppercase tracking-wide rounded border border-gray-600 px-1.5 py-px text-gray-400">Owner</span>}
+                {!r.sells && !r.is_owner_role && <span className="ml-2 text-[11px] text-gray-500">does not sell</span>}
+              </div>
+              <Switch on={r.enabled} onClick={() => void flip(r.id)} label={`Open POS on the phone for ${r.name}`}
+                disabled={busy} testid={`phone-pos-${r.id}`} />
+            </div>
+          ))}
+        </div>
+      )}
+      {err && <p className="mt-2 text-xs text-red-400">{err}</p>}
+      {saved && <p className="mt-2 text-xs text-gray-400">{saved}</p>}
+    </div>
+  );
+}
 
 // ── POS options ───────────────────────────────────────────────────────────────
 
@@ -144,6 +213,9 @@ export function PosOptionsTab() {
           })}
         </div>
       )}
+
+      {/* Owner, 2026-11-22: who sees "Open POS" in the phone app — the owner's alone to set (per role). */}
+      {isOwner && <PhonePosRolesCard />}
 
       {data?.stock && (
         <fieldset className={`${card} px-4 py-3`} data-testid="stock-zero-options" disabled={busy === 'stock'}>
