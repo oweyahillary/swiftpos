@@ -227,7 +227,7 @@ await ok('Business: POS options and the business-wide payment methods, on /api/c
   assert.match(c, /api\.put\('\/api\/controls\/loyalty', patch\)/);
   assert.doesNotMatch(c, /\/api\/controls\/updates/);
   assert.match(c, /api\.post\('\/api\/business\/settings', \{ key: PAYMENT_METHODS_ENABLED_KEY, value: v \}\)/);
-  assert.match(c, /export const POS_OPTION_KEYS = \['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'\] as const;/);   // A594
+  assert.match(c, /export const POS_OPTION_KEYS = \['web_pos', 'delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'approval_pin', 'rooms'\] as const;/);   // A594; 2026-11-22: + web_pos (default ON)
   const bp = read('pages/settings/BusinessPage.tsx');
   assert.match(bp, /\{ to: 'pos-options',\s+label: 'POS options' \}/);
   assert.doesNotMatch(bp, /till-updates/);
