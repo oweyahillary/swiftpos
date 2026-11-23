@@ -4,6 +4,7 @@ import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import { SITE } from '../lib/site';
 import { organization } from '../lib/schema';
+import { ClientRouter } from 'astro:transitions';
 
 interface Props {
   title: string;
@@ -19,7 +20,7 @@ interface Props {
 }
 
 const { title, description, waMessage, ogImage = '/og-zaptill.png', jsonLd = [], noindex = false } = Astro.props;
-// JSON in a <script>: "<" escaped so no string we wrote can close the tag.
+// JSON embedded in a script tag; the opening angle bracket is escaped so nothing we write can close the tag early.
 const ld = (o: object) => JSON.stringify(o).replace(/</g, '\\u003c');
 const canonical = new URL(Astro.url.pathname, Astro.site ?? SITE.url).href;
 const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.url).href;
@@ -54,8 +55,16 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.url).href;
     <script type="application/ld+json" set:html={ld(organization())} />
     {jsonLd.map((o) => <script type="application/ld+json" set:html={ld(o)} />)}
 
-    <link rel="preload" href="/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin />
+
+    <!-- Silky page-to-page transitions (Astro View Transitions). -->
+    <ClientRouter />
+    <!-- Motion flag set BEFORE first paint, so reveal elements start hidden (no flash). Skipped for a visitor who asked
+         for reduced motion, and with JS off: in both cases every element simply stays visible. -->
+    <script is:inline>
+      if (!window.matchMedia || !matchMedia('(prefers-reduced-motion: reduce)').matches)
+        document.documentElement.classList.add('motion');
+    </script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -64,5 +73,17 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.url).href;
       <slot />
     </main>
     <Footer />
+    <!-- Reveal elements as they scroll into view. Re-runs on every Astro view transition (astro:page-load fires on the
+         first load and after each client-side navigation). A no-op under reduced motion or no-JS: content is already shown. -->
+    <script>
+      function setupReveal() {
+        if (!document.documentElement.classList.contains('motion')) return;
+        const io = new IntersectionObserver((entries, obs) => {
+          for (const e of entries) if (e.isIntersecting) { e.target.classList.add('is-in'); obs.unobserve(e.target); }
+        }, { rootMargin: '0px 0px -8% 0px', threshold: 0.1 });
+        document.querySelectorAll('.reveal:not(.is-in), .wipe:not(.is-in), .draw-line:not(.is-in)').forEach((el) => io.observe(el));
+      }
+      document.addEventListener('astro:page-load', setupReveal);
+    </script>
   </body>
 </html>

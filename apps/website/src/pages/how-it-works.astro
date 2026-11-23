@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import WhatsAppButton from '../components/WhatsAppButton.astro';
+import DemoButton from '../components/DemoButton.astro';
 import VisitButton from '../components/VisitButton.astro';
 import Monitor from '../components/frames/Monitor.astro';
 import Laptop from '../components/frames/Laptop.astro';
@@ -22,13 +22,31 @@ const voids = demoCard(7);
   waMessage={WA_MESSAGES.demo}
   ogImage="/og/how-it-works.png"
 >
-  <section class="page-head day-head">
+  <section class="prod-hero">
+    <div class="wrap prod-hero__grid">
+      <div class="prod-hero__copy">
+        <p class="prod-hero__eyebrow reveal">A day, open to close</p>
+        <h1 class="reveal" style="--i:1">A day with ZapTill</h1>
+        <p class="prod-hero__sub reveal" style="--i:2">
+          One day at Mama Lishe Grill, a busy grill on Ngong Road, from the first PIN in the morning to the owner's
+          phone at night.
+        </p>
+        <div class="actions reveal" style="--i:3">
+          <DemoButton />
+          <VisitButton />
+        </div>
+      </div>
+      <div class="prod-hero__visual reveal reveal--rise cine" style="--i:2">
+        <Monitor label="The ZapTill point of sale at a demo restaurant">
+          <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
+            alt="The real ZapTill point of sale at a demo restaurant: menu buttons and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
+        </Monitor>
+      </div>
+    </div>
+  </section>
+
+  <section class="jump-strip">
     <div class="wrap">
-      <h1>A day with ZapTill</h1>
-      <p class="lede">
-        One day at Mama Lishe Grill, a made-up restaurant on Ngong Road, from the first PIN in the morning to the owner's
-        phone at night. Every screen here is the real ZapTill, running on demo data.
-      </p>
       <ol class="day-jump" aria-label="The day, in order">
         <li><a href="#open">07:55 Open</a></li>
         <li><a href="#rush">12:40 Lunch rush</a></li>
@@ -48,14 +66,13 @@ const voids = demoCard(7);
           <p class="moment__time"><time>07:55</time> Morning open</p>
           <h2 id="open-h">Wanjiru signs in with her PIN and counts her float.</h2>
           <p>
-            No passwords at the counter: each person has their own PIN, and the point of sale knows who they are and what they may
-            do. Before the first sale, Wanjiru counts the cash already in the drawer and enters it as her opening float.
+            Before the first sale, Wanjiru counts the cash already in the drawer and enters it as her opening float.
           </p>
           <p>From now on, every shilling in that drawer is hers to account for, and the point of sale keeps the count.</p>
         </div>
         <div class="split__visual">
           <Monitor label="The point of sale asking the cashier to count her opening float">
-            <Shot src="/screens/till-float.webp" eager width={1280} height={800}
+            <Shot src="/screens/till-float.webp" width={1280} height={800}
               alt="The real ZapTill point of sale: 'Open your drawer. Wanjiru, count the cash in the drawer before you start.' The opening float is KES 2,000, with a Start selling button." />
           </Monitor>
         </div>
@@ -68,8 +85,9 @@ const voids = demoCard(7);
           <p class="moment__time"><time>12:40</time> The lunch rush</p>
           <h2 id="rush-h">Table 4 orders, and pays part M-Pesa, part cash.</h2>
           <p>
-            The menu is big buttons. Chips Masala asks "Normal or Spicy?" and the answer goes on the order. A table can be
-            held and picked up again when they want more.
+            The menu is big tiles, each able to carry a photo of the dish, so the right one gets tapped even in a rush; a
+            search box and tabs narrow a long menu down fast. Chips Masala asks "Normal or Spicy?" and the answer goes on
+            the order. A table can be held and picked up again when they want more.
           </p>
           <p>
             At the bill, Table 4 pays KES 2,000 by M-Pesa and the rest in cash. Wanjiru splits the payment at the point of sale,
@@ -193,13 +211,9 @@ const voids = demoCard(7);
       <h2 id="hfinal-title">Want to see your own day like this?</h2>
       <p class="lede">We'll load your products or your menu, set up your printers and train your team. Start with a message.</p>
       <div class="actions">
-        <WhatsAppButton message={WA_MESSAGES.demo} />
+        <DemoButton message={WA_MESSAGES.demo} />
         <VisitButton />
       </div>
-      <p class="final__note">
-        Variants such as "Spicy", pictures on the point of sale, offers and stock at the point of sale come with ZapTill Online. Analytics is
-        an add-on. <a href="/pricing/">Build your quote</a>
-      </p>
     </div>
   </section>
 </Base>

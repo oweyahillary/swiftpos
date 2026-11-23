@@ -2,7 +2,7 @@
 // A Phase 1 stub page: a heading, a short intro, optional sections, and a call to action.
 // The "Coming in phase 2" note shows only in `npm run dev`; the built site carries it as an HTML comment.
 import Base from './Base.astro';
-import WhatsAppButton from '../components/WhatsAppButton.astro';
+import DemoButton from '../components/DemoButton.astro';
 import VisitButton from '../components/VisitButton.astro';
 import { WA_MESSAGES } from '../lib/site';
 
@@ -25,7 +25,7 @@ const isDev = import.meta.env.DEV;
       <div class="lede stub-intro"><slot name="intro" /></div>
       {showActions && (
         <div class="actions">
-          <WhatsAppButton message={waMessage} />
+          <DemoButton message={waMessage} />
           <VisitButton />
         </div>
       )}
