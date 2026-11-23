@@ -21,12 +21,12 @@ export const SITE = {
  *   the branch server and a point of sale. Installation can vary with the site; the price is confirmed before we start.
  * - extraComputerFrom: each extra computer (a point of sale, a kitchen screen) is from about this much, quoted per client
  *   (owner, 2026-10-23: "10k, the price might vary depending on the client").
- * - monthly: the cloud (web dashboard, daily email, online features), month to month, PER BUSINESS: one fee covers
- *   every branch (owner, 2026-10-23). It can be paid for 3, 6 or 12 months at once (6 or 12 recommended), with no
+ * - monthly: the cloud (web dashboard, daily email, online features), month to month, PER BRANCH: each branch pays its
+ *   own cloud fee (owner, 2026-11-23). It can be paid for 3, 6 or 12 months at once (6 or 12 recommended), with no
  *   discount for paying ahead (owner, 2026-10-23). If it lapses the points of sale keep selling; the cloud stops syncing and a
  *   point of sale cannot be registered again until it is paid; reminders are emailed before it ends.
- * - The first month of the cloud is free with the desktop setup (A569).
- * - analyticsMonthly: the Analytics add-on, about this much a month, per business like the cloud.
+ * - The first month of the cloud is free, once, with the initial desktop setup — not per branch (owner, 2026-11-23; A569).
+ * - analyticsMonthly: the Analytics add-on, about this much a month, per business (one fee for the whole business).
  */
 export const PRICES = {
   setup: 30000,
@@ -80,16 +80,16 @@ export function kes(n: number): string {
  * type ZapTill is set up for, not only food). Wording per type follows shared/businessTerms.ts: Menus for restaurants and
  * cafés, Departments for shops, minimarts and petrol stations, Groups for parking and other businesses.
  */
-// PUBLIC SCOPE (owner, 2026-11-12, overnight): market ONLY the tested restaurant POS for now — keep pricing and the
-// other POS verticals (shops/minimarts/petrol/parking) OFF the public site. These are the food-service pages that run
-// on the same tested restaurant POS. The other /for/* pages still exist in the repo but are UNLINKED from nav/footer/
+// PUBLIC SCOPE (owner, 2026-11-23): market ONLY the tested hospitality POS — restaurants, cafés, bars and quick service.
+// Keep pricing and the other POS verticals (shops/minimarts/petrol/parking) OFF the public site. These are the pages
+// that run on the same tested POS. The other /for/* pages still exist in the repo but are UNLINKED from nav/footer/
 // who-its-for until the owner re-enables them. Re-add the rows here to bring a vertical back.
 export const INDUSTRIES = [
   { href: '/for/restaurants/', name: 'Restaurants and cafés', short: 'Restaurants' },
   { href: '/for/bars/', name: 'Bars and lounges', short: 'Bars' },
   { href: '/for/quick-service/', name: 'Quick service and takeaways', short: 'Quick service' },
 ];
-/** Verticals parked off the public site for now (owner, 2026-11-12). Kept so nothing is lost; not linked anywhere. */
+/** Verticals parked off the public site for now (owner, 2026-11-23). Kept so nothing is lost; not linked anywhere. */
 export const INDUSTRIES_PARKED = [
   { href: '/for/retail/', name: 'Shops and supermarkets', short: 'Shops' },
   { href: '/for/minimarts/', name: 'Minimarts', short: 'Minimarts' },

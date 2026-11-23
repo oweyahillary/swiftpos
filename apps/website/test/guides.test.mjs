@@ -73,7 +73,7 @@ test('the worked price example adds up from the draft prices', () => {
   assert.equal(one.total, PRICES.setup + PRICES.monthly * 35);
   const two = zaptillCost({ branches: 2, years: 3 });
   assert.equal(two.setup, 2 * PRICES.setup, 'setup is per branch');
-  assert.equal(two.cloud, one.cloud, 'the cloud is per business, not per branch');
+  assert.equal(two.cloud, PRICES.monthly * (2 * 36 - PRICES.trialMonths), 'cloud is per branch; the free first month is one-off, not per branch');
   const withA = zaptillCost({ branches: 1, years: 3, analytics: true });
   assert.equal(withA.total - one.total, PRICES.analyticsMonthly * 36);
   assert.equal(one.perDay, Math.round(one.total / (3 * 365)));
