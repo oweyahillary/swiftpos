@@ -1,8 +1,8 @@
 ---
-// Guide 3 (night 3, DRAFT for the owner): what a point of sale should do offline. Claims checked against WORKPLAN §3 and
-// the Features "Works offline" list: the desktop POS sells and prints with no internet (scanner, kitchen tickets, pumps),
-// PIN sign-in, the branch server keeps the branch in step, everything catches up; the PC needs power (a UPS); the web
-// dashboard, the daily email and car parks (web POS) need the internet.
+// Guide 3 (night 3, DRAFT for the owner): what a point of sale should do offline. Restaurant/café framing only.
+// Claims checked against WORKPLAN §3 and the Features "Works offline" list: the desktop POS sells and prints with no
+// internet (kitchen tickets, open tables, receipts), PIN sign-in, the branch server keeps the branch in step,
+// everything catches up; the PC needs power (a UPS); the web dashboard and the daily email need the internet.
 import Guide from '../../layouts/Guide.astro';
 import Monitor from '../../components/frames/Monitor.astro';
 import Shot from '../../components/screens/Shot.astro';
@@ -11,7 +11,7 @@ import { WA_MESSAGES } from '../../lib/site';
 <Guide slug="pos-when-the-internet-goes-off" waMessage={WA_MESSAGES.guideOffline} ctaTitle="Pull the cable out and watch it keep selling.">
   <p>
     In Kenya the internet goes off. So does the power. Not every day, but always at the worst moment: the Friday lunch
-    rush, the end-of-month queue at the minimart, the evening when every matatu stops for fuel. When it happens, a
+    rush, the Saturday evening when every table is full, the night a big party walks in. When it happens, a
     point of sale that needs the internet to sell is not a point of sale. It is a screen that says "Please wait".
   </p>
   <p>
@@ -24,18 +24,17 @@ import { WA_MESSAGES } from '../../lib/site';
   <ul>
     <li><strong>Selling.</strong> Adding items, taking payment, printing the receipt.</li>
     <li><strong>Signing in.</strong> A cashier who comes on shift during an outage must still be able to start work with their own PIN, not borrow someone else's.</li>
-    <li><strong>The barcode scanner and the scale.</strong> At a shop or a minimart, scanning and weighing are the queue.</li>
-    <li><strong>The kitchen.</strong> At a restaurant or café, orders must still reach the kitchen printer or screen.</li>
-    <li><strong>The pumps.</strong> At a petrol station, the attendant must still be able to sell fuel by amount or by litres, on the right pump.</li>
-    <li><strong>Every point of sale in the branch, in step.</strong> If you have two counters, both must see the same open orders and the same stock, even with no internet.</li>
+    <li><strong>The kitchen.</strong> Orders must still reach the kitchen printer or screen, so the cooks keep working.</li>
+    <li><strong>Open tables.</strong> A table's bill must stay open and correct, so nothing is lost if the line drops in the middle of a meal.</li>
+    <li><strong>Every point of sale in the branch, in step.</strong> If you have two counters, both must see the same open tables and the same stock, even with no internet.</li>
   </ul>
 
   <figure>
-    <Monitor label="The real ZapTill point of sale at a demo petrol station">
-      <Shot src="/screens/till-pumps.webp" width={1280} height={800}
-        alt="The real ZapTill point of sale at a demo petrol station: five pumps with their grade and price per litre, and a sale of diesel with engine oil and water from the shop." />
+    <Monitor label="The real ZapTill point of sale in a demo restaurant">
+      <Shot src="/screens/till-pos.webp" width={1280} height={800}
+        alt="The real ZapTill point of sale in a demo restaurant: the menu as big tiles, a table's open order down the side and the total ready to take payment. A demo business." />
     </Monitor>
-    <figcaption>The pumps are kept on the point of sale itself, so the forecourt keeps selling with no internet. A demo business.</figcaption>
+    <figcaption>The whole menu, the open tables and the kitchen printer stay on the point of sale itself, so the counter keeps selling with no internet. A demo business.</figcaption>
   </figure>
 
   <h2>What can wait</h2>
@@ -62,14 +61,13 @@ import { WA_MESSAGES } from '../../lib/site';
   <div class="guide-zt">
     <p class="guide-zt__h">How ZapTill does it</p>
     <p>
-      The ZapTill desktop point of sale keeps selling and printing with no internet: the scanner, the kitchen tickets
-      and the pumps. Staff still sign in with their PIN. A branch server in the shop keeps every point of sale in the
-      branch in step, and when the internet comes back everything catches up by itself; nobody types anything in again.
-      A UPS is on our recommended hardware list for every branch.
+      The ZapTill desktop point of sale keeps selling and printing with no internet: the menu, the open tables, the
+      kitchen tickets and the receipts. Staff still sign in with their PIN. A branch server in the restaurant keeps
+      every point of sale in the branch in step, and when the internet comes back everything catches up by itself;
+      nobody types anything in again. A UPS is on our recommended hardware list for every branch.
     </p>
     <p>
-      Honestly: the web dashboard and the daily email need the internet, and so does parking, which runs on the web
-      point of sale.
+      Honestly: the web dashboard and the daily email need the internet.
     </p>
   </div>
 
@@ -78,7 +76,7 @@ import { WA_MESSAGES } from '../../lib/site';
   <ol>
     <li>"Unplug the internet now. Can I still sell, print and sign in a new cashier?"</li>
     <li>"If I have two points of sale, do they still share the same orders and stock with no internet?"</li>
-    <li>"Do kitchen tickets, the scanner and the pumps still work?"</li>
+    <li>"Do kitchen tickets still print, and do open tables stay correct?"</li>
     <li>"When the line is back, what happens to the sales? Does anyone retype anything?"</li>
     <li>"What happens in a power cut, and what hardware do you recommend for it?"</li>
     <li>"Which parts need the internet, honestly?"</li>
@@ -90,9 +88,9 @@ import { WA_MESSAGES } from '../../lib/site';
 
   <div class="guide-note">
     <p>
-      <strong>What about M-Pesa?</strong> The customer pays from their own phone, on Safaricom's network, not your shop's
-      internet. The cashier records the sale as M-Pesa as usual. Do check the payment has arrived on the business phone
-      before handing over the goods, internet or not.
+      <strong>What about M-Pesa?</strong> The customer pays from their own phone, on Safaricom's network, not your
+      restaurant's internet. The cashier records the sale as M-Pesa as usual. Do check the payment has arrived on the
+      business phone before you treat the bill as paid, internet or not.
     </p>
   </div>
 </Guide>

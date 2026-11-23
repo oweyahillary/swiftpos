@@ -66,8 +66,8 @@ set up the printers and screens, and train your staff on site. We'll give you a 
 export const FAQ_ONCE: FaqItem = {
   q: 'Do I pay for the points of sale every month?',
   a: `<p>No. Setting up a branch is paid once, and the points of sale are yours: once paid, it's a done deal. The monthly fee is
-for the cloud: your dashboard on the web and on your phone, the daily email, and the online features. It is one fee
-for your whole business, however many branches you have.</p>`,
+for the cloud: your dashboard on the web and on your phone, the daily email, and the online features. It is a monthly
+fee per branch.</p>`,
 };
 
 export const FAQ_TRIAL: FaqItem = {
@@ -103,8 +103,8 @@ install themselves.</p>`,
 export const FAQ_BRANCH: FaqItem = {
   q: 'Can I add a branch later?',
   a: `<p>Yes. A new branch is set up the same way, paid once, and shows up on the same web dashboard as the others, so
-you see every branch side by side. You pay its setup once; your monthly cloud fee stays the same, because it covers
-the whole business, not each branch.</p>`,
+you see every branch side by side. You pay its setup once, and it adds its own monthly cloud fee, because the cloud is
+billed per branch.</p>`,
 };
 
 export const FAQ_CONTRACT: FaqItem = {
