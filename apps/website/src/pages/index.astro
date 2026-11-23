@@ -1,12 +1,11 @@
 ---
 import Base from '../layouts/Base.astro';
-import WhatsAppButton from '../components/WhatsAppButton.astro';
+import DemoButton from '../components/DemoButton.astro';
 import VisitButton from '../components/VisitButton.astro';
 import Faq from '../components/Faq.astro';
-import Monitor from '../components/frames/Monitor.astro';
+import HeroShot from '../components/HeroShot.astro';
 import Laptop from '../components/frames/Laptop.astro';
 import Phone from '../components/frames/Phone.astro';
-import Shot from '../components/screens/Shot.astro';
 import DayCloseScreen from '../components/screens/DayCloseScreen.astro';
 import PhoneSummary from '../components/screens/PhoneSummary.astro';
 import Receipt from '../components/screens/Receipt.astro';
@@ -35,22 +34,20 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
   <section class="hero">
     <div class="wrap hero__grid">
       <div class="hero__copy">
-        <h1>Know where every shilling went, every single day.</h1>
-        <p class="hero__sub">
+        <p class="hero__eyebrow reveal">Point of sale · M-Pesa · Works offline</p>
+        <h1 class="reveal" style="--i:1">Know where every shilling went, every single day.</h1>
+        <p class="hero__sub reveal" style="--i:2">
           In your restaurant, café or bar. ZapTill runs your point of sale (POS) and <span class="nb">M-Pesa</span> through
           internet cuts, closes your day in minutes, tells you who was short, and sends you the numbers before you sleep.
         </p>
-        <div class="actions">
-          <WhatsAppButton message={WA_MESSAGES.demo} />
+        <div class="actions reveal" style="--i:3">
+          <DemoButton message={WA_MESSAGES.demo} />
           <VisitButton />
         </div>
-        <p class="hero__small">Built in Kenya. M-Pesa and KES from the first day. We set it up and train your staff.</p>
+        <p class="hero__small reveal" style="--i:4">Built in Kenya. M-Pesa and KES from the first day. We set it up and train your staff.</p>
       </div>
-      <div class="hero__visual">
-        <Monitor label="The ZapTill point of sale at a demo restaurant">
-          <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
-            alt="The real ZapTill point of sale at a demo restaurant: menu buttons and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
-        </Monitor>
+      <div class="hero__visual reveal reveal--rise" style="--i:2">
+        <HeroShot />
       </div>
     </div>
   </section>
@@ -66,17 +63,18 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
     </div>
   </section>
 
+
   <!-- Choose your business -->
   <section class="band" aria-labelledby="lanes-title">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <h2 id="lanes-title">Built for your place</h2>
         <p>The same point of sale, set up the way your place works and in your own words: menus and tables in a
           restaurant, tabs and credit in a bar, a fast counter for takeaway.</p>
       </div>
       <ul class="lanes">
-        {lanes.map((l) => (
-          <li>
+        {lanes.map((l, i) => (
+          <li class="reveal" style={`--i:${i}`}>
             <a href={l.href}>
               <span class="lanes__name">{l.name}</span>
               <span class="lanes__line">{l.line}</span>
@@ -91,7 +89,7 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
   <!-- Four benefits -->
   <section class="band band--white" aria-label="What ZapTill does for you">
     <div class="wrap benefits">
-      <article class="benefit">
+      <article class="benefit reveal">
         <div class="benefit__copy">
           <h2>Close the day in minutes, and know who was short.</h2>
           <p>
@@ -108,7 +106,7 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
         </div>
       </article>
 
-      <article class="benefit benefit--flip">
+      <article class="benefit benefit--flip reveal">
         <div class="benefit__copy">
           <h2>When the internet goes, your points of sale don't.</h2>
           <p>
@@ -123,7 +121,7 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
         </div>
       </article>
 
-      <article class="benefit">
+      <article class="benefit reveal">
         <div class="benefit__copy">
           <h2>Every order reaches the kitchen. Every receipt carries your M-Pesa number.</h2>
           <p>
@@ -145,7 +143,7 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
         </div>
       </article>
 
-      <article class="benefit benefit--flip">
+      <article class="benefit benefit--flip reveal">
         <div class="benefit__copy">
           <h2>Run your business properly, even when you're not there.</h2>
           <p>
@@ -169,19 +167,19 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
   <!-- The offline scene, told as a story -->
   <section class="band band--night" id="offline" aria-labelledby="offline-title">
     <div class="wrap offline">
-      <div class="section-head">
+      <div class="section-head reveal">
         <h2 id="offline-title">Friday, 12:40. The busiest hour. The internet goes.</h2>
         <p>Here is what happens at a busy restaurant running ZapTill.</p>
       </div>
       <ol class="timeline">
-        <li>
+        <li class="reveal">
           <time>12:40</time>
           <div>
             <h3>The router light goes red.</h3>
             <p>Nobody at either counter notices. The points of sale carry on selling and the receipts keep printing.</p>
           </div>
         </li>
-        <li>
+        <li class="reveal">
           <time>12:45</time>
           <div>
             <h3>The orders keep coming. The kitchen keeps cooking.</h3>
@@ -189,21 +187,21 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
               point of sale in step.</p>
           </div>
         </li>
-        <li>
+        <li class="reveal">
           <time>13:10</time>
           <div>
             <h3>KPLC goes as well.</h3>
             <p>The POS computer needs power, like any computer. On a small UPS it keeps going, and the cashiers keep selling.</p>
           </div>
         </li>
-        <li>
+        <li class="reveal">
           <time>14:05</time>
           <div>
             <h3>The internet is back.</h3>
             <p>Every sale from the last hour and a half catches up by itself. Nobody types anything in again.</p>
           </div>
         </li>
-        <li>
+        <li class="reveal">
           <time>22:47</time>
           <div>
             <h3>The owner checks their phone.</h3>
@@ -217,7 +215,7 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
   <!-- Do this next teaser -->
   <section class="band" aria-labelledby="dtn-title">
     <div class="wrap teaser">
-      <div class="teaser__copy">
+      <div class="teaser__copy reveal">
         <h2 id="dtn-title">Then it tells you what to change.</h2>
         <p class="lede">
           ZapTill Analytics reads your sales and ranks what to do next, in plain words: what to order before Friday,
@@ -232,7 +230,7 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
 
   <!-- Quote in one line -->
   <section class="price-line" aria-labelledby="price-title">
-    <div class="wrap price-line__inner">
+    <div class="wrap price-line__inner reveal">
       <h2 id="price-title">A quote built for your place.</h2>
       <p>
         Set up once per branch and the points of sale are yours — no percentage of your sales. We tailor the quote to
@@ -245,7 +243,7 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
   <!-- FAQ excerpt -->
   <section class="band" aria-labelledby="faq-title">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <h2 id="faq-title">Questions owners ask us</h2>
       </div>
       <Faq items={HOME_FAQ} />
@@ -256,10 +254,10 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
   <!-- Final call to action -->
   <section class="band band--night final" aria-labelledby="final-title">
     <div class="wrap">
-      <h2 id="final-title">See it running in a business like yours.</h2>
-      <p class="lede">We'll set it up, load your products or your menu, and train your team. Start with a message.</p>
+      <h2 id="final-title" class="reveal">See it running in a business like yours.</h2>
+      <p class="lede reveal" style="--i:1">We'll set it up, load your products or your menu, and train your team. Start with a message.</p>
       <div class="actions">
-        <WhatsAppButton message={WA_MESSAGES.demo} />
+        <DemoButton message={WA_MESSAGES.demo} />
         <VisitButton />
       </div>
     </div>
@@ -278,6 +276,7 @@ const description = 'A POS for restaurants, cafés and bars in Kenya: M-Pesa on 
   }
   .hero__grid { display: grid; gap: var(--s-7); align-items: center; }
   .hero h1 { max-width: 15ch; }
+  .hero__eyebrow { font: 600 0.82rem/1 var(--font-text); text-transform: uppercase; letter-spacing: 0.14em; color: var(--teal-light); margin-bottom: var(--s-4); }
   .hero__sub { font-size: var(--fs-md); line-height: 1.5; color: #c4d6d4; max-width: 36rem; margin-bottom: var(--s-6); }
   .hero__small { margin-top: var(--s-5); font-size: var(--fs-sm); color: var(--night-muted); }
   .hero__visual { position: relative; padding-bottom: var(--s-6); }

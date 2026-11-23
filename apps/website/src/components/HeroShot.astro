@@ -1,0 +1,99 @@
+---
+// HeroShot — the hero's real product screen, presented cinematically (owner, 2026-11-23: "cinematic product … layered
+// depth, a soft warm halo, gentle float and reflection"). A soft warm glow (teal easing into amber) breathes behind the
+// device; the device floats, tilts a little toward the cursor, and a light sheen sweeps the screen once in a while.
+// With no JS / reduced motion it is the still product shot, glow and all. Original ZapTill design — nothing copied.
+import Monitor from './frames/Monitor.astro';
+---
+<div class="shot" data-shot>
+  <div class="shot__glow" aria-hidden="true"></div>
+  <div class="shot__tilt" data-tilt>
+    <div class="shot__float">
+      <Monitor label="The ZapTill point of sale at a demo restaurant">
+        <div class="shot__screen">
+          <img class="shot__img" src="/screens/till-pos.webp" width="1280" height="800"
+            loading="eager" decoding="async" fetchpriority="high"
+            alt="The real ZapTill point of sale at a demo restaurant: menu buttons and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
+          <span class="shot__glare" aria-hidden="true"></span>
+        </div>
+      </Monitor>
+    </div>
+  </div>
+</div>
+
+<script>
+  function initShot() {
+    const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const fine = window.matchMedia && matchMedia('(pointer: fine)').matches;
+    if (reduce || !fine) return;
+    document.querySelectorAll<HTMLElement>('[data-shot]:not(.is-ready)').forEach((shot) => {
+      shot.classList.add('is-ready');
+      const tilt = shot.querySelector<HTMLElement>('[data-tilt]');
+      if (!tilt) return;
+      let raf = 0;
+      shot.addEventListener('pointermove', (e) => {
+        const r = shot.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width - 0.5;
+        const py = (e.clientY - r.top) / r.height - 0.5;
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          tilt.style.setProperty('--rx', (-py * 4).toFixed(2) + 'deg');
+          tilt.style.setProperty('--ry', (px * 5).toFixed(2) + 'deg');
+        });
+      });
+      shot.addEventListener('pointerleave', () => {
+        tilt.style.setProperty('--rx', '0deg');
+        tilt.style.setProperty('--ry', '0deg');
+      });
+    });
+  }
+  document.addEventListener('astro:page-load', initShot);
+</script>
+
+<style>
+  .shot { position: relative; isolation: isolate; }
+
+  /* A soft, warm halo of light behind the device — teal easing into amber — that slowly breathes. */
+  .shot__glow {
+    position: absolute; z-index: 0; inset: -10% -6% 0 2%;
+    background:
+      radial-gradient(48% 54% at 50% 42%, rgba(20, 184, 166, 0.40), transparent 72%),
+      radial-gradient(44% 50% at 72% 64%, rgba(245, 166, 86, 0.26), transparent 74%);
+    filter: blur(44px);
+    animation: shot-breathe 9s ease-in-out infinite;
+  }
+
+  /* Tilt toward the cursor (JS sets --rx/--ry); smooth via its own transition. */
+  .shot__tilt {
+    position: relative; z-index: 1;
+    --rx: 0deg; --ry: 0deg;
+    transform: perspective(1500px) rotateX(var(--rx)) rotateY(var(--ry));
+    transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform-style: preserve-3d;
+  }
+  /* Gentle float, a deep soft shadow for depth, and a glass reflection under the device (fading with distance). */
+  .shot__float {
+    animation: shot-float 8s ease-in-out infinite;
+    filter: drop-shadow(0 36px 54px rgba(2, 12, 14, 0.55));
+    -webkit-box-reflect: below 12px linear-gradient(rgba(0, 0, 0, 0.24), transparent 48%);
+  }
+
+  .shot__screen { position: relative; width: 100%; height: 100%; }
+  .shot__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* A light sheen that sweeps the glass now and then. */
+  .shot__glare {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(115deg, rgba(255, 255, 255, 0.16), transparent 32%);
+    transform: translateX(-130%);
+    animation: shot-glare 8s ease-in-out 1.2s infinite;
+  }
+
+  @keyframes shot-breathe { 0%, 100% { opacity: 0.82; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } }
+  @keyframes shot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-11px); } }
+  @keyframes shot-glare { 0% { transform: translateX(-130%); } 14%, 100% { transform: translateX(135%); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shot__glow, .shot__float, .shot__glare { animation: none; }
+    .shot__tilt { transform: none; }
+  }
+</style>

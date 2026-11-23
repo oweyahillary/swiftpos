@@ -5,7 +5,7 @@
 // (never anything typed that is PII — there are no name/phone fields here; they reach us on WhatsApp). The /pricing/
 // URL is kept so existing links land here. Re-add prices only when the owner says so.
 import Base from '../layouts/Base.astro';
-import WhatsAppButton from '../components/WhatsAppButton.astro';
+import DemoButton from '../components/DemoButton.astro';
 import VisitButton from '../components/VisitButton.astro';
 import { WA_MESSAGES } from '../lib/site';
 
@@ -102,7 +102,7 @@ const setupItems = [
     <div class="wrap">
       <h2 id="pfinal-title">Tell us about your place. We'll send you a quote today.</h2>
       <div class="actions">
-        <WhatsAppButton message={WA_MESSAGES.pricing} />
+        <DemoButton message={WA_MESSAGES.pricing} />
         <VisitButton label="See it running near you" />
       </div>
     </div>

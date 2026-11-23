@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import WhatsAppButton from '../components/WhatsAppButton.astro';
+import DemoButton from '../components/DemoButton.astro';
 import { WA_MESSAGES } from '../lib/site';
 
 // Public scope (owner, 2026-11-13): market only the tested restaurant/hotel POS — restaurants, cafés, bars and quick
@@ -65,7 +65,7 @@ const lanes = [
     <div class="wrap">
       <h2 id="wif-final">See it running in a place like yours.</h2>
       <div class="actions">
-        <WhatsAppButton message={WA_MESSAGES.demo} />
+        <DemoButton message={WA_MESSAGES.demo} />
       </div>
     </div>
   </section>

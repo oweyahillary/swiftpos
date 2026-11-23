@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import WhatsAppButton from '../components/WhatsAppButton.astro';
+import DemoButton from '../components/DemoButton.astro';
 import VisitButton from '../components/VisitButton.astro';
 import Monitor from '../components/frames/Monitor.astro';
 import Laptop from '../components/frames/Laptop.astro';
@@ -9,6 +9,7 @@ import Receipt from '../components/screens/Receipt.astro';
 import StockScreen from '../components/screens/StockScreen.astro';
 import DayCloseScreen from '../components/screens/DayCloseScreen.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
+import SystemMap from '../components/SystemMap.astro';
 import { WA_MESSAGES } from '../lib/site';
 import { ROLES } from '../lib/roles';
 import { softwareApplication } from '../lib/schema';
@@ -125,13 +126,26 @@ const roles = ROLES.filter((r) => !r.petrol);
   ogImage="/og/features.png"
   jsonLd={[softwareApplication(description)]}
 >
-  <section class="page-head feat-head">
+  <section class="prod-hero prod-hero--map">
     <div class="wrap">
-      <h1>Everything it does, for your restaurant</h1>
-      <p class="lede">
-        ZapTill is a point of sale (POS) for the counter and the kitchen, and a back office on the web that opens on your
-        phone. The screens are the real app, on a made-up restaurant.
-      </p>
+      <div class="prod-hero__lead">
+        <p class="prod-hero__eyebrow reveal">Point of sale · Kitchen · Back office</p>
+        <h1 class="reveal" style="--i:1">Everything it does, for your restaurant</h1>
+        <p class="prod-hero__sub reveal" style="--i:2">
+          ZapTill is a point of sale (POS) for the counter and the kitchen, and a back office on the web that opens on your
+          phone. Watch one order flow through it.
+        </p>
+        <div class="actions reveal" style="--i:3">
+          <DemoButton />
+          <VisitButton />
+        </div>
+      </div>
+      <SystemMap />
+    </div>
+  </section>
+
+  <section class="jump-strip">
+    <div class="wrap">
       <nav class="feat-jump" aria-label="Feature groups">
         <ul>{groups.map((g) => <li><a href={`#${g.id}`}>{g.name}</a></li>)}</ul>
       </nav>
@@ -148,7 +162,7 @@ const roles = ROLES.filter((r) => !r.petrol);
       </div>
       <div class="split__visual">
         <Monitor label="The ZapTill point of sale at a demo restaurant">
-          <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
+          <Shot src="/screens/till-pos.webp" width={1280} height={800}
             alt="The real ZapTill point of sale at a demo restaurant: menu buttons and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
         </Monitor>
       </div>
@@ -302,19 +316,20 @@ const roles = ROLES.filter((r) => !r.petrol);
     <div class="wrap">
       <h2 id="ffinal-title">See the parts you need, running on your own menu.</h2>
       <div class="actions">
-        <WhatsAppButton message={WA_MESSAGES.features} />
+        <DemoButton message={WA_MESSAGES.features} />
         <VisitButton />
       </div>
-      <p class="feat__note">
-        Pictures on the point of sale, variants, offers and stock at the point of sale come with ZapTill Online; Analytics is an
-        add-on.{' '}
-        <a href="/pricing/">Build your quote</a>
-      </p>
     </div>
   </section>
 </Base>
 
 <style>
+  /* Map hero: the lead copy sits centred above the full-width anatomy figure. */
+  .prod-hero--map .prod-hero__lead { max-width: 52rem; margin: 0 auto var(--s-7); text-align: center; }
+  .prod-hero--map .prod-hero__sub { margin-left: auto; margin-right: auto; }
+  .prod-hero--map .actions { justify-content: center; }
+  @media (max-width: 760px) { .prod-hero--map .prod-hero__lead { margin-bottom: var(--s-6); } }
+
   .feat-head { background: var(--card); border-bottom: 1px solid var(--line); }
   .feat-head .lede { margin-bottom: var(--s-5); }
   .feat-jump ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s-2); }
