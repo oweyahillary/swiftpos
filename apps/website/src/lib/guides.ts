@@ -1,9 +1,9 @@
 /**
  * The guides (/guides/): practical articles for owners, written night 3 (2026-10-23) as DRAFTS for the owner to review.
  *
- * Rules for every guide (WORKPLAN §3): say only what ships; no invented statistics, clients or quotes; every business
- * type in the examples, not only restaurants; "point of sale" or "POS", never the other word; demo businesses are the
- * fictional ones (Kijani Basket, Mama Lishe Grill, Mvua Café, Kifaru Fuel & Mart); each ends with a soft call to action.
+ * Rules for every guide (WORKPLAN §3): say only what ships; no invented statistics, clients or quotes; restaurant,
+ * café and bar examples only (marketing scope — the tested hospitality POS); "point of sale" or "POS", never the other
+ * word; demo businesses are the fictional ones (Mama Lishe Grill, Mvua Café); each ends with a soft call to action.
  *
  * `status: 'draft'` keeps a guide out of search engines (a robots noindex and no sitemap entry) and shows a note in
  * `npm run dev` only. When the owner has read one and is happy, change it to 'ready'.
@@ -113,13 +113,13 @@ export const DRAFT_GUIDE_PATHS = GUIDES.filter((g) => g.status === 'draft').map(
 
 /**
  * What ZapTill costs over a number of years, from the draft prices in site.ts (the pricing guide's worked example).
- * Setup once per branch; the cloud is per business with the first month free; Analytics optional, per business.
+ * Setup once per branch; the cloud is per branch; the first month is free once, at initial installation (not per branch); Analytics optional, per business.
  * Hardware and any extra computers are quoted separately and are not included.
  */
 export function zaptillCost({ branches = 1, years = 3, analytics = false }: { branches?: number; years?: number; analytics?: boolean } = {}) {
   const months = years * 12;
   const setup = PRICES.setup * branches;
-  const cloud = PRICES.monthly * Math.max(0, months - PRICES.trialMonths);
+  const cloud = PRICES.monthly * Math.max(0, branches * months - PRICES.trialMonths);
   const analyticsTotal = analytics ? PRICES.analyticsMonthly * months : 0;
   const total = setup + cloud + analyticsTotal;
   return { setup, cloud, analytics: analyticsTotal, total, perDay: Math.round(total / (years * 365)), perMonth: Math.round(total / months) };
