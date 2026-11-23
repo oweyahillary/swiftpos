@@ -113,14 +113,14 @@ export const DRAFT_GUIDE_PATHS = GUIDES.filter((g) => g.status === 'draft').map(
 
 /**
  * What ZapTill costs over a number of years, from the draft prices in site.ts (the pricing guide's worked example).
- * Setup once per branch; the cloud is per branch; the first month is free once, at initial installation (not per branch); Analytics optional, per business.
+ * Setup once per branch; the cloud is per branch; the first month is free once, at initial installation (not per branch); Analytics optional, per branch.
  * Hardware and any extra computers are quoted separately and are not included.
  */
 export function zaptillCost({ branches = 1, years = 3, analytics = false }: { branches?: number; years?: number; analytics?: boolean } = {}) {
   const months = years * 12;
   const setup = PRICES.setup * branches;
   const cloud = PRICES.monthly * Math.max(0, branches * months - PRICES.trialMonths);
-  const analyticsTotal = analytics ? PRICES.analyticsMonthly * months : 0;
+  const analyticsTotal = analytics ? PRICES.analyticsMonthly * branches * months : 0;
   const total = setup + cloud + analyticsTotal;
   return { setup, cloud, analytics: analyticsTotal, total, perDay: Math.round(total / (years * 365)), perMonth: Math.round(total / months) };
 }

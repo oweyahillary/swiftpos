@@ -26,7 +26,7 @@ export const SITE = {
  *   discount for paying ahead (owner, 2026-10-23). If it lapses the points of sale keep selling; the cloud stops syncing and a
  *   point of sale cannot be registered again until it is paid; reminders are emailed before it ends.
  * - The first month of the cloud is free, once, with the initial desktop setup — not per branch (owner, 2026-11-23; A569).
- * - analyticsMonthly: the Analytics add-on, about this much a month, per business (one fee for the whole business).
+ * - analyticsMonthly: the Analytics add-on, about this much a month, per branch (like the cloud).
  */
 export const PRICES = {
   setup: 30000,
