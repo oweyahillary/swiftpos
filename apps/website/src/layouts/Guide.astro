@@ -3,7 +3,7 @@
 // soft call to action. The facts live in src/lib/guides.ts; a draft is kept out of search engines (noindex, no sitemap
 // entry) and shows a review note in `npm run dev` only.
 import Base from './Base.astro';
-import WhatsAppButton from '../components/WhatsAppButton.astro';
+import DemoButton from '../components/DemoButton.astro';
 import VisitButton from '../components/VisitButton.astro';
 import { GUIDES, guideBySlug, guideHref } from '../lib/guides';
 import { article, breadcrumb } from '../lib/schema';
@@ -62,7 +62,7 @@ const dateText = new Date(g.date + 'T12:00:00Z').toLocaleDateString('en-GB', { d
         <h2 id="cta-title">{ctaTitle}</h2>
         <p class="lede">{ctaText}</p>
         <div class="actions">
-          <WhatsAppButton message={waMessage} />
+          <DemoButton message={waMessage} />
           <VisitButton />
         </div>
       </div>

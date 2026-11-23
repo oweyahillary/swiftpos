@@ -1,0 +1,7 @@
+---
+// The on-page primary call to action (owner, 2026-11-23: WhatsApp and the phone number live only on the footer and the
+// Contact page now). Everywhere else, send people to the Contact page, where they can WhatsApp, call or book a visit.
+interface Props { label?: string; small?: boolean }
+const { label = 'Get a demo', small = false } = Astro.props;
+---
+<a class:list={['btn', 'btn--go', { 'btn--small': small }]} href="/contact/">{label}</a>

@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import WhatsAppButton from '../components/WhatsAppButton.astro';
+import DemoButton from '../components/DemoButton.astro';
 import Laptop from '../components/frames/Laptop.astro';
 import Shot from '../components/screens/Shot.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
@@ -44,15 +44,17 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
         </p>
         <p class="an-hero__price">An add-on to the cloud, for your whole business — one fee, not per branch.</p>
         <div class="actions">
-          <WhatsAppButton message={WA_MESSAGES.analytics} label="Ask what it would show you" />
+          <DemoButton message={WA_MESSAGES.analytics} label="Ask what it would show you" />
         </div>
       </div>
       <div class="an-hero__visual">
-        <Laptop label="The Analytics page in the web dashboard, from a demo restaurant">
-          <Shot src="/screens/analytics-demo.webp" eager width={1400} height={875}
-            alt="The Analytics page from a demo restaurant: a plain summary of the last 30 days, a note that 6 items have no cost, and the first 'Do this next' cards: order about 70 more Tusker lager before Friday, cooking oil runs out in about 2 days, stock up for Friday." />
-        </Laptop>
-        <p class="an-hero__cap">The real Analytics page, on a made-up restaurant.</p>
+        <div class="cine">
+          <Laptop label="The Analytics page in the web dashboard, from a demo restaurant">
+            <Shot src="/screens/analytics-demo.webp" eager width={1400} height={875}
+              alt="The Analytics page from a demo restaurant: a plain summary of the last 30 days, a note that 6 items have no cost, and the first 'Do this next' cards: order about 70 more Tusker lager before Friday, cooking oil runs out in about 2 days, stock up for Friday." />
+          </Laptop>
+        </div>
+        <p class="an-hero__cap">The real Analytics page.</p>
       </div>
     </div>
   </section>
@@ -272,7 +274,7 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
       <!-- TODO(owner): decide what the first-month report includes, who prepares it and whether it is paid. Until then the
            page only invites a conversation and promises no price. -->
       <div class="actions">
-        <WhatsAppButton message={WA_MESSAGES.leakReport} label="Ask about the report" />
+        <DemoButton message={WA_MESSAGES.leakReport} label="Ask about the report" />
       </div>
       <p class="report__note">Analytics works on the sales ZapTill records; it needs a few weeks of trading to say much.</p>
     </div>

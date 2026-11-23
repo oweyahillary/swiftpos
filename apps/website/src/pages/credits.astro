@@ -2,7 +2,7 @@
 import Base from '../layouts/Base.astro';
 import credits from '../data/photo-credits.json';
 import brandData from '../assets/demo-brands/brands.json';
-import { WA_MESSAGES, SITE, telLink, waLink } from '../lib/site';
+import { WA_MESSAGES } from '../lib/site';
 
 // Photo credits (every product photo, even where the licence asks for none) and the demo businesses the site's screens,
 // receipts, labels and videos are made with (2026-10-23). Owner, 2026-10-25: reachable by URL only (no header or footer
@@ -32,8 +32,7 @@ const brands = brandData.brands.filter((b) => b.trade === 'restaurant' || b.trad
       <h2 id="demo-h">The demo businesses</h2>
       <p class="cr-note">
         The businesses shown in our demos are made up for illustration. If you believe something on this site concerns
-        you or your business, contact us on <a href={waLink(WA_MESSAGES.general)} rel="noopener">WhatsApp</a> or{' '}
-        <a href={telLink}>{SITE.phoneDisplay}</a> and we will review it and remove it if needed.
+        you or your business, <a href="/contact/">contact us</a> and we will review it and remove it if needed.
       </p>
       <ul class="cr-brands">
         {brands.map((b) => (
@@ -77,8 +76,8 @@ const brands = brandData.brands.filter((b) => b.trade === 'restaurant' || b.trad
     <div class="wrap">
       <h2 id="fonts-h">Fonts</h2>
       <p>
-        Headings are set in Bricolage Grotesque and text in Figtree, both under the SIL Open Font License, served from
-        this site.
+        Text and headings are set in Inter, with IBM Plex Mono for small labels, both under the SIL Open Font License,
+        served from this site.
       </p>
     </div>
   </section>

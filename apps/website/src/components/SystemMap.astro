@@ -1,0 +1,400 @@
+---
+// The features hero figure: a living "anatomy of a sale". Real ZapTill surfaces (the counter screenshot, the owner's
+// phone summary) sit as nodes with a crafted kitchen ticket and an M-Pesa chip; teal connectors draw themselves out
+// from the counter (the hub) as the figure cycles through the four beats of a sale. A schematic plate, not a flat
+// box-and-line diagram. Without JS, or under reduced motion, every node and wire shows, lit, with a summary caption.
+import Shot from './screens/Shot.astro';
+import PhoneSummary from './screens/PhoneSummary.astro';
+---
+<div class="map-figure reveal reveal--rise">
+  <div class="plate" data-map>
+    <div class="plate__head">
+      <span><span class="plate__fig">FIG.&nbsp;01</span> &middot; Anatomy of a sale</span>
+      <span class="plate__tag">[ Demo restaurant ]</span>
+    </div>
+
+    <div class="map">
+      <div class="map__stage">
+        <!-- Connectors (behind the nodes; endpoints tuck under the frames). pathLength normalises the draw. -->
+        <svg class="wires" viewBox="0 0 100 55" preserveAspectRatio="none" aria-hidden="true">
+          <path class="wire wire--kitchen" vector-effect="non-scaling-stroke" d="M 28 26 C 46 15, 54 15, 62 19" />
+          <path class="wire wire--mpesa"   vector-effect="non-scaling-stroke" d="M 26 33 C 40 45, 47 45, 52 44" />
+          <path class="wire wire--phone"   vector-effect="non-scaling-stroke" d="M 31 30 C 58 25, 72 31, 84 34" />
+        </svg>
+
+        <!-- Counter — the hub: a real screenshot of the point of sale. -->
+        <div class="node node--counter is-lit" style="left:24%;top:50%;width:34%">
+          <div class="node__inner">
+            <span class="node__tag">[ Counter ]</span>
+            <div class="win">
+              <div class="win__bar" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div class="win__screen">
+                <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
+                  alt="The real ZapTill point of sale at a demo restaurant: menu buttons and Table 4's order, total KES 3,050." />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Kitchen — a ticket, matching Table 4's order. -->
+        <div class="node node--kitchen" style="left:64%;top:33%;width:17%">
+          <div class="node__inner">
+            <span class="node__tag">[ Kitchen ]</span>
+            <div class="printer-mini">
+              <div class="printer-mini__body" aria-hidden="true">
+                <span class="printer-mini__led"></span>
+                <span class="printer-mini__mouth"></span>
+              </div>
+              <div class="ticket-feed">
+                <div class="ticket" role="img" aria-label="A kitchen ticket printing for Table 4: 1 Nyama Choma, 2 Chips Masala spicy, 1 Chicken Burger spicy, 1 Kachumbari.">
+                  <div class="ticket__h">KITCHEN &middot; TABLE 4</div>
+                  <div class="ticket__line"><span>1</span>Nyama Choma 1kg</div>
+                  <div class="ticket__line"><span>2</span>Chips Masala<em>Spicy</em></div>
+                  <div class="ticket__line"><span>1</span>Chicken Burger<em>Spicy</em></div>
+                  <div class="ticket__line"><span>1</span>Kachumbari</div>
+                  <div class="ticket__f">4 to cook &middot; 19:42</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- M-Pesa — the payment moment. -->
+        <div class="node node--mpesa" style="left:52%;top:80%;width:19%">
+          <div class="node__inner">
+            <span class="node__tag">[ M&#8209;Pesa ]</span>
+            <div class="chip" role="img" aria-label="Paid by M-Pesa, KES 3,050, split 2,000 M-Pesa and 1,050 cash.">
+              <span class="chip__k">Paid &middot; M&#8209;Pesa <b class="chip__ok">&#10003;</b></span>
+              <span class="chip__v">KES 3,050</span>
+              <span class="chip__s">2,000 M&#8209;Pesa &middot; 1,050 cash</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Your phone — the real daily-summary component. -->
+        <div class="node node--phone" style="left:86%;top:62%;width:13%">
+          <div class="node__inner">
+            <span class="node__tag">[ Your phone ]</span>
+            <div class="phone">
+              <div class="phone__screen"><PhoneSummary /></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="plate__cap">
+      <span class="plate__idx" data-idx>01</span>
+      <span class="plate__title" data-title>Ring an order</span>
+      <span class="plate__caption" data-cap>Menu buttons, tables, holds.</span>
+      <span class="plate__dots" aria-hidden="true">
+        <i data-dot></i><i data-dot></i><i data-dot></i><i data-dot></i>
+      </span>
+    </div>
+  </div>
+</div>
+
+<script>
+  type Step = { key: string; idx: string; title: string; cap: string };
+  const STEPS: Step[] = [
+    { key: 'counter', idx: '01', title: 'Ring an order',     cap: 'Menu buttons, tables, holds.' },
+    { key: 'kitchen', idx: '02', title: 'Kitchen notified',  cap: 'The ticket prints at the station.' },
+    { key: 'mpesa',   idx: '03', title: 'M‑Pesa received', cap: 'Paid — split the bill if they like.' },
+    { key: 'phone',   idx: '04', title: 'Dashboard updated', cap: 'The day lands on your phone.' },
+  ];
+
+  const stoppers = new Set<() => void>();
+  document.addEventListener('astro:before-swap', () => { stoppers.forEach((fn) => fn()); stoppers.clear(); });
+
+  function initMap(root: HTMLElement) {
+    if (root.dataset.mapInit) return;
+    root.dataset.mapInit = '1';
+    root.classList.add('is-live');
+
+    const titleEl = root.querySelector<HTMLElement>('[data-title]');
+    const capEl = root.querySelector<HTMLElement>('[data-cap]');
+    const idxEl = root.querySelector<HTMLElement>('[data-idx]');
+    const dots = Array.from(root.querySelectorAll<HTMLElement>('[data-dot]'));
+    const nodeSel = (k: string) => Array.from(root.querySelectorAll<HTMLElement>('.node--' + k));
+    const wireSel = (k: string) => Array.from(root.querySelectorAll<HTMLElement>('.wire--' + k));
+
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      STEPS.forEach((s) => {
+        nodeSel(s.key).forEach((el) => el.classList.add('is-lit'));
+        wireSel(s.key).forEach((el) => el.classList.add('is-drawn'));
+      });
+      dots.forEach((d) => d.classList.add('is-on'));
+      if (titleEl) titleEl.textContent = 'One flow';
+      if (capEl) capEl.textContent = 'Counter → kitchen → M‑Pesa → your phone.';
+      if (idxEl) idxEl.textContent = '—';
+      return;
+    }
+
+    function apply(n: number) {
+      STEPS.forEach((s, i) => {
+        const lit = i <= n;
+        nodeSel(s.key).forEach((el) => {
+          el.classList.toggle('is-lit', lit);
+          el.classList.toggle('is-focus', i === n);
+        });
+        wireSel(s.key).forEach((el) => el.classList.toggle('is-drawn', i > 0 && lit));
+      });
+      dots.forEach((d, i) => d.classList.toggle('is-on', i === n));
+      if (titleEl) titleEl.textContent = STEPS[n].title;
+      if (capEl) capEl.textContent = STEPS[n].cap;
+      if (idxEl) idxEl.textContent = STEPS[n].idx;
+    }
+
+    let n = 0;
+    apply(0);
+    let timer: number | undefined;
+    const tick = () => { n = (n + 1) % STEPS.length; apply(n); };
+    const start = () => { if (timer == null) timer = window.setInterval(tick, 1400); };
+    const stop = () => { if (timer != null) { clearInterval(timer); timer = undefined; } };
+    stoppers.add(stop);
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? start() : stop())), { threshold: 0.2 });
+      io.observe(root);
+      stoppers.add(() => io.disconnect());
+    } else {
+      start();
+    }
+  }
+
+  function initAll() { document.querySelectorAll<HTMLElement>('[data-map]').forEach(initMap); }
+  document.addEventListener('astro:page-load', initAll);
+  initAll();
+</script>
+
+<style>
+  .map-figure { position: relative; }
+  /* Warm ambient light behind the plate, so it floats off the dark hero. */
+  .map-figure::before {
+    content: '';
+    position: absolute;
+    inset: -8% -4% -12%;
+    z-index: 0;
+    background:
+      radial-gradient(60% 55% at 28% 42%, rgba(20, 184, 166, 0.30), transparent 70%),
+      radial-gradient(55% 60% at 78% 70%, rgba(245, 166, 86, 0.16), transparent 72%);
+    filter: blur(46px);
+    animation: map-breathe 11s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .plate {
+    position: relative;
+    z-index: 1;
+    border: 1px solid var(--night-line);
+    border-radius: 18px;
+    background:
+      radial-gradient(130% 120% at 12% -10%, rgba(20, 184, 166, 0.10), transparent 55%),
+      var(--night-2);
+    box-shadow: 0 48px 90px -44px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+  }
+
+  .plate__head,
+  .plate__cap {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.72rem 1.15rem;
+    font: 500 0.72rem/1 var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--night-muted);
+  }
+  .plate__head { justify-content: space-between; border-bottom: 1px solid var(--night-line); }
+  .plate__fig { color: var(--teal-light); }
+  .plate__tag { color: #6f928f; }
+
+  /* Stage ---------------------------------------------------------------- */
+  .map__stage { position: relative; aspect-ratio: 20 / 11; }
+  /* A faint blueprint dot-grid, faded at the edges. */
+  .map__stage::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-image: radial-gradient(circle, rgba(176, 212, 207, 0.11) 1px, transparent 1.4px);
+    background-size: 26px 26px;
+    -webkit-mask: radial-gradient(120% 95% at 42% 46%, #000 52%, transparent 100%);
+    mask: radial-gradient(120% 95% at 42% 46%, #000 52%, transparent 100%);
+    pointer-events: none;
+  }
+
+  .wires { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; overflow: visible; pointer-events: none; }
+  /* Thin, non-scaling dashes: a fixed hairline at any figure size, faint until its beat lights it teal. */
+  .wire {
+    fill: none;
+    stroke: rgba(150, 190, 186, 0.26);
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-dasharray: 4 5;
+    opacity: 0.55;
+    transition: stroke 650ms ease, opacity 650ms ease;
+  }
+  .wire.is-drawn { stroke: var(--teal-light); opacity: 1; filter: drop-shadow(0 0 2.5px rgba(45, 212, 191, 0.45)); }
+
+  /* Nodes ---------------------------------------------------------------- */
+  .node {
+    position: absolute;
+    z-index: 2;
+    transform: translate(-50%, -50%);
+  }
+  .node__inner {
+    position: relative;
+    transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1), opacity 520ms ease, filter 520ms ease;
+  }
+  /* In live mode a node waits dim until its beat; with no JS everything stays lit. */
+  .is-live .node { opacity: 0.4; filter: saturate(0.65) brightness(0.82); }
+  .is-live .node.is-lit { opacity: 1; filter: none; }
+  .node.is-focus .node__inner { transform: translateY(-2px) scale(1.008); }
+
+  .node__tag {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 0.5em);
+    font: 500 0.64rem/1 var(--font-mono);
+    letter-spacing: 0.1em;
+    color: var(--night-muted);
+    white-space: nowrap;
+    transition: color 420ms ease;
+  }
+  .node.is-focus .node__tag { color: var(--teal-light); }
+
+  /* Counter window */
+  .win {
+    border-radius: 11px;
+    overflow: hidden;
+    border: 1px solid #22383c;
+    background: #0a181b;
+    box-shadow: 0 24px 46px -26px rgba(0, 0, 0, 0.8);
+    transition: box-shadow 520ms ease;
+  }
+  .win__bar { display: flex; gap: 5px; align-items: center; padding: 7px 9px; background: #10212400; }
+  .win__bar i { width: 7px; height: 7px; border-radius: 50%; background: #2c474b; }
+  .win__screen { aspect-ratio: 16 / 10; }
+  .node--counter.is-lit .win,
+  .node--counter.is-focus .win { box-shadow: 0 26px 52px -24px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--teal), 0 0 40px -6px rgba(45, 212, 191, 0.42); }
+
+  /* Kitchen ticket — prints out of the mini thermal printer when the beat fires. */
+  .printer-mini { position: relative; }
+  .printer-mini__body {
+    position: relative;
+    z-index: 3;
+    height: 13px;
+    border-radius: 6px 6px 2px 2px;
+    background: linear-gradient(180deg, #35494c, #16292c 68%, #0f1b1c);
+    box-shadow: 0 8px 14px -9px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+  .printer-mini__mouth { position: absolute; left: 12%; right: 12%; bottom: 3px; height: 3px; border-radius: 2px; background: #05090a; box-shadow: inset 0 1px 1px #000; }
+  .printer-mini__led { position: absolute; top: 4px; right: 8px; width: 4px; height: 4px; border-radius: 50%; background: #3fbfae; box-shadow: 0 0 5px rgba(63, 191, 174, 0.8); }
+  /* The paper comes out from under the printer lip; the slip itself slides down in line-sized steps. */
+  .ticket-feed { position: relative; z-index: 1; overflow: hidden; padding-bottom: 8px; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.5)); transition: filter 520ms ease; }
+  .ticket {
+    background: var(--thermal);
+    color: var(--thermal-ink);
+    font: 500 0.56rem/1.5 var(--font-mono);
+    padding: 0.7em 0.8em 1em;
+    border-radius: 3px 3px 0 0;
+    transform: translateY(0);
+    transition: transform 1250ms steps(13, jump-start);
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 12px 50% repeat-x,
+      linear-gradient(#000 0 0) top / 100% calc(100% - 6px) no-repeat;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 12px 50% repeat-x,
+      linear-gradient(#000 0 0) top / 100% calc(100% - 6px) no-repeat;
+  }
+  /* Live: until the kitchen beat lights it, the slip waits tucked up behind the printer (quick retract). */
+  .is-live .node--kitchen:not(.is-lit) .ticket { transform: translateY(-108%); transition: transform 240ms ease; }
+  .ticket__h { font-weight: 700; letter-spacing: 0.04em; border-bottom: 1px dashed #c4beb0; padding-bottom: 0.45em; margin-bottom: 0.45em; }
+  .ticket__line { display: flex; gap: 0.6em; align-items: baseline; }
+  .ticket__line span { font-weight: 700; min-width: 1.1em; }
+  .ticket__line em { font-style: normal; margin-left: auto; color: #9a7b3d; font-size: 0.9em; }
+  .ticket__f { border-top: 1px dashed #c4beb0; margin-top: 0.5em; padding-top: 0.4em; color: #6b6557; }
+  .node--kitchen.is-focus .ticket-feed { filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 9px rgba(45, 212, 191, 0.5)); }
+  .node--kitchen.is-focus .printer-mini__led { animation: map-led 0.3s steps(2, jump-none) infinite; }
+  @keyframes map-led { from { opacity: 1; } to { opacity: 0.35; } }
+
+  /* M-Pesa chip */
+  .chip {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0.7em 0.95em;
+    border-radius: 13px;
+    background: linear-gradient(140deg, #0c2b2d, #0a181b);
+    border: 1px solid #22383c;
+    box-shadow: 0 20px 40px -24px rgba(0, 0, 0, 0.8);
+    white-space: nowrap;
+    transition: box-shadow 520ms ease, border-color 520ms ease;
+  }
+  .chip__k { font: 500 0.6rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--night-muted); }
+  .chip__ok { color: var(--teal-light); }
+  .chip__v { font: 800 1.02rem/1.1 var(--font-display); color: #fff; }
+  .chip__s { font: 500 0.58rem/1 var(--font-mono); color: #7f9f9c; }
+  .node--mpesa.is-focus .chip { border-color: var(--teal); box-shadow: 0 22px 44px -22px rgba(0, 0, 0, 0.8), 0 0 34px -6px rgba(45, 212, 191, 0.45); }
+
+  /* Phone */
+  .phone {
+    border-radius: 18px;
+    border: 1px solid #22383c;
+    background: #0a181b;
+    padding: 4px;
+    box-shadow: 0 24px 46px -24px rgba(0, 0, 0, 0.85);
+    transition: box-shadow 520ms ease;
+  }
+  .phone__screen { position: relative; container-type: inline-size; aspect-ratio: 9 / 19; border-radius: 13px; overflow: hidden; }
+  .node--phone.is-focus .phone { box-shadow: 0 26px 50px -22px rgba(0, 0, 0, 0.85), 0 0 0 1px var(--teal), 0 0 38px -6px rgba(45, 212, 191, 0.45); }
+
+  /* Caption strip -------------------------------------------------------- */
+  .plate__cap { justify-content: flex-start; gap: 0.7rem; border-top: 1px solid var(--night-line); }
+  .plate__idx { font-weight: 700; color: var(--teal-light); font-size: 0.8rem; flex: none; }
+  .plate__title { color: var(--night-text); font-weight: 700; white-space: nowrap; flex: none; }
+  .plate__caption {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    font: 500 0.78rem/1.3 var(--font-text);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--night-muted);
+  }
+  .plate__dots { display: inline-flex; gap: 7px; flex: none; }
+  @media (max-width: 560px) { .plate__caption { display: none; } }
+  .plate__dots i { width: 6px; height: 6px; border-radius: 50%; background: #2c474b; transition: background 300ms ease, transform 300ms ease; }
+  .plate__dots i.is-on { background: var(--teal-light); transform: scale(1.25); }
+
+  /* Float the two product surfaces gently so the plate feels alive. */
+  .node--counter .node__inner { animation: map-bob 9s ease-in-out infinite; }
+  .node--phone .node__inner { animation: map-bob 9s ease-in-out -4.5s infinite; }
+
+  @keyframes map-breathe { 0%, 100% { opacity: 0.8; transform: scale(1); } 50% { opacity: 1; transform: scale(1.02); } }
+  @keyframes map-bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -2.5px; } }
+
+  /* Mobile: the plate reflows to a readable stack; wires and bob step aside. */
+  @media (max-width: 760px) {
+    .map__stage { aspect-ratio: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 1.6rem 1rem; padding: 2rem 1.1rem 1.1rem; align-items: end; }
+    .map__stage::before, .wires { display: none; }
+    .node { position: static; transform: none; width: auto !important; }
+    .node--counter { grid-column: 1 / -1; }
+    .node--phone { justify-self: center; width: 44% !important; }
+    .node__inner { animation: none; }
+    .is-live .node { opacity: 1; filter: none; }
+    .node.is-focus .node__inner { transform: none; }
+    .node__tag { position: static; display: block; margin-bottom: 0.5em; }
+    /* No printer on the phone layout — just show the ticket, un-tucked. */
+    .printer-mini__body { display: none; }
+    .ticket-feed { overflow: visible; filter: none; }
+    .node--kitchen .ticket, .is-live .node--kitchen:not(.is-lit) .ticket { transform: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .map-figure::before, .node__inner { animation: none; }
+    .wire, .ticket, .ticket-feed { transition: none; }
+    .printer-mini__led { animation: none; }
+  }
+</style>

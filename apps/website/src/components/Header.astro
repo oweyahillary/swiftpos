@@ -1,10 +1,7 @@
 ---
 import Logo from './Logo.astro';
-import WhatsAppButton from './WhatsAppButton.astro';
-import { NAV, SITE, telLink } from '../lib/site';
+import { NAV } from '../lib/site';
 
-interface Props { waMessage?: string }
-const { waMessage } = Astro.props;
 const here = Astro.url.pathname;
 const current = (href: string) => (here.startsWith(href) ? 'page' : undefined);
 ---
@@ -21,8 +18,7 @@ const current = (href: string) => (here.startsWith(href) ? 'page' : undefined);
     </nav>
 
     <div class="site-header__end">
-      <a class="site-header__phone" href={telLink}>{SITE.phoneDisplay}</a>
-      <WhatsAppButton small label="WhatsApp" message={waMessage} />
+      <a class="btn btn--go btn--small" href="/contact/">Get a demo</a>
     </div>
 
     <!-- Phones and tablets: the same links in a disclosure, which works with no script. -->
@@ -35,8 +31,7 @@ const current = (href: string) => (here.startsWith(href) ? 'page' : undefined);
           ))}
           <li><a href="/contact/" aria-current={current('/contact/')}>Contact</a></li>
         </ul>
-        <p class="mobile-nav__phone">Call or WhatsApp <a href={telLink}>{SITE.phoneDisplay}</a></p>
-        <WhatsAppButton message={waMessage} />
+        <a class="btn btn--go" href="/contact/">Get a demo</a>
       </div>
     </details>
   </div>

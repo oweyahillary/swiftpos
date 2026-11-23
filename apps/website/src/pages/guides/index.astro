@@ -2,7 +2,7 @@
 // The guides hub (night 3). The list comes from src/lib/guides.ts. While every guide is a draft, the hub is kept out
 // of search engines too (it would only list pages that are).
 import Base from '../../layouts/Base.astro';
-import WhatsAppButton from '../../components/WhatsAppButton.astro';
+import DemoButton from '../../components/DemoButton.astro';
 import { GUIDES, guideHref } from '../../lib/guides';
 import { WA_MESSAGES } from '../../lib/site';
 import { breadcrumb } from '../../lib/schema';
@@ -40,7 +40,7 @@ const allDraft = GUIDES.every((g) => g.status === 'draft');
       </ul>
       <div class="guides-ask">
         <p>Is there something you would like us to write about? Tell us.</p>
-        <WhatsAppButton message={WA_MESSAGES.guides} label="Suggest a guide on WhatsApp" />
+        <DemoButton message={WA_MESSAGES.guides} label="Suggest a guide on WhatsApp" />
       </div>
     </div>
   </section>
