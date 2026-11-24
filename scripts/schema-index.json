@@ -344,7 +344,9 @@
     "suspended_at": "\"timestamp with time zone\"",
     "desktop_approved_version": "\"text\"",
     "subdomain": "\"text\"",
-    "support_admin_id": "\"uuid\""
+    "support_admin_id": "\"uuid\"",
+    "android_till_approved_version": "\"text\"",
+    "mobile_approved_version": "\"text\""
   },
   "categories": {
     "id": "\"uuid\" NOT NULL",
@@ -944,7 +946,8 @@
     "paid_amount": "\"numeric\"",
     "mpesa_result_desc": "\"text\"",
     "mpesa_requested_at": "\"timestamp with time zone\" NOT NULL",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "mpesa_queried_at": "\"timestamp with time zone\""
   },
   "notifications": {
     "id": "\"uuid\" NOT NULL",
@@ -1217,7 +1220,8 @@
     "mpesa_checkout_id": "\"text\"",
     "mpesa_phone": "\"text\"",
     "mpesa_result_desc": "\"text\"",
-    "mpesa_requested_at": "\"timestamp with time zone\""
+    "mpesa_requested_at": "\"timestamp with time zone\"",
+    "mpesa_queried_at": "\"timestamp with time zone\""
   },
   "permissions": {
     "id": "\"uuid\" NOT NULL",
@@ -1268,6 +1272,13 @@
   "product_attributes": {
     "product_id": "\"uuid\" NOT NULL",
     "group_id": "\"uuid\" NOT NULL"
+  },
+  "product_branches_hidden": {
+    "product_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "created_by": "\"text\""
   },
   "product_packaging": {
     "id": "\"uuid\" NOT NULL",

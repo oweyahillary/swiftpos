@@ -91,3 +91,23 @@ first: (a) a lint over `migrations/*.sql` that fails if `CREATE TEMP`/`ON COMMIT
 autocommit (needs dollar-quote-aware splitting); (c) give `migrate.mjs` a `--single-transaction` apply so every file is
 atomic like the harness — simplest, but would break any migration that needs a non-transactional statement (e.g. `CREATE
 INDEX CONCURRENTLY`), so audit first. (a) is the lowest-risk guard.
+
+## 8. Second CI failure found while testing (2026-11-24): stale schema index + the TEMP spelling
+The `Schema drift` job was red on **both** the A624/A625 commit (309c5558) and the migration-fix commit — the only red
+job; everything else (server, offline, build, type-check, both Postgres-migration jobs) was green. Two causes, surfaced
+in order because the job stops at the first failing step (`bash -e`):
+1. **`schema-audit.py --strict`** failed: the server references `product_branches_hidden` (A625, `lib/branchMenu.ts`,
+   `routes/products.ts`) but the **hand-maintained** `scripts/schema-index.json` was never regenerated for it — the A625
+   work added the table + code but not the index snapshot. The index was also missing four already-live columns
+   (`businesses.android_till_approved_version`, `.mobile_approved_version`, two `mpesa_queried_at`). **Fix:**
+   `node scripts/build-schema-index.mjs --merge-migrations` added the table + the 9 columns (additive, nothing removed).
+   Audit now green: 127 tables, `total: 0`. (`refresh-schema-index.mjs --from-db` against the live DB is the authoritative
+   refresh and can be re-run before prod, but merge was correct here — `product_branches_hidden` is new and fully defined
+   by migration 194, so there is no DB↔migration divergence to miss.)
+2. **`check-schema-drift.mjs`** then flagged `_a624_eff` (193's working table) as "a table created in a migration, absent
+   from the index." Its parser's regex matches the `CREATE TEMP ` abbreviation but **not** `CREATE TEMPORARY ` — so
+   migration 176's `CREATE TEMPORARY TABLE a595_parts` is correctly ignored and my `CREATE TEMP TABLE` was not. **Fix:**
+   193 now uses `CREATE TEMPORARY TABLE` (the house convention 176 already uses; an exact synonym, backfill unchanged,
+   193 still 10/10). **Follow-up (not done):** harden `check-schema-drift.mjs` so it ignores a temp table by *either*
+   spelling — treat the `TEMP`/`TEMPORARY`/`UNLOGGED` prefix in a capturing group and skip when it is `TEMP*` (UNLOGGED is
+   a real persistent table and must stay tracked). Left for a deliberate change, not a mid-test edit to a shared gate.

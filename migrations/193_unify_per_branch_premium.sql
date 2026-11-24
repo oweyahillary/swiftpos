@@ -16,9 +16,10 @@
 -- ORDER: apply this BEFORE deploying the code that stops reading the switches, or per-branch clients (empty premium) lose
 -- Analytics for the gap.
 --
--- ONE TRANSACTION: migrate.mjs applies each file with `psql -f` in autocommit, so a bare `CREATE TEMP TABLE … ON COMMIT
--- DROP` would be dropped the instant its own statement commits — gone before the next statement reads it. Wrapping the
--- whole backfill in BEGIN/COMMIT keeps the temp table alive until the final commit AND makes the backfill all-or-nothing.
+-- ONE TRANSACTION: migrate.mjs applies each file with `psql -f` in autocommit, so a bare `CREATE TEMPORARY TABLE … ON
+-- COMMIT DROP` would be dropped the instant its own statement commits — gone before the next statement reads it. Wrapping
+-- the whole backfill in BEGIN/COMMIT keeps the temp table alive until the final commit AND makes the backfill atomic.
+-- (TEMPORARY, not the TEMP abbreviation — matches migration 176 and the schema-drift gate skips TEMPORARY working tables.)
 BEGIN;
 
 -- 0. Safety notice: a branch on the Premium package keeps the package (which grants all three). If its business had a
@@ -41,7 +42,7 @@ END $chk$;
 
 -- 1. Capture each branch's CURRENT effective premium (the two-layer rule) BEFORE creating any rows.
 --    A branch has F when the master switch is on AND (the business is billed as one, OR this branch pays for F).
-CREATE TEMP TABLE _a624_eff ON COMMIT DROP AS
+CREATE TEMPORARY TABLE _a624_eff ON COMMIT DROP AS
 SELECT br.id AS branch_id, br.business_id,
   ARRAY(
     SELECT f FROM unnest(ARRAY['analytics','attendance','themes']) AS f
