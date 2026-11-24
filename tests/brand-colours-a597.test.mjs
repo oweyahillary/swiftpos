@@ -64,6 +64,7 @@ const SV = require(path.join(DIST, 'lib/syncVersions.js'));
 const AC = require(path.join(DIST, 'lib/authCache.js'));
 const PI = require(path.join(DIST, 'lib/posInit.js'));
 const SC = require(path.join(DIST, 'lib/syncChanges.js'));
+const CLOUD = require(path.join(DIST, 'lib/cloudPlan.js'));   // A624: clear the cloud-facts cache between resets
 // The shared rules as the cloud compiled them (byte-identical to shared/, the POS's and the web's copies).
 const T = coreRequire('@zaptill/core/themes');
 const S = coreRequire('@zaptill/core/branchBranding');
@@ -87,7 +88,7 @@ const reset = (themes = true, branding = {}) => {
   mem.fail = (table, op, _f, _p, cols) => (missingColumns && table === 'business_branding' && /primary_hex|secondary_hex/.test(String(cols ?? ''))
     ? { message: 'column business_branding.primary_hex does not exist', code: '42703' } : null);
   mem.calls = [];
-  SV._resetSyncVersions(); AC._resetAuthCache(); PI._resetInitCache(); SC._resetSyncChanges();
+  SV._resetSyncVersions(); AC._resetAuthCache(); PI._resetInitCache(); SC._resetSyncChanges(); CLOUD._resetStanding();   // A624
   mem.db = {
     businesses: [{ id: B, owner_id: OWNER, name: 'Test Shop', type: 'retail', currency: 'KES', vat_rate: 16, ctl_rate: 0, status: 'active' }],
     branches: [{ id: BR, business_id: B, name: 'Westlands', is_main: true, desktop_licensed: true },
@@ -98,6 +99,7 @@ const reset = (themes = true, branding = {}) => {
     user_devices: [{ id: 'ud-1', business_id: B, device_id: 'dev-T1', status: 'approved', retired_at: null, branch_id: BR, user_id: OWNER }],
     sync_versions: [{ business_id: B, topic: 'catalogue', version: 7 }],
     feature_flags: themes ? [{ business_id: B, key: 'themes', enabled: true }] : [],
+    branch_cloud_plans: themes ? [BR, BR2].map((branch_id) => ({ branch_id, business_id: B, premium: ['themes'], package: false, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2099-01-01T00:00:00Z', web_off: false })) : [],   // A624: Themes gated per branch
     business_branding: [{ business_id: B, accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, theme_id: 'violet',
       primary_hex: null, secondary_hex: null, ...branding }],
     branch_branding: [],

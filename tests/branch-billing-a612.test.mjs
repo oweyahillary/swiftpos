@@ -115,11 +115,13 @@ await ok('the invoice: the package one line, the Cloud and premium items by quan
   const mixed = EM.invoiceItems([{ branch: 'A', cloud: 3000, period: 'monthly' }, { branch: 'B', cloud: 9000, period: '3_months' }]);
   assert.deepEqual(mixed.map((i) => i.description), ['Cloud (Monthly (month on month))', 'Cloud (3 months)']);
 });
-await ok('premium per branch: null for a business billed as one; else the branches that pay (the package counts)', () => {
-  assert.equal(BB.featureBranches({ branchIds: [B1], branchPlans: [] }, 'analytics'), null);
+await ok('premium per branch (A624): [] when no branch pays; else the branches that pay (the package counts)', () => {
+  assert.deepEqual(BB.featureBranches({ branchIds: [B1], branchPlans: [] }, 'analytics'), []);
   const f = { branchIds: [B1, B2, B3], branchPlans: [row(B1, null, { premium: ['analytics'] }), row(B2, null, { package: true }), row(B3, null)] };
   assert.deepEqual(BB.featureBranches(f, 'analytics'), [B1, B2]);
   assert.deepEqual(BB.featureBranches(f, 'themes'), [B2]);
+  assert.equal(BB.anyBranchHasFeature(f, 'analytics'), true);
+  assert.equal(BB.anyBranchHasFeature({ branchIds: [B1], branchPlans: [] }, 'analytics'), false);
 });
 
 console.log('\nB. the billing job\n');
@@ -255,7 +257,8 @@ try {
 console.log('\nD. premium per branch — the gates and the screens\n');
 await ok('Analytics: billed per branch, only the branches that pay (a branch named that does not: off); the comparison too', () => {
   const a = read('apps/server/src/routes/analytics.ts');
-  assert.match(a, /const paying = featureBranches\(await cloudFactsFor\(businessId\)\.catch\(\(\) => null\), 'analytics'\);/);
+  assert.match(a, /const facts = await cloudFactsFor\(businessId\)\.catch\(\(\) => null\);/);
+  assert.match(a, /const paying = featureBranches\(facts, 'analytics'\);/);
   assert.match(a, /if \(branch && !paying\.includes\(branch\)\) \{ res\.status\(403\)\.json\(\{ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' \}\)/);
   assert.match(a, /return \(w \?\? paying\)\.filter\(\(b\) => paying\.includes\(b\)\);/);
 });
@@ -266,7 +269,7 @@ await ok('Attendance: the branch server of a branch without it reads no device; 
   assert.match(t, /const paying = \(req as \{ attendanceBranches\?: string\[\] \| null \}\)\.attendanceBranches;\s*if \(!paying\) return f;/);
 });
 await ok('Themes: a branch\'s POS takes the brand only when that branch pays for it; a plan change reaches the POS (catalogue version)', () => {
-  assert.match(read('apps/server/src/routes/pos.ts'), /const themesOn = themesBusiness && \(!themesPaying \|\| themesPaying\.includes\(/);
+  assert.match(read('apps/server/src/routes/pos.ts'), /const themesOn = themesPaying\.includes\(/);   // A624: per-branch is the sole gate
   assert.match(read('migrations/182_branch_cloud_plans.sql'), /CREATE TRIGGER trg_sync_version_catalogue AFTER INSERT OR UPDATE OR DELETE ON public\.branch_cloud_plans/);
 });
 await ok('the admin portal: Cloud per branch on Plan & billing; Billing details on the Billing page', () => {

@@ -44,6 +44,7 @@ const jwt = require('jsonwebtoken');
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
 const ROUTE = require(path.join(DIST, 'routes/analytics.js'));
+const CLOUD = require(path.join(DIST, 'lib/cloudPlan.js'));   // A624: clear the cloud-facts cache between resets
 
 const pg = await openSchema({ through: 158 });
 const S = await seedAnalytics(pg);
@@ -75,8 +76,12 @@ const reset = (flags = []) => {
     user_branches: [{ user_id: MGR, branch_id: S.W }, { user_id: MGR_K, branch_id: S.K }, { user_id: MGR_NC, branch_id: S.W }, { user_id: CASH, branch_id: S.W }],
     user_permissions: [], business_settings: [], branch_settings: [],
     feature_flags: flags.map((business_id) => ({ id: id(), business_id, key: 'analytics', enabled: true })),
+    // A624: Analytics is gated PER BRANCH now — a flagged business's branches pay for it (premium ['analytics']).
+    branch_cloud_plans: flags.flatMap((business_id) => (({ [S.A]: [S.W, S.K], [S.B]: [S.BB] })[business_id] ?? [])
+      .map((branch_id) => ({ branch_id, business_id, premium: ['analytics'], package: false, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2099-01-01T00:00:00Z', web_off: false }))),
   };
   ROUTE._analyticsCache().clear();
+  CLOUD._resetStanding();   // A624: the gate now reads branch premium from cloud facts — read them fresh for this db
   rpcs = [];
 };
 const view = (table, r) => {

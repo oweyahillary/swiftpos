@@ -9,8 +9,10 @@ import { BRANCH_BRANDING_COLUMNS, type BranchBrandingRow, servedBranchBranding }
 import { effectiveThemeId } from '../lib/themeRules';   // A547
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
-import { themesEnabled, themeWriteError, brandColourWriteError, BRAND_COLOUR_FIELDS, selectBusinessBranding,
+import { themeWriteError, brandColourWriteError, BRAND_COLOUR_FIELDS, selectBusinessBranding,
   isMissingBrandColourColumn, withoutBrandColourColumns } from '../lib/themeAccess';   // A597: brand colours
+import { anyBranchHasFeature } from '../lib/branchBilling';   // A624: Themes is premium per branch
+import { cloudFactsFor } from '../lib/cloudPlan';
 import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
 import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '@zaptill/core/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
@@ -317,12 +319,17 @@ router.get('/cloud-trial', requireAuth, async (req, res) => {
 const BRANDING_COLUMNS = 'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, primary_hex, secondary_hex, updated_at';
 
 // GET /api/business/branding
+// A624: can the business configure Themes? Yes when at least one branch pays for it (premium or the package).
+async function businessHasThemes(businessId: string | undefined): Promise<boolean> {
+  return anyBranchHasFeature(businessId ? await cloudFactsFor(businessId).catch(() => null) : null, 'themes');
+}
+
 // The client branding row (accent + logo) for this business, or null when unset (A303).
 // Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
 router.get('/branding', requireAuth, async (req, res) => {
   const [{ data, error }, enabled, { data: bizLogo }] = await Promise.all([
     selectBusinessBranding(req.businessId, BRANDING_COLUMNS),   // A597: falls back before migration 179
-    themesEnabled(req.businessId),   // A325: the web shows the theme picker only when the business has themes
+    businessHasThemes(req.businessId),   // A325: the web shows the theme picker only when the business has themes
     supabase.from('businesses').select('logo_url').eq('id', req.businessId).maybeSingle(),   // the unified Cloudinary logo
   ]);
   if (error) { sendError(res, error); return; }
@@ -404,7 +411,7 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
   if (has('theme_id')) {
     // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag — A617: except a
     // free theme (FREE_THEME_IDS: Ocean, Teal, Sky), which every business may choose.
-    const err = themeWriteError(req.body.theme_id, await themesEnabled(req.businessId));
+    const err = themeWriteError(req.body.theme_id, await businessHasThemes(req.businessId));
     if (err) { res.status(400).json({ error: err }); return; }
     row.theme_id = req.body.theme_id;
   }
@@ -414,7 +421,7 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
   // a manager's or a POS's branding save never touches them.
   const colourFields = BRAND_COLOUR_FIELDS.filter((f) => has(f));
   if (colourFields.length) {
-    const who = { owner: req.isOwner === true && !req.isTill && req.webPartner !== true, enabled: await themesEnabled(req.businessId) };
+    const who = { owner: req.isOwner === true && !req.isTill && req.webPartner !== true, enabled: await businessHasThemes(req.businessId) };
     for (const f of colourFields) {
       const refusal = brandColourWriteError(f, req.body[f], who);
       if (refusal) { res.status(refusal.status).json({ error: refusal.error, code: refusal.code }); return; }
@@ -488,7 +495,7 @@ router.get('/branding/branches', requireAuth, requireAnyPermission('receipt.mana
   if (!branchBrandingCaller(req, res)) return;
   const [{ data: branches, error }, enabled] = await Promise.all([
     supabase.from('branches').select('id, name, is_main').eq('business_id', req.businessId).order('name'),
-    themesEnabled(req.businessId),
+    businessHasThemes(req.businessId),
   ]);
   if (error) { sendError(res, error); return; }
   const mine = ((branches ?? []) as Array<{ id: string; name: string; is_main?: boolean }>).filter((b) => assertBranchAccess(req, b.id));
@@ -520,7 +527,7 @@ router.get('/branding/branches/:branchId/served', requireAuth, async (req, res) 
   if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
   if (!assertBranchAccess(req, branch.id)) { res.status(403).json({ error: 'You can see your own branch only.' }); return; }
   const [enabled, { data: biz }] = await Promise.all([
-    themesEnabled(req.businessId),
+    businessHasThemes(req.businessId),
     supabase.from('business_branding').select('theme_id').eq('business_id', req.businessId).maybeSingle(),
   ]);
   res.json({
@@ -536,7 +543,7 @@ router.patch('/branding/branches/:branchId', requireAuth, requireAnyPermission('
   const branch = await businessBranch(req.businessId, req.params.branchId);
   if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
   if (!assertBranchAccess(req, branch.id)) { res.status(403).json({ error: 'You can change the branding of your own branch only.' }); return; }
-  if (!(await themesEnabled(req.businessId))) {
+  if (!(await businessHasThemes(req.businessId))) {
     res.status(403).json({ error: 'Per-branch branding is part of Themes — ask ZapTill to turn it on.', code: 'THEMES_OFF' }); return;
   }
   const body = req.body ?? {};

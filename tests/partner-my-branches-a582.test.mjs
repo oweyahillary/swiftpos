@@ -71,6 +71,7 @@ const rbac = require(path.join(DIST, 'middleware/rbac.js'));
 const { requireAuth } = require(path.join(DIST, 'middleware/auth.js'));
 const WP = require(path.join(DIST, 'lib/webPartners.js'));
 const ANALYTICS = require(path.join(DIST, 'routes/analytics.js'));
+const CLOUD = require(path.join(DIST, 'lib/cloudPlan.js'));   // A624: clear the cloud-facts cache between resets
 const P = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
 const quiet = { warn: console.warn, error: console.error };
 console.warn = () => {}; console.error = () => {};
@@ -130,7 +131,7 @@ const orderRow = (id, branch, cashier, total, extra = {}) => ({ id, business_id:
 const O = { x1: u(501), x2: u(502), y1: u(503), z1: u(504), w1: u(505), w2: u(506) };
 const SH = { x: u(601), w: u(602) };
 const reset = () => {
-  mem.fail = () => null; mem.calls = []; AC._resetAuthCache(); ANALYTICS._analyticsCache().clear();
+  mem.fail = () => null; mem.calls = []; AC._resetAuthCache(); ANALYTICS._analyticsCache().clear(); CLOUD._resetStanding();
   const GM = roleOf('General Manager', GM_KEYS), MGR = roleOf('Manager', MGR_KEYS), CASH = roleOf('Cashier', ['orders.create']);
   const users = [
     person(OWNER, 'Owner', roleOf('Admin', []), [X]),
@@ -149,6 +150,7 @@ const reset = () => {
     users, user_branches: ub, roles: [], role_permissions: [], user_permissions: [],
     permissions: P.PERMISSION_KEYS.map((k, i) => ({ id: `perm-${i}`, key: k })),
     feature_flags: [{ business_id: B, key: 'analytics', enabled: true }, { business_id: B, key: 'web_hosting', enabled: true }],
+    branch_cloud_plans: [X, Y, Z, W].map((branch_id) => ({ branch_id, business_id: B, premium: ['analytics'], package: false, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2099-01-01T00:00:00Z', web_off: false })),   // A624: Analytics gated per branch
     business_settings: [], branch_settings: [], refresh_tokens: [], audit_log: [], sync_versions: [], sync_changes: [],
     orders: [orderRow(O.x1, X, XAVI, 100), orderRow(O.x2, X, XAVI, 100), orderRow(O.y1, Y, YARA, 200), orderRow(O.z1, Z, ZED, 300),
       orderRow(O.w1, W, WANDA, 99999, { customer_name: 'Wilma', order_number: 'W-99999' }),

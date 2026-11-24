@@ -48,7 +48,7 @@ import {
   cleanAttendanceNo, cleanPersonName, cleanIncomingPunch, newOnDevice, deviceDiff, datesBetween, deviceName,
   cleanShift, type Punch, type Correction, type DeviceUser, type IncomingPunch, type WorkShift,
 } from '../lib/attendanceRules';
-import { attendanceEnabled, queuePersonOnDevices, takenNumbers, nextNumber, deviceClaims, type PersonRow } from '../lib/attendanceStore';
+import { queuePersonOnDevices, takenNumbers, nextNumber, deviceClaims, type PersonRow } from '../lib/attendanceStore';
 import { cloudFactsFor } from '../lib/cloudPlan';                 // A612
 import { featureBranches } from '../lib/branchBilling';           // A612: premium per branch
 
@@ -92,8 +92,7 @@ type NodeReq = Request & { attBranch?: string };
 async function nodeGate(req: NodeReq, res: Response, next: NextFunction): Promise<void> {
   const who = await serverBranch({ businessId: req.businessId, deviceId: req.deviceId ?? null, isTill: !!req.isTill, surface: req.surface ?? null });
   if ('status' in who) { res.status(who.status).json({ error: who.error, code: who.code }); return; }
-  if (!(await attendanceEnabled(req.businessId))) { off(res); return; }
-  // A612: a branch that does not pay for Attendance — its branch server reads no device
+  // A624: premium per branch is the sole gate — a branch that does not pay for Attendance reads no device.
   const paying = await attendanceBranches(req.businessId);
   if (paying && !paying.includes(who.branchId)) { off(res); return; }
   req.attBranch = who.branchId;
@@ -289,8 +288,7 @@ router.use('/node', nodeRouter);
 // ── The web ────────────────────────────────────────────────────────────────────────────────────────────────────────
 router.use(requireWebSurface);
 router.use(async (req, res, next) => {
-  if (!(await attendanceEnabled(req.businessId))) { off(res); return; }
-  // A612: billed per branch — only the branches that pay for Attendance (none: off)
+  // A624: premium per branch is the sole gate — only the branches that pay for Attendance (none: off).
   const paying = await attendanceBranches(req.businessId);
   if (paying && !paying.length) { off(res); return; }
   (req as { attendanceBranches?: string[] | null }).attendanceBranches = paying;

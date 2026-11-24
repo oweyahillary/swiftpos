@@ -69,6 +69,7 @@ const SV = require(path.join(DIST, 'lib/syncVersions.js'));
 const AC = require(path.join(DIST, 'lib/authCache.js'));
 const PI = require(path.join(DIST, 'lib/posInit.js'));
 const SC = require(path.join(DIST, 'lib/syncChanges.js'));
+const CLOUD = require(path.join(DIST, 'lib/cloudPlan.js'));   // A624: clear the cloud-facts cache between resets
 // The shared rule as the cloud compiled it (@zaptill/core/branchBranding — packages/core/dist, the one file the till,
 // the web and the cloud import).
 const S = require('@zaptill/core/branchBranding');
@@ -94,7 +95,7 @@ const logChange = (biz, branch, table_name, row_id, topic = 'look') =>
 
 const reset = (themes = true) => {
   mem.fail = () => null; mem.calls = []; seq = 10; rpcFiltersBranch = true;
-  SV._resetSyncVersions(); AC._resetAuthCache(); PI._resetInitCache(); SC._resetSyncChanges();
+  SV._resetSyncVersions(); AC._resetAuthCache(); PI._resetInitCache(); SC._resetSyncChanges(); CLOUD._resetStanding();   // A624
   mem.db = {
     businesses: [{ id: B, owner_id: OWNER, name: 'Test Grill', type: 'restaurant', currency: 'KES', vat_rate: 16, ctl_rate: 0, status: 'active' },
       { id: B2, owner_id: 'x', name: 'Other', type: 'restaurant', currency: 'KES', vat_rate: 16, status: 'active' }],
@@ -108,6 +109,7 @@ const reset = (themes = true) => {
       { id: 'ud-2', business_id: B, device_id: 'dev-T2', status: 'approved', retired_at: null, branch_id: BR2, user_id: OWNER }],
     sync_versions: [{ business_id: B, topic: 'catalogue', version: 7 }, { business_id: B2, topic: 'catalogue', version: 3 }],
     feature_flags: themes ? [{ business_id: B, key: 'themes', enabled: true }, { business_id: B2, key: 'themes', enabled: true }] : [],
+    branch_cloud_plans: themes ? [[BR, B], [BR2, B], [BRX, B2]].map(([branch_id, business_id]) => ({ branch_id, business_id, premium: ['themes'], package: false, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2099-01-01T00:00:00Z', web_off: false })) : [],   // A624: Themes gated per branch
     business_branding: [{ business_id: B, accent_hex: '#0d9488', logo_png: null, logo_receipt: null, receipt_logo_enabled: false, theme_id: 'ocean' }],
     branch_branding: [
       { branch_id: BR, theme_id: 'violet', accent_hex: null, receipt_footer: 'Karibu Westlands', updated_at: '2026-10-21T08:00:00Z' },

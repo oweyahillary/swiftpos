@@ -23,15 +23,18 @@ import {
   LOSS_LIMITS, LOSS_TOP, LOSS_OFF_CODE, LOSS_OFF_MESSAGE, type LossKind,
 } from '../lib/lossAlertRules';
 import { LOSS_SETTINGS_KEY } from '../jobs/lossAlerts';
-import { analyticsEnabled } from '../lib/analyticsAccess';   // A580: premium, the same switch as Analytics
+import { anyBranchHasFeature } from '../lib/branchBilling';   // A624: premium per branch
+import { cloudFactsFor } from '../lib/cloudPlan';
 
 const router = safeRouter();
 router.use(requireAuth);
 router.use(requireWebSurface);
-// A580 (owner, 2026-10-23: "Yes let them be premium"): every route — the watch list, "looked into" and the owner's
-// settings — needs the business's premium Analytics switch (the 'analytics' feature flag, as /api/analytics/*).
+// A580/A624: every route — the watch list, "looked into" and the owner's settings — is premium, the same as Analytics,
+// now gated PER BRANCH: the business needs at least one branch that pays for Analytics ('analytics' premium or package).
 router.use(async (req, res, next) => {
-  if (!(await analyticsEnabled(req.businessId))) { res.status(403).json({ error: LOSS_OFF_MESSAGE, code: LOSS_OFF_CODE }); return; }
+  if (!anyBranchHasFeature(await cloudFactsFor(req.businessId!).catch(() => null), 'analytics')) {
+    res.status(403).json({ error: LOSS_OFF_MESSAGE, code: LOSS_OFF_CODE }); return;
+  }
   next();
 });
 

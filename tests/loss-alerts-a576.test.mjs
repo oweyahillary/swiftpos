@@ -333,6 +333,7 @@ const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const mem = installMemDb(supabase);
 const AC = require(path.join(DIST, 'lib/authCache.js'));
 const J = require(path.join(DIST, 'jobs/lossAlerts.js'));
+const CLOUD = require(path.join(DIST, 'lib/cloudPlan.js'));   // A624: clear the cloud-facts cache between resets
 const { businessDateEAT } = require('@zaptill/core/businessDay');
 const warn = console.warn; console.warn = () => {};
 const logErr = console.error; console.error = () => {};
@@ -373,8 +374,11 @@ const reset = () => {
     loss_alerts: [], notifications: [], audit_log: [], refresh_tokens: [], sync_versions: [], sync_changes: [],
     // A580: the Watch list is premium — the business has the Analytics switch on (the non-premium cases are owner-decisions-a580)
     feature_flags: [{ id: 'ff-an', business_id: B, key: 'analytics', enabled: true }],
+    // A624: the Watch list is gated per branch now — both branches pay for Analytics.
+    branch_cloud_plans: [W, K].map((branch_id) => ({ branch_id, business_id: B, premium: ['analytics'], package: false, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2099-01-01T00:00:00Z', web_off: false })),
     user_devices: [{ id: 'ud-1', business_id: B, device_id: 'dev-T1', status: 'approved', retired_at: null, branch_id: W, user_id: OWNER }],
   };
+  CLOUD._resetStanding();   // A624: read branch premium fresh for this db
 };
 
 await ok('stored once per key, with the plain words; the owner\'s copy and the team copies (the branch manager, the partner) — not the cashier, not the other branch\'s manager, not Mary', async () => {

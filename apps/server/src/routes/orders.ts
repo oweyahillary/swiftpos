@@ -47,6 +47,7 @@ import { withoutCosts } from '../lib/costAccess';   // A494
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { isTillOwnSalePush } from '../lib/tillScope';   // A545
 import { webSaleStockRefusal } from '../lib/stockGateStore';   // A563
+import { branchMenuRefusal } from '../lib/branchMenu';   // A625: per-branch menu
 import { recordCreditSale } from '../lib/creditConfirm';   // A545
 import { isSoldByWeight, weighedAmountAccepted } from '@zaptill/core/scaleBarcode';   // A577
 import { loadCreditRule, onApproverList, type CreditApprovalRule } from '../lib/creditApprovers';   // A585
@@ -895,6 +896,9 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
   if (!deviceIdFromRequest(req) && !(req.body?.created_at || req.body?.client_created_at)) {
     const soldOut = await webSaleStockRefusal(req.businessId, branch_id, items);
     if (soldOut) { res.status(409).json(soldOut); return; }
+    // A625: a live web sale of a product that is off this branch's menu is refused (a till's offline sale is never refused).
+    const offMenu = await branchMenuRefusal(req.businessId, branch_id, items);
+    if (offMenu) { res.status(409).json(offMenu); return; }
   }
 
   try {

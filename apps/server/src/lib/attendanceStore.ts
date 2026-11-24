@@ -15,6 +15,8 @@
 import { supabase } from './supabase';
 import { catalogueGen } from './writeActivity';
 import { ATTENDANCE_FLAG, nextFreeNumber, deviceName, cleanAttendanceNo, slotClaims } from './attendanceRules';
+import { featureBranches } from './branchBilling';   // A624: premium per branch
+import { cloudFactsFor } from './cloudPlan';
 
 const FLAG_TTL_MS = 60_000;
 const flagMemo = new Map<string, { at: number; on: boolean; gen: string }>();
@@ -159,7 +161,8 @@ export async function nextNumber(businessId: string): Promise<number> {
 export async function attendanceStaffChanged(businessId: string | null | undefined, user: { id: string; name?: string | null; status?: string | null; branch_id?: string | null } , by: string | null): Promise<void> {
   if (!businessId || !user?.id) return;
   try {
-    if (!(await attendanceEnabled(businessId))) return;
+    const attBranches = featureBranches(await cloudFactsFor(businessId).catch(() => null), 'attendance');   // A624: premium per branch
+    if (!attBranches.length || (user.branch_id && !attBranches.includes(user.branch_id))) return;
     const { data: had } = await supabase.from('attendance_people').select('id, business_id, branch_id, user_id, name, attendance_no, active')
       .eq('business_id', businessId).eq('user_id', user.id).maybeSingle();
     const before = (had ?? null) as PersonRow | null;

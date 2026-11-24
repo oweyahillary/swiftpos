@@ -48,6 +48,7 @@ const jwt = require('jsonwebtoken');
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
 const ROUTE = require(path.join(DIST, 'routes/analytics.js'));
+const CLOUD = require(path.join(DIST, 'lib/cloudPlan.js'));   // A624: clear the cloud-facts cache between resets
 const { invalidateDayCutoff } = require(path.join(DIST, 'lib/dayCutoff.js'));
 
 const pg = await openSchema({ through: 162 });
@@ -93,7 +94,9 @@ const reset = (flags = [], kStatus = 'active') => {
     feature_flags: flags.map((business_id) => ({ id: id(), business_id, key: 'analytics', enabled: true })),
     // the plain reads go to PGlite's own tables (the levels)
   };
+  db.branch_cloud_plans = flags.flatMap((bid) => db.branches.filter((br) => br.business_id === bid).map((br) => ({ branch_id: br.id, business_id: bid, premium: ['analytics'], package: false, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2099-01-01T00:00:00Z', web_off: false })));   // A624: Analytics gated per branch
   ROUTE._analyticsCache().clear();
+  CLOUD._resetStanding();   // A624: read branch premium fresh for this db
   rpcs = [];
 };
 const view = (table, r) => {

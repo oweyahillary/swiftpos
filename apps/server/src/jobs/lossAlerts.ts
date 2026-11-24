@@ -29,8 +29,7 @@ import { isOwnerRoleName } from '../lib/ownerRole';
 import { readPartners } from '../lib/webPartners';
 import { cashDifference } from './ownerAlertsDecision';
 import { lossAlertsSection } from './ownerEmails';
-import { analyticsEnabled } from '../lib/analyticsAccess';   // A580: premium — the same switch as Analytics
-import { ANALYTICS_FLAG } from '../lib/analyticsRules';
+import { payingBranchesFor } from '../lib/branchBilling';   // A624: the paying branches (one read, for the job)
 import {
   readLossSettings, detectLossAlerts, toNotify, teamRecipients, ownerTold, notificationTitle, lossPrevDate, kindsFor,
   emailLines, LOSS_WEEK_DAYS, type LossInput, type LossAlert, type LossSettings, type Person, type StoredAlert,
@@ -59,12 +58,12 @@ export async function readLossSettingsFor(businessId: string): Promise<LossSetti
 }
 
 export async function runLossAlertsTick(now: Date = new Date()): Promise<void> {
-  // A580 (owner, 2026-10-23: "Yes let them be premium"): only the businesses with premium Analytics switched on (the
-  // 'analytics' feature flag) — one read for the list; every other business is skipped (nothing read, stored or told).
-  const { data: flags, error: fErr } = await supabase.from('feature_flags').select('business_id')
-    .eq('key', ANALYTICS_FLAG).eq('enabled', true).limit(10000);
-  if (fErr) { console.error('[lossAlerts] feature_flags:', fErr.message); return; }
-  const premium = [...new Set(((flags ?? []) as Array<{ business_id: string }>).map((f) => f.business_id).filter(Boolean))];
+  // A580/A624: only the businesses with at least one branch that pays for Analytics (branch_cloud_plans premium or the
+  // package) — one read for the list; every other business is skipped (nothing read, stored or told).
+  const { data: bcp, error: fErr } = await supabase.from('branch_cloud_plans').select('business_id, premium, package').limit(10000);
+  if (fErr) { console.error('[lossAlerts] branch_cloud_plans:', fErr.message); return; }
+  const premium = [...new Set(((bcp ?? []) as Array<{ business_id: string; premium?: string[] | null; package?: boolean | null }>)
+    .filter((r) => r.package || (r.premium ?? []).includes('analytics')).map((r) => r.business_id).filter(Boolean))];
   if (premium.length === 0) return;
   let businesses: Biz[];
   try { businesses = await chunkIn<Biz>('businesses', 'id', premium, (q) => q.select('id, name, owner_id, currency, type')); }
@@ -212,13 +211,14 @@ const missingTable = (msg: string) => /loss_alerts/.test(msg) && /does not exist
  * tests read both. Nothing at all when the owner switched the alerts off.
  */
 export async function runLossAlertsForBusiness(biz: Biz, now: Date = new Date()): Promise<{ stored: LossAlert[]; notified: LossAlert[]; pending?: number; today?: string; cutoff?: number }> {
-  // A580: premium only (the Analytics switch) — a business without it gets nothing stored and nobody told.
-  if (!(await analyticsEnabled(biz.id))) return { stored: [], notified: [] };
+  // A580/A624: premium per branch — only the branches that pay for Analytics get alerts; a business with none gets nothing.
+  const payingBranches = await payingBranchesFor(biz.id, 'analytics');
+  if (!payingBranches.length) return { stored: [], notified: [] };
   const settings = await readLossSettingsFor(biz.id);
   if (!settings.enabled) return { stored: [], notified: [] };
   const { users, people, ownerRoleIds } = await loadPeople(biz.id);
   const input = await loadLossInput(biz, now, users);
-  const alerts = detectLossAlerts(input, settings);
+  const alerts = detectLossAlerts(input, settings).filter((a) => !a.branch_id || payingBranches.includes(a.branch_id));   // A624: only the branches that pay
   const nowIso = now.toISOString();
 
   if (alerts.length) {
@@ -281,7 +281,7 @@ export async function runLossAlertsForBusiness(biz: Biz, now: Date = new Date())
  */
 export async function lossEmailHtml(biz: { id: string; name: string; owner_id: string | null; currency: string | null }, recipients: string[], now: Date): Promise<string> {
   try {
-    if (!(await analyticsEnabled(biz.id))) return '';   // A580: premium only — no block in a non-premium owner's email
+    if (!(await payingBranchesFor(biz.id, 'analytics')).length) return '';   // A580/A624: premium per branch
     const settings = await readLossSettingsFor(biz.id);
     if (!settings.enabled || !settings.daily_email) return '';
     const { data: b } = await supabase.from('businesses').select('type').eq('id', biz.id).maybeSingle();

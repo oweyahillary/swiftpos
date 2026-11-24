@@ -927,4 +927,38 @@ router.post('/bulk', BULK, async (req, res) => {   // A595: the spreadsheet impo
   });
 });
 
+// ─── A625: per-branch menu — which products are off which branch's menu ───────────────────────────────────────────
+// GET returns the business's active branches + the hidden map { productId: [branchId…] }; the Menu editor renders an
+// "Available at" control per product. PUT sets a product's hidden branches (empty = on every branch, the default).
+router.get('/branch-availability', requirePermission('menu.edit'), async (req, res) => {
+  const [{ data: branches, error: bErr }, { data: rows, error }] = await Promise.all([
+    supabase.from('branches').select('id, name, is_main').eq('business_id', req.businessId).eq('status', 'active').order('name'),
+    supabase.from('product_branches_hidden').select('product_id, branch_id').eq('business_id', req.businessId),
+  ]);
+  if (bErr || error) { sendError(res, (bErr || error) as Error); return; }
+  const hidden: Record<string, string[]> = {};
+  for (const r of (rows ?? []) as Array<{ product_id: string; branch_id: string }>) (hidden[r.product_id] ??= []).push(r.branch_id);
+  res.json({ branches: branches ?? [], hidden });
+});
+
+router.put('/:id/branches', requirePermission('menu.edit'), async (req, res) => {
+  const { id } = req.params;
+  const { data: product } = await supabase.from('products').select('id').eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (!product) { res.status(404).json({ error: 'Product not found' }); return; }
+  const { data: brs } = await supabase.from('branches').select('id').eq('business_id', req.businessId);
+  const valid = new Set(((brs ?? []) as Array<{ id: string }>).map((b) => b.id));
+  const want = Array.isArray(req.body?.hidden)
+    ? [...new Set((req.body.hidden as unknown[]).map((b) => String(b)).filter((b) => valid.has(b)))]
+    : [];
+  // Replace this product's exclusion rows with `want`.
+  const del = await supabase.from('product_branches_hidden').delete().eq('business_id', req.businessId).eq('product_id', id);
+  if (del.error) { sendError(res, del.error); return; }
+  if (want.length) {
+    const ins = await supabase.from('product_branches_hidden')
+      .insert(want.map((branch_id) => ({ product_id: id, branch_id, business_id: req.businessId, created_by: req.userId ?? null })));
+    if (ins.error) { sendError(res, ins.error); return; }
+  }
+  res.json({ ok: true, product_id: id, hidden: want });
+});
+
 export default router;

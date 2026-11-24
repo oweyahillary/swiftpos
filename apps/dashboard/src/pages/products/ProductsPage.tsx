@@ -71,6 +71,10 @@ export default function ProductsPage() {
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null);
   const [recipeProduct, setRecipeProduct] = useState<Product | null>(null);
   const [productRecipes, setProductRecipes] = useState<Set<string>>(new Set());
+  // A625: per-branch menu — the business's branches, which branches each product is OFF the menu at, and this edit's draft.
+  const [branches, setBranches] = useState<{ id: string; name: string; is_main?: boolean }[]>([]);
+  const [hiddenMap, setHiddenMap] = useState<Record<string, string[]>>({});
+  const [hiddenDraft, setHiddenDraft] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ── Bulk cost editor ────────────────────────────────────────────────────────
@@ -146,12 +150,14 @@ export default function ProductsPage() {
 
   const fetchAll = async () => {
     if (!business) return;
-    const [prods, cats] = await Promise.all([
+    const [prods, cats, avail] = await Promise.all([
       api.get<Product[]>('/api/products'),
       api.get<Category[]>('/api/categories'),
+      api.get<{ branches: { id: string; name: string; is_main?: boolean }[]; hidden: Record<string, string[]> }>('/api/products/branch-availability').catch(() => null),   // A625
     ]);
     setProducts(prods ?? []);
     setCategories(cats ?? []);
+    if (avail) { setBranches(avail.branches ?? []); setHiddenMap(avail.hidden ?? {}); }   // A625
     setLoading(false);
 
     // Load which products have recipes (for the 🧂 badge)
@@ -172,6 +178,7 @@ export default function ProductsPage() {
   const openNew = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setHiddenDraft(new Set());   // A625: a new product is on every branch's menu
     setPlatformDraft({}); setPlatformBefore({});   // A619
     setImageFile(null);
     setImagePreview(null);
@@ -181,6 +188,7 @@ export default function ProductsPage() {
 
   const openEdit = (p: Product) => {
     setEditing(p);
+    setHiddenDraft(new Set(hiddenMap[p.id] ?? []));   // A625: the branches it is currently off the menu at
     setForm({
       name: p.name,
       description: p.description ?? '',
@@ -283,6 +291,10 @@ export default function ProductsPage() {
       }
       // A619: the item's own platform prices, through their own route (the item is saved whatever happens to them).
       const platformError = savedId ? await savePlatformPrices(savedId, platformDraft, platformBefore) : '';
+      // A625: the item's per-branch availability — the branches it is off the menu at (the item is saved whatever happens here).
+      if (savedId && branches.length > 1) {
+        try { await api.put(`/api/products/${savedId}/branches`, { hidden: [...hiddenDraft] }); } catch { /* non-critical */ }
+      }
       await fetchAll();
       setSaving(false);
       if (platformError) { setError(platformError); return; }
@@ -800,6 +812,29 @@ export default function ProductsPage() {
                 still finds it and it sells at its normal price. Pick none (or all) for every day.
               </p>
             </div>
+
+            {/* A625: per-branch menu — which branches this item is on. Shown only when the business has more than one branch. */}
+            {branches.length > 1 && (
+              <div data-testid="available-at">
+                <label className="block text-sm text-gray-400 mb-1.5">Available at</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {branches.map((b) => {
+                    const on = !hiddenDraft.has(b.id);
+                    return (
+                      <button key={b.id} type="button"
+                        onClick={() => setHiddenDraft(prev => { const next = new Set(prev); on ? next.add(b.id) : next.delete(b.id); return next; })}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${on
+                          ? 'bg-swift-strong border-swift-strong text-white' : 'border-gray-700 text-gray-500 hover:border-gray-500 line-through'}`}>
+                        {b.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500 mt-1.5">
+                  {hiddenDraft.size === 0 ? 'On every branch’s menu.' : `Off ${hiddenDraft.size} branch${hiddenDraft.size > 1 ? 'es' : ''} — tap a branch to turn it on or off.`}
+                </p>
+              </div>
+            )}
 
             {/* A577: sold by weight — every business type (a shop's loose goods, a butchery, a restaurant's meat by the kilo,
                 a petrol station's shop). The price above is then per kg; the scale code is what its scale prints on a label. */}

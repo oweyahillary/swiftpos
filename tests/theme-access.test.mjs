@@ -51,11 +51,11 @@ ok('a non-curated id is refused — even with the flag (Emerald was rejected for
 // ── The routes use exactly these rules ──
 const src = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const pos = src('apps/server/src/routes/pos.ts');
-ok('/pos/init computes themeId with effectiveThemeId + the flag',
-  // A544: the flag is read once into themesOn — the branch override (branchBranding) is served by the same answer.
-  // A612 phase 4: the flag AND (billed per branch) the branch paying for Themes, then the same effectiveThemeId.
-  /const themesBusiness = await themesEnabled\(req\.businessId\);/.test(pos)
-  && /const themesOn = themesBusiness && \(!themesPaying \|\| [^;]+;(?:\s*\/\/[^\n]*)*\s*const themeId = effectiveThemeId\(themesOn, branding\?\.theme_id\);/.test(pos));
+ok('/pos/init computes themeId per branch (A624): Themes only on a branch that pays',
+  // A624: premium per branch is the sole gate — themesPaying (the branches that pay) decides, then the same effectiveThemeId.
+  /const themesPaying = featureBranches\(await cloudFactsFor\(req\.businessId\)\.catch\(\(\) => null\), 'themes'\);/.test(pos)
+  && /const themesOn = themesPaying\.includes\(/.test(pos)
+  && /const themeId = effectiveThemeId\(themesOn, branding\?\.theme_id\);/.test(pos));
 ok('…served top-level, NOT inside `branding` (a business may have themes without a branding row)',
   /\n    themeId,\n(?:\s*\/\/[^\n]*\n)*\s*themesPremium: themesOn,\n(?:\s*\/\/[^\n]*\n)*\s*branchBranding,\n    receiptHeader:/.test(pos) && !/branding: branding \? \{[^}]*themeId/.test(pos));
 // A617: a free theme id no longer says "Themes" — the POS is told themesPremium (the customer screen's logo and colours).
@@ -66,8 +66,8 @@ ok('…and theme_id is selected with the branding row', /'accent_hex, logo_png, 
 ok('a flag flip moves the catalogue version (tills see it within the 20-s check)',
   /latest\('business_branding', 'business_id', biz\),[\s\S]{0,300}latest\('feature_flags', 'business_id', biz\),/.test(pos));
 const biz = src('apps/server/src/routes/business.ts');
-ok('PUT /branding validates theme_id through themeWriteError and the flag',
-  /if \(has\('theme_id'\)\) \{[\s\S]{0,300}themeWriteError\(req\.body\.theme_id, await themesEnabled\(req\.businessId\)\)/.test(biz));
+ok('PUT /branding validates theme_id through themeWriteError, per branch (A624)',
+  /if \(has\('theme_id'\)\) \{[\s\S]{0,300}themeWriteError\(req\.body\.theme_id, await businessHasThemes\(req\.businessId\)\)/.test(biz));
 ok('GET /branding returns theme_id and themes_enabled (the web shows the picker only with the flag)',
   /theme_id, (?:primary_hex, secondary_hex, )?updated_at'/.test(biz) && /themes_enabled: enabled/.test(biz));
 ok('the cloud runs the one themes.ts (packages/core, no copy of its own)', /from '@zaptill\/core\/themes'/.test(src('apps/server/src/lib/themeRules.ts'))

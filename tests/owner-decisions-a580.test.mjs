@@ -179,6 +179,7 @@ try {
   const mem = installMemDb(supabase);
   const AC = require(path.join(DIST, 'lib/authCache.js'));
   const J = require(path.join(DIST, 'jobs/lossAlerts.js'));
+  const CLOUD = require(path.join(DIST, 'lib/cloudPlan.js'));   // A624: clear the cloud-facts cache between resets
   const R = require(path.join(DIST, 'lib/lossAlertRules.js'));
   const { businessDateEAT } = require('@zaptill/core/businessDay');
   const warn = console.warn, logErr = console.error; console.warn = () => {}; console.error = () => {};
@@ -213,6 +214,9 @@ try {
       loss_alerts: [], notifications: [], audit_log: [], refresh_tokens: [], sync_versions: [], sync_changes: [], feature_flags: flags,
       user_devices: [],
     };
+    // A624: the Watch list is gated per branch — a business with the Analytics switch on has its branches pay for it.
+    mem.db.branch_cloud_plans = flags.filter((f) => f.key === 'analytics' && f.enabled).flatMap((f) => mem.db.branches.filter((br) => br.business_id === f.business_id).map((br) => ({ branch_id: br.id, business_id: f.business_id, premium: ['analytics'], package: false, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2099-01-01T00:00:00Z', web_off: false })));
+    CLOUD._resetStanding();   // A624: read branch premium fresh for this db
   };
 
   await ok('the job skips a business without premium Analytics: nothing stored, nobody told (the bell stays quiet)', async () => {
@@ -310,10 +314,10 @@ try {
     // A608 (2026-10-29): the web manager portal is retired — its checks are gone; "the portal uses the same
     // panel" pinned ManagerDashboard.tsx; the dashboard's WatchListPage (above) is the web's only Watch list now.
   });
-  await ok('the route and the job read the same switch as Analytics (feature_flags \'analytics\')', () => {
+  await ok('A624: the Loss Alerts route and job both gate per branch (branch_cloud_plans premium)', () => {
     const route = read('apps/server/src/routes/lossAlerts.ts'), job = read('apps/server/src/jobs/lossAlerts.ts');
-    assert.match(route, /router\.use\(async \(req, res, next\) => \{\s*if \(!\(await analyticsEnabled\(req\.businessId\)\)\)/);
-    assert.match(job, /\.from\('feature_flags'\)\.select\('business_id'\)\s*\n?\s*\.eq\('key', ANALYTICS_FLAG\)\.eq\('enabled', true\)/);
+    assert.match(route, /router\.use\(async \(req, res, next\) => \{\s*if \(!anyBranchHasFeature\(await cloudFactsFor\(req\.businessId!\)\.catch\(\(\) => null\), 'analytics'\)\)/);
+    assert.match(job, /\.from\('branch_cloud_plans'\)\.select\('business_id, premium, package'\)/);
   });
 
   // ── U. the unused weight unit ──────────────────────────────────────────────

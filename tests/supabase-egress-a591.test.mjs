@@ -512,6 +512,7 @@ try {
     const { ANALYTICS_FLAG } = require(path.join(DIST, 'lib/analyticsRules.js'));
     LA._resetLossQuiet();
     mem.db.feature_flags = [{ id: 'ff', business_id: B, key: ANALYTICS_FLAG, enabled: true }];
+    mem.db.branch_cloud_plans = [{ branch_id: BR, business_id: B, premium: ['analytics'], package: false }];   // A624: the loss job gates per branch
     const now = new Date('2026-10-26T09:20:00Z');
     await LA.runLossAlertsTick(now);
     const firstOrders = reads.filter((r) => r.table === 'orders').length;

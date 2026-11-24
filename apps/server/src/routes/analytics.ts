@@ -56,7 +56,6 @@ import { supabase } from '../lib/supabase';
 import { seesCosts } from '../lib/costAccess';
 import { getDayCutoff } from '../lib/dayCutoff';
 import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
-import { analyticsEnabled } from '../lib/analyticsAccess';
 import { cloudFactsFor } from '../lib/cloudPlan';                   // A612
 import { featureBranches } from '../lib/branchBilling';             // A612: premium per branch
 import {
@@ -127,8 +126,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 async function context(req: Request, res: Response): Promise<Ctx | null> {
   const businessId = req.businessId;
   if (!businessId) { res.status(403).json({ error: 'No business on this sign-in.' }); return null; }
-  if (!(await analyticsEnabled(businessId))) { res.status(403).json({ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' }); return null; }
-
   // the branch: an owner — or an A550 partner of every branch — names one of the business's branches or none (all);
   // anyone else is held to their own
   const q = req.query.branch ?? req.query.branch_id;
@@ -157,17 +154,19 @@ async function context(req: Request, res: Response): Promise<Ctx | null> {
     branch = req.branchId;
   }
 
-  // A612 phase 4 (premium per branch): billed per branch, Analytics covers the branches that pay for it (premium or the
-  // package) — one named that does not: off for it; none named: those of the branches in view.
-  const paying = featureBranches(await cloudFactsFor(businessId).catch(() => null), 'analytics');
-  if (paying) {
-    (req as { analyticsBranches?: string[] }).analyticsBranches = paying;
-    if (branch && !paying.includes(branch)) { res.status(403).json({ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' }); return null; }
-    if (!branch) {
-      const inView = (branches ?? paying).filter((b) => paying.includes(b) && !req.pausedBranches?.has(b));
-      if (!inView.length) { res.status(403).json({ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' }); return null; }
-      branches = inView;
-    }
+  // A624: premium per branch is the SOLE gate (the master switch is retired). Analytics covers the branches that pay for
+  // it (premium or the package) — a branch named that does not pay: off for it; none named: the branches in view that
+  // pay; none at all: off for the business. When every branch the caller may see pays, the scope is left as it was (for
+  // the owner that is the whole business — the business-wide aggregate, as before per-branch billing).
+  const facts = await cloudFactsFor(businessId).catch(() => null);
+  const paying = featureBranches(facts, 'analytics');
+  (req as { analyticsBranches?: string[] }).analyticsBranches = paying;
+  if (branch && !paying.includes(branch)) { res.status(403).json({ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' }); return null; }
+  if (!branch) {
+    const scope = branches ?? (facts?.branchIds ?? []);
+    const inView = scope.filter((b) => paying.includes(b) && !req.pausedBranches?.has(b));
+    if (!inView.length) { res.status(403).json({ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' }); return null; }
+    branches = scope.filter((b) => !req.pausedBranches?.has(b)).length === inView.length ? branches : inView;
   }
 
   // the period, in business dates (the owner's day cut-off, as every report)

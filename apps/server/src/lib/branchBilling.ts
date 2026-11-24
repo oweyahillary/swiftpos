@@ -149,14 +149,19 @@ export function branchBill(row: Pick<BranchPlanRow, 'amount' | 'premium' | 'pack
 }
 
 /**
- * The branches that have a premium feature: null when the business is billed as one (its flag alone decides, as before);
- * else the branches whose row pays for it (premium or the package). The business's flag is checked by the caller. Pure.
+ * A624: the branches that pay for a premium feature (premium or the package) — the SOLE gate now the per-business master
+ * switches (feature_flags 'analytics'/'attendance'/'themes') are retired. Every business has per-branch rows (migration
+ * 193), so this always returns an array; [] means no branch is entitled. Pure.
  */
-export function featureBranches(f: Pick<CloudFactsRow, 'branchIds' | 'branchPlans'> | null | undefined, feature: PremiumKey): string[] | null {
-  const rows = f?.branchPlans ?? [];
-  if (!f || !rows.length) return null;
-  const rowBy = new Map(rows.map((r) => [String(r.branch_id), r]));
+export function featureBranches(f: Pick<CloudFactsRow, 'branchIds' | 'branchPlans'> | null | undefined, feature: PremiumKey): string[] {
+  if (!f) return [];
+  const rowBy = new Map((f.branchPlans ?? []).map((r) => [String(r.branch_id), r]));
   return (f.branchIds ?? []).filter((id) => premiumOf(rowBy.get(id)).has(feature));
+}
+
+/** A624: does any branch of the business pay for the feature? The route-level gate for a premium page. Pure. */
+export function anyBranchHasFeature(f: Pick<CloudFactsRow, 'branchIds' | 'branchPlans'> | null | undefined, feature: PremiumKey): boolean {
+  return featureBranches(f, feature).length > 0;
 }
 
 // ── Storage ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -184,4 +189,19 @@ export async function themesFreeFor(businessId: string): Promise<boolean> {
       .eq('business_id', businessId).eq('key', THEMES_FREE_FLAG).maybeSingle();
     return !error && (data as { enabled?: boolean } | null)?.enabled === true;
   } catch { return false; }
+}
+
+/**
+ * A624: the branches of a business that pay for a premium feature — ONE `branch_cloud_plans` read (lighter than the full
+ * `cloudFactsFor`, which the routes use). The loss-alerts JOB uses this so its per-business egress stays as it was (one
+ * read, like the old `analyticsEnabled`). A failed read answers [] (no branch).
+ */
+export async function payingBranchesFor(businessId: string | null | undefined, feature: PremiumKey): Promise<string[]> {
+  if (!businessId) return [];
+  try {
+    const { data, error } = await supabase.from('branch_cloud_plans').select('branch_id, premium, package').eq('business_id', businessId);
+    if (error) return [];
+    return ((data ?? []) as Array<{ branch_id: string; premium?: string[] | null; package?: boolean | null }>)
+      .filter((r) => r.package || (r.premium ?? []).includes(feature)).map((r) => String(r.branch_id));
+  } catch { return []; }
 }

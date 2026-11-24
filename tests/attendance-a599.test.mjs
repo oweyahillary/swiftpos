@@ -57,6 +57,7 @@ const state = require(path.join(DIST, 'lib/permissionsState.js'));
 const AC = require(path.join(DIST, 'lib/authCache.js'));
 const ST = require(path.join(DIST, 'lib/attendanceStore.js'));
 const R = require(path.join(DIST, 'lib/attendanceRules.js'));
+const CLOUD = require(path.join(DIST, 'lib/cloudPlan.js'));   // A624: clear the cloud-facts cache between resets
 const bcrypt = require('bcrypt');
 console.warn = () => {}; console.error = () => {};
 const CAT = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/permissions.ts')).href);
@@ -95,6 +96,7 @@ const reset = (flag = true) => {
       { id: 'ud-x', business_id: B2, device_id: 'dev-X', status: 'approved', retired_at: null, branch_id: BRX, user_id: 'x', device_role: 'node', role_confirmed_at: ago(86_400_000) },
     ],
     feature_flags: flag ? [{ business_id: B, key: 'attendance', enabled: true }, { business_id: B2, key: 'attendance', enabled: true }] : [],
+    branch_cloud_plans: flag ? [[BR, B], [BR2, B], [BRX, B2]].map(([branch_id, business_id]) => ({ branch_id, business_id, premium: ['attendance'], package: false, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2099-01-01T00:00:00Z', web_off: false })) : [],   // A624: Attendance gated per branch
     attendance_devices: [
       { id: DEV, business_id: B, branch_id: BR, name: 'Front door', ip: '192.168.1.201', port: 4370, comm_key: 0, serial: null, removed_at: null, created_at: ago(9e6) },
       { id: DEV2, business_id: B, branch_id: BR2, name: 'CBD door', ip: '192.168.2.201', port: 4370, comm_key: 0, serial: 'CBD123', removed_at: null, created_at: ago(9e6) },
@@ -104,6 +106,7 @@ const reset = (flag = true) => {
     business_settings: [], branch_settings: [], cloud_plans: [], refresh_tokens: [], audit_log: [], notifications: [], admin_users: [], ops_events: [],
     sync_versions: [], sync_changes: [], sync_change_floor: [{ id: 1, floor_seq: 0 }], roles: [], role_permissions: [], permissions: [],
   };
+  CLOUD._resetStanding();   // A624: read branch premium fresh for this db
 };
 
 const express = require('express');
@@ -284,7 +287,7 @@ try {
     const staff = await call('GET', '/api/staff', T.owner);
     assert.equal(staff.status, 200, staff.text.slice(0, 200));
     assert.ok(!JSON.stringify(staff.body).includes('Mama Njeri'));
-    ST.forgetAttendanceFlag(); mem.db.feature_flags = [];
+    ST.forgetAttendanceFlag(); mem.db.feature_flags = []; mem.db.branch_cloud_plans = []; CLOUD._resetStanding();   // A624: Attendance is per branch now
     const c = await call('POST', '/api/staff/clock', T.posCashier, { pin: '4321', type: 'in', staff_id: cook.id, branch_id: BR });
     assert.equal(c.status, 401, 'no users row to clock');
     const s = await call('POST', '/api/auth/pos-login', undefined, { email: 'Mama Njeri', pin: '4321', branch_id: BR });

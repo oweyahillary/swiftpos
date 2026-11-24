@@ -18,7 +18,8 @@ import { isPosDeviceSurface } from '../lib/posSurface';   // Till stage 2: the b
 import { checkDeviceBranch } from '../lib/deviceBinding';   // A446
 import { createHash } from 'crypto';   // A446
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
-import { themesEnabled, effectiveThemeId, effectiveBrandColours, selectBusinessBranding } from '../lib/themeAccess';   // A597
+import { effectiveThemeId, effectiveBrandColours, selectBusinessBranding } from '../lib/themeAccess';   // A597
+import { hiddenProductsAt } from '../lib/branchMenu';   // A625: per-branch menu
 import { getWebAccess } from '../lib/webAccess';
 import { worksAtBranch } from '../lib/branchAccess';   // A426
 import { isConfirmedBranchServer } from '../lib/deviceRole';   // A427
@@ -435,7 +436,7 @@ export interface InitCaller { businessId?: string | null }
  */
 export async function buildInit(req: InitCaller, requestedBranchId: string | null): Promise<BuiltInit> {
   const [
-    { data: products, error: pErr },
+    { data: productsAll, error: pErr },
     { data: categories, error: cErr },
     { data: comboRows },
     { data: receiptTextRows },
@@ -527,10 +528,6 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A597: + the owner's brand colours (migration 179; read without them on a database not yet migrated).
     selectBusinessBranding(req.businessId, 'accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, primary_hex, secondary_hex'),
   ]);
-  // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
-  // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
-  // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
-  const themesBusiness = await themesEnabled(req.businessId);
   // A346: does the business have the web POS? Same entitlement as web sign-in (lib/webAccess.ts) — fully usable = active
   // or in grace (owner, 2026-09-27: "stock should only appear if the web pos is enabled"; reports-only week → no).
   const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
@@ -542,10 +539,19 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // The branch the till OPERATES on (the licence gate, in the route, reads its desktop_licensed — D11): the bound branch it
   // sent, falling back to the main branch only for legacy callers with no binding.
   const opBranch = boundBranch ?? mainBranch;
-  // A612 phase 4 (premium per branch): billed per branch, Themes only on a branch that pays for it (premium or the package);
-  // another branch's POS keeps the standard look. Billed as one: the business's flag alone, as before.
+  // A625: per-branch menu — drop the products hidden at this branch (off its menu). No rows = the whole menu, as before.
+  const opBranchId = String((opBranch as { id?: string } | null)?.id ?? '');
+  let products = productsAll ?? [];
+  if (opBranchId && products.length) {
+    const hidden = await hiddenProductsAt(req.businessId, opBranchId);
+    if (hidden.size) products = products.filter((p: { id: string }) => !hidden.has(p.id));
+  }
+  // A624 (premium per branch is the sole gate): Themes only on a branch that pays for it (premium or the package);
+  // another branch's POS keeps the standard look.
   const themesPaying = featureBranches(await cloudFactsFor(req.businessId).catch(() => null), 'themes');
-  const themesOn = themesBusiness && (!themesPaying || themesPaying.includes(String((opBranch as { id?: string } | null)?.id ?? '')));
+  const themesOn = themesPaying.includes(String((opBranch as { id?: string } | null)?.id ?? ''));
+  // A624: Attendance per branch — does this branch pay for it? (the web POS hides its PIN clock-in; the cloud refuses it)
+  const attendanceHere = featureBranches(await cloudFactsFor(req.businessId).catch(() => null), 'attendance').includes(String((opBranch as { id?: string } | null)?.id ?? ''));
   // A617: without Themes here, a free theme (Ocean, Teal, Sky) the owner chose, else ZapTill's default look (null).
   const themeId = effectiveThemeId(themesOn, branding?.theme_id);
   // A544: this branch's override of the business branding (theme, brand colour, receipt footer) — only while the business
@@ -766,7 +772,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       const rows = (data ?? []) as Array<{ key: string; enabled: boolean }>;
       return {
         posFeatures: parsePosFeatures(rows.filter((r) => r.key !== ATTENDANCE_FLAG && r.key !== 'etims_enabled')),
-        attendanceDevice: rows.some((r) => r.key === ATTENDANCE_FLAG && r.enabled === true),
+        attendanceDevice: attendanceHere,   // A624: premium per branch — this till's branch
         // A607: KRA eTIMS is on for the business — the POS then asks for the buyer's KRA PIN (customer details at the
         // counter) and sends it with the sale. Older POSs ignore it.
         etimsEnabled: rows.some((r) => r.key === 'etims_enabled' && r.enabled === true),

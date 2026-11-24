@@ -27,7 +27,9 @@ import { signInAddress } from '../lib/tenant';   // A550
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A562
 import { approvalPinOn } from '@zaptill/core/posFeatures';   // A562
 import { splitsPending } from '../lib/permissionsState';   // A595
-import { attendanceEnabled, attendanceStaffChanged } from '../lib/attendanceStore';   // A599
+import { attendanceStaffChanged } from '../lib/attendanceStore';   // A599
+import { featureBranches } from '../lib/branchBilling';   // A624: premium per branch
+import { cloudFactsFor } from '../lib/cloudPlan';
 import { CLOCK_BY_DEVICE_MESSAGE } from '../lib/attendanceRules';   // A599
 
 const router = safeRouter();
@@ -1332,9 +1334,10 @@ router.delete('/roles/:roleId', requirePermission('staff.roles'), async (req, re
 router.post('/clock', async (req, res) => {
   const { pin, type, branch_id, staff_id } = req.body ?? {};
 
-  // A599: with Attendance on (premium), every punch comes from the attendance device — the PIN clock-in is refused, before
-  // any PIN is looked at (so it is no PIN oracle either). Without the flag it works exactly as before.
-  if (await attendanceEnabled(req.businessId)) {
+  // A599/A624: with Attendance on for the clocking branch (premium per branch), every punch comes from the device — the
+  // PIN clock-in is refused, before any PIN is looked at (so it is no PIN oracle either). A branch without it clocks by PIN.
+  const clockBranch = allBranchAccess(req) ? (branch_id ?? req.branchId ?? null) : (req.branchId ?? null);
+  if (clockBranch && featureBranches(await cloudFactsFor(req.businessId).catch(() => null), 'attendance').includes(String(clockBranch))) {
     res.status(403).json({ error: CLOCK_BY_DEVICE_MESSAGE, code: 'CLOCK_BY_DEVICE' });
     return;
   }
