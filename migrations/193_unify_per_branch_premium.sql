@@ -15,6 +15,11 @@
 --
 -- ORDER: apply this BEFORE deploying the code that stops reading the switches, or per-branch clients (empty premium) lose
 -- Analytics for the gap.
+--
+-- ONE TRANSACTION: migrate.mjs applies each file with `psql -f` in autocommit, so a bare `CREATE TEMP TABLE … ON COMMIT
+-- DROP` would be dropped the instant its own statement commits — gone before the next statement reads it. Wrapping the
+-- whole backfill in BEGIN/COMMIT keeps the temp table alive until the final commit AND makes the backfill all-or-nothing.
+BEGIN;
 
 -- 0. Safety notice: a branch on the Premium package keeps the package (which grants all three). If its business had a
 --    premium switch OFF, that branch currently has NO access to that feature, yet after the switches are retired the
@@ -81,3 +86,5 @@ WHERE bp.branch_id = e.branch_id AND NOT bp.package;
 INSERT INTO public.schema_migrations (version, notes)
 VALUES ('193_unify_per_branch_premium', 'A624: unify cloud billing on per-branch — backfill branch premium from the master switches (access-preserving); switches retired in code, dropped by a later migration')
 ON CONFLICT (version) DO NOTHING;
+
+COMMIT;

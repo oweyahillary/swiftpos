@@ -3,6 +3,15 @@
 All on the **`dev` worktree** (`c:\swiftpos\pos-print`, branch `dev`). **Nothing committed, nothing deployed.**
 Everything below builds clean and passes locally. **To test: apply migrations 193 + 194 to the dev DB BEFORE running the new server code** (the entitlement backfill must land first).
 
+> **Fix applied 2026‑11‑24 (during testing):** migration 193 failed on the real `node scripts/migrate.mjs` apply —
+> `relation "_a624_eff" does not exist`. Cause: `migrate.mjs` runs each file with `psql -f` in **autocommit**, so the
+> `CREATE TEMP TABLE … ON COMMIT DROP` was dropped the instant its own statement committed, before the next statement
+> read it. The migration‑test harness (and CI) run the file as **one** PGlite transaction, so they never saw it.
+> Fix: wrap 193's body in `BEGIN; … COMMIT;` (the convention migrations 08–12/68 already use) — the temp table now lives
+> until the final commit and the backfill is atomic. 193 re‑tested 10/10. Migration 194 has no temp table and is safe
+> under autocommit (unchanged). **Re‑run `node scripts/migrate.mjs` — both apply cleanly now.** Follow‑up worth doing:
+> a guard so the test path matches the real apply path (see the task doc).
+
 ---
 
 ## 1. A624 — the premium master switches retired (per‑branch is now the sole gate) ✅ DONE

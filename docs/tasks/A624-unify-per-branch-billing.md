@@ -76,3 +76,18 @@ Package stays as-is (a branch on the package already implies all three).
 ## 6. Open questions
 - Billing-page redesign: what does "not confusing" look like to the owner? (mockups to follow)
 - Trial/complimentary businesses with a premium switch but no plan: confirm the default row shape in §3.1.
+
+## 7. Apply gotcha found on real psql (2026-11-24)
+Migration 193 first failed on `node scripts/migrate.mjs`: `relation "_a624_eff" does not exist`. The runner applies each
+file with `psql -f` in **autocommit** (one implicit transaction *per statement*), so a bare `CREATE TEMP TABLE … ON
+COMMIT DROP` is dropped the moment its own statement commits — before the next statement reads it. The migration-test
+harness (`scripts/test-migration-193.mjs`) and CI run the whole file as **one** PGlite `db.exec()` transaction, so the
+temp table always survived there and the bug was invisible. **Fix:** wrap 193's body in `BEGIN; … COMMIT;` (matches
+migrations 08–12/68) — the temp table lives until the final commit and the backfill is now all-or-nothing. Re-tested 10/10.
+
+**Follow-up (not done — proposed):** close the test↔apply mismatch so this class of bug can't recur. Options, cheapest
+first: (a) a lint over `migrations/*.sql` that fails if `CREATE TEMP`/`ON COMMIT` appears outside an explicit
+`BEGIN;…COMMIT;` or a single `DO` block; (b) make the migration-test harness apply files statement-by-statement in
+autocommit (needs dollar-quote-aware splitting); (c) give `migrate.mjs` a `--single-transaction` apply so every file is
+atomic like the harness — simplest, but would break any migration that needs a non-transactional statement (e.g. `CREATE
+INDEX CONCURRENTLY`), so audit first. (a) is the lowest-risk guard.
