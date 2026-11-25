@@ -63,7 +63,7 @@ import {
 import { receiptEmailHtml, invoiceItems, type BranchBill } from '../lib/cloudPlanEmail';
 import { readBillingDetails, branchBill, periodMonths, premiumOf, isPremiumKey, PREMIUM_KEYS, ownPricesOf, mergeOwnPrices, newBranchPremium, themesFreeFor } from '../lib/branchBilling';   // A612, A617
 import { ownerEmailOf } from '../jobs/cloudPlanReminders';
-import { ensureBillingCode } from '../lib/cloudBillingStore';   // A626: the client's Paybill account code
+import { ensureBillingCode, walletOf } from '../lib/cloudBillingStore';   // A626: the client's Paybill account code + credit
 
 const router = safeRouter();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -122,12 +122,14 @@ async function planView(businessId: string) {
       standing: bs ? standingView(bs) : null, period_total: bill ? invoiceItems([bill]).reduce((t, i) => t + i.amount, 0) : null };
   });
   const billing_code = await ensureBillingCode(businessId);   // A626: the Paybill account number (generated if none yet)
+  const credit_balance = await walletOf(businessId);   // A626 Phase 2b: prepaid cloud credit
   return {
     plan: facts?.plan ?? null,
     standing: s ? standingView(s) : null,
     per_branch: rows.length > 0,   // A612
     themes_free: themesFree,   // A617: on the free-Themes deal — its new branches start with Themes at 0
     billing_code,   // A626
+    credit_balance,   // A626 Phase 2b
     branches,
     prices: details.prices,
     open_invoices: open,   // A587: what a payment offsets, oldest first

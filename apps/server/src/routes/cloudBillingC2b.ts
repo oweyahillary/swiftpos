@@ -9,7 +9,8 @@
  */
 import { safeRouter } from '../middleware/asyncHandler';
 import { ACCEPTED, looksLikeToken, hashC2bToken, parseConfirmation } from '../lib/c2b';
-import { billingTokenMatches, keepReceipt } from '../lib/cloudBillingStore';
+import { billingTokenMatches, keepReceipt, receiptByTransId, setReceiptStatus } from '../lib/cloudBillingStore';
+import { allocate, emailBillingReceipt } from '../lib/cloudBillingAllocate';
 
 const router = safeRouter();
 
@@ -18,7 +19,14 @@ async function receiveBillingPayment(token: string, body: unknown): Promise<void
   if (!(await billingTokenMatches(hashC2bToken(token)))) return;   // not our token — ignore (still answer Accepted)
   const payment = parseConfirmation(body);
   if (!payment) return;
-  await keepReceipt(payment);   // once per M-Pesa code
+  if ((await keepReceipt(payment)) !== 'new') return;   // once per M-Pesa code
+  // A626 Phase 2b: a matched payment is applied to the client's bill at once — web access, the open invoice(s), a trial —
+  // and the remainder goes to the wallet. An unmatched one is left for the admin to assign.
+  const rc = await receiptByTransId(payment.transId);
+  if (!rc?.business_id) return;
+  const result = await allocate(rc.business_id, { amount: Number(rc.amount), reference: payment.transId, paidAt: new Date().toISOString(), receiptId: rc.id, by: 'cloud-billing' });
+  await setReceiptStatus(rc.id, result.openedAccess ? 'allocated' : 'matched');
+  void emailBillingReceipt(rc.business_id, Number(rc.amount), payment.transId, result);   // fire-and-forget: Safaricom must not wait on the email
 }
 
 // Safaricom's validation — accept everything (External Validation is a later application; A626 §5).

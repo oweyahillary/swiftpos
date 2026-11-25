@@ -138,3 +138,43 @@ export async function recentReceipts(fromIso: string | null, toIso: string | nul
   }
   return rows;
 }
+
+/** One receipt by its M-Pesa code (so the callback can allocate what it just kept). */
+export async function receiptByTransId(transId: string): Promise<{ id: string; business_id: string | null; amount: number } | null> {
+  const { data } = await supabase.from('cloud_billing_receipts').select('id, business_id, amount').eq('trans_id', transId).maybeSingle();
+  return (data as { id: string; business_id: string | null; amount: number } | null) ?? null;
+}
+
+/** Move a receipt's status (received → matched/unmatched → allocated). */
+export async function setReceiptStatus(receiptId: string, status: string): Promise<void> {
+  await supabase.from('cloud_billing_receipts').update({ status }).eq('id', receiptId);
+}
+
+// ── the credit wallet (A626 Phase 2b) ────────────────────────────────────────────────────────────────────────────────
+export interface CreditEntry { id: string; delta: number; reason: string | null; receipt_id: string | null; created_by: string | null; created_at: string }
+
+/** A client's credit balance (0 when it has no wallet row yet). */
+export async function walletOf(businessId: string): Promise<number> {
+  const { data } = await supabase.from('business_cloud_credit').select('balance').eq('business_id', businessId).maybeSingle();
+  return Number((data as { balance: number | string } | null)?.balance ?? 0);
+}
+
+/** The credit ledger, newest first. */
+export async function creditEntries(businessId: string, limit = 50): Promise<CreditEntry[]> {
+  const { data } = await supabase.from('cloud_credit_entries').select('id, delta, reason, receipt_id, created_by, created_at')
+    .eq('business_id', businessId).order('created_at', { ascending: false }).limit(Math.min(Math.max(limit, 1), 200));
+  return (data ?? []) as CreditEntry[];
+}
+
+/** Add `delta` to a client's wallet (never below 0) and record the ledger entry. Returns the new balance. */
+export async function addCredit(businessId: string, delta: number, reason: string, receiptId: string | null, by: string | null): Promise<number> {
+  const next = Math.max(Math.round((await walletOf(businessId) + delta) * 100) / 100, 0);
+  await supabase.from('business_cloud_credit').upsert(
+    { business_id: businessId, balance: next, currency: 'KES', updated_at: new Date().toISOString() },
+    { onConflict: 'business_id' },
+  );
+  await supabase.from('cloud_credit_entries').insert(
+    { id: crypto.randomUUID(), business_id: businessId, delta, reason, receipt_id: receiptId, created_by: by, created_at: new Date().toISOString() },
+  );
+  return next;
+}

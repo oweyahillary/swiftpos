@@ -294,6 +294,12 @@
     "primary_hex": "\"text\"",
     "secondary_hex": "\"text\""
   },
+  "business_cloud_credit": {
+    "business_id": "\"uuid\" NOT NULL",
+    "balance": "\"numeric\" NOT NULL",
+    "currency": "\"text\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "business_days": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -428,6 +434,15 @@
     "phone_masked": "\"text\"",
     "status": "\"text\" NOT NULL",
     "business_id": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "cloud_credit_entries": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "delta": "\"numeric\" NOT NULL",
+    "reason": "\"text\"",
+    "receipt_id": "\"uuid\"",
+    "created_by": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "cloud_payments": {

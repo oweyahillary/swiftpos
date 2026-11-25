@@ -27,7 +27,7 @@ interface Prices { cloud: number; analytics: number; attendance: number; themes:
 /** A624: the cloud payments and the notices sent — one history, now the sole place to see them (CloudPlanCard hides). */
 interface Payment { id: string; amount: number; method: string; reference: string | null; paid_at: string; paid_until_after: string; branch_ids?: string[] | null }
 interface Reminder { milestone: string; sent_at: string }
-interface View { per_branch: boolean; themes_free?: boolean; billing_code?: string | null; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; payments?: Payment[]; reminders?: Reminder[]; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
+interface View { per_branch: boolean; themes_free?: boolean; billing_code?: string | null; credit_balance?: number; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; payments?: Payment[]; reminders?: Reminder[]; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
 interface Preview { expected: number; branches: Array<{ branch_id: string; name: string; from: string; until: string; fresh: boolean }> }
 
 const TONE: Record<string, string> = { ok: "#34e5a0", warn: "#f59e0b", bad: C.danger, muted: C.muted };
@@ -147,6 +147,15 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
   // A624: the branch being edited, and whether its premium add-ons are locked (no active cloud to run them on).
   const editBranch = edit ? view.branches.find((b) => b.branch_id === edit.branch_id) ?? null : null;
   const premiumLocked = !!editBranch && !cloudActive(editBranch);
+  // A626 Phase 2b: apply the client's held credit to its open invoices now.
+  const allocateWallet = async () => {
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const v = await req("POST", `/cloud-billing/clients/${clientId}/credit/allocate`);
+      setNotice(v.settled?.length ? `Allocated — paid ${v.settled.join(", ")}; credit left ${kes(v.wallet)}.` : `No open invoice the credit covers yet. Credit left ${kes(v.wallet)}.`);
+      load(); onChanged?.();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
 
   return (
     <div style={S.card} data-testid="branch-billing">
@@ -160,6 +169,13 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
       <div data-testid="branch-billing-code" style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
         Paybill account code: <b style={{ fontFamily: "monospace", color: C.text }}>{view.billing_code ?? "—"}</b> <span style={{ fontSize: 11 }}>— the client pays ZapTill's Paybill with this as the account number.</span>
       </div>
+      {(view.credit_balance ?? 0) > 0 && (
+        <div data-testid="branch-billing-credit" style={{ fontSize: 12, color: C.muted, marginTop: 4, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          Account credit: <b style={{ fontFamily: "monospace", color: TONE.ok }}>{kes(view.credit_balance ?? 0)}</b>
+          <span style={{ fontSize: 11 }}>held from a payment, applies to the next invoice automatically.</span>
+          {isSuper && <button data-testid="branch-billing-allocate" disabled={busy} onClick={allocateWallet} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, opacity: busy ? 0.5 : 1 }}>Allocate now</button>}
+        </div>
+      )}
       {themesDeal}
       {notice && <div style={{ fontSize: 12, color: "#34e5a0", margin: "8px 0" }}>{notice}</div>}
       {error && <div style={{ fontSize: 12, color: C.danger, margin: "8px 0" }}>{error}</div>}

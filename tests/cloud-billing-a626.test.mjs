@@ -77,12 +77,23 @@ const reset = () => {
       { id: AGENT, email: 'agent@zaptill.test', name: 'Agent', role: 'agent', is_active: true },
     ],
     businesses: [
-      { id: BIZ, name: 'Acme Co', type: 'retail', status: 'active', billing_code: 'ACME', billing_code_norm: 'ACME', created_at: '2026-01-01T00:00:00Z' },
+      { id: BIZ, name: 'Acme Co', type: 'retail', status: 'active', billing_code: 'ACME', billing_code_norm: 'ACME', web_access_expires_at: null, created_at: '2026-01-01T00:00:00Z' },
       { id: BIZ2, name: 'Duka Bora', type: 'retail', status: 'active', billing_code: null, billing_code_norm: null, created_at: '2026-01-02T00:00:00Z' },
     ],
     zaptill_billing_c2b: [], cloud_billing_receipts: [], admin_audit_log: [],
+    branches: [], branch_cloud_plans: [], invoices: [], feature_flags: [], business_settings: [],
+    business_cloud_credit: [], cloud_credit_entries: [],
   };
   adminAuth.forgetAdmin?.();
+};
+
+const BR = 'eeeeeeee-0000-4000-8000-000000000001';
+const balance = (biz) => Number((mem.db.business_cloud_credit.find((c) => c.business_id === biz) ?? {}).balance ?? 0);
+// Seed a branch for BIZ with a past paid-until and one open cloud invoice of `amount` for it.
+const seedInvoice = (amount, periodEnd = '2026-12-31T21:00:00Z') => {
+  mem.db.branches = [{ id: BR, business_id: BIZ, name: 'Main', is_main: true, status: 'active' }];
+  mem.db.branch_cloud_plans = [{ branch_id: BR, business_id: BIZ, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2026-11-01T00:00:00Z', premium: [], package: false, web_off: false }];
+  mem.db.invoices = [{ id: 'inv-1', invoice_number: 'INV-2026-0001', business_id: BIZ, kind: 'cloud', status: 'pending', amount, branch_ids: [BR], period_start: '2026-11-30T21:00:00Z', period_end: periodEnd }];
 };
 
 const express = require('express');
@@ -272,6 +283,77 @@ try {
       const r = await call('POST', '/api/admin/cloud-billing/register', ADMIN);
       assert.equal(r.status, 400); assert.equal(r.body.code, 'NO_CREDS');
     } finally { process.env.ZAPTILL_MPESA_CONSUMER_KEY = saved; }
+  });
+
+  // ── Phase 2b: allocation + the credit wallet ─────────────────────────────────────────────────────────────────────
+  await ok('a matched payment covering the invoice settles it, extends the branch, opens access; wallet 0, allocated', async () => {
+    reset(); seedInvoice(10000);
+    const { token } = await register();
+    await pay(token);   // 10000 to ACME
+    assert.equal(mem.db.invoices[0].status, 'paid');
+    assert.equal(mem.db.invoices[0].payment_method, 'mpesa');
+    assert.equal(mem.db.branch_cloud_plans[0].paid_until, '2026-12-31T21:00:00Z');   // extended to the period end
+    assert.equal(balance(BIZ), 0);
+    assert.equal(receipts()[0].status, 'allocated');
+    assert.ok(mem.db.feature_flags.some((f) => f.business_id === BIZ && f.key === 'web_hosting' && f.enabled));   // web access on
+  });
+
+  await ok('an overpayment settles the invoice and keeps the surplus as credit', async () => {
+    reset(); seedInvoice(8000);
+    const { token } = await register();
+    await pay(token);   // 10000 > 8000
+    assert.equal(mem.db.invoices[0].status, 'paid');
+    assert.equal(balance(BIZ), 2000);
+    assert.equal(receipts()[0].status, 'allocated');
+  });
+
+  await ok('an underpayment is held in the wallet; the invoice stays open; status matched', async () => {
+    reset(); seedInvoice(15000);
+    const { token } = await register();
+    await pay(token);   // 10000 < 15000
+    assert.equal(mem.db.invoices[0].status, 'pending');
+    assert.equal(balance(BIZ), 10000);
+    assert.equal(receipts()[0].status, 'matched');
+  });
+
+  await ok('with no open invoice the whole payment becomes credit', async () => {
+    reset();
+    const { token } = await register();
+    await pay(token);
+    assert.equal(balance(BIZ), 10000);
+    assert.equal(receipts()[0].status, 'matched');
+  });
+
+  await ok('the wallet auto-applies: a held underpayment plus a later payment settle the invoice', async () => {
+    reset(); seedInvoice(15000);
+    const { token } = await register();
+    await pay(token, { TransID: 'PAYA00001' });   // 10000 held
+    assert.equal(mem.db.invoices[0].status, 'pending'); assert.equal(balance(BIZ), 10000);
+    await pay(token, { TransID: 'PAYB00002' });    // +10000 → 20000 >= 15000 → settle, 5000 left
+    assert.equal(mem.db.invoices[0].status, 'paid'); assert.equal(balance(BIZ), 5000);
+  });
+
+  await ok('the admin Allocate drains the wallet into a later invoice (super admin only)', async () => {
+    reset();
+    const { token } = await register();
+    await pay(token);   // 10000 -> wallet (no invoice yet)
+    assert.equal(balance(BIZ), 10000);
+    mem.db.branches = [{ id: BR, business_id: BIZ, name: 'Main', is_main: true, status: 'active' }];
+    mem.db.branch_cloud_plans = [{ branch_id: BR, business_id: BIZ, period: 'monthly', amount: 3000, currency: 'KES', paid_until: '2026-11-01T00:00:00Z', premium: [], package: false, web_off: false }];
+    mem.db.invoices = [{ id: 'inv-2', invoice_number: 'INV-2026-0002', business_id: BIZ, kind: 'cloud', status: 'pending', amount: 7000, branch_ids: [BR], period_start: '2026-11-30T21:00:00Z', period_end: '2026-12-31T21:00:00Z' }];
+    assert.equal((await call('POST', `/api/admin/cloud-billing/clients/${BIZ}/credit/allocate`, AGENT_T, {})).status, 403);
+    const a = await call('POST', `/api/admin/cloud-billing/clients/${BIZ}/credit/allocate`, ADMIN, {});
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.deepEqual(a.body.settled, ['INV-2026-0002']); assert.equal(a.body.wallet, 3000);
+    assert.equal(mem.db.invoices[0].status, 'paid'); assert.equal(balance(BIZ), 3000);
+  });
+
+  await ok('credit GET returns the balance and ledger', async () => {
+    reset();
+    const { token } = await register();
+    await pay(token);   // 10000 -> wallet
+    const g = await call('GET', `/api/admin/cloud-billing/clients/${BIZ}/credit`, AGENT_T);
+    assert.equal(g.body.balance, 10000); assert.ok((g.body.entries ?? []).length >= 1);
   });
 } finally { server.close(); }
 

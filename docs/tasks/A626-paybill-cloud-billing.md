@@ -56,6 +56,27 @@ Scope built: **who paid**, by the account code. No money moves yet (the wallet +
   parser resolves each table. **Phase 2b (next):** the credit wallet, allocation against open invoices via the existing
   branch-payment engine, auto-apply, and the paid-invoice receipt.
 
+## 0c. Phase 2b — move the money (credit wallet + allocation) ✅ BUILT (2026-11-25), proven offline
+- **Migration 197** `migrations/197_cloud_credit_wallet.sql` — `business_cloud_credit` (a balance per client, `CHECK >= 0`) +
+  `cloud_credit_entries` (the ledger). Service role only. Tested `scripts/test-migration-197.mjs` 6/6.
+- **Allocation** (`lib/cloudBillingAllocate.ts`): `allocate(businessId, { amount, reference, paidAt, receiptId, by })` —
+  `amount + wallet` settles the client's open cloud invoices **oldest-first, each in full** (`openCloudInvoices`); the
+  remainder stays in the wallet; **nothing half-enabled**. Settling marks the invoice paid, moves its branches' paid-until
+  to the period end (only forward), turns web access on and converts a trial — the same opening a hand-recorded branch
+  payment does, fed by the invoice. `amount: 0` drains the wallet alone (the admin's Allocate / the billing job later).
+- **On receipt** (`routes/cloudBillingC2b.ts`): a matched payment is allocated at once; status → `allocated` (settled
+  something) or `matched` (held in wallet). The receipt **email** is fire-and-forget (Safaricom must not wait): a
+  paid-invoice receipt when settled, a "credit received" note otherwise (`emailBillingReceipt`, reusing `receiptEmailHtml`).
+- **Admin** (`routes/cloudBillingAdmin.ts`): `GET /clients/:id/credit` (balance + ledger), `POST /clients/:id/credit/allocate`
+  (super admin — drain the wallet into open invoices). `planView` returns `credit_balance`; `BranchBillingCard` shows the
+  credit + an **Allocate now** button.
+- **Tests:** `tests/cloud-billing-a626.test.mjs` 23/23 — exact (settles + extends branch + opens access, wallet 0),
+  overpayment (surplus → wallet), underpayment (held, invoice open, status matched), no-invoice (→ wallet), **auto-apply**
+  (held + a later payment settle it), admin Allocate (super-only). Schema gates green.
+- **Not done (Phase 2b follow-ons):** hook the billing job (`runCloudBilling`) to auto-drain the wallet the moment a new
+  invoice is raised (today it drains on the next receipt or the admin's Allocate); a super-admin wallet adjust/refund;
+  surface `allocated` vs `matched` and the wallet in the global receipts feed; reversal-callback handling.
+
 ## 1. What it does
 
 - ZapTill registers **one Paybill** with Safaricom (ZapTill's own shortcode). Each client (business) carries a unique

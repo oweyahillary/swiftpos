@@ -12,7 +12,8 @@ import { supabase } from '../lib/supabase';
 import { newC2bToken, hashC2bToken } from '../lib/c2b';
 import { registerC2bUrls, simulateC2bPayment } from '../lib/c2bDaraja';
 import { zaptillDaraja, serverEnvironment, callbackBase, billingC2bUrls, normalizeBillRef } from '../lib/cloudBilling';
-import { readBillingC2bSettings, writeBillingC2bSettings, recentReceipts, ensureBillingCode, setBillingCode, matchBillingCode, assignReceipt } from '../lib/cloudBillingStore';
+import { readBillingC2bSettings, writeBillingC2bSettings, recentReceipts, ensureBillingCode, setBillingCode, matchBillingCode, assignReceipt, walletOf, creditEntries } from '../lib/cloudBillingStore';
+import { allocate } from '../lib/cloudBillingAllocate';
 
 const router = safeRouter();
 const isoOrNull = (v: unknown): string | null => (typeof v === 'string' && v && Number.isFinite(Date.parse(v)) ? new Date(Date.parse(v)).toISOString() : null);
@@ -119,6 +120,22 @@ router.post('/receipts/:id/assign', requireAdmin, requireSuperAdmin, async (req,
   if ('error' in r) { res.status(400).json({ error: r.error }); return; }
   await audit(req, 'cloud_billing.assign', { receipt_id: id, business_id: businessId });
   res.json({ ok: true, business_id: businessId });
+});
+
+// GET /clients/:id/credit — the client's cloud credit balance + ledger.
+router.get('/clients/:id/credit', requireAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) { res.status(400).json({ error: 'bad client id' }); return; }
+  res.json({ balance: await walletOf(id), currency: 'KES', entries: await creditEntries(id) });
+});
+
+// POST /clients/:id/credit/allocate — apply the wallet to the client's open invoices now (a held underpayment). Super admin.
+router.post('/clients/:id/credit/allocate', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) { res.status(400).json({ error: 'bad client id' }); return; }
+  const r = await allocate(id, { amount: 0, reference: 'wallet', paidAt: new Date().toISOString(), receiptId: null, by: req.adminEmail ?? 'admin' });
+  await audit(req, 'cloud_billing.allocate', { business_id: id, settled: r.settled, wallet: r.wallet });
+  res.json({ ok: true, settled: r.settled, wallet: r.wallet });
 });
 
 export default router;
