@@ -69,12 +69,14 @@ ok('Features: the POS switches are read-only ("On" / "Off", no switch), with whe
   assert.doesNotMatch(f, /The stored value shown no longer applies once roles hold the permission/);
 });
 
-ok('Features: other flags switch only when the portal holds them (loyalty_enabled read-only); themes still toggles', () => {
+ok('Features: other flags switch only when the portal holds them (loyalty_enabled read-only); themes/analytics/attendance are per branch now', () => {
   const f = tab('features');
   // A604: loyalty_enabled is listed with the owner's options now; what is left is named (OTHER_FLAG_LABELS).
   assert.match(f, /\{adminSwitches\(f\.key\) \? toggle\(f\.enabled, \(\) => toggleFeature\(f\.key, !f\.enabled\), OTHER_FLAG_LABELS\[f\.key\]\?\.label \?\? f\.key\) : ownerValue\(f\.enabled, f\.key\)\}/);
-  assert.match(f, /toggle\(hasThemes, \(\) => toggleThemes\(!hasThemes\), "App themes and brand colours"\)/);   // A597: relabelled
-  assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/features\/themes`/);
+  // A624: Themes / Analytics / Attendance are set per branch (BranchBillingCard); the business-wide toggles and their PATCHes are retired.
+  assert.match(f, /data-testid="premium-per-branch-note"/);
+  assert.doesNotMatch(ap, /\(\) => toggle(Themes|Analytics|Attendance)\(/);   // no handler call sites remain
+  assert.doesNotMatch(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/features\/(themes|analytics|attendance)`/);
   assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/features\/web_hosting`/);
   assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/web-access`/);
 });

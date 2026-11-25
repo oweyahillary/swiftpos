@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { POS_FEATURE_KEYS } from '@zaptill/core/posFeatures';
+import { cloudFactsFor } from '../lib/cloudPlan';
+import { anyBranchHasFeature, PREMIUM_KEYS } from '../lib/branchBilling';
 
 /**
  * Audit 2026-10-14: the feature switches a client may flip themselves. EVERY other key is set by ZapTill in the admin portal
@@ -28,6 +30,13 @@ router.get('/', requireAuth, async (req, res) => {
 
   const flags: Record<string, boolean> = {};
   (data ?? []).forEach((f) => { flags[f.key] = f.enabled; });
+
+  // A624: the premium add-ons (Analytics, Attendance, Themes) are gated PER BRANCH now (branch_cloud_plans), not by a
+  // business-wide feature_flags switch. Report each as on when ANY of the business's branches pays for it, so the
+  // dashboard's Attendance nav — and anything else reading these keys — sees the real per-branch entitlement, not the
+  // retired switch (which is kept in feature_flags for rollback but no longer gates anything).
+  const facts = await cloudFactsFor(req.businessId!).catch(() => null);
+  for (const key of PREMIUM_KEYS) flags[key] = anyBranchHasFeature(facts, key);
 
   res.json(flags);
 });

@@ -117,10 +117,10 @@ await ok('what is left under "Other flags" is a real switch under a plain name (
   assert.match(otherBlock, /toggle\(f\.enabled, \(\) => toggleFeature\(f\.key, !f\.enabled\), OTHER_FLAG_LABELS\[f\.key\]\?\.label \?\? f\.key\)/);
 });
 
-await ok('the real admin switches stay: themes, analytics, attendance, the A601 cut-off, receipt and kitchen options', () => {
-  assert.match(features, /toggle\(hasThemes, \(\) => toggleThemes\(!hasThemes\), "App themes and brand colours"\)/);
-  assert.match(features, /toggle\(hasAnalytics, \(\) => toggleAnalytics\(!hasAnalytics\), "Analytics"\), "feature-analytics"\)/);
-  assert.match(features, /toggle\(hasAttendance, \(\) => toggleAttendance\(!hasAttendance\), "Attendance"\), "feature-attendance"\)/);
+await ok('the retired add-ons are per branch now; the real admin switches stay: the A601 cut-off, receipt and kitchen options', () => {
+  // A624: Themes / Analytics / Attendance are set per branch (BranchBillingCard) — their business-wide toggles are gone.
+  assert.match(features, /data-testid="premium-per-branch-note"/);
+  assert.doesNotMatch(features, /\(\) => toggle(Themes|Analytics|Attendance)\(/);
   assert.match(features, /superOnly\(toggle\(hasCloudBackup, \(\) => toggleCutoffFlag\('cloud_backup', !hasCloudBackup\), "Keep cloud backup"\)\), "feature-cloud-backup"\)/);
   assert.match(features, /superOnly\(toggle\(hasDesktopUpdates, \(\) => toggleCutoffFlag\('desktop_updates', !hasDesktopUpdates\), "Release desktop updates"\)\), "feature-desktop-updates"\)/);
   assert.match(features, /toggle\(on, \(\) => toggleFeature\(key, !on\), rf\?\.label \?\? key\)/);

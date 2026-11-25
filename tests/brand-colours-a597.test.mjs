@@ -362,8 +362,11 @@ try {
       assert.equal(r.status, 200, r.text); assert.equal(r.body.branding.accentHex, '#f5b800'); assert.equal(r.body.branding.primaryHex, null);
     } finally { missingColumns = false; }
   });
-  await ok('the admin switch says it covers brand colours; no "till" in the new words', async () => {
-    assert.match(read('apps/admin/src/AdminPortal.tsx'), /settingRow\("App themes and brand colours",/);
+  await ok('App themes / brand colours are set per branch now (the business-wide toggle is retired); no "till" in the new words', async () => {
+    // A624: Themes (with brand colours) is set per branch on Cloud per branch — not a business-wide switch here.
+    const ap = read('apps/admin/src/AdminPortal.tsx');
+    assert.match(ap, /data-testid="premium-per-branch-note"/);
+    assert.doesNotMatch(ap, /settingRow\("App themes and brand colours",/);
     const tab = read('apps/dashboard/src/pages/settings/BrandingTab.tsx');
     const block = tab.slice(tab.indexOf('function BrandColoursField'), tab.indexOf('// A small, honest mock'));
     assert.ok(block.length > 500 && !/\btill/i.test(block.replace(/TillPreview/g, '')));

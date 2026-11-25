@@ -895,17 +895,9 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
 
   const webHostingFlag = features.find(f => f.key === 'web_hosting');
   const hasWebHosting  = webHostingFlag?.enabled === true;
-  // A325: client branding Phase 2 — curated action themes (premium; off by default). While off, the client's
-  // tills keep today's look and the web hides the theme picker. Price not decided: no invoice is raised here.
-  const hasThemes = features.find(f => f.key === 'themes')?.enabled === true;
-  // A549: Analytics v1 — the web dashboard's Analytics page (menu engineering, heatmap, money leaks, credit ageing,
-  // insights). Premium; off by default. While off the page shows "part of ZapTill Premium" and the cloud refuses
-  // /api/analytics (ANALYTICS_OFF). Price not decided: no invoice is raised here.
-  const hasAnalytics = features.find(f => f.key === 'analytics')?.enabled === true;
-  // A599: Attendance (premium; off by default; +KES 2,000 on the cloud price) — punches from a ZKTeco device through the
-  // branch server, the web dashboard's Attendance report. While off nothing attendance-related shows anywhere and the
-  // cloud refuses /api/attendance (ATTENDANCE_OFF). No invoice is raised here (the cloud plan's price is set there).
-  const hasAttendance = features.find(f => f.key === 'attendance')?.enabled === true;
+  // A624 (owner, 2026-11-25): App themes (A325/A597), Analytics (A549) and Attendance (A599) are set PER BRANCH now —
+  // Plan & billing › Cloud per branch — not by a business-wide feature_flags switch. The toggles here are retired; the
+  // feature_flags rows are kept only for rollback and no longer gate anything (the cloud reads branch_cloud_plans).
   // A601: the desktop-only cut-off's two switches (super admin; no migration — feature_flags rows): keep the cloud backup
   // with no plan (goodwill), and release desktop updates (a paid support extra; the version is still the approval).
   const hasCloudBackup = features.find(f => f.key === 'cloud_backup')?.enabled === true;
@@ -972,59 +964,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
     } catch(e) { setError(e.message); }
   }
 
-  async function toggleThemes(enable) {
-    const msg = enable
-      ? 'Enable themes and brand colours? The client can then pick an app theme, and the owner their brand colours, on the Branding page; their web dashboard and points of sale pick them up within about 20 seconds.'
-      : 'Disable themes and brand colours? The client\'s web dashboard and points of sale return to the standard look within about 20 seconds. Their chosen theme and colours are kept for later.';
-    if (!(await askConfirm(msg))) return;
-    try {
-      await req("PATCH", `/clients/${client.id}/features/themes`, {
-        enabled: enable,
-        notes:   enable ? 'Themes enabled (client branding Phase 2)' : 'Themes disabled',
-      });
-      setFeatures(prev => {
-        const existing = prev.find(f => f.key === 'themes');
-        if (existing) return prev.map(f => f.key === 'themes' ? { ...f, enabled: enable } : f);
-        return [...prev, { key: 'themes', enabled: enable }];
-      });
-    } catch(e) { setError(e.message); }
-  }
-
-  async function toggleAnalytics(enable) {
-    const msg = enable
-      ? 'Enable Analytics? The owner (and managers with the sales report) see the Analytics page on the web dashboard at once.'
-      : 'Disable Analytics? The Analytics page shows "part of ZapTill Premium" again at once.';
-    if (!(await askConfirm(msg))) return;
-    try {
-      await req("PATCH", `/clients/${client.id}/features/analytics`, {
-        enabled: enable,
-        notes:   enable ? 'Analytics enabled (A549, premium)' : 'Analytics disabled',
-      });
-      setFeatures(prev => {
-        const existing = prev.find(f => f.key === 'analytics');
-        if (existing) return prev.map(f => f.key === 'analytics' ? { ...f, enabled: enable } : f);
-        return [...prev, { key: 'analytics', enabled: enable }];
-      });
-    } catch(e) { setError(e.message); }
-  }
-
-  async function toggleAttendance(enable) {
-    const msg = enable
-      ? 'Enable Attendance (+KES 2,000 on the cloud price)? The owner can then set up ZKTeco attendance devices and see the Attendance report on the web dashboard; the web POS PIN clock-in is replaced by the device.'
-      : 'Disable Attendance? The Attendance page, its devices and the report disappear from the web dashboard at once and the branch server stops pulling punches. The web POS PIN clock-in comes back. Recorded punches are kept.';
-    if (!(await askConfirm(msg))) return;
-    try {
-      await req("PATCH", `/clients/${client.id}/features/attendance`, {
-        enabled: enable,
-        notes:   enable ? 'Attendance enabled (A599, premium)' : 'Attendance disabled',
-      });
-      setFeatures(prev => {
-        const existing = prev.find(f => f.key === 'attendance');
-        if (existing) return prev.map(f => f.key === 'attendance' ? { ...f, enabled: enable } : f);
-        return [...prev, { key: 'attendance', enabled: enable }];
-      });
-    } catch(e) { setError(e.message); }
-  }
+  // A624 (owner, 2026-11-25): the per-business Themes / Analytics / Attendance switch handlers are gone — those add-ons
+  // are set per branch on Plan & billing (BranchBillingCard), not by a business-wide switch.
 
   // A601: cloud_backup / desktop_updates — the client's POSs hear within about 20 seconds (a feature_flags change) or at
   // their next catalogue pull.
@@ -1757,19 +1698,12 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Features</div>
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Changes take effect at once; tills pick them up at their next sync.</p>
-          {/* A325: client branding Phase 2 — curated app themes (premium; off by default). */}
-          {/* A597: the same switch now also lets the OWNER choose their brand colours (web dashboard and both POS apps). */}
-          {settingRow("App themes and brand colours",
-            hasThemes ? "The client picks an app theme, and the owner their own brand colours, on the Branding page; the web dashboard and points of sale follow them." : "The web dashboard and points of sale keep the standard look. Turn on to let the client pick an app theme and the owner their brand colours.",
-            toggle(hasThemes, () => toggleThemes(!hasThemes), "App themes and brand colours"))}
-          {/* A549: Analytics v1 (premium; off by default) — the web dashboard's Analytics page. */}
-          {settingRow("Analytics",
-            hasAnalytics ? "The Analytics page is open: menu engineering, sales heatmap, money leaks, credit ageing and insights." : "The Analytics page shows “part of ZapTill Premium”. Turn on when the client has paid for it.",
-            toggle(hasAnalytics, () => toggleAnalytics(!hasAnalytics), "Analytics"), "feature-analytics")}
-          {/* A599: Attendance (premium; off by default; +KES 2,000 on the cloud price) — ZKTeco devices and the report. */}
-          {settingRow("Attendance (+KES 2,000 on the cloud price)",
-            hasAttendance ? "On: the client sets up ZKTeco attendance devices and sees the Attendance report; punches come from the device (the web POS PIN clock-in is off)." : "Off: nothing about attendance shows for this client. Turn on when the client has paid for it (+KES 2,000 on the cloud price).",
-            toggle(hasAttendance, () => toggleAttendance(!hasAttendance), "Attendance"), "feature-attendance")}
+          {/* A624 (owner, 2026-11-25): App themes (A325/A597), Analytics (A549) and Attendance (A599) are set PER BRANCH on
+              Plan & billing › Cloud per branch — the business-wide toggles are retired. Said here so support knows where
+              they live now; the matrix is the only place they're switched. */}
+          <div data-testid="premium-per-branch-note" style={{ fontSize: 12, color: C.muted, margin: "6px 0 2px", lineHeight: 1.5 }}>
+            <strong>App themes &amp; brand colours, Analytics and Attendance</strong> are set per branch now — Plan &amp; billing › <em>Cloud per branch</em>. Each branch that pays gets them; there is no business-wide switch.
+          </div>
           {/* A601: the desktop-only cut-off — only for a client with no plan, no paid-until, no trial and no web access. */}
           {detail?.desktop_only && (
             <div data-testid="desktop-only-features">

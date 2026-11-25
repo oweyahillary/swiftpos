@@ -127,10 +127,18 @@ matrix — **no new API, all from the existing `cloud-plan` view**:
 - Kept intact: the Edit panel, Record-payment flow (`branch-payments/preview`), own-prices (A617), the themes-free deal.
   Both billing tests green (branch-billing-a612 22/22, a617 25/25); admin type-clean.
 
-## 10. Phase 3 — retire the dead master toggles + per-branch nav (NEXT, not done)
-After the matrix, remove the now-dead admin **Features** toggles (Themes/Analytics/Attendance — `AdminPortal.tsx`
-~1760-1772 + the `hasThemes/hasAnalytics/hasAttendance` vars and `toggleThemes/Analytics/Attendance` handlers), replacing
-them with a read-only pointer to Branch billing; and make `routes/flags.ts` derive `analytics/attendance/themes` from
-`anyBranchHasFeature()` so the dashboard Attendance nav (`DashboardLayout.tsx` ~318) is per-branch. **Couples to 3 tests**
-that pin the toggles — brand-colours-a597, admin-pos-options-a604, admin-owner-settings — so they update in the same commit.
-Keep `feature_flags` rows + the dead `*Enabled` functions for rollback (Phase 5 drops them later).
+## 10. Phase 3 — retire the dead master toggles + per-branch nav ✅ DONE (2026-11-25)
+- **Admin Features tab** (`AdminPortal.tsx`): removed the three business-wide toggles (App themes / Analytics / Attendance)
+  — their `settingRow` rows, the `hasThemes/hasAnalytics/hasAttendance` vars and the `toggleThemes/Analytics/Attendance`
+  handlers are gone, replaced by one read-only note (`data-testid="premium-per-branch-note"`) pointing to Plan & billing ›
+  Cloud per branch. The "Other flags" filter already excluded these keys, so they appear nowhere as switches now.
+- **Dashboard Attendance nav** → per-branch, server-side: `routes/flags.ts` now overrides `analytics/attendance/themes` in
+  `GET /api/flags` with `anyBranchHasFeature(cloudFactsFor(...))`, so `DashboardLayout.tsx`'s `attendanceOn` reflects
+  per-branch entitlement with **no dashboard change**. Only the Attendance nav reads these keys (Analytics nav is gated by
+  the `reports.analytics` permission; StaffTab reads `approval_pin`; receipt code reads `receipt_*`), so the blast radius
+  is exactly the nav.
+- **Tests updated:** brand-colours-a597, admin-pos-options-a604, admin-owner-settings (assert the per-branch note + no
+  handler call sites, instead of the retired toggles). All green, plus every `/api/flags`-consuming test re-run green.
+- **Kept for rollback:** the `feature_flags` rows and the dead `*Enabled` functions + the admin server PATCH route
+  `/clients/:id/features/:key` (still used by `web_hosting` / `themes_free` / eTIMS). **Phase 5** drops the dead rows +
+  functions later, once this is proven in prod.
