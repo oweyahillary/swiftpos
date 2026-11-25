@@ -11,7 +11,7 @@ import { C, S } from "./theme";
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 interface Settings { configured: boolean; server_environment: string; table: boolean;
   registered: { at: string | null; shortcode: string | null; environment: string | null; last_error: string | null } | null }
-interface Receipt { id: string; trans_id: string; amount: number; bill_ref: string | null; first_name: string | null; created_at: string; status: string }
+interface Receipt { id: string; trans_id: string; amount: number; bill_ref: string | null; first_name: string | null; created_at: string; status: string; business_id: string | null; business_name?: string | null }
 
 const kes = (n: number) => `KES ${Number(n).toLocaleString("en-KE")}`;
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" }) : "—");
@@ -24,6 +24,7 @@ export default function CloudBillingSettingsCard({ req, isSuper }: { req: Req; i
   const [busy, setBusy] = useState(false);
   const [testRef, setTestRef] = useState("");
   const [testAmount, setTestAmount] = useState("1");
+  const [assignDraft, setAssignDraft] = useState<Record<string, string>>({});
 
   const loadReceipts = useCallback(() => { req("GET", "/cloud-billing/receipts").then((r) => setReceipts(r.receipts ?? [])).catch(() => {}); }, [req]);
   const load = useCallback(() => {
@@ -84,15 +85,25 @@ export default function CloudBillingSettingsCard({ req, isSuper }: { req: Req; i
       </div>
       {receipts.length === 0 ? <div style={{ fontSize: 12, color: C.muted }}>No payments received yet.</div> : (
         <div className="sp-table-wrap"><table style={S.table} data-testid="cloud-billing-receipts">
-          <thead><tr>{["Received", "Amount", "Account", "Name", "M-Pesa code", "Status"].map((h) => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["Received", "Amount", "Account", "Client", "M-Pesa code"].map((h) => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
           <tbody>{receipts.map((r) => (
             <tr key={r.id}>
               <td style={{ ...S.td, fontSize: 12 }}>{when(r.created_at)}</td>
               <td style={{ ...S.td, fontFamily: "monospace" }}>{kes(r.amount)}</td>
               <td style={{ ...S.td, fontSize: 12 }}>{r.bill_ref ?? "—"}</td>
-              <td style={{ ...S.td, fontSize: 12 }}>{r.first_name ?? "—"}</td>
+              <td style={{ ...S.td, fontSize: 12 }}>
+                {r.business_name
+                  ? <span style={{ color: "#34e5a0" }}>{r.business_name}</span>
+                  : <span data-testid={`receipt-unmatched-${r.id}`} style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ color: "#f59e0b" }}>unmatched</span>
+                      {isSuper && <>
+                        <input style={{ ...S.input, width: 120, fontSize: 11 }} placeholder="correct code" value={assignDraft[r.id] ?? ""} onChange={(e) => setAssignDraft({ ...assignDraft, [r.id]: e.target.value })} />
+                        <button disabled={busy || !(assignDraft[r.id] ?? "").trim()} onClick={() => run(() => req("POST", `/cloud-billing/receipts/${r.id}/assign`, { code: assignDraft[r.id] ?? "" }), () => "Payment assigned to the client.")}
+                          style={{ ...S.btn, ...S.btnGhost, fontSize: 11, opacity: busy || !(assignDraft[r.id] ?? "").trim() ? 0.5 : 1 }}>Assign</button>
+                      </>}
+                    </span>}
+              </td>
               <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{r.trans_id}</td>
-              <td style={{ ...S.td, fontSize: 12, color: C.muted }}>{r.status}</td>
             </tr>
           ))}</tbody>
         </table></div>

@@ -27,7 +27,7 @@ interface Prices { cloud: number; analytics: number; attendance: number; themes:
 /** A624: the cloud payments and the notices sent — one history, now the sole place to see them (CloudPlanCard hides). */
 interface Payment { id: string; amount: number; method: string; reference: string | null; paid_at: string; paid_until_after: string; branch_ids?: string[] | null }
 interface Reminder { milestone: string; sent_at: string }
-interface View { per_branch: boolean; themes_free?: boolean; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; payments?: Payment[]; reminders?: Reminder[]; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
+interface View { per_branch: boolean; themes_free?: boolean; billing_code?: string | null; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; payments?: Payment[]; reminders?: Reminder[]; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
 interface Preview { expected: number; branches: Array<{ branch_id: string; name: string; from: string; until: string; fresh: boolean }> }
 
 const TONE: Record<string, string> = { ok: "#34e5a0", warn: "#f59e0b", bad: C.danger, muted: C.muted };
@@ -155,6 +155,10 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
         <div style={{ fontSize: 11, color: C.muted }}>
           A month: Cloud {kes(view.prices.cloud)} · Analytics {kes(view.prices.analytics)} · Attendance {kes(view.prices.attendance)} · Themes {kes(view.prices.themes)} · Premium package {kes(view.prices.package)}
         </div>
+      </div>
+      {/* A626: the Paybill account number the client pays with — matched to a payment on ZapTill's billing Paybill. */}
+      <div data-testid="branch-billing-code" style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+        Paybill account code: <b style={{ fontFamily: "monospace", color: C.text }}>{view.billing_code ?? "—"}</b> <span style={{ fontSize: 11 }}>— the client pays ZapTill's Paybill with this as the account number.</span>
       </div>
       {themesDeal}
       {notice && <div style={{ fontSize: 12, color: "#34e5a0", margin: "8px 0" }}>{notice}</div>}

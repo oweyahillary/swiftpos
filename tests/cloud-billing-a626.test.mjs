@@ -67,6 +67,7 @@ console.warn = () => {}; console.error = () => {};
 const mem = installMemDb(supabase);
 
 const SUPER = 'cccccccc-0000-4000-8000-000000000001', AGENT = 'cccccccc-0000-4000-8000-000000000002';
+const BIZ = 'dddddddd-0000-4000-8000-000000000001', BIZ2 = 'dddddddd-0000-4000-8000-000000000002';
 const reset = () => {
   mem.fail = () => null; mem.calls = [];
   daraja.registered = []; daraja.simulated = []; daraja.refuse = null;
@@ -74,6 +75,10 @@ const reset = () => {
     admin_users: [
       { id: SUPER, email: 'boss@zaptill.test', name: 'Boss', role: 'super_admin', is_active: true },
       { id: AGENT, email: 'agent@zaptill.test', name: 'Agent', role: 'agent', is_active: true },
+    ],
+    businesses: [
+      { id: BIZ, name: 'Acme Co', type: 'retail', status: 'active', billing_code: 'ACME', billing_code_norm: 'ACME', created_at: '2026-01-01T00:00:00Z' },
+      { id: BIZ2, name: 'Duka Bora', type: 'retail', status: 'active', billing_code: null, billing_code_norm: null, created_at: '2026-01-02T00:00:00Z' },
     ],
     zaptill_billing_c2b: [], cloud_billing_receipts: [], admin_audit_log: [],
   };
@@ -137,15 +142,48 @@ try {
     assert.ok(mem.db.admin_audit_log.some((a) => a.action === 'cloud_billing.register'));
   });
 
-  await ok('a confirmation on the registered token lands a receipt (Accepted), with the account code normalised', async () => {
+  await ok('a confirmation lands a receipt (Accepted), the code is normalised, and it is matched to the client', async () => {
     reset();
     const { token } = await register();
-    const r = await pay(token, { BillRefNumber: 'ac-me ' });
+    const r = await pay(token, { BillRefNumber: 'ac-me ' });   // a typo'd/cased form of ACME
     assert.deepEqual(r.body, { ResultCode: 0, ResultDesc: 'Accepted' });
     assert.equal(receipts().length, 1);
     const rc = receipts()[0];
     assert.deepEqual([rc.trans_id, rc.amount, rc.bill_ref, rc.bill_ref_norm], ['QJK7XT3L5P', 10000, 'ac-me', 'ACME']);
-    assert.equal(rc.status, 'received');
+    assert.equal(rc.status, 'matched'); assert.equal(rc.business_id, BIZ);
+  });
+
+  await ok('an unknown account code is recorded unmatched (no client)', async () => {
+    reset();
+    const { token } = await register();
+    await pay(token, { BillRefNumber: 'NOPE', TransID: 'UNKNOWN01' });
+    const rc = receipts()[0];
+    assert.equal(rc.status, 'unmatched'); assert.equal(rc.business_id, null);
+  });
+
+  await ok('an unmatched receipt is assigned to a client by its code (super admin; unknown code refused; agent refused)', async () => {
+    reset();
+    const { token } = await register();
+    await pay(token, { BillRefNumber: 'NOPE' });
+    const rc = receipts()[0];
+    assert.equal(rc.status, 'unmatched');
+    assert.equal((await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/assign`, AGENT_T, { code: 'ACME' })).status, 403);
+    assert.equal((await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/assign`, ADMIN, { code: 'GHOST' })).body.code, 'UNKNOWN_CODE');
+    const a = await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/assign`, ADMIN, { code: 'ac me' });   // normalised match
+    assert.equal(a.status, 200, JSON.stringify(a.body)); assert.equal(a.body.business_id, BIZ);
+    assert.equal(receipts()[0].status, 'matched'); assert.equal(receipts()[0].business_id, BIZ);
+  });
+
+  await ok('billing code: GET returns the code, generates one from the name when none; PUT sets it (super admin only)', async () => {
+    reset();
+    assert.equal((await call('GET', `/api/admin/cloud-billing/clients/${BIZ}/code`, AGENT_T)).body.code, 'ACME');
+    const gen = await call('GET', `/api/admin/cloud-billing/clients/${BIZ2}/code`, AGENT_T);
+    assert.match(gen.body.code, /^DUKABO/);   // from "Duka Bora"
+    assert.equal(mem.db.businesses.find((b) => b.id === BIZ2).billing_code, gen.body.code);   // persisted
+    assert.equal((await call('PUT', `/api/admin/cloud-billing/clients/${BIZ}/code`, AGENT_T, { code: 'NEW1' })).status, 403);
+    const put = await call('PUT', `/api/admin/cloud-billing/clients/${BIZ}/code`, ADMIN, { code: 'new-1' });
+    assert.equal(put.status, 200); assert.equal(put.body.code, 'new-1');
+    assert.equal(mem.db.businesses.find((b) => b.id === BIZ).billing_code_norm, 'NEW1');   // kept in step
   });
 
   await ok('the same payment twice keeps one (deduped on the M-Pesa code)', async () => {
@@ -207,6 +245,7 @@ try {
     const feed = await call('GET', '/api/admin/cloud-billing/receipts', AGENT_T);
     assert.equal(feed.body.receipts.length, 1);
     assert.equal(feed.body.receipts[0].bill_ref, 'ACME');
+    assert.equal(feed.body.receipts[0].business_name, 'Acme Co');   // A626 Phase 2a: the matched client
     const s = await call('GET', '/api/admin/cloud-billing/settings', AGENT_T);
     assert.equal(s.body.registered.shortcode, '174379'); assert.equal(s.body.registered.environment, 'sandbox');
   });

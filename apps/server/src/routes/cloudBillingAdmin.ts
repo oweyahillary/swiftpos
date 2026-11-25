@@ -11,8 +11,8 @@ import { requireAdmin, requireSuperAdmin } from '../middleware/adminAuth';
 import { supabase } from '../lib/supabase';
 import { newC2bToken, hashC2bToken } from '../lib/c2b';
 import { registerC2bUrls, simulateC2bPayment } from '../lib/c2bDaraja';
-import { zaptillDaraja, serverEnvironment, callbackBase, billingC2bUrls } from '../lib/cloudBilling';
-import { readBillingC2bSettings, writeBillingC2bSettings, recentReceipts } from '../lib/cloudBillingStore';
+import { zaptillDaraja, serverEnvironment, callbackBase, billingC2bUrls, normalizeBillRef } from '../lib/cloudBilling';
+import { readBillingC2bSettings, writeBillingC2bSettings, recentReceipts, ensureBillingCode, setBillingCode, matchBillingCode, assignReceipt } from '../lib/cloudBillingStore';
 
 const router = safeRouter();
 const isoOrNull = (v: unknown): string | null => (typeof v === 'string' && v && Number.isFinite(Date.parse(v)) ? new Date(Date.parse(v)).toISOString() : null);
@@ -82,10 +82,43 @@ router.post('/test-payment', requireAdmin, requireSuperAdmin, async (req, res) =
   res.json({ ok: true, amount, bill_ref: billRef });
 });
 
-// GET /receipts?from=&to= — the raw receipts feed, newest first.
+// GET /receipts?from=&to= — the raw receipts feed, newest first, with the matched client attached.
 router.get('/receipts', requireAdmin, async (req, res) => {
   const rows = await recentReceipts(isoOrNull(req.query.from), isoOrNull(req.query.to));
   res.json({ receipts: rows });
+});
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// GET /clients/:id/code — a client's billing code (the Paybill account number), generated from its name if it has none.
+router.get('/clients/:id/code', requireAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) { res.status(400).json({ error: 'bad client id' }); return; }
+  const code = await ensureBillingCode(id);
+  if (code === null) { res.status(404).json({ error: 'No such client' }); return; }
+  res.json({ code });
+});
+
+// PUT /clients/:id/code — set a client's billing code. Super admin; a code another client holds is refused.
+router.put('/clients/:id/code', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) { res.status(400).json({ error: 'bad client id' }); return; }
+  const r = await setBillingCode(id, String(req.body?.code ?? ''));
+  if ('error' in r) { res.status(409).json({ error: r.error, code: 'CODE_IN_USE' }); return; }
+  await audit(req, 'cloud_billing.code', { business_id: id, code: r.code });
+  res.json({ code: r.code });
+});
+
+// POST /receipts/:id/assign — assign an unmatched receipt to the client whose account code is given (fix a typo). Super admin.
+router.post('/receipts/:id/assign', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) { res.status(400).json({ error: 'bad receipt id' }); return; }
+  const businessId = await matchBillingCode(normalizeBillRef(String(req.body?.code ?? '')));
+  if (!businessId) { res.status(404).json({ error: 'No client has that account code.', code: 'UNKNOWN_CODE' }); return; }
+  const r = await assignReceipt(id, businessId);
+  if ('error' in r) { res.status(400).json({ error: r.error }); return; }
+  await audit(req, 'cloud_billing.assign', { receipt_id: id, business_id: businessId });
+  res.json({ ok: true, business_id: businessId });
 });
 
 export default router;

@@ -346,7 +346,9 @@
     "subdomain": "\"text\"",
     "support_admin_id": "\"uuid\"",
     "android_till_approved_version": "\"text\"",
-    "mobile_approved_version": "\"text\""
+    "mobile_approved_version": "\"text\"",
+    "billing_code": "\"text\"",
+    "billing_code_norm": "\"text\""
   },
   "categories": {
     "id": "\"uuid\" NOT NULL",

@@ -36,6 +36,26 @@ rest of this spec, Phase 2). Reuses A621's `c2bDaraja.ts` + `lib/c2b.ts` (token 
   ZapTill's sandbox shortcode, e.g. 174379) on the dev server; open admin → Billing → *Cloud billing — M-Pesa Paybill* →
   **Register with Safaricom** → **Send sandbox test payment** (KES 1) → it appears in **Receipts** within seconds.
 
+## 0b. Phase 2a — identify the payer (billing code + matching) ✅ BUILT (2026-11-25), proven offline
+Scope built: **who paid**, by the account code. No money moves yet (the wallet + allocation are Phase 2b).
+- **Migration 196** `migrations/196_business_billing_code.sql` — `businesses.billing_code` (+ `billing_code_norm`, unique on
+  the normalised form) and a **backfill** so every current client gets a code from its name (unique by a numeric suffix on
+  a clash). Tested `scripts/test-migration-196.mjs` 6/6.
+- **Matching** (`lib/cloudBillingStore.ts`): a confirmed receipt is matched to the client whose `billing_code_norm` equals
+  the normalised `BillRefNumber` — exact-on-normalised only. `status` becomes `matched` (+ `business_id`) or `unmatched`.
+  `keepReceipt` now sets an explicit `id` (the mock has no `gen_random_uuid()` default). The receipts feed attaches each
+  matched client's name.
+- **Billing code + assign** (`routes/cloudBillingAdmin.ts`): `GET /clients/:id/code` (generates one from the name if none),
+  `PUT /clients/:id/code` (super admin; a code another client holds → 409), `POST /receipts/:id/assign` (super admin —
+  assign an unmatched receipt to the client whose code is given; unknown code → 404). `planView` (cloudPlanAdmin) returns
+  `billing_code`, so the per-client Plan & billing shows it.
+- **Admin UI:** the code shows in `BranchBillingCard`'s header; `CloudBillingSettingsCard`'s receipts feed gains a
+  **Client** column with inline **assign-by-code** for unmatched rows.
+- **Tests:** `tests/cloud-billing-a626.test.mjs` 16/16 (matching, unmatched, assign incl. super-only + unknown-code, code
+  GET/PUT, the feed shows the client). Schema-drift gates green; the `.from()` calls use string literals so the drift
+  parser resolves each table. **Phase 2b (next):** the credit wallet, allocation against open invoices via the existing
+  branch-payment engine, auto-apply, and the paid-invoice receipt.
+
 ## 1. What it does
 
 - ZapTill registers **one Paybill** with Safaricom (ZapTill's own shortcode). Each client (business) carries a unique
