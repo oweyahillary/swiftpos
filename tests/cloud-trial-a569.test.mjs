@@ -351,7 +351,9 @@ try {
     const a = read('apps/admin/src/AdminPortal.tsx');
     assert.match(a, /data-testid="trial-convert">Convert to paid/);
     // A581: Convert to paid is the Cloud plan's Record payment (amount and period editable), not a fixed KES 10,000 year.
-    assert.match(a, /querySelector\('\[data-testid="pay-amount"\]'\)/);
+    // A624: the per-business Cloud plan card hides once a client is per-branch, so the button scrolls to whichever
+    // Record-payment field is present — the per-business pay-amount or the per-branch branch-pay-amount.
+    assert.match(a, /querySelector\('\[data-testid="pay-amount"\], \[data-testid="branch-pay-amount"\]'\)/);
     assert.match(a, /<CloudPlanCard /);
     assert.match(a, /data-testid="client-plan"/);
   });

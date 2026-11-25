@@ -26,6 +26,7 @@ interface Reminder { milestone: string; paid_until: string; sent_at: string; own
 interface OpenInvoice { id: string; invoice_number: string; period_start: string | null; period_end: string | null; amount: number }
 interface View {
   plan: Plan | null; standing: CloudStandingView | null; payments: Payment[]; reminders: Reminder[];
+  per_branch?: boolean;   // A624: once billed per branch, the matrix is the single billing surface and this card hides
   open_invoices?: OpenInvoice[];   // A587: what a payment offsets, oldest first
   defaults: { monthly: number; periods: Array<{ value: string; label: string; amount: number | null }>; methods: string[] };
 }
@@ -125,6 +126,11 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
   }
 
   if (!view) return <div style={S.card}><div style={{ fontSize: 12, color: error ? C.danger : C.muted }}>{error ?? "Loading the cloud plan…"}</div></div>;
+  // A624 (owner, 2026-11-25): once a client is billed per branch, the per-branch matrix (BranchBillingCard) is the single
+  // billing surface — recording a branch payment already sets web access, converts the trial and raises the invoice, so
+  // this business-level plan/payment card would only duplicate it. It hides here, and stays only for a not-yet-per-branch
+  // client (a fresh cloud trial) as the bootstrap that sets the first plan and records the first payment.
+  if (view.per_branch) return null;
   const line = standingLine(view.standing);
   const label = (p: string) => view.defaults.periods.find((x) => x.value === p)?.label ?? p;
   const field = (title: string, el: React.ReactNode) => (

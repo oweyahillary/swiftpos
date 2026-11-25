@@ -1559,7 +1559,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
               trialBillingLine(d.cloud_trial).text,
               superOnly(<>
                 {/* A581: converting is recording the first payment on the cloud plan (amount and period editable) — no fixed KES 10,000 a year */}
-                <button onClick={() => document.querySelector('[data-testid="pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                <button onClick={() => document.querySelector('[data-testid="pay-amount"], [data-testid="branch-pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
                   style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }} data-testid="trial-convert">Convert to paid</button>
                 {d.cloud_trial.phase === "active" && hasWebHosting && (
                   <button onClick={() => toggleWebHosting(false, `End ${d.name}'s cloud trial now? The owner is locked out of the web dashboard at once. Points of sale are not affected.`)}
@@ -1585,7 +1585,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false, i
                     {webHostingFlag && detail?.web_access_expires_at && Date.parse(detail.web_access_expires_at) > Date.now() && (
                       <button data-testid="web-access-enable" onClick={() => toggleWebHosting(true)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Enable web access</button>
                     )}
-                    <button data-testid="web-access-via-plan" onClick={() => document.querySelector('[data-testid="pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                    <button data-testid="web-access-via-plan" onClick={() => document.querySelector('[data-testid="pay-amount"], [data-testid="branch-pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
                       style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Record payment</button>
                   </>),
               "web-access")}

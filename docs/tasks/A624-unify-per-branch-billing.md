@@ -142,3 +142,23 @@ matrix — **no new API, all from the existing `cloud-plan` view**:
 - **Kept for rollback:** the `feature_flags` rows and the dead `*Enabled` functions + the admin server PATCH route
   `/clients/:id/features/:key` (still used by `web_hosting` / `themes_free` / eTIMS). **Phase 5** drops the dead rows +
   functions later, once this is proven in prod.
+
+## 11. Phase 6 — one billing surface: hide the per-business Cloud plan card for per-branch clients (owner, 2026-11-25) ✅ DONE
+Owner: "the billing page is confusing — cloud per branch AND cloud per business." The Plan & billing tab stacked two
+plan/payment cards: **CloudPlanCard "Cloud plan (per business)"** and **BranchBillingCard "Cloud per branch"** — two
+Record-payment flows, two "paid until", two standings. **Finding:** `per_branch = (business has any branch_cloud_plans
+rows)` (cloudPlanAdmin `planView`), and migration 193 gave every cloud business branch rows, so "cloud per business" is
+effectively dead. The per-branch **branch-payments** handler already does the whole job (`routes/cloudPlanAdmin.ts` ~545):
+sets `businesses.web_access_expires_at`, `webAccessOn(...)`, `convertTrial(...)`, and raises/settles the invoice — so the
+business-level Record-payment is pure duplication.
+- **CloudPlanCard** now returns `null` when `view.per_branch` (added `per_branch` to its View). So an established client
+  (every one, post-193) sees only the matrix; it stays as the **bootstrap** for a not-yet-per-branch client (a fresh cloud
+  trial has no branch rows — `cloudTrial.ts` creates none), where it sets the first plan and records the first payment.
+- **BranchBillingCard** gained a compact **Payments & reminders** section (from the same `cloud-plan` view's `payments[]` /
+  `reminders[]`, which already carried every payment incl. per-branch ones) so nothing is lost when CloudPlanCard hides.
+- **AdminPortal** "Web portal access" header: the trial **Convert to paid** / **Record payment** buttons now scroll to
+  `[data-testid="pay-amount"], [data-testid="branch-pay-amount"]` — whichever Record-payment field is present.
+- **Never two at once:** per-branch → matrix only; fresh trial → CloudPlanCard bootstrap only (the matrix shows just the
+  "Bill per branch" note). No server change; all endpoints intact. Tests green (branch-billing-a612, a617, cloud-trial-a569
+  updated for the combined scroll selector, billing-credit-a587). **Not done:** complimentary paid-until still lives in
+  CloudPlanCard (shown for the bootstrap only); if a per-branch client needs it, surface it in the header — follow-up.

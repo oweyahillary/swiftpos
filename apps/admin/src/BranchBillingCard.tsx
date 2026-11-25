@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { C, S } from "./theme";
-import { expiryText, trialDate, type CloudStandingView, type Tone } from "./cloudPlan";
+import { expiryText, milestoneText, trialDate, type CloudStandingView, type Tone } from "./cloudPlan";
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 interface BranchPlan { period: string; amount: number; custom_until: string | null; paid_until: string | null; web_off: boolean; premium: string[]; package: boolean }
@@ -24,7 +24,10 @@ interface BranchRow { branch_id: string; name: string | null; is_main: boolean; 
 type OwnKey = "analytics" | "attendance" | "themes" | "package";
 type OwnPrices = Partial<Record<OwnKey, number>>;
 interface Prices { cloud: number; analytics: number; attendance: number; themes: number; package: number }
-interface View { per_branch: boolean; themes_free?: boolean; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
+/** A624: the cloud payments and the notices sent — one history, now the sole place to see them (CloudPlanCard hides). */
+interface Payment { id: string; amount: number; method: string; reference: string | null; paid_at: string; paid_until_after: string; branch_ids?: string[] | null }
+interface Reminder { milestone: string; sent_at: string }
+interface View { per_branch: boolean; themes_free?: boolean; branches: BranchRow[]; prices: Prices; plan: { period: string } | null; payments?: Payment[]; reminders?: Reminder[]; defaults: { periods: Array<{ value: string; label: string }>; methods: string[] } }
 interface Preview { expected: number; branches: Array<{ branch_id: string; name: string; from: string; until: string; fresh: boolean }> }
 
 const TONE: Record<string, string> = { ok: "#34e5a0", warn: "#f59e0b", bad: C.danger, muted: C.muted };
@@ -264,6 +267,31 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
       <div style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>
         Each branch has its own due date and 7 unpaid days. The owner gets one invoice for the branches due the same day. A branch that does not pay is cut off on its own; the others carry on.
       </div>
+
+      {/* A624: the cloud payments and notices — one history for the whole client (this card is the only billing surface now). */}
+      <div style={{ fontSize: 12, fontWeight: 600, margin: "18px 0 8px" }}>Payments &amp; reminders</div>
+      {view.payments?.length ? (
+        <div className="sp-table-wrap"><table style={S.table} data-testid="branch-payments-history">
+          <thead><tr>{["Paid on", "Amount", "Method", "Branches", "Paid until"].map((h) => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>{view.payments.slice(0, 12).map((p) => {
+            const names = (p.branch_ids ?? []).map((bid) => view.branches.find((b) => b.branch_id === bid)?.name ?? "—").join(", ");
+            return (
+              <tr key={p.id}>
+                <td style={{ ...S.td, fontSize: 12 }}>{trialDate(p.paid_at)}</td>
+                <td style={{ ...S.td, fontFamily: "monospace" }}>{kes(p.amount)}</td>
+                <td style={{ ...S.td, fontSize: 12 }}>{METHOD[p.method] ?? p.method}{p.reference ? ` · ${p.reference}` : ""}</td>
+                <td style={{ ...S.td, fontSize: 12 }}>{names || "—"}</td>
+                <td style={{ ...S.td, fontSize: 12 }}><b>{trialDate(p.paid_until_after)}</b></td>
+              </tr>
+            );
+          })}</tbody>
+        </table></div>
+      ) : <div style={{ fontSize: 12, color: C.muted }}>No cloud payments recorded yet.</div>}
+      {view.reminders?.length ? (
+        <div data-testid="branch-reminders" style={{ fontSize: 11, color: C.muted, marginTop: 10 }}>
+          Notices sent: {view.reminders.map((r) => `${milestoneText(r.milestone)} (${trialDate(r.sent_at)})`).join(" · ")}
+        </div>
+      ) : null}
     </div>
   );
 }
