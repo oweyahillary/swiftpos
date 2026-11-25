@@ -50,6 +50,7 @@ import mpesaRoutes         from './mpesa';
 import mpesaSettingsRoutes from './mpesaSettings';   // A618
 import c2bRoutes           from './c2b';             // A621: M-Pesa payment notifications (Safaricom C2B)
 import c2bSettingsRoutes   from './c2bSettings';     // A621: the owner's switch, store number and registration
+import cloudBillingC2bRoutes from './cloudBillingC2b';   // A626: Safaricom's addresses for ZapTill's cloud-billing Paybill
 import mpesaStatementRoutes from './mpesaStatement'; // 2026-11-05: the M-Pesa statement check's sales
 import webhooksRoutes      from './webhooks';
 import { fuelTanksRouter, pumpsRouter } from './fueltanks';
@@ -79,6 +80,7 @@ import appUpdateRoutes from './appUpdate';         // Android Stage 0: the app's
 import appErrorsRoutes from './appErrors';         // Android Stage 0: the app's crash and error reports
 import cloudPlanAdminRoutes from './cloudPlanAdmin';   // A581: the cloud payment plan
 import billingDetailsAdminRoutes from './billingDetailsAdmin';   // A612: ZapTill's billing details and prices
+import cloudBillingAdminRoutes from './cloudBillingAdmin';   // A626: ZapTill's cloud-billing Paybill (register, test, receipts)
 import { forgetOnWrite }   from '../lib/forgetOnWrite';   // A528
 import { ringDrawersOnWrite } from '../lib/drawerBell';   // A535
 import branchDrawersRoutes from './branchDrawers';       // A535: a branch server asks about every drawer of its branch at once
@@ -155,6 +157,7 @@ router.use('/mpesa/settings', mpesaSettingsRoutes);   // A618: the STK push deta
 router.use('/mpesa/c2b-settings', c2bSettingsRoutes);   // A621: before /mpesa
 router.use('/payments/mpesa-statement', mpesaStatementRoutes);   // 2026-11-05: Reports › M-Pesa statement
 router.use('/payments/c2b',   c2bRoutes);   // A621: Safaricom's addresses may not contain "mpesa" — so not under /mpesa
+router.use('/cloud-billing/c2b', cloudBillingC2bRoutes);   // A626: Safaricom's addresses for ZapTill's own billing Paybill (distinct from A621's /payments/c2b)
 router.use('/mpesa',          mpesaRoutes);
 router.use('/fuel-tanks',     fuelTanksRouter);
 router.use('/pumps',          pumpsRouter);
@@ -176,6 +179,7 @@ router.use('/admin/support-logs', supportAdminRoutes);   // A519: before /admin,
 router.use('/admin/clients', logRequestsAdminRoutes);   // A533: …/:id/log-requests only; the rest falls through to /admin
 router.use('/admin/clients', cloudPlanAdminRoutes);   // A581: …/:id/cloud-plan only; the rest falls through to /admin
 router.use('/admin/billing-details', billingDetailsAdminRoutes);   // A612
+router.use('/admin/cloud-billing', cloudBillingAdminRoutes);   // A626: before /admin, which takes the rest of /admin/*
 router.use('/admin/tills-days', tillsDaysAdminRoutes);   // A523: before /admin, which takes the rest of /admin/*
 router.use('/admin/ops',      opsAdminRoutes);   // A525: before /admin, which takes the rest of /admin/*
 router.use('/admin/desktop',  adminInstallerRoutes);   // A570: before /admin, which takes the rest of /admin/*

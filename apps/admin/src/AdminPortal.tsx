@@ -23,6 +23,7 @@ import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone, expir
 import CloudPlanCard from "./CloudPlanCard";   // A581: the cloud payment plan
 import BranchBillingCard from "./BranchBillingCard";   // A612: the cloud per branch
 import BillingDetailsCard from "./BillingDetailsCard";   // A612: ZapTill's billing details and prices
+import CloudBillingSettingsCard from "./CloudBillingSettingsCard";   // A626: ZapTill's cloud-billing Paybill (M-Pesa C2B)
 import AdminPager, { usePageSize } from "./AdminPager";   // A475
 import { paginate } from "@zaptill/core/paginate";
 
@@ -2018,6 +2019,7 @@ function BillingPage({ req, isSuper = false }) {
     <div style={S.content}>
       <h1 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 20px" }}>Billing</h1>
       <div style={{ marginBottom: 20 }}><BillingDetailsCard req={req} isSuper={isSuper} /></div>
+      <div style={{ marginBottom: 20 }}><CloudBillingSettingsCard req={req} isSuper={isSuper} /></div>
       <div className="sp-kpi-grid sp-kpi-3">
         {[["Total Invoiced", total, C.accent], ["Paid", paid, "#22c55e"], ["Outstanding", outstanding, "#f59e0b"]].map(([l, v, c]) => (
           <div key={l} style={S.kpiCard}>
