@@ -96,7 +96,7 @@ const ADMIN = jwt.sign({ adminId: SUPER, email: 'boss@zaptill.test', role: 'supe
 const AGENT_T = jwt.sign({ adminId: AGENT, email: 'agent@zaptill.test', role: 'agent' }, process.env.ADMIN_JWT_SECRET, { algorithm: 'HS256' });
 
 const confirmation = (o = {}) => ({ TransactionType: 'Pay Bill', TransID: 'QJK7XT3L5P', TransTime: '20261125143005',
-  TransAmount: '10000.00', BusinessShortCode: '174379', BillRefNumber: 'KUDO', MSISDN: '2547 ***** 149', FirstName: 'KUDO', ...o });
+  TransAmount: '10000.00', BusinessShortCode: '174379', BillRefNumber: 'ACME', MSISDN: '2547 ***** 149', FirstName: 'ACME', ...o });
 const register = async (token = ADMIN) => {
   const r = await call('POST', '/api/admin/cloud-billing/register', token);
   return { r, token: daraja.registered.length ? String(daraja.registered.at(-1).body.ConfirmationURL).split('/').pop() : null };
@@ -140,11 +140,11 @@ try {
   await ok('a confirmation on the registered token lands a receipt (Accepted), with the account code normalised', async () => {
     reset();
     const { token } = await register();
-    const r = await pay(token, { BillRefNumber: 'ku-do ' });
+    const r = await pay(token, { BillRefNumber: 'ac-me ' });
     assert.deepEqual(r.body, { ResultCode: 0, ResultDesc: 'Accepted' });
     assert.equal(receipts().length, 1);
     const rc = receipts()[0];
-    assert.deepEqual([rc.trans_id, rc.amount, rc.bill_ref, rc.bill_ref_norm], ['QJK7XT3L5P', 10000, 'ku-do', 'KUDO']);
+    assert.deepEqual([rc.trans_id, rc.amount, rc.bill_ref, rc.bill_ref_norm], ['QJK7XT3L5P', 10000, 'ac-me', 'ACME']);
     assert.equal(rc.status, 'received');
   });
 
@@ -183,11 +183,11 @@ try {
   await ok('sandbox test payment: super admin fires a simulate to Safaricom', async () => {
     reset();
     await register();
-    const r = await call('POST', '/api/admin/cloud-billing/test-payment', ADMIN, { amount: 1, bill_ref: 'KUDO' });
+    const r = await call('POST', '/api/admin/cloud-billing/test-payment', ADMIN, { amount: 1, bill_ref: 'ACME' });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.equal(daraja.simulated.length, 1);
     const sim = daraja.simulated[0].body;
-    assert.deepEqual([sim.ShortCode, sim.CommandID, sim.Amount, sim.BillRefNumber], ['174379', 'CustomerPayBillOnline', 1, 'KUDO']);
+    assert.deepEqual([sim.ShortCode, sim.CommandID, sim.Amount, sim.BillRefNumber], ['174379', 'CustomerPayBillOnline', 1, 'ACME']);
   });
 
   await ok('test payment is super-admin only; and needs a sandbox registration first', async () => {
@@ -206,7 +206,7 @@ try {
     await pay(token);
     const feed = await call('GET', '/api/admin/cloud-billing/receipts', AGENT_T);
     assert.equal(feed.body.receipts.length, 1);
-    assert.equal(feed.body.receipts[0].bill_ref, 'KUDO');
+    assert.equal(feed.body.receipts[0].bill_ref, 'ACME');
     const s = await call('GET', '/api/admin/cloud-billing/settings', AGENT_T);
     assert.equal(s.body.registered.shortcode, '174379'); assert.equal(s.body.registered.environment, 'sandbox');
   });

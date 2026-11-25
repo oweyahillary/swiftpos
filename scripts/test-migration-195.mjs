@@ -54,7 +54,7 @@ await ok('a token_hash must be 64 hex (or null)', async () => {
   await db.query(`UPDATE public.zaptill_billing_c2b SET token_hash = repeat('a',64) WHERE singleton`);
 });
 await ok('cloud_billing_receipts: a receipt lands, deduped on the M-Pesa code (trans_id)', async () => {
-  await db.query(`INSERT INTO public.cloud_billing_receipts (trans_id, shortcode, amount, bill_ref, bill_ref_norm) VALUES ('QJK7XT3L5P','123456',1080,'KUDO','KUDO')`);
+  await db.query(`INSERT INTO public.cloud_billing_receipts (trans_id, shortcode, amount, bill_ref, bill_ref_norm) VALUES ('QJK7XT3L5P','123456',1080,'ACME','ACME')`);
   assert.equal(await throws(`INSERT INTO public.cloud_billing_receipts (trans_id, shortcode, amount) VALUES ('QJK7XT3L5P','123456',1)`), true, 'same trans_id must conflict');
   assert.equal((await one(`SELECT count(*)::int AS n FROM public.cloud_billing_receipts`)).n, 1);
 });

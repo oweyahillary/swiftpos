@@ -68,7 +68,7 @@ export default function CloudBillingSettingsCard({ req, isSuper }: { req: Req; i
           {sandboxReady && (
             <>
               <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: C.muted }}>Account code (optional)
-                <input data-testid="cloud-billing-test-ref" style={S.input} value={testRef} onChange={(e) => setTestRef(e.target.value)} placeholder="e.g. KUDO" /></label>
+                <input data-testid="cloud-billing-test-ref" style={S.input} value={testRef} onChange={(e) => setTestRef(e.target.value)} placeholder="e.g. ACME" /></label>
               <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: C.muted }}>Amount (KES)
                 <input data-testid="cloud-billing-test-amount" style={{ ...S.input, width: 90 }} inputMode="numeric" value={testAmount} onChange={(e) => setTestAmount(e.target.value)} /></label>
               <button data-testid="cloud-billing-test" disabled={busy} onClick={() => run(() => req("POST", "/cloud-billing/test-payment", { amount: Number(testAmount) || 1, bill_ref: testRef.trim() || null }), (v) => `Sandbox test payment sent (${kes(v.amount)}${v.bill_ref ? `, account ${v.bill_ref}` : ""}). It should appear below in a few seconds — Refresh.`)}

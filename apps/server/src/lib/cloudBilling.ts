@@ -52,7 +52,7 @@ export function billingC2bUrls(base: string, token: string): { ok: true; confirm
 }
 
 /** A client's billing code / the account number a payer types — normalised for storage and (Phase 2) matching: trimmed,
- *  upper-cased, non-alphanumerics stripped, so "kudo", "KUDO ", "Kudo", "ku-do" all become "KUDO". null when empty. */
+ *  upper-cased, non-alphanumerics stripped, so "acme", "ACME ", "Acme", "ac-me" all become "ACME". null when empty. */
 export function normalizeBillRef(v: string | null | undefined): string | null {
   const s = (v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   return s || null;
