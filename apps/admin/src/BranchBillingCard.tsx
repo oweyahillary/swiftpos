@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { C, S } from "./theme";
-import { standingLine, trialDate, type CloudStandingView } from "./cloudPlan";
+import { expiryText, trialDate, type CloudStandingView, type Tone } from "./cloudPlan";
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 interface BranchPlan { period: string; amount: number; custom_until: string | null; paid_until: string | null; web_off: boolean; premium: string[]; package: boolean }
@@ -43,6 +43,19 @@ const ownToSend = (draft: Record<OwnKey, string>, before: OwnPrices | undefined)
 };
 const METHOD: Record<string, string> = { mpesa: "M-Pesa", bank: "Bank", cash: "Cash", other: "Other" };
 const today = () => new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
+
+// A624 (owner, 2026-11-25): the billing page as a per-branch × per-feature matrix. There is no business-wide premium switch
+// any more — a branch's own plan is the only gate. An add-on takes effect only on a branch with an ACTIVE cloud
+// subscription, so a branch with no cloud shows its add-ons amber (set, not in effect) and the editor can't add new ones.
+const INACTIVE_CLOUD = new Set(["off", "locked", "not_interested"]);
+const cloudActive = (b: BranchRow): boolean => !!b.plan && !b.plan.web_off && !INACTIVE_CLOUD.has(b.standing?.state ?? "");
+const hasFeat = (b: BranchRow, key: string): boolean => b.package || b.premium.includes(key);
+/** The branch's cloud subscription in a few words — the matrix's leading column; every add-on depends on it. */
+const cloudCell = (b: BranchRow): { text: string; tone: Tone } => {
+  if (!b.plan) return { text: "No cloud", tone: "muted" };
+  if (b.plan.web_off) return { text: "Disabled", tone: "bad" };
+  return expiryText(b.standing) ?? { text: b.plan.paid_until ? `Paid to ${trialDate(b.plan.paid_until)}` : "On a plan", tone: "ok" };
+};
 
 export default function BranchBillingCard({ clientId, req, isSuper, onChanged }: { clientId: string; req: Req; isSuper: boolean; onChanged?: () => void }) {
   const [view, setView] = useState<View | null>(null);
@@ -83,7 +96,6 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
   };
 
   if (!view) return <div style={S.card}><div style={{ fontSize: 12, color: error ? C.danger : C.muted }}>{error ?? "Loading the branches' plans…"}</div></div>;
-  const label = (p: string) => view.defaults.periods.find((x) => x.value === p)?.label ?? p;
   const field = (title: string, el: React.ReactNode) => (
     <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: C.muted, minWidth: 120, flex: 1 }}>{title}{el}</label>
   );
@@ -129,6 +141,9 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
     own_prices: ownToSend(edit.own, view.branches.find((b) => b.branch_id === edit.branch_id)?.own_prices),   // A617
   }), (v) => { setEdit(null); return v?.notice ?? "Branch plan saved."; });
   const onOwnPrice = (b: BranchRow) => Object.keys(b.own_prices ?? {}).length > 0;   // A617
+  // A624: the branch being edited, and whether its premium add-ons are locked (no active cloud to run them on).
+  const editBranch = edit ? view.branches.find((b) => b.branch_id === edit.branch_id) ?? null : null;
+  const premiumLocked = !!editBranch && !cloudActive(editBranch);
 
   return (
     <div style={S.card} data-testid="branch-billing">
@@ -143,19 +158,28 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
       {error && <div style={{ fontSize: 12, color: C.danger, margin: "8px 0" }}>{error}</div>}
 
       <div className="sp-table-wrap" style={{ marginTop: 10 }}><table style={S.table} data-testid="branch-plans">
-        <thead><tr>{["Branch", "Plan", "Premium", "Paid until", "Where it stands", "A period", ""].map((h) => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+        <thead><tr>{["Branch", "Cloud", "Analytics", "Attendance", "Themes", "Per period", ""].map((h) => (
+          <th key={h} style={{ ...S.th, textAlign: h === "Branch" || h === "Cloud" || h === "" ? "left" : "center" }}>{h}</th>
+        ))}</tr></thead>
         <tbody>{view.branches.map((b) => {
-          const line = standingLine(b.standing);
+          const cloud = cloudCell(b);
+          const active = cloudActive(b);
           return (
             <tr key={b.branch_id}>
-              <td style={{ ...S.td, fontWeight: 600 }}>{b.name}{b.is_main ? " ★" : ""}</td>
-              <td style={{ ...S.td, fontSize: 12 }}>{b.plan ? `${label(b.plan.period)} · ${kes(b.plan.amount)}` : <span style={{ color: C.muted }}>Follows the business</span>}</td>
-              <td style={{ ...S.td, fontSize: 12 }}>{b.package ? "Premium package" : b.premium.length ? b.premium.map((k) => PREMIUM.find((p) => p[0] === k)?.[1] ?? k).join(", ") : "—"}
+              <td style={{ ...S.td, fontWeight: 600 }}>{b.name}{b.is_main ? " ★" : ""}
+                {b.package && <span title="Premium package — Cloud and every add-on at the bundle price"
+                  style={{ marginLeft: 6, fontSize: 10, color: TONE.ok, border: `1px solid ${C.border}`, borderRadius: 6, padding: "0 4px" }}>package</span>}
                 {onOwnPrice(b) && <span data-testid={`branch-own-price-${b.branch_id}`} title={OWN_PRICES.filter(([k]) => b.own_prices?.[k] !== undefined).map(([k, n]) => `${n} ${kes(b.own_prices?.[k])}`).join(" · ")}
                   style={{ marginLeft: 6, fontSize: 10, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 6, padding: "0 4px" }}>own price</span>}</td>
-              <td style={{ ...S.td, fontSize: 12 }}>{b.plan ? trialDate(b.plan.paid_until) : "—"}</td>
-              <td style={{ ...S.td, fontSize: 12, color: TONE[line.tone] }}>{b.plan?.web_off ? "Disabled" : line.title}</td>
-              <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{kes(b.period_total)}</td>
+              <td style={{ ...S.td, fontSize: 12, color: TONE[cloud.tone] }}>{cloud.text}</td>
+              {PREMIUM.map(([k]) => {
+                const on = hasFeat(b, k);
+                return <td key={k} style={{ ...S.td, textAlign: "center", fontSize: 13 }}
+                  title={!on ? "Not on this branch" : active ? "On" : "Set, but not in effect — this branch has no active cloud"}>
+                  {!on ? <span style={{ color: C.muted }}>—</span> : <span style={{ color: active ? TONE.ok : TONE.warn }}>✓</span>}
+                </td>;
+              })}
+              <td style={{ ...S.td, textAlign: "center", fontFamily: "monospace", fontSize: 12 }}>{kes(b.period_total)}</td>
               <td style={S.td}>{isSuper && (
                 <button data-testid={`branch-edit-${b.branch_id}`} style={{ ...S.btn, ...S.btnGhost, fontSize: 11 }}
                   onClick={() => setEdit({ branch_id: b.branch_id, period: b.plan?.period ?? view.plan?.period ?? "monthly", amount: String(b.plan?.amount ?? view.prices.cloud),
@@ -164,6 +188,13 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
             </tr>
           );
         })}</tbody>
+        <tfoot><tr style={{ borderTop: `2px solid ${C.border}` }}>
+          <td style={{ ...S.td, fontWeight: 600 }}>Totals</td>
+          <td style={{ ...S.td, fontSize: 12, color: C.muted }}>{view.branches.filter(cloudActive).length} on cloud</td>
+          {PREMIUM.map(([k]) => <td key={k} style={{ ...S.td, textAlign: "center", fontSize: 12, fontWeight: 600 }} title={`Branches with ${PREMIUM.find((p) => p[0] === k)?.[1]}`}>{view.branches.filter((b) => hasFeat(b, k)).length}</td>)}
+          <td style={{ ...S.td, textAlign: "center", fontFamily: "monospace", fontSize: 12, fontWeight: 600 }} title="Total billed per period across the branches">{kes(view.branches.reduce((s, b) => s + (b.period_total ?? 0), 0))}</td>
+          <td style={S.td}></td>
+        </tr></tfoot>
       </table></div>
 
       {edit && (
@@ -176,15 +207,16 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
             {field("Cloud, per period (KES)", <input style={S.input} inputMode="numeric" value={edit.amount} onChange={(e) => setEdit({ ...edit, amount: e.target.value })} />)}
           </div>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10, fontSize: 12 }}>
-            <label><input type="checkbox" checked={edit.package} onChange={(e) => setEdit({ ...edit, package: e.target.checked })} /> Premium package (Cloud and every premium item)</label>
+            <label style={{ opacity: premiumLocked ? 0.5 : 1 }}><input type="checkbox" disabled={premiumLocked} checked={edit.package} onChange={(e) => setEdit({ ...edit, package: e.target.checked })} /> Premium package (Cloud and every premium item)</label>
             {PREMIUM.map(([k, n]) => (
-              <label key={k} style={{ opacity: edit.package ? 0.5 : 1 }}>
-                <input type="checkbox" disabled={edit.package} checked={edit.package || edit.premium.includes(k)}
+              <label key={k} style={{ opacity: premiumLocked || edit.package ? 0.5 : 1 }}>
+                <input type="checkbox" disabled={premiumLocked || edit.package} checked={edit.package || edit.premium.includes(k)}
                   onChange={(e) => setEdit({ ...edit, premium: e.target.checked ? [...edit.premium, k] : edit.premium.filter((x) => x !== k) })} /> {n}
               </label>
             ))}
             <label style={{ color: C.danger }}><input type="checkbox" checked={edit.web_off} onChange={(e) => setEdit({ ...edit, web_off: e.target.checked })} /> Disable this branch now</label>
           </div>
+          {premiumLocked && <div data-testid="branch-premium-locked" style={{ fontSize: 11, color: TONE.warn, marginTop: 6 }}>This branch has no active cloud subscription — put it on the cloud (record a payment, or clear "Disable") before adding premium add-ons.</div>}
           {/* A617: this branch's own monthly price for an add-on or the package; blank = ZapTill's price (the placeholder). */}
           <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 6px" }}>Own prices, a month (optional)</div>
           <div data-testid="branch-own-prices" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -192,7 +224,7 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
               placeholder={String(view.prices[k])} value={edit.own[k]} onChange={(e) => setEdit({ ...edit, own: { ...edit.own, [k]: e.target.value } })} />)}</span>)}
           </div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Leave a price blank for ZapTill's price; 0 gives it free. The invoice shows the price that applies.</div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Premium needs the business's own switch on too (Features). Disable cuts the branch off at once: its POS stop syncing and nobody sees its data.</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Premium is per branch — there is no business-wide switch; a branch needs an active cloud subscription for its add-ons to take effect. Disable cuts the branch off at once: its POS stop syncing and nobody sees its data.</div>
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <button data-testid="branch-save" disabled={busy || !edit.amount} onClick={saveBranch} style={{ ...S.btn, ...S.btnPrimary, opacity: busy ? 0.5 : 1 }}>Save</button>
             <button onClick={() => setEdit(null)} style={{ ...S.btn, ...S.btnGhost }}>Cancel</button>

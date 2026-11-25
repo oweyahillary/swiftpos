@@ -111,3 +111,26 @@ in order because the job stops at the first failing step (`bash -e`):
    193 still 10/10). **Follow-up (not done):** harden `check-schema-drift.mjs` so it ignores a temp table by *either*
    spelling — treat the `TEMP`/`TEMPORARY`/`UNLOGGED` prefix in a capturing group and skip when it is `TEMP*` (UNLOGGED is
    a real persistent table and must stay tracked). Left for a deliberate change, not a mid-test edit to a shared gate.
+
+## 9. Phase 4 — the billing page as a per-branch × per-feature matrix (owner, 2026-11-25) ✅ DONE
+Owner: "the billing page is soo confusing." Redesigned `apps/admin/src/BranchBillingCard.tsx` (per-branch view) into a
+matrix — **no new API, all from the existing `cloud-plan` view**:
+- Columns: **Branch · Cloud · Analytics · Attendance · Themes · Per period · (Edit)**. The old joined "Premium" text column
+  and the separate Plan / Paid-until / Where-it-stands columns fold into one **Cloud** status cell (`cloudCell()` →
+  `expiryText()`, with `web_off`→"Disabled", no plan→"No cloud").
+- **Cloud is the gate (owner's call, confirmed):** each add-on cell is ✓ (green) when on + active, amber ✓ when set but the
+  branch has no active cloud, — when off. `cloudActive(b)` = has a plan, not `web_off`, standing not in {off, locked,
+  not_interested}. In the Edit panel the premium/package checkboxes are **disabled** for a branch with no active cloud, with
+  a note; the stale "Premium needs the business's own switch (Features)" line is gone.
+- **Package** kept as the Edit-panel toggle (confirmed); a `package` badge marks a bundled branch in the matrix.
+- **Totals footer:** branches-on-cloud count, a per-feature branch count, and the grand total billed per period.
+- Kept intact: the Edit panel, Record-payment flow (`branch-payments/preview`), own-prices (A617), the themes-free deal.
+  Both billing tests green (branch-billing-a612 22/22, a617 25/25); admin type-clean.
+
+## 10. Phase 3 — retire the dead master toggles + per-branch nav (NEXT, not done)
+After the matrix, remove the now-dead admin **Features** toggles (Themes/Analytics/Attendance — `AdminPortal.tsx`
+~1760-1772 + the `hasThemes/hasAnalytics/hasAttendance` vars and `toggleThemes/Analytics/Attendance` handlers), replacing
+them with a read-only pointer to Branch billing; and make `routes/flags.ts` derive `analytics/attendance/themes` from
+`anyBranchHasFeature()` so the dashboard Attendance nav (`DashboardLayout.tsx` ~318) is per-branch. **Couples to 3 tests**
+that pin the toggles — brand-colours-a597, admin-pos-options-a604, admin-owner-settings — so they update in the same commit.
+Keep `feature_flags` rows + the dead `*Enabled` functions for rollback (Phase 5 drops them later).
