@@ -57,7 +57,7 @@ let db;
 const grant = (role_id, key) => ({ id: id(), role_id, permission_id: PID[key] });
 const reset = () => {
   db = {
-    businesses: [{ id: BZ, owner_id: OWNER, name: 'Pollo', desktop_approved_version: null }],
+    businesses: [{ id: BZ, owner_id: OWNER, name: 'Pollo', type: 'restaurant', desktop_approved_version: null }],   // A627: type gates the catalogue
     branches: [{ id: BR, business_id: BZ, name: 'A', is_main: true, status: 'active' }],
     permissions: Object.entries(PID).map(([key, pid]) => ({ id: pid, key, label: key, module: 'x' })),
     roles: [{ id: R_OWNER, business_id: BZ, name: 'Owner' }, { id: R_MGR, business_id: BZ, name: 'Manager' },
@@ -161,12 +161,32 @@ try {
     reset();
     const r = await call('GET', '/api/staff/permissions', T.mgr);
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.map((p) => p.key), [...P.PERMISSION_KEYS]);
+    // A627: gated by establishment — a restaurant's catalogue (no fuel/parking keys), in catalogue order. Every key is still
+    // registered in public.permissions on the way (the gating only shapes the RESPONSE), so reports.costs is there.
+    assert.deepEqual(r.body.map((p) => p.key), P.permissionsForType('restaurant').map((p) => p.key));
+    assert.ok(!r.body.some((p) => p.key === 'reports.fuel' || p.key === 'parking.manage'), 'no other establishment\'s keys');
+    assert.ok(r.body.some((p) => p.key === 'tables.manage'), 'but a restaurant sees its own (tables)');
     assert.ok(r.body.every((p) => p.id && p.label && p.description && p.group && p.surface), 'every field');
     assert.ok(!r.body.some((p) => P.isLegacyKey(p.key)), 'no broad key');
     assert.ok(db.permissions.some((p) => p.key === 'reports.costs'), 'registered on the way');
     const g = await call('GET', '/api/staff/permission-groups', T.mgr);
     assert.deepEqual(g.body.map((x) => x.id), P.PERMISSION_GROUPS.map((x) => x.id));
+  });
+
+  await ok('A627 GET /permissions is gated by establishment: a petrol station sees Fuel, a restaurant a car park do not', async () => {
+    reset();
+    const keysFor = async () => (await call('GET', '/api/staff/permissions', T.mgr)).body.map((p) => p.key);
+    db.businesses[0].type = 'petrol_station';
+    const fuel = await keysFor();
+    assert.ok(fuel.includes('reports.fuel') && fuel.includes('fuel.manage'), 'petrol station sees fuel keys');
+    assert.ok(!fuel.includes('parking.manage') && !fuel.includes('tables.manage'), 'but not parking or tables');
+    db.businesses[0].type = 'parking';
+    const park = await keysFor();
+    assert.ok(park.includes('parking.manage') && !park.includes('reports.fuel'), 'a car park sees parking, not fuel');
+    db.businesses[0].type = 'retail';
+    const shop = await keysFor();
+    assert.ok(!shop.includes('reports.fuel') && !shop.includes('parking.manage') && !shop.includes('tables.manage'), 'a shop sees none of them');
+    assert.ok(shop.includes('orders.create') && shop.includes('reports.sales'), 'but keeps the universal keys');
   });
   await ok('GET /roles: keys (fine), is_owner_role, assignable, editable, members — for a manager', async () => {
     reset();

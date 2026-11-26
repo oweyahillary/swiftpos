@@ -229,7 +229,9 @@ export default function BusinessProfileTab() {
             <h3 className="text-white font-semibold">Cashiers see their sales when closing a shift</h3>
             <p className="text-gray-500 text-sm mt-0.5">
               When on, a cashier closing a shift sees the shift's sales and number of orders — on the desktop POS and the web POS.
-              They still never see the expected cash or any difference; a manager confirms the count. Off by default.
+              They still never see the expected cash or any difference; a manager confirms the count. Off by default. To give the
+              view to one person instead, grant them <span className="text-gray-400">“See own shift sales at close”</span> on Roles
+              and permissions — a locked cashier (this switch off, without the right) only keys in the cash they counted.
             </p>
           </div>
           <button data-testid="cashier-sees-sales-toggle"

@@ -46,8 +46,8 @@ ok('the owner sets it, and a branch may override it', () => {
 
 console.log('\nThe cloud\n');
 const shifts = read('apps/server/src/routes/shifts.ts');
-ok("a cashier's blind shift carries their sales only when the switch is on", () => {
-  assert.match(shifts, /const seesSales = await cashierSeesShiftSales\(req\.businessId!, shift\.branch_id\);/);
+ok("a cashier's blind shift carries their sales when the switch is on OR they hold the A627 right", () => {
+  assert.match(shifts, /const seesSales = \(await cashierSeesShiftSales\(req\.businessId!, shift\.branch_id\)\) \|\| can\(req, 'shifts\.see_shift_sales'\);/);
   // A442 adds each person's part (sales only) inside the same switch.
   assert.match(shifts, /\.\.\.\(seesSales \? \{ cashier_sales: \{ total: Math\.round\(kept \* 100\) \/ 100, orders: \(orders \?\? \[\]\)\.length,\s*\/\/[^\n]*\n\s*by_cashier: byCashier\.map\(\(c\) => \(\{ name: c\.name, orders: c\.orders, sales: c\.sales \}\)\) \} \} : \{\}\)/);
 });
@@ -60,8 +60,8 @@ ok('the till is told with its settings (the branch\'s own wins)', () => {
 console.log('\nThe till\n');
 const svc = read('apps/desktop/src/main/shiftService.ts');
 const blind = svc.slice(svc.indexOf('export function blindReport'), svc.indexOf('/** A manager for shift purposes'));
-ok('only when on: the blind report adds the sales kept and the orders', () => {
-  assert.match(blind, /seesSales: boolean = getCashierSeesShiftSales\(\)/);
+ok('the blind report adds the sales kept and the orders when the switch is on OR the A627 right is held', () => {
+  assert.match(blind, /seesSales: boolean = signedInCan\('shifts\.see_shift_sales'\) \|\| getCashierSeesShiftSales\(\)/);
   // A442 adds each person's part (sales only) inside the same switch, and strips the per-person figures when it is off.
   assert.match(blind, /\.\.\.\(seesSales \? \{ cashierSales: \{ total: money2\(z\.totals\.netSales \?\? z\.totals\.grossSales\), orders: z\.totals\.orderCount,\s*byCashier: \(z\.byCashier \?\? \[\]\)\.map\(\(c\) => \(\{ name: c\.name, orders: c\.orders, sales: c\.sales \}\)\) \} \} : \{\}\)/);
   assert.match(blind, /byCashier: seesSales \? \(z\.byCashier \?\? \[\]\)\.map\(\(c\) => \(\{ \.\.\.c, byMethod: \[\] \}\)\) : \[\],/);

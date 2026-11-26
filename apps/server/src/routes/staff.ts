@@ -11,7 +11,7 @@ import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
 import { callerHeld, canAssignRole, roleEditRefusal, overridesBeyondCaller } from '../lib/roleCeiling';
 import { isOwnerRoleName } from '../lib/ownerRole';
-import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf } from '@zaptill/core/permissions';
+import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf, permissionsForType, keysForType } from '@zaptill/core/permissions';
 import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf, withNewParentParts, overridePartsOf } from '../lib/roleKeys';
 import { useEmailCodes } from '../lib/loginOtp';   // A391
 import { keysBeyond } from '@zaptill/core/permissions';   // A494
@@ -1194,12 +1194,20 @@ router.get('/roles', requireAnyPermission('staff.view', 'staff.edit', 'staff.rol
   }));
 });
 
+// A627: the establishment type, so the catalogue and grants are gated by it (a shop never gets the fuel keys).
+async function businessTypeOf(businessId: string | undefined): Promise<string | null> {
+  const { data } = await supabase.from('businesses').select('type').eq('id', businessId).maybeSingle();
+  return (data as { type: string | null } | null)?.type ?? null;
+}
+
 // GET /api/staff/permissions — the catalogue: fine keys only, in catalogue order, with the words the owner reads.
 router.get('/permissions', async (req, res) => {
   let ids: Map<string, string>;
   try { ids = await permissionIds(PERMISSIONS.map((p) => p.key)); } catch (e) { sendError(res, e as Error); return; }
+  // A627: the catalogue is gated by establishment — a shop never sees the fuel keys, a restaurant the parking keys.
+  const catalogue = permissionsForType(await businessTypeOf(req.businessId));
   // A595: and how the Roles screen nests them — a part names its parent; See / Do / Approve; the personal-data badge.
-  res.json(PERMISSIONS.map((p) => ({
+  res.json(catalogue.map((p) => ({
     id: ids.get(p.key) ?? null, key: p.key, label: p.label, description: p.description, group: p.group, surface: p.surface,
     view: p.view === true, personal: p.personal === true, parent: parentOf(p.key), parts: [...partsOf(p.key)], kind: permissionKind(p.key),
   })));
@@ -1233,6 +1241,9 @@ router.put('/roles/:roleId/permissions', requirePermission('staff.roles'), async
   // A595: a parent ticked for the first time by a client that does not know the split rights (no `parts: true`) brings
   // its parts, as before the split — only those the caller may give.
   if (req.body?.parts !== true) wanted = withNewParentParts(wanted, role.keys, callerHeld(req));
+  // A627: a typed key (fuel, parking, tables…) can't be granted to the wrong establishment — drop it, keeping any the role
+  // already holds by its type. Defence behind the Roles screen, which already hides the keys another establishment uses.
+  wanted = keysForType(wanted, await businessTypeOf(req.businessId));
   const refusal = roleEditRefusal(callerHeld(req), role, wanted);
   if (refusal) { res.status(403).json(refusal); return; }
 
@@ -1259,6 +1270,7 @@ router.post('/roles', requirePermission('staff.roles'), async (req, res) => {
     wanted = [...new Set([...srcKeys, ...wanted])];
   }
   if (req.body?.parts !== true && !copy_from) wanted = withNewParentParts(wanted, new Set(), callerHeld(req));   // A595
+  wanted = keysForType(wanted, await businessTypeOf(req.businessId));   // A627: no fuel keys on a shop's role, even by copy
   const refusal = roleEditRefusal(callerHeld(req), { name: clean, keys: [] }, wanted);
   if (refusal) { res.status(403).json(refusal); return; }
 

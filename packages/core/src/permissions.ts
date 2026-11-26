@@ -46,6 +46,11 @@ export interface PermissionDef {
   /** A595: it shows or sets PERSONAL data (Kenya Data Protection Act 2019): phone numbers, e-mails, what a customer bought,
    *  PINs, pay. A "personal data" badge on the Roles screen; never part of the built-in Auditor (VIEW_KEYS). */
   personal?: boolean;
+  /** A627: the key belongs to specific establishments only (businesses.type) — a petrol station's fuel keys, a car park's
+   *  parking keys, a restaurant/café's table and kitchen keys. Undefined = every business. The Roles screen lists, and the
+   *  cloud grants, a typed key only to a business of one of these types (permissionsForType) — so a shop never sees Fuel
+   *  reports. Mirrors BuiltInRole.types, which already gates the built-in ROLES by type. */
+  types?: readonly string[];
 }
 
 export const PERMISSION_GROUPS: Array<{ id: PermissionGroup; label: string; description: string }> = [
@@ -61,6 +66,17 @@ export const PERMISSION_GROUPS: Array<{ id: PermissionGroup; label: string; desc
   { id: 'front',     label: 'Front of house',      description: 'Reservations, parking and fuel' },
   { id: 'settings',  label: 'Settings',            description: 'How the business, its branches and its tills are set up' },
 ];
+
+/**
+ * The establishment types (businesses.type — the admin portal's and onboarding's VALID_TYPES) that gate certain built-in
+ * ROLES (A514/A580) and, from A627, certain permission KEYS. Defined here, above the catalogue, so a key can tag itself.
+ *   FUEL  — only a petrol station sells fuel (its Fuel attendant role; its fuel.* and reports.fuel keys).
+ *   FOOD  — only a restaurant/café runs a kitchen and serves at tables (its Waiter/Kitchen roles; its table/kitchen keys).
+ *   PARKING — only a car park runs parking tickets (its parking.* keys).
+ */
+export const FUEL_BUSINESS_TYPES: readonly string[] = ['petrol_station'];
+export const FOOD_BUSINESS_TYPES: readonly string[] = ['restaurant', 'cafe'];
+export const PARKING_BUSINESS_TYPES: readonly string[] = ['parking'];
 
 export const PERMISSIONS: PermissionDef[] = [
   // ── Selling ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -110,6 +126,13 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Close the day', description: 'Close the trading day on a till (Close Day) - the way out of the day lock' },
   { key: 'shifts.close_branch',  group: 'drawer', surface: 'till', manager: true,
     label: 'Close the branch', description: 'Close Branch on the branch server: confirm the day totals of every till and close every till day' },
+  // A627 (owner, 2026-11-26: "can we make it a user right that the owner or the partner can give their team?"): seeing a
+  // shift's sales at close is a RIGHT now, grantable per person — not only the business-wide 'cashier_sees_shift_sales'
+  // switch. The count stays BLIND either way: never the expected cash or the difference (that needs shifts.confirm). The
+  // switch still works as the business-wide default for cashiers; this right gives the view to a specific person, so a
+  // locked cashier (switch off, no right) only keys in the cash they counted. Senior roles hold it; a cashier does not.
+  { key: 'shifts.see_shift_sales', group: 'drawer', surface: 'both', view: true, manager: true,
+    label: 'See own shift sales at close', description: 'When closing a shift, see the shift\'s sales total and number of orders. The count stays blind — never the expected cash or the difference (a drawer confirmation shows those).' },
 
   // ── Reports — one key per report ─────────────────────────────────────────────────────────────────────────────────
   { key: 'reports.overview',     group: 'reports', surface: 'both', view: true, manager: true,
@@ -130,7 +153,7 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Audit trail', description: 'Download the audit trail of voids, refunds, discounts and other changes, with who made them' },
   { key: 'reports.inventory',    group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Inventory report', description: 'Stock movement and value over a period' },
-  { key: 'reports.fuel',         group: 'reports', surface: 'both', view: true, manager: true,
+  { key: 'reports.fuel',         group: 'reports', surface: 'both', view: true, manager: true, types: FUEL_BUSINESS_TYPES,   // A627
     label: 'Fuel reports', description: 'Fuel sales, wet stock and the pump monitor' },
   { key: 'reports.tax',          group: 'reports', surface: 'web', view: true,
     label: 'Tax report', description: 'VAT and levy by branch and category, and eTIMS invoices' },
@@ -265,17 +288,17 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Attendance devices', description: 'Add and remove attendance devices, give people their device numbers and match the users found on a device' },
 
   // ── Front of house ───────────────────────────────────────────────────────────────────────────────────────────────
-  { key: 'reservations.manage',  group: 'front', surface: 'web', cashier: true, manager: true,
+  { key: 'reservations.manage',  group: 'front', surface: 'web', cashier: true, manager: true, types: FOOD_BUSINESS_TYPES,   // A627
     label: 'Reservations and waitlist', description: 'Take and change reservations and the waitlist' },
-  { key: 'parking.manage',       group: 'front', surface: 'both', cashier: true, manager: true,
+  { key: 'parking.manage',       group: 'front', surface: 'both', cashier: true, manager: true, types: PARKING_BUSINESS_TYPES,   // A627
     label: 'Parking', description: 'Open, close and void parking tickets' },
-  { key: 'parking.void',         group: 'front', surface: 'both', manager: true,
+  { key: 'parking.void',         group: 'front', surface: 'both', manager: true, types: PARKING_BUSINESS_TYPES,   // A627
     label: 'Void parking tickets', description: 'Void a parking ticket, with a reason' },
-  { key: 'fuel.manage',          group: 'front', surface: 'both', cashier: true, manager: true,
+  { key: 'fuel.manage',          group: 'front', surface: 'both', cashier: true, manager: true, types: FUEL_BUSINESS_TYPES,   // A627
     label: 'Fuel pumps and tanks', description: 'Set pumps active or idle, record tank deliveries and set up pumps and tanks' },
-  { key: 'fuel.deliveries',      group: 'front', surface: 'both', manager: true,
+  { key: 'fuel.deliveries',      group: 'front', surface: 'both', manager: true, types: FUEL_BUSINESS_TYPES,   // A627
     label: 'Record fuel deliveries', description: 'Record a delivery of fuel into a tank' },
-  { key: 'fuel.setup',           group: 'front', surface: 'both', manager: true,
+  { key: 'fuel.setup',           group: 'front', surface: 'both', manager: true, types: FUEL_BUSINESS_TYPES,   // A627
     label: 'Set up pumps and tanks', description: 'Add, change and remove pumps and tanks' },
 
   // ── Settings ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -311,7 +334,7 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Receipt text', description: 'The receipt\'s header and footer lines' },
   { key: 'stations.manage',      group: 'settings', surface: 'both', manager: true,
     label: 'Printers and print stations', description: 'Printers, kitchen and bar stations and what prints where' },
-  { key: 'tables.manage',        group: 'settings', surface: 'web', manager: true,
+  { key: 'tables.manage',        group: 'settings', surface: 'web', manager: true, types: FOOD_BUSINESS_TYPES,   // A627
     label: 'Tables and zones', description: 'The dining tables and floor zones' },
   { key: 'devices.approve',      group: 'settings', surface: 'web', manager: true,
     label: 'Tills and devices', description: 'Approve, rename, retire and remove tills' },
@@ -335,6 +358,27 @@ const FINE = new Set(PERMISSION_KEYS);
 export const VIEW_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.view && !p.personal).map((p) => p.key);
 /** A595: the keys that show or set personal data (the Roles screen's "personal data" badge). */
 export const PERSONAL_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.personal).map((p) => p.key);
+
+// ── A627: gate keys by establishment (businesses.type) ───────────────────────────────────────────────────────────────
+const typeKey = (t: string | null | undefined): string => String(t ?? '').trim().toLowerCase();
+/** Does a key apply to a business of this type? An untyped key applies to every business; a typed one only to its types. */
+export function permissionAppliesToType(def: Pick<PermissionDef, 'types'> | undefined, businessType: string | null | undefined): boolean {
+  if (!def?.types) return true;
+  return def.types.map(typeKey).includes(typeKey(businessType));
+}
+/** The catalogue a business of this type sees and may grant — type-specific keys (fuel, parking, tables…) drop out for the
+ *  others, so a shop never sees Fuel reports. Order preserved. */
+export function permissionsForType(businessType: string | null | undefined): PermissionDef[] {
+  return PERMISSIONS.filter((p) => permissionAppliesToType(p, businessType));
+}
+/** The key→types map, for a client (the cloud sends it so the Roles screen can gate without the catalogue's `types`). */
+export const PERMISSION_TYPES: Readonly<Record<string, readonly string[]>> =
+  Object.fromEntries(PERMISSIONS.filter((p) => p.types).map((p) => [p.key, p.types!]));
+/** Keep only the keys a business of this type may hold (drops a typed key meant for another establishment). */
+export function keysForType(keys: Iterable<string>, businessType: string | null | undefined): string[] {
+  const byKey = new Map(PERMISSIONS.map((p) => [p.key, p]));
+  return [...keys].filter((k) => k === '*' || permissionAppliesToType(byKey.get(k), businessType));
+}
 
 /**
  * A595 — the keys that were too broad, and their PARTS. Owner, 2026-10-26: "implement the changes and break down any right
@@ -513,18 +557,10 @@ export function defaultKeysFor(kind: 'owner' | 'manager' | 'cashier' | 'none'): 
   return PERMISSIONS.filter((p) => (kind === 'manager' ? p.manager : p.cashier)).map((p) => p.key);
 }
 
-/**
- * A514: the business types that sell fuel (businesses.type — the admin portal's and onboarding's VALID_TYPES). Only these
- * get the built-in Fuel attendant role.
- */
-export const FUEL_BUSINESS_TYPES: readonly string[] = ['petrol_station'];
-/**
- * A580 (owner, 2026-10-23: "how can shops have waiter and kitchen roles unless requested keep them off we only have
- * cashier and other roles"): the business types that run a kitchen and serve at tables (businessTerms.ts
- * FOOD_SERVICE_TYPES). Only these get the built-in Waiter, Kitchen and Kitchen Manager roles; a shop (retail, minimart),
- * a petrol station, a car park or "other" does not. Migration 169 takes the unused ones off existing shops.
- */
-export const FOOD_BUSINESS_TYPES: readonly string[] = ['restaurant', 'cafe'];
+// A514 (fuel), A580 (food — owner, 2026-10-23: "how can shops have waiter and kitchen roles unless requested keep them
+// off we only have cashier and other roles") and A627 (parking): the establishment-type groups are defined above the
+// catalogue (FUEL_BUSINESS_TYPES / FOOD_BUSINESS_TYPES / PARKING_BUSINESS_TYPES) so a permission key can tag itself with
+// them. Migration 169 took the unused built-in food roles off existing shops.
 
 export interface BuiltInRole {
   /** The role's name as a new business sees it. Matched case- and space-insensitively (lower(trim(name))). */
@@ -606,7 +642,8 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
     keys: [...CASHIER_DEFAULT_KEYS, 'sales.discount', 'shifts.cash_movements', 'shifts.cash_out', 'expenses.record', 'sales.void',   // A594
       'sales.refund', 'sales.reprint', 'sales.history_all', 'customers.credit', 'shifts.confirm', 'reports.sales', 'reports.shifts', 'shifts.close_day',   // A520: Close Day, not Close Branch
       // A595: repayments and the two PIN approvals; not Analytics (the premium area is for managers).
-      'customers.credit_payment', 'shifts.approve_payout', 'sales.approve_kitchen_void'] },
+      'customers.credit_payment', 'shifts.approve_payout', 'sales.approve_kitchen_void',
+      'shifts.see_shift_sales'] },   // A627: a supervisor sees the branch's sales, so a shift's sales at close too
   { name: 'Waiter', description: 'Takes orders, sends them to the kitchen and takes payment',
     keys: ['orders.create', 'sales.discount', 'sales.discount_preset', 'products.view', 'inventory.view', 'customers.view', 'customers.contacts', 'customers.history', 'customers.edit',
       'reservations.manage'], types: FOOD_BUSINESS_TYPES },   // A580: restaurants and cafés only
@@ -635,7 +672,7 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
       // A595: the operational parts — not per-person rights, pay rates, the audit trail or approving staff changes.
       'menu.costs_edit', 'menu.delete', 'menu.bulk', 'suppliers.manage', 'inventory.order', 'inventory.reorder',
       'inventory.count_review', 'staff.contacts', 'staff.pins', 'parking.void', 'fuel.deliveries', 'fuel.setup',
-      'reports.analytics', 'devices.view'] },
+      'reports.analytics', 'devices.view', 'shifts.see_shift_sales'] },   // A627: runs the operational reports → sees shift sales
   { name: 'Finance Manager', description: 'The accountant who acts - pays suppliers, records expenses, customer credit and drawer checks',
     keys: [...ACCOUNTANT_KEYS, 'payables.manage', 'expenses.manage', 'customers.view', 'customers.credit', 'shifts.confirm',
       // A595: paying suppliers, every expense part, phone numbers (to chase a balance), credit repayments and write-offs,

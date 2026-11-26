@@ -1750,7 +1750,8 @@ router.get('/:id', async (req, res) => {
   if (blind) {
     // A416: the owner's switch (off by default) — the cashier sees their shift's sales (kept after refunds) and orders.
     // Never expected cash, the per-method figures or the difference: the count stays blind.
-    const seesSales = await cashierSeesShiftSales(req.businessId!, shift.branch_id);
+    // A627: the person's own RIGHT (shifts.see_shift_sales) grants the sales view, OR the business-wide switch as before.
+    const seesSales = (await cashierSeesShiftSales(req.businessId!, shift.branch_id)) || can(req, 'shifts.see_shift_sales');
     const kept = (orders ?? []).reduce((s: number, o: any) => s + Number(o.total) - Math.min(Math.max(Number(o.refunded_amount ?? 0), 0), Number(o.total)), 0);
     res.json({
       id: shift.id, status: shift.status, opened_at: shift.opened_at, cashier_id: shift.cashier_id, opened_by: shift.opened_by,

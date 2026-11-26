@@ -14,6 +14,7 @@ import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
 import { getDeviceConfig, canSell, getPosFeatures, getCashierHistoryMethods, getCashierSeesShiftSales, getCashierHistoryTotals } from './deviceConfig';
+import { signedInCan } from './tillAccess';   // A627: the shift-sales right (per person), OR the business-wide switch
 import { checkStaleDay, ensureDayOpen, businessDateNow } from './dayService';
 import { v4 as uuid } from 'uuid';
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
@@ -686,7 +687,9 @@ export function blindClose(): boolean {
  * The report a blind close may show: who, when, which methods to count, the cashier's own expenses and the manager's
  * confirmation status — every sales and cash figure taken out (not merely hidden on the screen).
  */
-export function blindReport(z: ZReport, seesSales: boolean = getCashierSeesShiftSales()): ZReport & { blind: true; declareMethods: string[] } {
+// A627: the signed-in person's RIGHT (shifts.see_shift_sales) grants the sales view per person, OR the business-wide switch
+// (cashier_sees_shift_sales) as before — so a locked cashier (no right, switch off) still only keys in the cash they counted.
+export function blindReport(z: ZReport, seesSales: boolean = signedInCan('shifts.see_shift_sales') || getCashierSeesShiftSales()): ZReport & { blind: true; declareMethods: string[] } {
   const declareMethods = [...new Set(z.byMethod
     .filter((m) => String(m.method).toLowerCase() !== 'cash' && Math.round(Number(m.amount) * 100) !== 0)
     .map((m) => String(m.method).toLowerCase()))].sort((a, b) => a.localeCompare(b));

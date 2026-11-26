@@ -16,7 +16,7 @@
  * stays); each part can then be ticked or unticked alone. Keys that show personal data carry a "Personal data" badge.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PERMISSIONS, PERMISSION_GROUPS, PERSONAL_KEYS, parentOf, partsOf, permissionKind, type PermissionKind } from '@zaptill/core/permissions';
+import { PERMISSIONS, PERMISSION_GROUPS, PERSONAL_KEYS, parentOf, partsOf, permissionKind, permissionsForType, type PermissionKind } from '@zaptill/core/permissions';
 import { permissionWords, permissionGroupWords } from '@zaptill/core/businessTerms';   // A573
 
 export interface CatalogueKey {
@@ -46,7 +46,9 @@ export function usePermissionCatalogue(client: Client, businessType?: string | n
       if (!live) return;
       const fromCloud = k.status === 'fulfilled' && Array.isArray(k.value)
         ? k.value.filter((p) => p && typeof p.key === 'string' && typeof p.group === 'string') : [];
-      setKeys(fromCloud.length ? fromCloud : PERMISSIONS.map(({ key, label, description, group, surface, view, personal }) => ({
+      // A627: the local fallback is gated by establishment too (permissionsForType) — a shop's Roles screen shows no fuel
+      // keys even when the cloud catalogue endpoint has not answered.
+      setKeys(fromCloud.length ? fromCloud : permissionsForType(businessType).map(({ key, label, description, group, surface, view, personal }) => ({
         key, label, description, group, surface, view: view === true, personal: personal === true,
         parent: parentOf(key), parts: [...partsOf(key)], kind: permissionKind(key),
       })));
