@@ -7,12 +7,10 @@ import { requireAnyPermission, requirePermission, assertBranchAccess, can, outsi
 import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 import { cutoffSettingValue } from '@zaptill/core/businessDay';   // 0.6.34
-import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';   // A429
 import { PLATFORM_PRICES_KEY, rulesSettingValue } from '@zaptill/core/platformPrices';   // A619
 import { CATEGORY_LAYOUT_KEY, CATEGORY_LAYOUT_PERMISSIONS, categoryLayoutSettingValue } from '@zaptill/core/categoryLayout';   // 8n
 import { ONSCREEN_KEYBOARD_KEY, ONSCREEN_KEYBOARD_PERMISSIONS, onscreenKeyboardSettingValue } from '@zaptill/core/onscreenKeyboard';   // owner 2026-11-09
-import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
 import { maySetMpesa } from '@zaptill/core/permissions';                 // A492
@@ -273,9 +271,7 @@ router.put('/:id/stock/:productId', requireAuth, requireAnyPermission('inventory
 // (branch → business default) happens server-side in GET /pos/init, so the
 // branch-bound till just receives its own values.
 const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff',   // 0.6.34 + the day's end
-  'cashier_history_methods',   // 0.6.37 (A387): the methods a cashier's History shows
-  'cashier_sees_shift_sales',   // A416: a cashier closing a shift sees their sales
-  'cashier_history_totals',    // A418: a cashier's History shows the total of what is filtered
+  // A627: the cashier-history overrides (methods, sees-sales, History total) are rights now, not branch settings.
   'payment_methods_enabled',   // A429: the payment methods this branch takes
   PLATFORM_PRICES_KEY,         // A619: this branch's delivery platform prices (the rounding stays the business's)
   CATEGORY_LAYOUT_KEY,         // 8n: the branch's POS shows its categories in the side panel or across the top
@@ -389,13 +385,7 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branche
     if (clean === null) { res.status(400).json({ error: 'Choose on or off.' }); return; }
     stored = clean;
   }
-  // 0.6.37 (A387): a branch's own History methods — a list of method codes ([] = every method).
-  if (key === CASHIER_HISTORY_METHODS_KEY) {
-    const clean = historyMethodsSettingValue(value);
-    if (clean === null) { res.status(400).json({ error: 'Choose payment methods from the list.' }); return; }
-    stored = clean;
-    invalidateHistoryMethods(req.businessId);
-  }
+  // A627: a branch's own cashier-History methods override is retired — it is the sales.history_all_payments right now.
   const { error } = await supabase
     .from('branch_settings')
     .upsert(

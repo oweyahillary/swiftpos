@@ -465,8 +465,6 @@ contextBridge.exposeInMainWorld('swiftpos', {
     offers: ()                                           => ipcRenderer.invoke('manage:offers'),   // A445
     saveOffer: (offer: unknown)                          => ipcRenderer.invoke('manage:saveOffer', offer),
     deleteOffer: (id: string)                            => ipcRenderer.invoke('manage:deleteOffer', id),
-    getCashierHistoryMethods: ()                         => ipcRenderer.invoke('manage:getCashierHistoryMethods'),   // 0.6.37
-    setCashierHistoryMethods: (methods: string[])        => ipcRenderer.invoke('manage:setCashierHistoryMethods', methods),
   },
 
   manager: {

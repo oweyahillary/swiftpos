@@ -74,11 +74,11 @@ ok('the cloud totals every page the filters show (the same filters, paged), not 
   assert.match(o, /const \{ data: page, error: tErr \} = await filtered\(supabase\.from\('orders'\)/);
   assert.match(o, /\.order\('id', \{ ascending: true \}\)\.range\(at, at \+ 499\)/);
 });
-ok('A627: the till shows the total on the sales.history_total right; the switch plumbing stays dead (parity kept)', () => {
-  // dead plumbing kept so there is no desktop schema change and client-parity holds
-  assert.match(read('apps/server/src/routes/pos.ts'), /cashierHistoryTotals: historyTotalsOn\(receiptText\.cashier_sees_shift_sales, receiptText\.cashier_history_totals\),/);
-  assert.match(read('apps/desktop/src/main/deviceConfig.ts'), /return c\?\.cashier_history_totals === 1 && c\?\.cashier_sees_shift_sales === 1;/);
-  // but showTotal now reads the right, not the device flag
+ok('A627: the till shows the total on the sales.history_total right; the switch plumbing is gone', () => {
+  // the retired cashier_history_totals / cashier_sees_shift_sales plumbing is removed everywhere
+  assert.ok(!/cashierHistoryTotals|cashier_history_totals/.test(read('apps/server/src/routes/pos.ts')), 'pos.ts no longer sends the totals flag');
+  assert.ok(!/export function getCashierHistoryTotals/.test(read('apps/desktop/src/main/deviceConfig.ts')), 'getCashierHistoryTotals is gone');
+  // showTotal reads the right
   assert.match(read('apps/desktop/src/main/shiftService.ts'), /showTotal: manager \|\| \(!!st && personCan\(st, 'sales\.history_total'\)\),/);
 });
 ok('both History screens show it; the sales toggles are retired (a rights note instead)', () => {

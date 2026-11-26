@@ -20,7 +20,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from '@zaptill/core/orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from '@zaptill/core/delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setThemesPremium, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled, setPlatformPricing, setCategoryLayout, setOnscreenKeyboard } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setAttendanceFlag, setEtimsFlag, setThemesPremium, setReversalRules, setBusinessDayCutoff, setSupportContact, setStockCountFreeze, setPaymentMethodsEnabled, setPlatformPricing, setCategoryLayout, setOnscreenKeyboard } from './deviceConfig';
 import { cleanOwnPrices } from '@zaptill/core/platformPrices';   // A619
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
@@ -2077,10 +2077,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (typeof c.continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: c.continuousOperation });
   setBusinessDayCutoff(c.businessDayCutoff);   // 0.6.34: undefined (older cloud / node) keeps the till's value
   setSupportContact(c.support);                // 0.6.35: undefined keeps; null = no tech (ZapTill support)
-  setCashierHistoryMethods(c.cashierHistoryMethods);   // 0.6.37: undefined (older cloud / node) keeps
   setStockCountFreeze(c.stockCount);                   // A394: undefined (older cloud / node) keeps; null = nothing frozen
-  setCashierSeesShiftSales(c.cashierSeesShiftSales);   // A416: undefined (older cloud / node) keeps
-  setCashierHistoryTotals(c.cashierHistoryTotals);     // A418: undefined (older cloud / node) keeps
+  // A627: cashier-History config (methods / sees-sales / History-total) retired — per-person rights, not pulled config.
   setPaymentMethodsEnabled(c.paymentMethodsEnabled);   // A429: undefined (older cloud / node) keeps
   if (Array.isArray(c.kitchenExclusions)) saveDeviceConfig({ kitchen_exclusions: JSON.stringify(c.kitchenExclusions) });
   // A304: remote-wins branding. Only when the cloud returned a row (c.branding set);
@@ -2144,10 +2142,8 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
     continuousOperation: typeof _j.continuousOperation === 'boolean' ? _j.continuousOperation : null,
     businessDayCutoff: typeof _j.businessDayCutoff === 'number' ? _j.businessDayCutoff : undefined,   // 0.6.34
     support: 'support' in _j ? (_j.support ?? null) : undefined,   // 0.6.35: an older cloud sends no key → keep
-    cashierHistoryMethods: Array.isArray(_j.cashierHistoryMethods) ? _j.cashierHistoryMethods : undefined,   // 0.6.37
     stockCount: 'stockCount' in _j ? (_j.stockCount ?? null) : undefined,   // A394: an older cloud sends no key → keep
-    cashierSeesShiftSales: typeof _j.cashierSeesShiftSales === 'boolean' ? _j.cashierSeesShiftSales : undefined,   // A416
-    cashierHistoryTotals: typeof _j.cashierHistoryTotals === 'boolean' ? _j.cashierHistoryTotals : undefined,   // A418
+    // A627: cashier-History config (methods / sees-sales / History-total) retired — per-person rights now.
     paymentMethodsEnabled: Array.isArray(_j.paymentMethodsEnabled) ? _j.paymentMethodsEnabled : undefined,   // A429
     // A304: null when the business has no branding row → applyReferenceConfig skips it,
     // keeping any local value. A row (even with null fields) is remote-wins.

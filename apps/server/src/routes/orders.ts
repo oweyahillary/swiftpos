@@ -1,6 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { cashierHistoryView } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
-import { getHistoryMethods } from '../lib/historyMethods';
+import { cashierHistoryView } from '@zaptill/core/cashierHistory';   // A387 / A627 (sales.history_all_payments right)
 import { historyTotal } from '../lib/cashierShiftSales';   // A418 (A627: cashierHistoryTotals switch retired → sales.history_total right)
 import { classifyOrderCreateError } from '../lib/orderErrors';
 import { pickCashier, claimNeedsValidation } from '../lib/cashier';
@@ -1631,7 +1630,8 @@ router.get('/:id', async (req, res, next) => {
   }
   let shown: any = data;
   if (!callerMayConfirm(req)) {
-    const methods = await getHistoryMethods(req.businessId, (data as any).branch_id ?? scopedBranch ?? null);
+    // A627: which methods a cashier sees in History is the sales.history_all_payments RIGHT — all of them, or cash only.
+    const methods = can(req, 'sales.history_all_payments') ? [] : ['cash'];
     if (methods.length) {
       const view = cashierHistoryView([data as any], methods);
       if (!view.length) { res.status(404).json({ error: 'Order not found' }); return; }

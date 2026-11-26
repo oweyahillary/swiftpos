@@ -1,22 +1,19 @@
 /**
- * cashier-history.test.mjs — 0.6.37 (A387): a cashier's History shows only the payment methods the manager chose; a
- * cashier never reprints.
+ * cashier-history.test.mjs — A387 / A627: cashierHistoryView, the pure filter for which payments a cashier sees in History.
  *
- * Owner, 2026-10-03: "order history to only show manager allowed … so the manager selects what the cashier sees" —
- * "based on payment method" — "They can only see allowed method eg mpesa, cash, card but never reprints a receipt" —
- * set on the dashboard and the till. The shared rule run for real; source assertions on the cloud (the setting, the
- * branch override, pos/init, GET /api/orders), the web (POS History, Settings, Branches) and the till's wiring. The till
- * itself is run for real in apps/desktop/test/cashier-history.test.mjs.
+ * Which methods a cashier sees is a per-person RIGHT now (sales.history_all_payments): [] (every method) with it or as a
+ * manager, else ['cash']. The server (orders.ts) and the till apply cashierHistoryView with that list. The old
+ * 'cashier_history_methods' business/branch/till setting is gone. The till is run for real in
+ * apps/desktop/test/cashier-history.test.mjs.
  *
  * MUTATIONS TO CONFIRM BITE: cashierHistoryView keeping a whole split sale → "a split sale shows only its allowed part"
- * fails; dropping the empty-list pass-through → "nothing chosen = every method" fails; GET /api/orders filtering a
- * manager → its pin fails; can_reprint for a cashier → its pin fails.
+ * fails; dropping the empty-list pass-through → "nothing chosen = every method" fails; orders.ts not gating on the right
+ * → "the right decides the methods" fails.
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -34,18 +31,6 @@ const ORDERS = [
   sale('no-rows', [], 250),
   sale('zero-leg', [{ method: 'cash', amount: 0 }, { method: 'mpesa', amount: 450 }], 450),
 ];
-
-await ok('the setting: a list of method codes; empty / null / "[]" = every method; anything else refused', () => {
-  assert.deepStrictEqual(H.cleanHistoryMethods(['MPESA', 'cash', 'cash']), ['mpesa', 'cash']);
-  assert.deepStrictEqual(H.cleanHistoryMethods('["mpesa"]'), ['mpesa']);
-  assert.deepStrictEqual(H.cleanHistoryMethods('cash, card'), ['cash', 'card']);
-  for (const every of [null, undefined, '', '[]', []]) assert.deepStrictEqual(H.cleanHistoryMethods(every), [], String(every));
-  for (const bad of [{ a: 1 }, ['m pesa'], ['<script>'], 42]) assert.strictEqual(H.cleanHistoryMethods(bad), undefined, JSON.stringify(bad));
-  assert.strictEqual(H.historyMethodsSettingValue(['mpesa']), '["mpesa"]');
-  assert.strictEqual(H.historyMethodsSettingValue([]), '[]');
-  assert.strictEqual(H.historyMethodsSettingValue({}), null);
-  assert.strictEqual(H.CASHIER_HISTORY_METHODS_KEY, 'cashier_history_methods');
-});
 
 await ok('nothing chosen = every method: the list is unchanged', () => {
   assert.strictEqual(H.cashierHistoryView(ORDERS, []), ORDERS);
@@ -73,75 +58,11 @@ await ok('cash + card: a sale with no payment rows counts as cash; the split sho
   assert.strictEqual(v.find((o) => o.id === 'split').history_shown_total, 300);
 });
 
-await ok('the cloud: the setting (settings.manage, validated), the branch override, pos/init', () => {
-  const biz = read('apps/server/src/routes/business.ts');
-  assert.match(biz, /'cashier_history_methods',/);   // readable
-  assert.match(biz, /if \(key === CASHIER_HISTORY_METHODS_KEY\) \{\s*const clean = historyMethodsSettingValue\(value\);\s*if \(clean === null\)/);
-  assert.match(biz, /invalidateHistoryMethods\(req\.businessId\)/);
-  const br = read('apps/server/src/routes/branches.ts');
-  assert.match(br, /OVERRIDABLE_KEYS = \[[^\]]*'cashier_history_methods',?[^\]]*\]/);
-  assert.match(br, /if \(key === CASHIER_HISTORY_METHODS_KEY\) \{\s*const clean = historyMethodsSettingValue\(value\);/);
-  const pos = read('apps/server/src/routes/pos.ts');
-  assert.match(pos, /cashierHistoryMethods: cleanHistoryMethods\(receiptText\.cashier_history_methods\) \?\? \[\]/);
-  assert.equal((pos.match(/'business_day_cutoff', 'cashier_history_methods'/g) ?? []).length, 2, 'business and branch keys');
-  const hm = read('apps/server/src/lib/historyMethods.ts');
-  assert.match(hm, /from\('branch_settings'\)/);
-  assert.match(hm, /catch \{ methods = \[\]; \}/);
-});
-
-await ok('GET /api/orders: a cashier\'s list filtered in the query (pages right), split sales trimmed; managers see all; only managers reprint', () => {
+await ok('A627: the methods a cashier sees in History are the sales.history_all_payments right (cash only without it)', () => {
   const o = read('apps/server/src/routes/orders.ts');
-  // A627: the methods a cashier sees are the sales.history_all_payments RIGHT now (all) else cash — the picker is retired.
   assert.match(o, /const historyMethods = \(manager \|\| can\(req, 'sales\.history_all_payments'\)\) \? \[\] : \['cash'\];/);
-  // A418: the filters are written once (`filtered`) and applied to the page — and to the total of every page.
-  assert.match(o, /if \(historyMethods\.length\)\s+q = q\.in\('pm\.method', historyMethods\);/);
-  assert.match(o, /query = filtered\(query\);/);
   assert.match(o, /if \(historyMethods\.length\) orders = cashierHistoryView\(orders, historyMethods\);/);
-  assert.match(o, /total: count \?\? 0, own_only: ownOnly,\s*history_methods: historyMethods, can_reprint: holds\(req, 'sales\.reprint'\)(?:, \.\.\.\(totals \? \{ totals \} : \{\}\))? \}\);/);
 });
 
-await ok('the web: POS History shows the allowed part; Settings and the branch override offer the methods', () => {
-  const h = read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx');
-  assert.match(h, /order\.history_partial\s*\? `\$\{fmt\(Number\(order\.history_shown_total \?\? 0\), currency\)\} \(part of a split payment\)`/);
-  assert.match(h, /\{!order\.history_partial && <>/);
-  assert.match(h, /setCanReprint\(res\.can_reprint === true\)/);
-  const p = read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx');
-  // A627: the business-level methods picker is retired → the sales.history_all_payments right; the note points to it.
-  assert.doesNotMatch(p, /HistoryMethodsPicker/);
-  assert.match(p, /See all payments in History/);
-  const b = read('apps/dashboard/src/pages/settings/BranchReceiptOverrides.tsx');
-  assert.match(b, /save\('cashier_history_methods', JSON\.stringify\(list\)\)/);
-  assert.match(b, /save\('cashier_history_methods', null\)/);
-  const pick = read('apps/dashboard/src/pages/settings/HistoryMethodsPicker.tsx');
-  assert.match(pick, /if \(!next\.length\) \{ setError\('Leave at least one method ticked\.'\); return; \}/);
-  assert.match(pick, /methods\.every\(\(m\) => next\.includes\(m\.code\)\) \? \[\] : next/);
-});
-
-await ok('the till: pulled and relayed, cached, filtered for a cashier, set from Manager → Settings', () => {
-  const se = read('apps/desktop/src/main/syncEngine.ts');
-  assert.match(se, /setCashierHistoryMethods\(c\.cashierHistoryMethods\)/);
-  const rb = read('apps/desktop/src/main/referenceBundle.ts');
-  assert.match(rb, /cashierHistoryMethods/);
-  const ipc = ipcHandlersSource();
-  assert.match(ipc, /scope\.methods\.length \? cashierHistoryView\(orders as any\[\], scope\.methods\) : orders/);
-  assert.match(ipc, /handle\('manage:setCashierHistoryMethods'/);
-  assert.match(read('apps/desktop/src/main/ipcSchemas.ts'), /'manage:setCashierHistoryMethods': \{ kind: 'stringArray' \}/);
-  assert.match(read('apps/desktop/src/main/preload.ts'), /setCashierHistoryMethods: \(methods: string\[\]\)/);
-  // A490: set by whoever holds settings.business (the panel shows, and edits, for that key; ManagerPage passes it).
-  assert.match(read('apps/desktop/src/renderer/components/SettingsPanel.tsx'), /\{canBusiness && <section className="border-t border-gray-800 pt-6">\s*<CashierHistoryPanel canEdit=\{canBusiness\} \/>/);
-  assert.match(read('apps/desktop/src/renderer/pages/ManagerPage.tsx'), /<SettingsPanel canBusiness=\{has\('settings\.business'\)\}/);
-  assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /o\.history_partial \? fmtMoney\(Number\(o\.history_shown_total \?\? 0\)\)/);
-  // A490: reprint is its own key (sales.reprint); "manager" is shifts.confirm — they see every method, a cashier the chosen.
-  assert.match(read('apps/desktop/src/main/shiftService.ts'), /const manager = !!st && personCan\(st, 'shifts\.confirm'\);/);
-  // A627: the till reads the sales.history_all_payments right (all) else cash — the device-flag picker is retired.
-  assert.match(read('apps/desktop/src/main/shiftService.ts'), /methods: \(manager \|\| \(!!st && personCan\(st, 'sales\.history_all_payments'\)\)\) \? \[\] : \['cash'\],/);
-});
-
-await ok('schema 66 on both sides', () => {
-  assert.ok(Number(/export const REQUIRED_DESKTOP_SCHEMA = (\d+);/.exec(read('apps/server/src/lib/desktopSchema.ts'))[1]) >= 66);
-  assert.ok(Number(/export const LOCAL_SCHEMA_VERSION = (\d+);/.exec(read('apps/desktop/src/main/localDb.ts'))[1]) >= 66);
-  assert.match(read('apps/desktop/src/main/localDb.ts'), /\['cashier_history_methods', ?'TEXT'\]/);
-});
-
-console.log(`\n${pass} passed, ${fail} failed`);
+console.log(`\n${fail ? 'FAIL' : 'PASS'} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

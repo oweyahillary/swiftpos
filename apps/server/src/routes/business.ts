@@ -16,10 +16,8 @@ import { cloudFactsFor } from '../lib/cloudPlan';
 import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
 import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '@zaptill/core/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
-import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '@zaptill/core/paymentCatalogue';   // A429
 import { PLATFORM_PRICES_KEY, PLATFORM_ROUNDING_KEY, rulesSettingValue, roundingSettingValue } from '@zaptill/core/platformPrices';   // A619
-import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
 import { cleanReportSchedule } from '../jobs/ownerAlertsDecision';   // A476
@@ -56,7 +54,7 @@ const SETTING_WRITE_KEYS = ['receipt.manage', 'settings.business', 'settings.pay
  * A595 (docs/PERMISSIONS-AUDIT.md F20): the selling rules are their own part of settings.business (settings.sales_rules —
  * migration 176 gave it to every holder): continuous operation and what a cashier's History shows.
  */
-const SALES_RULE_KEYS: ReadonlySet<string> = new Set(['continuous_operation', CASHIER_HISTORY_METHODS_KEY, 'cashier_sees_shift_sales', 'cashier_history_totals']);
+const SALES_RULE_KEYS: ReadonlySet<string> = new Set(['continuous_operation']);   // A627: the cashier-history switches are rights now
 const LOYALTY_SETTING_KEYS = new Set(['loyalty_enabled', 'loyalty_earn_rate']);
 
 /**
@@ -74,8 +72,7 @@ export const BUSINESS_SETTING_KEYS: ReadonlySet<string> = new Set([
   'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep',   // A580: 'weight_unit' gone (read by nothing; per-item kg / g, A577)
   'default_parking_rate', 'parking_min_hours', 'parking_billing_mode',
   'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
-  'continuous_operation', BUSINESS_DAY_CUTOFF_KEY, CASHIER_HISTORY_METHODS_KEY,
-  'cashier_sees_shift_sales', 'cashier_history_totals', 'kitchen_exclusions', 'order_note_picks',
+  'continuous_operation', BUSINESS_DAY_CUTOFF_KEY, 'kitchen_exclusions', 'order_note_picks',   // A627: cashier-history switches removed (rights now)
   SCALE_SETTINGS_KEY,   // A577: how the business's weighing scales print their labels
 ]);
 /** Families of settings.business keys whose suffix is the tenant's own (a vehicle type, a delivery platform). */
@@ -175,16 +172,11 @@ const READABLE_SETTING_KEYS = new Set([
   'continuous_operation',
   // 0.6.34: when the business day ends ("HH:MM", 00:00–06:00) — a bar trading past midnight (lib/businessDay.ts).
   'business_day_cutoff',
-  // 0.6.37 (A387): the payment methods a cashier's History shows (a JSON list; [] = every method).
-  'cashier_history_methods',
   // A429: the payment methods switched on (a JSON list of catalogue codes; absent = the defaults).
   'payment_methods_enabled',
   // A619: the delivery platforms' price rules (JSON by platform) and the business's rounding of their prices.
   'delivery_platform_prices', 'delivery_platform_rounding',
-  // A416: a cashier closing a shift sees their sales ("true"); off by default (lib/cashierShiftSales.ts).
-  'cashier_sees_shift_sales',
-  // A418: a cashier's History shows the total of what is filtered ("true"); only while cashier_sees_shift_sales is on.
-  'cashier_history_totals',
+  // A627: the cashier-history switches (sees-sales, History total, History methods) are rights now, not settings.
   // A394: is an item being counted frozen (not sold until counted)? The owner's choice — "true" / "false".
   'stock_count_freeze',
   // Names that must never reach a kitchen ticket — drinks, sauces, packaged
@@ -881,23 +873,8 @@ router.post('/settings', requireAuth, (req, res, next) => {
     return;
   }
 
-  // ── 0.6.37 (A387): the methods a cashier's History shows — a manager's choice (settings.manage, checked above) ──
-  if (key === CASHIER_HISTORY_METHODS_KEY) {
-    const clean = historyMethodsSettingValue(value);
-    if (clean === null) {
-      res.status(400).json({ error: 'Choose payment methods from the list.', code: 'INVALID_VALUE' });
-      return;
-    }
-    const { data: existingHm } = await supabase
-      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
-    const { error: hmErr } = existingHm
-      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingHm.id)
-      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
-    if (hmErr) { sendError(res, hmErr); return; }
-    invalidateHistoryMethods(req.businessId);
-    res.json({ key, value: clean });
-    return;
-  }
+  // A627: the 'cashier_history_methods' setting is retired — which payments a cashier sees in History is the
+  // sales.history_all_payments right now (orders.ts). The business/branch/till picker is gone.
 
   // ── A577: the scale label layout — only a layout that adds up to an EAN-13 is stored, as clean JSON ──
   if (key === SCALE_SETTINGS_KEY) {

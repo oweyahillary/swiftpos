@@ -21,7 +21,6 @@ import { parsePosFeatures, type PosFeatures } from '@zaptill/core/posFeatures';
 import { rulesFromWire, type ReversalRules } from '@zaptill/core/reversalRules';
 import { cleanCutoff } from '@zaptill/core/businessDay';   // 0.6.34
 import { supportContact, supportWire, type SupportContact } from '@zaptill/core/support';   // 0.6.35 (A384)
-import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { parseStockCountFreeze, freezeExpired, NO_FREEZE, type StockCountFreeze } from '@zaptill/core/stockCountFreeze';   // A394, A521
 import { logLine } from './logFile';   // A521
 import { cleanScaleSettings, scaleSettingsOrDefault, type ScaleSettings } from '@zaptill/core/scaleBarcode';   // A577
@@ -111,19 +110,13 @@ export interface DeviceConfig {
   /** 0.6.35 (A384): the shop's own tech (JSON {name, phone} or 'null' = none → SwiftPOS support), pulled with the
    *  catalogue. NULL = not told yet. Written only by setSupportContact() from the pull. */
   support_contact: string | null;
-  /** 0.6.37 (A387): the payment methods a cashier's History shows (JSON list; [] = every method), pulled with the
-   *  catalogue. NULL = not told yet (every method). Written only by setCashierHistoryMethods() from the pull or a
-   *  manager's change on this till. */
-  cashier_history_methods: string | null;
   /** A394: the items a stock count freezes at this branch (JSON {ref, productIds}), pulled with the catalogue. NULL =
    *  not told yet (nothing frozen). Written only by setStockCountFreeze() from the pull. */
   stock_count_freeze: string | null;
-  /** A416: may a cashier closing a shift see their sales (1 / 0)? Pulled with the catalogue; NULL = not told = off.
-   *  Written only by setCashierSeesShiftSales() from the pull. */
-  cashier_sees_shift_sales: number | null;
-  /** A418: may a cashier's History show the total of what is filtered (1 / 0)? Already combined with A416 by the cloud.
-   *  NULL = not told = off. Written only by setCashierHistoryTotals() from the pull. */
-  cashier_history_totals: number | null;
+  // A627: cashier_history_methods (A387) / cashier_sees_shift_sales (A416) / cashier_history_totals (A418) are retired —
+  // what a cashier sees in History / at close is a per-person RIGHT now (sales.history_all_payments / shifts.see_shift_sales
+  // / sales.history_total), read from the signed-in person's permissions. The device_config columns are no longer read or
+  // written; they stay only on local DBs that already have them (harmless, never touched).
   /** A429: the payment methods this branch takes — a JSON list of codes. NULL = not told = the catalogue's defaults.
    *  Written only by setPaymentMethodsEnabled() from the pull (and a manager's save on this till). */
   payment_methods_enabled: string | null;
@@ -164,10 +157,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     pos_features: row.pos_features ?? null,
     reversal_rules: row.reversal_rules ?? null,
     support_contact: row.support_contact ?? null,
-    cashier_history_methods: row.cashier_history_methods ?? null,
     stock_count_freeze: row.stock_count_freeze ?? null,
-    cashier_sees_shift_sales: row.cashier_sees_shift_sales ?? null,
-    cashier_history_totals: row.cashier_history_totals ?? null,
     payment_methods_enabled: row.payment_methods_enabled ?? null,   // A429
     configured: row.configured === 1,
   };
@@ -229,14 +219,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     reversal_rules: current?.reversal_rules ?? null,
     // 0.6.35: never from the patch — only setSupportContact() (the pull) writes it; the INSERT below leaves it alone.
     support_contact: current?.support_contact ?? null,
-    // 0.6.37: never from the patch — only setCashierHistoryMethods() writes it; the INSERT below leaves it alone.
-    cashier_history_methods: current?.cashier_history_methods ?? null,
     // A394: never from the patch — only setStockCountFreeze() (the pull) writes it; the INSERT below leaves it alone.
     stock_count_freeze: current?.stock_count_freeze ?? null,
-    // A416: never from the patch — only setCashierSeesShiftSales() (the pull) writes it; the INSERT below leaves it alone.
-    cashier_sees_shift_sales: current?.cashier_sees_shift_sales ?? null,
-    // A418: never from the patch — only setCashierHistoryTotals() (the pull) writes it.
-    cashier_history_totals: current?.cashier_history_totals ?? null,
     // A429: never from the patch — only setPaymentMethodsEnabled() writes it.
     payment_methods_enabled: current?.payment_methods_enabled ?? null,
     // Once configured, stays configured unless a factory reset clears the row.
@@ -486,33 +470,8 @@ export function getSupportContact(): SupportContact {
   try { return supportContact(JSON.parse(raw)); } catch { return supportContact(null); }
 }
 
-/**
- * 0.6.37 (A387): cache the payment methods a cashier's History shows. undefined = not said (older cloud or node) →
- * keep; a list ([] = every method) is stored; anything else is ignored.
- */
-export function setCashierHistoryMethods(raw: unknown): void {
-  if (raw === undefined) return;
-  const m = cleanHistoryMethods(raw);
-  if (m === undefined) return;
-  getLocalDb().prepare(`UPDATE device_config SET cashier_history_methods = ? WHERE id = 1`).run(JSON.stringify(m));
-}
-
-/** A416: cache whether a cashier sees their sales at close. undefined = not said (older cloud or node) → keep. */
-export function setCashierSeesShiftSales(raw: unknown): void {
-  if (typeof raw !== 'boolean') return;
-  getLocalDb().prepare(`UPDATE device_config SET cashier_sees_shift_sales = ? WHERE id = 1`).run(raw ? 1 : 0);
-}
-
-/** A416: does a cashier closing a shift on this till see their sales? Off until told (the default). */
-export function getCashierSeesShiftSales(): boolean {
-  return getDeviceConfig()?.cashier_sees_shift_sales === 1;
-}
-
-/** A418: cache whether a cashier's History shows a total. undefined = not said (older cloud or node) → keep. */
-export function setCashierHistoryTotals(raw: unknown): void {
-  if (typeof raw !== 'boolean') return;
-  getLocalDb().prepare(`UPDATE device_config SET cashier_history_totals = ? WHERE id = 1`).run(raw ? 1 : 0);
-}
+// A627: setCashierHistoryMethods / setCashierSeesShiftSales / getCashierSeesShiftSales / setCashierHistoryTotals are
+// retired — what a cashier sees in History / at close is a per-person RIGHT now (read from the signed-in person's keys).
 
 /**
  * A429: cache the payment methods this branch takes — a list of method codes. undefined / not a list = not said (an
@@ -532,16 +491,8 @@ export function getPaymentMethodsEnabled(): string[] | null {
   try { const v = JSON.parse(raw); return Array.isArray(v) ? v.map(String) : null; } catch { return null; }
 }
 
-/** A418: does a cashier's History show the total? Only while A416 is on too (checked here as well). Off until told. */
-export function getCashierHistoryTotals(): boolean {
-  const c = getDeviceConfig();
-  return c?.cashier_history_totals === 1 && c?.cashier_sees_shift_sales === 1;
-}
-
-/** 0.6.37 (A387): the methods a cashier's History shows on this till ([] = every method, also until told). */
-export function getCashierHistoryMethods(): string[] {
-  return cleanHistoryMethods(getDeviceConfig()?.cashier_history_methods ?? null) ?? [];
-}
+/** A627: getCashierHistoryTotals / getCashierHistoryMethods are retired — the sales.history_total /
+ *  sales.history_all_payments rights decide what a cashier's History shows now. */
 
 /** 0.6.34: when the business day ends on this till (0 = midnight until told). */
 export function getBusinessDayCutoff(): number {

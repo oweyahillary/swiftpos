@@ -337,8 +337,6 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:setCategoryLayout':       { kind: 'enum', values: CATEGORY_LAYOUTS },              // 8n: 'panel' | 'top'
   'pos:onscreenKeyboard':           NO_PAYLOAD,                                            // owner 2026-11-09
   'manage:setOnscreenKeyboard':     { kind: 'enum', values: ONSCREEN_KEYBOARD_VALUES },      // owner 2026-11-09: 'on' | 'off'
-  'manage:getCashierHistoryMethods': NO_PAYLOAD,                                            // 0.6.37 (A387)
-  'manage:setCashierHistoryMethods': { kind: 'stringArray' },
 
   // ── manager (reports) ─────────────────────────────────────────────────────
   // salesSummary/topProducts/recentOrders take r?: RangeArg. The whole arg is

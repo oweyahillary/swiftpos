@@ -31,7 +31,6 @@ import { parsePosFeatures } from '@zaptill/core/posFeatures';
 import { rulesFromWire, type ReversalRules } from '@zaptill/core/reversalRules';
 import { cleanShowDays } from '@zaptill/core/productDays';
 import { supportWire } from '@zaptill/core/support';   // 0.6.35 (A384)
-import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { parseStockCountFreeze, type StockCountFreeze } from '@zaptill/core/stockCountFreeze';   // A394
 import { cleanCloudBackup, type CloudBackup } from './cloudBackupWire';   // A601
 
@@ -79,14 +78,9 @@ export interface ReferenceBundle {
     businessDayCutoff?: number | null;
     /** 0.6.35: the shop's own tech ({name, phone}, or null = none); undefined = the node has not been told. */
     support?: { name: string | null; phone: string | null } | null;
-    /** 0.6.37: the payment methods a cashier's History shows ([] = every); undefined = the node has not been told. */
-    cashierHistoryMethods?: string[];
     /** A394: the items a stock count freezes ({ref, productIds}; null = none); undefined = the node has not been told. */
     stockCount?: StockCountFreeze | null;
-    /** A416: may a cashier see their sales at close? undefined = the node has not been told. */
-    cashierSeesShiftSales?: boolean;
-    /** A418: a cashier's History total. undefined = the node has not been told. */
-    cashierHistoryTotals?: boolean;
+    // A627: cashier-History methods / sees-sales / History-total are per-person rights now, not relayed config.
     /** A429: the payment methods the branch takes. undefined = the node has not been told. */
     paymentMethodsEnabled?: string[];
     /** A346: the node's copy of the cloud's answer — does the business have the web POS? null = not known. */
@@ -171,11 +165,8 @@ export interface ReferenceRows {
     continuousOperation: boolean | null;
     businessDayCutoff?: number | null; // 0.6.34
     support?: { name: string | null; phone: string | null } | null; // 0.6.35
-    cashierHistoryMethods?: string[]; // 0.6.37
     stockCount?: StockCountFreeze | null; // A394
-    cashierSeesShiftSales?: boolean;      // A416
-    cashierHistoryTotals?: boolean;       // A418
-    paymentMethodsEnabled?: string[];     // A429
+    paymentMethodsEnabled?: string[];     // A429  (A627: cashier-History config retired → rights)
     webPosEnabled?: boolean | null;   // A346
     cloudBackup?: { on: boolean; phase: string; cutoffAt: string | null } | null;   // A601
     customerScreen?: unknown;   // A606
@@ -308,10 +299,8 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       continuousOperation: rows.config.continuousOperation,
       businessDayCutoff: rows.config.businessDayCutoff ?? null,   // 0.6.34: relayed so a peer's day ends with the node's
       support: rows.config.support,                       // 0.6.35: relayed so a peer's Help shows the shop's tech
-      cashierHistoryMethods: rows.config.cashierHistoryMethods,   // 0.6.37: relayed so a peer's History follows the manager
       stockCount: rows.config.stockCount,   // A394: relayed so a peer stops selling what the count freezes
-      cashierSeesShiftSales: rows.config.cashierSeesShiftSales,   // A416: relayed so a peer's cashiers follow the switch
-      cashierHistoryTotals: rows.config.cashierHistoryTotals,     // A418: relayed likewise
+      // A627: cashier-History config no longer relayed — it is a per-person right now.
       paymentMethodsEnabled: rows.config.paymentMethodsEnabled,   // A429: relayed so a peer shows the branch's methods
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
       // A601: relayed so a POS behind the server stops (and resumes) its cloud backup with the server; null = not known.
@@ -434,14 +423,9 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         : asBool(cfg.continuous_operation),
       // 0.6.34: the node's cut-off (0 = midnight — the node defaults to midnight until told, as a peer does).
       businessDayCutoff: typeof cfg?.business_day_cutoff === 'number' ? cfg.business_day_cutoff : null,
-      // 0.6.37: undefined until the node itself has been told (a peer then keeps its own value).
-      cashierHistoryMethods: typeof cfg?.cashier_history_methods === 'string'
-        ? (cleanHistoryMethods(cfg.cashier_history_methods) ?? undefined) : undefined,
       // A394: undefined until the node itself has been told (a peer then keeps its own value).
       stockCount: typeof cfg?.stock_count_freeze === 'string' ? parseStockCountFreeze(cfg.stock_count_freeze) : undefined,
-      // A416: undefined until the node itself has been told (a peer then keeps its own value).
-      cashierSeesShiftSales: cfg?.cashier_sees_shift_sales == null ? undefined : cfg.cashier_sees_shift_sales === 1,
-      cashierHistoryTotals: cfg?.cashier_history_totals == null ? undefined : cfg.cashier_history_totals === 1,   // A418
+      // A627: cashier-History config retired (per-person rights now).
       // A429: undefined until the node itself has been told (a peer then keeps its own value).
       paymentMethodsEnabled: (() => {
         if (typeof cfg?.payment_methods_enabled !== 'string') return undefined;
@@ -568,14 +552,9 @@ export interface AcquiredReference {
     businessDayCutoff?: number;
     /** 0.6.35: the shop's own tech. undefined = not said (older cloud / node) → keep; null = none (SwiftPOS support). */
     support?: { name: string | null; phone: string | null } | null;
-    /** 0.6.37: the payment methods a cashier's History shows. undefined = not said → keep. */
-    cashierHistoryMethods?: string[];
     /** A394: the items a stock count freezes. undefined = not said (older cloud / node) → keep; null = none. */
     stockCount?: unknown;
-    /** A416: a cashier sees their sales at close. undefined = not said (older cloud / node) → keep. */
-    cashierSeesShiftSales?: boolean;
-    /** A418: a cashier's History total. undefined = not said → keep. */
-    cashierHistoryTotals?: boolean;
+    // A627: cashier-History config (methods / sees-sales / History-total) retired → per-person rights.
     /** A429: the payment methods the branch takes. undefined = not said → keep. */
     paymentMethodsEnabled?: string[];
     branding?: PulledBranding | null;
@@ -661,10 +640,8 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       continuousOperation: typeof pi.continuousOperation === 'boolean' ? pi.continuousOperation : null,
       businessDayCutoff: typeof pi.businessDayCutoff === 'number' ? pi.businessDayCutoff : undefined,   // 0.6.34
       support: pi && typeof pi === 'object' && 'support' in pi ? supportWire(pi.support) : undefined,   // 0.6.35
-      cashierHistoryMethods: Array.isArray(pi.cashierHistoryMethods) ? (cleanHistoryMethods(pi.cashierHistoryMethods) ?? undefined) : undefined,   // 0.6.37
       stockCount: pi && typeof pi === 'object' && 'stockCount' in pi ? (pi.stockCount ?? null) : undefined,   // A394
-      cashierSeesShiftSales: typeof pi.cashierSeesShiftSales === 'boolean' ? pi.cashierSeesShiftSales : undefined,   // A416
-      cashierHistoryTotals: typeof pi.cashierHistoryTotals === 'boolean' ? pi.cashierHistoryTotals : undefined,   // A418
+      // A627: cashier-History config not parsed from a peer — per-person rights now.
       paymentMethodsEnabled: Array.isArray(pi.paymentMethodsEnabled) ? pi.paymentMethodsEnabled.map(String) : undefined,   // A429
       // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,

@@ -1083,8 +1083,6 @@ declare global {
         offers: () => Promise<Array<import('@zaptill/core/offers').Offer & { editable?: boolean; created_by_name?: string | null }>>;
         saveOffer: (offer: unknown) => Promise<any>;
         deleteOffer: (id: string) => Promise<any>;
-        getCashierHistoryMethods: () => Promise<{ methods: string[] }>;
-        setCashierHistoryMethods: (methods: string[]) => Promise<any>;
       };
       manager: {
         reportScope: () => Promise<{

@@ -3,7 +3,6 @@ import { posApi } from '../lib/posApi';
 import PaymentMethodsPanel from './PaymentMethodsPanel';
 import BranchPaymentMethodsPanel from './BranchPaymentMethodsPanel';   // A429
 import ReversalRulesPanel from './ReversalRulesPanel';
-import CashierHistoryPanel from './CashierHistoryPanel';
 import MpesaPanel from './MpesaPanel';   // A492
 import CategoryLayoutPanel from './CategoryLayoutPanel';   // 8n
 import OnscreenKeyboardPanel from './OnscreenKeyboardPanel';   // owner 2026-11-09
@@ -87,10 +86,8 @@ export default function SettingsPanel({ canBusiness = false, canPayments = false
         <ReversalRulesPanel isOwner={isOwner} />
       </section>
 
-      {/* 0.6.37 (A387): the payment methods a cashier's History shows. */}
-      {canBusiness && <section className="border-t border-gray-800 pt-6">
-        <CashierHistoryPanel canEdit={canBusiness} />
-      </section>}
+      {/* A627: what cashiers see in History is a per-person right now (sales.history_all_payments), set on Roles and
+          permissions in the web dashboard — no till-side picker. */}
 
       {/* 8n: the categories in the side panel or across the top — this branch's POS (and its web POS). */}
       {canPosLayout && <section className="border-t border-gray-800 pt-6">

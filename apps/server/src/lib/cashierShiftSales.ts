@@ -1,61 +1,14 @@
 /**
- * cashierShiftSales — A416 (owner, 2026-10-09: "where is the feature for waiter seeing total sales on the shift while
- * closing? can we add it to the managers/owners side which can be toggled on and off at will but by default is off?").
+ * cashierShiftSales — the History running-total calc for a cashier.
  *
- *   cashier_sees_shift_sales   "true" — a cashier closing a shift sees their shift's sales (the total kept after
- *                              refunds, and the number of orders). Anything else, or unset = OFF (the default).
- *
- * The business default (business_settings) or the branch's own (branch_settings) — the branch's wins, as every
- * overridable setting. The count stays blind either way: expected cash, the per-method figures and the difference are
- * never shown to a cashier (0.6.29, A365) — the manager's confirmation would lose its point.
+ * A416/A418 made "a cashier sees their shift's sales / a running total in History" business switches; A627 (owner,
+ * 2026-11-26) turned them into per-person RIGHTS (`shifts.see_shift_sales`, `sales.history_total`) and the switches are
+ * gone. What remains here is the pure total the History shows when a cashier holds `sales.history_total`.
  */
-import { supabase } from './supabase';
-
-export const CASHIER_SEES_SHIFT_SALES_KEY = 'cashier_sees_shift_sales';
-
-/** "true" / true → on; anything else → off. */
-export function cleanSeesSales(raw: unknown): boolean {
-  return raw === true || String(raw ?? '').trim().toLowerCase() === 'true';
-}
 
 /**
- * A418 (owner, 2026-10-09: "allow cashiers to filter their sales and it gives them a subtotal using the current filter";
- * 2026-10-09: "one should be on for the other to be active"):
- *   cashier_history_totals     "true" — a cashier's History shows the total of what the filters show. Works only while
- *                              cashier_sees_shift_sales is on (cashierHistoryTotals checks both). Off by default.
- */
-export const CASHIER_HISTORY_TOTALS_KEY = 'cashier_history_totals';
-
-/** One switch at a branch: the branch's own value wins; else the business default; else off. */
-async function branchSwitch(businessId: string, branchId: string | null | undefined, key: string): Promise<boolean> {
-  if (branchId) {
-    const { data: own } = await supabase.from('branch_settings').select('value')
-      .eq('business_id', businessId).eq('branch_id', branchId).eq('key', key).maybeSingle();
-    if (own) return cleanSeesSales((own as { value: unknown }).value);
-  }
-  const { data } = await supabase.from('business_settings').select('value')
-    .eq('business_id', businessId).eq('key', key).maybeSingle();
-  return cleanSeesSales((data as { value: unknown } | null)?.value);
-}
-
-/** Is it on at this branch? The branch's own value wins; else the business default; else off. */
-export async function cashierSeesShiftSales(businessId: string, branchId: string | null | undefined): Promise<boolean> {
-  return branchSwitch(businessId, branchId, CASHIER_SEES_SHIFT_SALES_KEY);
-}
-
-/** A418: may a cashier see the History total? Only while A416 is on too — "one should be on for the other". */
-export async function cashierHistoryTotals(businessId: string, branchId: string | null | undefined): Promise<boolean> {
-  return (await cashierSeesShiftSales(businessId, branchId)) && (await branchSwitch(businessId, branchId, CASHIER_HISTORY_TOTALS_KEY));
-}
-
-/** A418: the effective value from the two raw settings (the till and pos/init) — both must be on. */
-export function historyTotalsOn(seesSales: unknown, totals: unknown): boolean {
-  return cleanSeesSales(seesSales) && cleanSeesSales(totals);
-}
-
-/**
- * A418: the History total — what the filters show: the orders, and the sales of the completed ones (kept after refunds;
- * a cashier's split sale counts only its allowed part, `history_shown_total`). Voided sales count as orders, not sales.
+ * The History total — what the filters show: the orders, and the sales of the completed ones (kept after refunds; a
+ * cashier's split sale counts only its allowed part, `history_shown_total`). Voided sales count as orders, not sales.
  * The till's own copy is shared/historyView.ts historyTotal — the same rule.
  */
 export function historyTotal(rows: Array<{ status?: string | null; total?: unknown; refunded_amount?: unknown;

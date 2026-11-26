@@ -340,9 +340,9 @@ await ok('masked: credit accounts, a credit account, Analytics, M-Pesa status �
 });
 await ok('masked: an order\'s customer number and its M-Pesa payer for a person without customers.contacts; the POS\'s own session as it is', async () => {
   reset();
-  const r = await call('GET', `/api/orders/${X}`, holding(['orders.create', 'sales.history_all']));
+  const r = await call('GET', `/api/orders/${X}`, holding(['orders.create', 'sales.history_all', 'sales.history_all_payments']));   // A627: see the M-Pesa order
   assert.equal(r.body.customer_phone, MASKED); assert.equal(r.body.payments[0].mpesa_phone, '25•• ••• 678');
-  const full = await call('GET', `/api/orders/${X}`, holding(['orders.create', 'sales.history_all', 'customers.contacts']));
+  const full = await call('GET', `/api/orders/${X}`, holding(['orders.create', 'sales.history_all', 'sales.history_all_payments', 'customers.contacts']));
   assert.equal(full.body.customer_phone, PHONE);
 });
 await ok('masked: a customer edit by someone without customers.contacts never writes the phone or e-mail (a masked value from the form included)', async () => {

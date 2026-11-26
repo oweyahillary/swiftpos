@@ -176,7 +176,7 @@ const GATES = [
   ['manage:setCategoryLayout', 'top', ['settings.branches'], /shows its categories/],
   ['manage:setReceiptText', { header: 'H', footer: 'F' }, ['receipt.manage'], /receipt text/],
   ['manage:setContinuousOperation', true, ['settings.business'], /business settings/],
-  ['manage:setCashierHistoryMethods', ['cash'], ['settings.business'], /business settings/],
+  // A627: manage:setCashierHistoryMethods is retired — it is the sales.history_all_payments right now.
   ['manage:offers', undefined, ['menu.offers'], /set up offers/],
   ['manage:listStaff', undefined, ['staff.view'], /see the staff list/],
   ['manage:setStaffPin', { id: 'u-9', pin: '1234' }, ['staff.edit'], /add or change staff/],

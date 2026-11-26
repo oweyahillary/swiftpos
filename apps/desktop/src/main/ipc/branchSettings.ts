@@ -4,7 +4,6 @@ import { offeredVersion, shareDir, shareProgress, tillVersions } from '../update
 import { cleanOffer, type Offer } from '@zaptill/core/offers';   // A445
 import { app } from 'electron';
 import { assertPayload } from '../ipcValidate';
-import { historyMethodsSettingValue, CASHIER_HISTORY_METHODS_KEY } from '@zaptill/core/cashierHistory';
 import { getLocalDb } from '../localDb';
 import { setReceiptPay } from '../receiptPay';
 import { syncAll } from '../syncEngine';
@@ -12,7 +11,7 @@ import { tillBranchId } from '../deviceConfig';   // A446
 import { signedIn as sessionPerson, personKeys, hasMarker, isOwnerRole } from '../tillAccess';
 import { maySetMpesa } from '@zaptill/core/permissions';   // A492
 import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from '@zaptill/core/mpesaReceive';   // A492
-import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getCashierHistoryMethods, setCashierHistoryMethods, getPaymentMethodsEnabled, setPaymentMethodsEnabled, getPlatformPricing, getCategoryLayout, setCategoryLayout, getOnscreenKeyboard, setOnscreenKeyboard } from '../deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getReversalRules, setReversalRules, getPaymentMethodsEnabled, setPaymentMethodsEnabled, getPlatformPricing, getCategoryLayout, setCategoryLayout, getOnscreenKeyboard, setOnscreenKeyboard } from '../deviceConfig';
 import { CATEGORY_LAYOUT_KEY, CATEGORY_LAYOUT_PERMISSIONS, categoryLayoutSettingValue } from '@zaptill/core/categoryLayout';   // 8n
 import { ONSCREEN_KEYBOARD_KEY, ONSCREEN_KEYBOARD_PERMISSIONS, onscreenKeyboardSettingValue } from '@zaptill/core/onscreenKeyboard';   // owner 2026-11-09
 import { isReversalSettingKey, reversalSettingValue } from '@zaptill/core/reversalRules';
@@ -191,13 +190,5 @@ export function registerBranchSettingsHandlers(ctx: IpcShared) {
     syncAll().catch(console.error);
     return out;
   });
-  handle('manage:getCashierHistoryMethods', async () => ({ methods: getCashierHistoryMethods() }));
-  handle('manage:setCashierHistoryMethods', async (_e, methods) => {
-    requireKey(['settings.business'], 'Only someone who manages the business settings can change that.');   // A490
-    const clean = historyMethodsSettingValue(methods);
-    if (clean === null) throw new Error('Choose payment methods from the list.');
-    const out = await manageFetch('/api/business/settings', 'POST', { key: CASHIER_HISTORY_METHODS_KEY, value: JSON.parse(clean) });
-    setCashierHistoryMethods(clean);
-    return out;
-  });
+  // A627: the cashier-History methods picker is retired — it is the sales.history_all_payments right now (web Roles screen).
 }

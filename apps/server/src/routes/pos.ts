@@ -26,8 +26,6 @@ import { isConfirmedBranchServer } from '../lib/deviceRole';   // A427
 import { mayIssueJoinCode } from '../lib/tillJoin';   // A427
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';   // A427
 import { cleanCutoff } from '@zaptill/core/businessDay';   // 0.6.34
-import { cleanHistoryMethods } from '@zaptill/core/cashierHistory';
-import { cleanSeesSales, historyTotalsOn } from '../lib/cashierShiftSales';   // A416 / A418   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { frozenAtBranch, may as mayStock } from '../lib/stockTakeAccess';   // A394 (A535: may)
 import { pageAll, chunkPaged } from '../lib/pgQuery';
@@ -477,7 +475,8 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
+      // A627: the cashier-history settings (methods / sees-sales / History total) are dropped here — they are rights now.
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
         SCALE_SETTINGS_KEY,   // A577: the business's scale label layout
         CUSTOMER_SCREEN_KEY,   // A606: the customer screen's slideshow (the owner's images)
         ...REVERSAL_SETTING_KEYS]),
@@ -514,7 +513,8 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
           .select('key, value')
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
-          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
+          // A627: the cashier-history branch overrides are dropped here — they are per-person rights now.
+          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
             CATEGORY_LAYOUT_KEY, ONSCREEN_KEYBOARD_KEY])   // 8n + owner 2026-11-09: the branch's own only — there is no business-wide value
       : Promise.resolve({ data: [], error: null }),
     supabase
@@ -704,12 +704,8 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     continuousOperation: receiptText.continuous_operation === 'true',
     // 0.6.34: when the business day ends, minutes after midnight (0 = midnight); the branch's own value wins.
     businessDayCutoff: cleanCutoff(receiptText.business_day_cutoff) ?? 0,
-    // 0.6.37 (A387): the payment methods a cashier's History shows ([] = every method); the branch's own value wins.
-    cashierHistoryMethods: cleanHistoryMethods(receiptText.cashier_history_methods) ?? [],
-    // A416: a cashier closing a shift sees their sales — off unless the owner/manager turned it on; the branch's own wins.
-    cashierSeesShiftSales: cleanSeesSales(receiptText.cashier_sees_shift_sales),
-    // A418: a cashier's History total — only while the switch above is on too ("one should be on for the other").
-    cashierHistoryTotals: historyTotalsOn(receiptText.cashier_sees_shift_sales, receiptText.cashier_history_totals),
+    // A627: the cashier-history settings (methods, sees-sales, History total) are rights now — the till reads the signed-in
+    // person's permissions (shifts.see_shift_sales / sales.history_total / sales.history_all_payments), not pos/init flags.
     // A429: the payment methods this branch takes (catalogue codes); the branch's own value wins; absent = the defaults.
     paymentMethodsEnabled: enabledFromSetting(receiptText.payment_methods_enabled),
     // A619: the delivery platforms' prices — the business's rounding and this branch's rule per platform (its own, else

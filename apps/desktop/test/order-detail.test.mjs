@@ -126,15 +126,13 @@ console.log('\nWhat a cashier may open\n');
   signIn('u-brian', 'Brian', 'cashier');
   const r = await H['order:detail'](null, 'o-1');
   ok('with "own history" on, a cashier cannot open another\'s sale', !r.ok && /not yours/i.test(r.error ?? ''), JSON.stringify(r));
-  signIn('u-amy', 'Amy', 'cashier');
-  C.setCashierHistoryMethods(['cash']);
+  signIn('u-amy', 'Amy', 'cashier');   // A627: a cashier without sales.history_all_payments sees cash only
   const own = await H['order:detail'](null, 'o-1');
-  ok('…their own, yes — with only the payment methods their History shows', own.ok && own.detail.payments.length === 1
+  ok('…their own, yes — with only cash (the methods their History shows without the right)', own.ok && own.detail.payments.length === 1
     && own.detail.payments[0].method === 'cash', JSON.stringify(own.detail?.payments));
   ok('…and no Reprint for a cashier', own.canReprint === false);
   const pr = await H['escpos:reprintReceiptForOrder'](null, 'o-1');
   ok('the till refuses a cashier\'s reprint as before', !pr.ok && /managers/i.test(pr.error ?? ''));
-  C.setCashierHistoryMethods([]);
   C.setPosFeatures({ cashier_own_history: false });
 }
 

@@ -1,71 +1,37 @@
 /**
- * cashier-shift-sales.test.mjs — A416 (owner, 2026-10-09: "where is the feature for waiter seeing total sales on the shift
- * while closing? can we add it to the managers/owners side which can be toggled on and off at will but by default is off?").
+ * cashier-shift-sales.test.mjs — A627: "see own shift sales at close" is a per-person RIGHT (shifts.see_shift_sales); the
+ * old business/branch 'cashier_sees_shift_sales' switch (A416) and all its plumbing are gone.
  *
  *   node tests/cashier-shift-sales.test.mjs
  *
- * RUNS the real rule (apps/server/src/lib/cashierShiftSales.ts cleanSeesSales), then pins the path end to end: the owner's
- * switch and the branch override (dashboard + the cloud's allowlists), the cloud's till payload, the till's cache (schema
- * 68), the till's blind report and both close screens — and that the count stays blind (no expected cash, no method figure).
+ * Pins: the cloud blind close and the till's blind report read the right; the count stays blind (no expected cash, no
+ * method figure); both close screens show the sales; and the retired switch plumbing is removed everywhere.
  *
- * MUTATIONS TO CONFIRM BITE: cleanSeesSales treating anything but "true" as on → "off unless true" fails; blindReport
- * adding the sales when the switch is off → "only when on" fails; blindReport putting expected cash back → "the count stays
- * blind" fails; the cloud sending the sales to a cashier without the switch → its pin fails.
+ * MUTATIONS TO CONFIRM BITE: blindReport reading a device flag instead of the right → "only when the right is held" fails;
+ * blindReport putting expected cash back → "the count stays blind" fails.
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-// The rule file imports the supabase client; its pure part is checked by source + a copy of the one-liner's behaviour.
-const rule = read('apps/server/src/lib/cashierShiftSales.ts');
-const cleanSrc = /export function cleanSeesSales\(raw: unknown\): boolean \{\s*return ([^;]+);\s*\}/.exec(rule)?.[1];
-const cleanSeesSales = new Function('raw', `return ${cleanSrc};`);
-
-console.log('\nThe switch\n');
-ok('off unless "true" (the default is off)', () => {
-  assert.ok(cleanSrc, 'cleanSeesSales not found');
-  for (const v of [undefined, null, '', 'false', 'yes', '1', 0, 1, 'TRUEish']) assert.equal(cleanSeesSales(v), false, String(v));
-  for (const v of ['true', ' TRUE ', true]) assert.equal(cleanSeesSales(v), true, String(v));
-});
-ok("the branch's own value wins, else the business default", () => {
-  assert.match(rule, /if \(branchId\) \{[\s\S]*from\('branch_settings'\)[\s\S]*if \(own\) return cleanSeesSales\(/);
-  assert.match(rule, /from\('business_settings'\)[\s\S]*return cleanSeesSales\(/);
-});
-ok('A627: the switches are retired for rights — the business toggles are gone, the plumbing stays', () => {
-  // the setting allowlists + the branch override stay as dead plumbing (no desktop schema change, client-parity kept)
-  assert.match(read('apps/server/src/routes/business.ts'), /'cashier_sees_shift_sales',/);
-  assert.match(read('apps/server/src/routes/branches.ts'), /'cashier_sees_shift_sales',/);
-  assert.match(read('apps/dashboard/src/pages/settings/BranchReceiptOverrides.tsx'), /save\('cashier_sees_shift_sales', null\)/);
-  // but the two business toggles are removed, replaced by a pointer to the rights
-  const prof = read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx');
-  assert.ok(!/saveSetting\('cashier_sees_shift_sales'/.test(prof), 'the A416 toggle is removed');
-  assert.ok(!/saveSetting\('cashier_history_totals'/.test(prof), 'the A418 toggle is removed');
-  assert.match(prof, /data-testid="cashier-sales-rights-note"/);
-});
-
 console.log('\nThe cloud\n');
 const shifts = read('apps/server/src/routes/shifts.ts');
-ok("a cashier's blind shift carries their sales only when they hold the A627 right (switch retired)", () => {
+ok("a cashier's blind shift carries their sales only when they hold the shifts.see_shift_sales right", () => {
   assert.match(shifts, /const seesSales = can\(req, 'shifts\.see_shift_sales'\);/);
   // A442 adds each person's part (sales only) inside the same switch.
   assert.match(shifts, /\.\.\.\(seesSales \? \{ cashier_sales: \{ total: Math\.round\(kept \* 100\) \/ 100, orders: \(orders \?\? \[\]\)\.length,\s*\/\/[^\n]*\n\s*by_cashier: byCashier\.map\(\(c\) => \(\{ name: c\.name, orders: c\.orders, sales: c\.sales \}\)\) \} \} : \{\}\)/);
-});
-ok('the till is told with its settings (the branch\'s own wins)', () => {
-  const pos = read('apps/server/src/routes/pos.ts');
-  assert.match(pos, /cashierSeesShiftSales: cleanSeesSales\(receiptText\.cashier_sees_shift_sales\),/);
-  assert.equal((pos.match(/'cashier_sees_shift_sales'/g) || []).length, 2, 'read from business_settings and branch_settings');
 });
 
 console.log('\nThe till\n');
 const svc = read('apps/desktop/src/main/shiftService.ts');
 const blind = svc.slice(svc.indexOf('export function blindReport'), svc.indexOf('/** A manager for shift purposes'));
-ok('the blind report adds the sales kept and the orders only when the A627 right is held (switch retired)', () => {
+ok('the blind report adds the sales kept and the orders only when the shifts.see_shift_sales right is held', () => {
   assert.match(blind, /seesSales: boolean = signedInCan\('shifts\.see_shift_sales'\)\)/);
   // A442 adds each person's part (sales only) inside the same switch, and strips the per-person figures when it is off.
   assert.match(blind, /\.\.\.\(seesSales \? \{ cashierSales: \{ total: money2\(z\.totals\.netSales \?\? z\.totals\.grossSales\), orders: z\.totals\.orderCount,\s*byCashier: \(z\.byCashier \?\? \[\]\)\.map\(\(c\) => \(\{ name: c\.name, orders: c\.orders, sales: c\.sales \}\)\) \} \} : \{\}\)/);
@@ -76,21 +42,21 @@ ok('the count stays blind: expected cash 0, no variance, no method figures', () 
   assert.match(blind, /byMethod: z\.byMethod\.map\(\(m\) => \(\{ \.\.\.m, amount: 0, orders: 0 \}\)\)/);
   assert.match(blind, /cashSales: 0, expectedCash: 0/);
 });
-ok('cached on the till (schema 68 on), pulled, relayed by the branch server; off until told', () => {
-  assert.match(read('apps/desktop/src/main/localDb.ts'), /\['cashier_sees_shift_sales', 'INTEGER'\]/);
-  // Added at 68; a later schema (A429: 69) keeps it — the till and the cloud still move together.
-  const local = Number(read('apps/desktop/src/main/localDb.ts').match(/export const LOCAL_SCHEMA_VERSION = (\d+);/)[1]);
-  const required = Number(read('apps/server/src/lib/desktopSchema.ts').match(/export const REQUIRED_DESKTOP_SCHEMA = (\d+);/)[1]);
-  assert.ok(local >= 68 && required === local, `local ${local}, required ${required}`);
-  const cfg = read('apps/desktop/src/main/deviceConfig.ts');
-  assert.match(cfg, /return getDeviceConfig\(\)\?\.cashier_sees_shift_sales === 1;/);
-  assert.match(cfg, /if \(typeof raw !== 'boolean'\) return;/);
-  assert.match(read('apps/desktop/src/main/syncEngine.ts'), /setCashierSeesShiftSales\(c\.cashierSeesShiftSales\);/);
-  assert.match(read('apps/desktop/src/main/referenceBundle.ts'), /cashierSeesShiftSales: rows\.config\.cashierSeesShiftSales,/);
-});
 ok('both close screens show it — the till and the web POS', () => {
   assert.match(read('apps/desktop/src/renderer/pages/ShiftPanel.tsx'), /\{report\.cashierSales && \(\s*<p className="mt-2 text-white" data-testid="cashier-sales">/);
   assert.match(read('apps/dashboard/src/pages/pos/ShiftModal.tsx'), /\{blind && cashierSales && \(\s*<p style=\{s\.subtitle\} data-testid="cashier-sales">/);
+});
+
+console.log('\nThe retired switch is gone\n');
+ok('the cashier_sees_shift_sales / cashier_history_totals switch plumbing is removed', () => {
+  const prof = read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx');
+  assert.ok(!/saveSetting\('cashier_sees_shift_sales'/.test(prof), 'the A416 toggle is removed');
+  assert.ok(!/saveSetting\('cashier_history_totals'/.test(prof), 'the A418 toggle is removed');
+  assert.match(prof, /data-testid="cashier-sales-rights-note"/);
+  // the cloud no longer sends it; the till no longer caches, reads or keeps a column for it
+  assert.ok(!/cashierSeesShiftSales/.test(read('apps/server/src/routes/pos.ts')), 'pos.ts no longer sends the flag');
+  assert.ok(!/export function getCashierSeesShiftSales/.test(read('apps/desktop/src/main/deviceConfig.ts')), 'the getter is gone');
+  assert.ok(!/\['cashier_sees_shift_sales', 'INTEGER'\]/.test(read('apps/desktop/src/main/localDb.ts')), 'the device_config column is off the create-list');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
