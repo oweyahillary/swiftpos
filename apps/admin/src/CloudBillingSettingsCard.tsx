@@ -38,6 +38,12 @@ export default function CloudBillingSettingsCard({ req, isSuper }: { req: Req; i
     try { const v = await fn(); setNotice(ok(v)); load(); } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
 
+  const reverse = (r: Receipt) => {
+    if (!window.confirm(`Reverse ${kes(r.amount)} (${r.trans_id})?\n\nZapTill claws back up to that much from the client's credit. If it was already applied to an invoice, the invoice stays paid and the shortfall is flagged for you to re-invoice — nothing is silently locked.`)) return;
+    run(() => req("POST", `/cloud-billing/receipts/${r.id}/reverse`),
+      (v) => v.already ? "That payment was already reversed." : `Reversed. Clawed back ${kes(v.clawback)}${v.shortfall > 0 ? `; ${kes(v.shortfall)} was already spent on an invoice — re-invoice if needed.` : "."}`);
+  };
+
   if (!s) return <div style={S.card}><div style={{ fontSize: 12, color: error ? C.danger : C.muted }}>{error ?? "Loading cloud billing…"}</div></div>;
 
   const reg = s.registered;
@@ -92,8 +98,14 @@ export default function CloudBillingSettingsCard({ req, isSuper }: { req: Req; i
               <td style={{ ...S.td, fontFamily: "monospace" }}>{kes(r.amount)}</td>
               <td style={{ ...S.td, fontSize: 12 }}>{r.bill_ref ?? "—"}</td>
               <td style={{ ...S.td, fontSize: 12 }}>
-                {r.business_name
-                  ? <span style={{ color: "#34e5a0" }}>{r.business_name}</span>
+                {r.status === "reversed"
+                  ? <span style={{ color: C.muted }}>{r.business_name ?? "—"} <span style={{ color: "#f87171" }}>(reversed)</span></span>
+                  : r.business_name
+                  ? <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ color: "#34e5a0" }}>{r.business_name}</span>
+                      {isSuper && <button data-testid={`receipt-reverse-${r.id}`} disabled={busy} onClick={() => reverse(r)}
+                        style={{ ...S.btn, ...S.btnGhost, fontSize: 11, opacity: busy ? 0.5 : 1 }}>Reverse</button>}
+                    </span>
                   : <span data-testid={`receipt-unmatched-${r.id}`} style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                       <span style={{ color: "#f59e0b" }}>unmatched</span>
                       {isSuper && <>

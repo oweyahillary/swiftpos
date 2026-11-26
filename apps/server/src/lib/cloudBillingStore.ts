@@ -139,10 +139,18 @@ export async function recentReceipts(fromIso: string | null, toIso: string | nul
   return rows;
 }
 
-/** One receipt by its M-Pesa code (so the callback can allocate what it just kept). */
-export async function receiptByTransId(transId: string): Promise<{ id: string; business_id: string | null; amount: number } | null> {
-  const { data } = await supabase.from('cloud_billing_receipts').select('id, business_id, amount').eq('trans_id', transId).maybeSingle();
-  return (data as { id: string; business_id: string | null; amount: number } | null) ?? null;
+export interface ReceiptLite { id: string; business_id: string | null; amount: number; status: string }
+
+/** One receipt by its M-Pesa code (so the callback can allocate what it just kept, or reverse a reversed one). */
+export async function receiptByTransId(transId: string): Promise<ReceiptLite | null> {
+  const { data } = await supabase.from('cloud_billing_receipts').select('id, business_id, amount, status').eq('trans_id', transId).maybeSingle();
+  return (data as ReceiptLite | null) ?? null;
+}
+
+/** One receipt by its row id (so the admin Reverse action can find what it undoes). */
+export async function receiptById(receiptId: string): Promise<ReceiptLite | null> {
+  const { data } = await supabase.from('cloud_billing_receipts').select('id, business_id, amount, status').eq('id', receiptId).maybeSingle();
+  return (data as ReceiptLite | null) ?? null;
 }
 
 /** Move a receipt's status (received → matched/unmatched → allocated). */

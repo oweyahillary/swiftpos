@@ -11,7 +11,7 @@
 import { supabase } from './supabase';
 import { openCloudInvoices } from './cloudPlan';
 import { convertTrialIfAny } from './cloudTrial';
-import { walletOf, addCredit, businessesWithCredit } from './cloudBillingStore';
+import { walletOf, addCredit, businessesWithCredit, setReceiptStatus, type ReceiptLite } from './cloudBillingStore';
 import { receiptEmailHtml } from './cloudPlanEmail';
 import { sendEmailChecked } from './mailer';
 import { ownerEmailOf } from './ownerEmail';
@@ -96,6 +96,27 @@ export async function emailBillingReceipt(businessId: string, amount: number, re
     const html = `<p>Hi ${name},</p><p>We have received your payment of KES ${amount.toLocaleString('en-KE')} (M-Pesa ${reference}). It is held as ZapTill account credit (KES ${result.wallet.toLocaleString('en-KE')}) and applies to your next invoice automatically.</p><p>— ZapTill</p>`;
     return (await sendEmailChecked({ to, subject: 'ZapTill — payment received (credit)', html })).ok;
   } catch (e) { console.warn('[cloud-billing] receipt email not sent:', (e as Error)?.message); return false; }
+}
+
+export interface ReverseResult { business_id: string | null; amount: number; clawback: number; shortfall: number; already: boolean }
+
+/**
+ * Undo a kept payment (Safaricom reversed it, or an admin claws one back). The wallet is a single pot, so we pull back at
+ * most what is still held: clawback = min(the receipt's amount, the current balance). Any shortfall is money already spent
+ * settling an invoice (access given) — we do NOT roll an invoice or a branch's paid-until back (A626 §10: flag the admin,
+ * never silently lock); the shortfall is returned for the caller to surface. Idempotent: a receipt already reversed is a
+ * no-op. An unmatched receipt (no client) never touched a wallet, so it is only marked reversed.
+ */
+export async function reverseReceipt(receipt: ReceiptLite, reason: string, by: string | null): Promise<ReverseResult> {
+  const amount = Math.round(Number(receipt.amount) * 100) / 100;
+  if (receipt.status === 'reversed') return { business_id: receipt.business_id, amount, clawback: 0, shortfall: 0, already: true };
+  if (!receipt.business_id) { await setReceiptStatus(receipt.id, 'reversed'); return { business_id: null, amount, clawback: 0, shortfall: 0, already: false }; }
+  const wallet = await walletOf(receipt.business_id);
+  const clawback = Math.round(Math.min(amount, wallet) * 100) / 100;
+  const shortfall = Math.round((amount - clawback) * 100) / 100;
+  if (clawback > 0) await addCredit(receipt.business_id, -clawback, reason, receipt.id, by);
+  await setReceiptStatus(receipt.id, 'reversed');
+  return { business_id: receipt.business_id, amount, clawback, shortfall, already: false };
 }
 
 /**

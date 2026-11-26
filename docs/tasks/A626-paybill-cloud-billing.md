@@ -79,8 +79,19 @@ Scope built: **who paid**, by the account code. No money moves yet (the wallet +
   the credit stays held, nothing half-paid; the client follows the normal unpaid ladder until topped up). To avoid a lib↔job
   import cycle, `ownerEmailOf` moved to `lib/ownerEmail.ts` (used by the reminders job, cloudPlanAdmin and cloudBillingAllocate).
   Tested in `cloud-billing-a626.test.mjs` (drain settles; credit < invoice is a no-op).
+- **Reversal ✅ (2026-11-26):** undo a kept payment (Safaricom reversed it, or a clawback). Core `reverseReceipt()`
+  (`lib/cloudBillingAllocate.ts`): the wallet is a single pot, so it claws back `min(amount, current balance)`; any
+  **shortfall** is money already spent settling an invoice (access given) and is **returned/flagged, not rolled back** —
+  the invoice stays paid and the branch's paid-until is never pushed back (A626 §10: flag the admin, never silently lock).
+  Idempotent (a receipt already reversed is a no-op); an unmatched receipt is only marked reversed. Two paths share the
+  core: the admin **`POST /receipts/:id/reverse`** (super admin, audited `cloud_billing.reverse`) with a Reverse button in
+  the receipts feed, and the **confirm callback** — `reversalOf()` (`lib/cloudBilling.ts`) spots a `TransactionType:
+  "Reversal"` body and routes it to the matching original by `OriginalTransactionID`, so a reversal is **never recorded as
+  income**. The admin action is the reliable path; the callback is best-effort (Safaricom's exact C2B reversal shape is not
+  sandbox-testable). Tested (held clawed back in full; spent → shortfall flagged, invoice stays paid; overpayment surplus
+  only; idempotent; unknown id 404; reversal callback undoes + not double-recorded; unknown original ignored).
 - **Not done (Phase 2b follow-ons):** a super-admin wallet adjust/refund; surface `allocated` vs `matched` and the wallet
-  in the global receipts feed; reversal-callback handling; the invoice reminder email could net off held credit
+  in the global receipts feed; the invoice reminder email could net off held credit
   ("you owe KES X after your KES Y credit") rather than show the full amount.
 
 ## 1. What it does

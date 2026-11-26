@@ -11,7 +11,8 @@
  *
  * MUTATIONS TO CONFIRM BITE: drop the token match in receiveBillingPayment → "a payment with the wrong token is ignored"
  * fails; drop the trans_id dedupe → "the same payment twice keeps one" fails; drop normalizeBillRef → "the account code is
- * normalised" fails; skip saving token_hash on a refusal → "a refusal keeps the prior registration" fails.
+ * normalised" fails; skip saving token_hash on a refusal → "a refusal keeps the prior registration" fails; drop the
+ * reversalOf detection → "a reversal CALLBACK … never recorded as income" fails (the reversal lands as a second receipt).
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -373,6 +374,84 @@ try {
     assert.deepEqual(r.drained, []);
     assert.equal(mem.db.invoices[0].status, 'pending');
     assert.equal(balance(BIZ), 5000);   // untouched
+  });
+
+  // ── Reversal: undo a kept payment (Safaricom reversed it, or a clawback) ─────────────────────────────────────────
+  await ok('reverse: a payment still held in the wallet is clawed back in full (super admin)', async () => {
+    reset();
+    const { token } = await register();
+    await pay(token);   // 10000 -> wallet (no invoice), status matched
+    assert.equal(balance(BIZ), 10000);
+    const rc = receipts()[0];
+    assert.equal((await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/reverse`, AGENT_T)).status, 403);   // agent refused
+    const r = await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/reverse`, ADMIN);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual([r.body.clawback, r.body.shortfall], [10000, 0]);
+    assert.equal(balance(BIZ), 0);
+    assert.equal(receipts()[0].status, 'reversed');
+    assert.ok(mem.db.admin_audit_log.some((a) => a.action === 'cloud_billing.reverse'));
+  });
+
+  await ok('reverse: money already spent on an invoice stays paid; only the held part is clawed back, the shortfall flagged', async () => {
+    reset(); seedInvoice(10000);
+    const { token } = await register();
+    await pay(token);   // 10000 settles the invoice -> wallet 0, allocated, access on
+    assert.equal(mem.db.invoices[0].status, 'paid'); assert.equal(balance(BIZ), 0);
+    const rc = receipts()[0];
+    const r = await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/reverse`, ADMIN);
+    assert.deepEqual([r.body.clawback, r.body.shortfall], [0, 10000]);   // nothing to claw back; 10000 already spent
+    assert.equal(mem.db.invoices[0].status, 'paid');                     // NOT rolled back (A626 §10: flag, never silently lock)
+    assert.equal(balance(BIZ), 0);
+    assert.equal(receipts()[0].status, 'reversed');
+  });
+
+  await ok('reverse: an overpayment claws back only the surplus still held, the invoiced part is the shortfall', async () => {
+    reset(); seedInvoice(8000);
+    const { token } = await register();
+    await pay(token);   // 10000: 8000 settles, 2000 surplus in wallet
+    assert.equal(balance(BIZ), 2000);
+    const rc = receipts()[0];
+    const r = await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/reverse`, ADMIN);
+    assert.deepEqual([r.body.clawback, r.body.shortfall], [2000, 8000]);
+    assert.equal(balance(BIZ), 0);
+  });
+
+  await ok('reverse is idempotent (a second reverse changes nothing)', async () => {
+    reset();
+    const { token } = await register();
+    await pay(token);
+    const rc = receipts()[0];
+    await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/reverse`, ADMIN);
+    const again = await call('POST', `/api/admin/cloud-billing/receipts/${rc.id}/reverse`, ADMIN);
+    assert.equal(again.body.already, true);
+    assert.deepEqual([again.body.clawback, again.body.shortfall], [0, 0]);
+    assert.equal(balance(BIZ), 0);
+  });
+
+  await ok('reverse: an unknown receipt id is 404', async () => {
+    reset();
+    const r = await call('POST', `/api/admin/cloud-billing/receipts/${BIZ}/reverse`, ADMIN);   // a valid UUID, not a receipt
+    assert.equal(r.status, 404, JSON.stringify(r.body));
+  });
+
+  await ok('a reversal CALLBACK undoes the matching payment and is never recorded as income', async () => {
+    reset();
+    const { token } = await register();
+    await pay(token);   // QJK7XT3L5P, 10000 -> wallet
+    assert.equal(balance(BIZ), 10000); assert.equal(receipts().length, 1);
+    const rev = await pay(token, { TransactionType: 'Reversal', TransID: 'REV0000001', OriginalTransactionID: 'QJK7XT3L5P' });
+    assert.deepEqual(rev.body, { ResultCode: 0, ResultDesc: 'Accepted' });
+    assert.equal(receipts().length, 1);                 // the reversal is NOT a second receipt
+    assert.equal(receipts()[0].status, 'reversed');
+    assert.equal(balance(BIZ), 0);                       // the credit is clawed back
+  });
+
+  await ok('a reversal callback for an unknown original is ignored (still Accepted, nothing kept)', async () => {
+    reset();
+    const { token } = await register();
+    const rev = await pay(token, { TransactionType: 'Reversal', TransID: 'REV0000002', OriginalTransactionID: 'GHOST99999' });
+    assert.deepEqual(rev.body, { ResultCode: 0, ResultDesc: 'Accepted' });
+    assert.equal(receipts().length, 0);
   });
 } finally { server.close(); }
 

@@ -51,6 +51,25 @@ export function billingC2bUrls(base: string, token: string): { ok: true; confirm
   return { ok: true, confirm, validate };
 }
 
+/**
+ * A reversal of an earlier payment: Safaricom's confirmation body is a reversal (TransactionType "Reversal"), not a fresh
+ * payment — so the pipe never records a reversed payment as income. Returns the reversed payment's M-Pesa code (the
+ * OriginalTransactionID, under Safaricom's spellings) plus the reversal's own code, or null when the body is not a reversal.
+ * The admin's Reverse action is the reliable path; this only catches a reversal Safaricom happens to push in this shape.
+ */
+export function reversalOf(body: unknown): { originalTransId: string | null; transId: string | null } | null {
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  if (!/revers/i.test(String(b.TransactionType ?? ''))) return null;
+  const code = (v: unknown): string | null => {
+    const t = (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '').trim().toUpperCase();
+    return /^[A-Z0-9]{8,20}$/.test(t) ? t : null;
+  };
+  return {
+    originalTransId: code(b.OriginalTransactionID) ?? code(b.OriginalTransactionId) ?? code(b.OriginalTransID),
+    transId: code(b.TransID),
+  };
+}
+
 /** A client's billing code / the account number a payer types — normalised for storage and (Phase 2) matching: trimmed,
  *  upper-cased, non-alphanumerics stripped, so "acme", "ACME ", "Acme", "ac-me" all become "ACME". null when empty. */
 export function normalizeBillRef(v: string | null | undefined): string | null {

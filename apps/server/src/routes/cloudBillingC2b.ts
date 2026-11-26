@@ -9,14 +9,26 @@
  */
 import { safeRouter } from '../middleware/asyncHandler';
 import { ACCEPTED, looksLikeToken, hashC2bToken, parseConfirmation } from '../lib/c2b';
+import { reversalOf } from '../lib/cloudBilling';
 import { billingTokenMatches, keepReceipt, receiptByTransId, setReceiptStatus } from '../lib/cloudBillingStore';
-import { allocate, emailBillingReceipt } from '../lib/cloudBillingAllocate';
+import { allocate, emailBillingReceipt, reverseReceipt } from '../lib/cloudBillingAllocate';
 
 const router = safeRouter();
+
+/** A reversal Safaricom pushed down the confirm URL: undo the matching kept payment. Idempotent; a no-op when we never
+ *  recorded the original (no money was applied) or it is already reversed. */
+async function receiveBillingReversal(rev: { originalTransId: string | null; transId: string | null }): Promise<void> {
+  if (!rev.originalTransId) return;
+  const rc = await receiptByTransId(rev.originalTransId);
+  if (!rc || rc.status === 'reversed') return;
+  await reverseReceipt(rc, `Reversed (M-Pesa ${rev.transId ?? rev.originalTransId})`, 'cloud-billing');
+}
 
 async function receiveBillingPayment(token: string, body: unknown): Promise<void> {
   if (!looksLikeToken(token)) return;
   if (!(await billingTokenMatches(hashC2bToken(token)))) return;   // not our token — ignore (still answer Accepted)
+  const reversal = reversalOf(body);
+  if (reversal) { await receiveBillingReversal(reversal); return; }   // a reversal, never recorded as income
   const payment = parseConfirmation(body);
   if (!payment) return;
   if ((await keepReceipt(payment)) !== 'new') return;   // once per M-Pesa code

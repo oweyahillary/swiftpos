@@ -12,8 +12,8 @@ import { supabase } from '../lib/supabase';
 import { newC2bToken, hashC2bToken } from '../lib/c2b';
 import { registerC2bUrls, simulateC2bPayment } from '../lib/c2bDaraja';
 import { zaptillDaraja, serverEnvironment, callbackBase, billingC2bUrls, normalizeBillRef } from '../lib/cloudBilling';
-import { readBillingC2bSettings, writeBillingC2bSettings, recentReceipts, ensureBillingCode, setBillingCode, matchBillingCode, assignReceipt, walletOf, creditEntries } from '../lib/cloudBillingStore';
-import { allocate } from '../lib/cloudBillingAllocate';
+import { readBillingC2bSettings, writeBillingC2bSettings, recentReceipts, ensureBillingCode, setBillingCode, matchBillingCode, assignReceipt, walletOf, creditEntries, receiptById } from '../lib/cloudBillingStore';
+import { allocate, reverseReceipt } from '../lib/cloudBillingAllocate';
 
 const router = safeRouter();
 const isoOrNull = (v: unknown): string | null => (typeof v === 'string' && v && Number.isFinite(Date.parse(v)) ? new Date(Date.parse(v)).toISOString() : null);
@@ -120,6 +120,20 @@ router.post('/receipts/:id/assign', requireAdmin, requireSuperAdmin, async (req,
   if ('error' in r) { res.status(400).json({ error: r.error }); return; }
   await audit(req, 'cloud_billing.assign', { receipt_id: id, business_id: businessId });
   res.json({ ok: true, business_id: businessId });
+});
+
+// POST /receipts/:id/reverse — undo a kept payment (Safaricom reversed it, or a clawback). Claws back up to the amount from
+// the client's wallet; money already spent on an invoice is left paid and the shortfall is reported, not silently locked
+// (A626 §10). Super admin; idempotent.
+router.post('/receipts/:id/reverse', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) { res.status(400).json({ error: 'bad receipt id' }); return; }
+  const rc = await receiptById(id);
+  if (!rc) { res.status(404).json({ error: 'No such receipt.' }); return; }
+  const reason = textOrNull(req.body?.reason, 120) ?? 'Reversed by admin';
+  const r = await reverseReceipt(rc, reason, req.adminEmail ?? 'admin');
+  await audit(req, 'cloud_billing.reverse', { receipt_id: id, business_id: r.business_id, clawback: r.clawback, shortfall: r.shortfall, already: r.already });
+  res.json({ ok: true, clawback: r.clawback, shortfall: r.shortfall, business_id: r.business_id, already: r.already });
 });
 
 // GET /clients/:id/credit — the client's cloud credit balance + ledger.
