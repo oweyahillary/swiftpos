@@ -102,6 +102,11 @@ export const PERMISSIONS: PermissionDef[] = [
   // does not. Description apostrophe-free + registered one-line in migration 199 (test-migration-134 registeredLater).
   { key: 'sales.history_total',  group: 'selling', surface: 'both', view: true, manager: true,
     label: 'See a running total in History', description: 'In History, see the number of orders and the sales of whatever the filters show (not only the page on screen).' },
+  // A627 (owner, 2026-11-26): which payment methods a cashier sees in History is a RIGHT now, not the business-wide
+  // 'cashier_history_methods' picker (retired). With it, History shows sales paid by every method; without it, only cash.
+  // Seniors hold it; a cashier does not. Description apostrophe-free + registered one-line in migration 201.
+  { key: 'sales.history_all_payments', group: 'selling', surface: 'both', view: true, manager: true,
+    label: 'See all payments in History', description: 'In History, see sales paid by every method. Without this, a cashier sees only cash sales (a split sale shows only its cash part).' },
   { key: 'sales.approve_kitchen_void', group: 'selling', surface: 'both', manager: true,
     label: 'Approve removing items sent to the kitchen', description: 'Approve with their PIN taking an item off an order after it was sent to the kitchen or bar' },
   { key: 'invoice.create',       group: 'selling', surface: 'web', cashier: true, manager: true,
@@ -648,7 +653,7 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
       'sales.refund', 'sales.reprint', 'sales.history_all', 'customers.credit', 'shifts.confirm', 'reports.sales', 'reports.shifts', 'shifts.close_day',   // A520: Close Day, not Close Branch
       // A595: repayments and the two PIN approvals; not Analytics (the premium area is for managers).
       'customers.credit_payment', 'shifts.approve_payout', 'sales.approve_kitchen_void',
-      'shifts.see_shift_sales', 'sales.history_total'] },   // A627: a supervisor sees the branch's sales — at close and a History total
+      'shifts.see_shift_sales', 'sales.history_total', 'sales.history_all_payments'] },   // A627: a supervisor sees the branch's sales — at close, a History total, and every payment method
   { name: 'Waiter', description: 'Takes orders, sends them to the kitchen and takes payment',
     keys: ['orders.create', 'sales.discount', 'sales.discount_preset', 'products.view', 'inventory.view', 'customers.view', 'customers.contacts', 'customers.history', 'customers.edit',
       'reservations.manage'], types: FOOD_BUSINESS_TYPES },   // A580: restaurants and cafés only
@@ -677,7 +682,7 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
       // A595: the operational parts — not per-person rights, pay rates, the audit trail or approving staff changes.
       'menu.costs_edit', 'menu.delete', 'menu.bulk', 'suppliers.manage', 'inventory.order', 'inventory.reorder',
       'inventory.count_review', 'staff.contacts', 'staff.pins', 'parking.void', 'fuel.deliveries', 'fuel.setup',
-      'reports.analytics', 'devices.view', 'shifts.see_shift_sales', 'sales.history_total'] },   // A627: runs the operational reports → sees shift sales + History total
+      'reports.analytics', 'devices.view', 'shifts.see_shift_sales', 'sales.history_total', 'sales.history_all_payments'] },   // A627: runs the operational reports → sees shift sales, History total + all payments
   { name: 'Finance Manager', description: 'The accountant who acts - pays suppliers, records expenses, customer credit and drawer checks',
     keys: [...ACCOUNTANT_KEYS, 'payables.manage', 'expenses.manage', 'customers.view', 'customers.credit', 'shifts.confirm',
       // A595: paying suppliers, every expense part, phone numbers (to chase a balance), credit repayments and write-offs,

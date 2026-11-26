@@ -13,7 +13,7 @@
 import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
-import { getDeviceConfig, canSell, getPosFeatures, getCashierHistoryMethods } from './deviceConfig';
+import { getDeviceConfig, canSell, getPosFeatures } from './deviceConfig';
 import { signedInCan } from './tillAccess';   // A627: the shift-sales right (per person) — the switch is retired
 import { checkStaleDay, ensureDayOpen, businessDateNow } from './dayService';
 import { v4 as uuid } from 'uuid';
@@ -668,7 +668,10 @@ export function historyScope(): HistoryScope {
     canReprint: !!st && personCan(st, 'sales.reprint'),
     canVoid: !!st && personCan(st, 'sales.void'),
     canRefund: !!st && personCan(st, 'sales.refund'),
-    methods: manager ? [] : getCashierHistoryMethods(),
+    // A387/A627: every payment method with the sales.history_all_payments RIGHT (or a manager), else only cash — the
+    // 'cashier_history_methods' picker is retired as the control (its device flag stays dead); migration 201 granted the
+    // right wherever the picker showed more than cash.
+    methods: (manager || (!!st && personCan(st, 'sales.history_all_payments'))) ? [] : ['cash'],
     // A418/A627: the total of what the filters show — a manager always, else the sales.history_total RIGHT (the
     // 'cashier_history_totals' switch is retired; migration 199 granted the right wherever the switch was on).
     showTotal: manager || (!!st && personCan(st, 'sales.history_total')),

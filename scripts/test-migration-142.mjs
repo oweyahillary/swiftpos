@@ -99,7 +99,7 @@ const TAKEN_LATER = { Cashier: ['shifts.cash_movements', 'sales.discount'], Mana
 // A599: the attendance rights are registered and given by 180 (test-migration-180.mjs).
 // 8n: settings.pos_layout is registered and given to the built-in Manager / GM by migration 190, not 142.
 // A627: shifts.see_shift_sales is registered and given to the built-in seniors by migration 198, not 142.
-const A595 = new Set([...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices', 'settings.pos_layout', 'shifts.see_shift_sales', 'sales.history_total']);
+const A595 = new Set([...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices', 'settings.pos_layout', 'shifts.see_shift_sales', 'sales.history_total', 'sales.history_all_payments']);
 const keys142 = (r) => [...new Set([...r.keys, ...(TAKEN_LATER[r.name] ?? [])])].filter((k) => !(LATER[r.name] ?? []).includes(k) && !A595.has(k));
 // A550: the roles migration 159 adds later (General Manager, Operations Manager, …) are not 142's — 142 is compared with the
 // built-in roles it made, in their order (scripts/test-migration-159.mjs compares the rest).

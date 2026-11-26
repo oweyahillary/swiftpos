@@ -1512,12 +1512,12 @@ router.get('/', async (req, res) => {
 
   // Owner: may filter by any branch_id or get all. Staff: locked to their branch.
   const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
-  const scopedBranch = bf.kind === 'one' ? bf.id : bf.kind === 'set' ? null : branchScope(req);
-  // 0.6.37 (A387): a cashier sees only the payment methods the manager chose ([] = every; a manager always every). The
-  // filter is in the query, so the count and the pages are right; the split sales are trimmed below.
+  // A387 / A627: which payment methods a cashier sees in History is a RIGHT now (sales.history_all_payments), not the
+  // business-wide 'cashier_history_methods' picker (retired as the control; the setting + its plumbing stay dead). With the
+  // right (or as a manager) History shows every method ([]); without it, only cash. The filter is in the query, so the
+  // count and the pages are right; the split sales are trimmed below.
   const manager = callerMayConfirm(req);
-  // A490: History's methods narrowing is the cashier's view — anyone who sees every cashier's sales sees every method.
-  const historyMethods = manager ? [] : await getHistoryMethods(req.businessId, scopedBranch ?? (bf.kind === 'set' ? null : (req as any).branchId ?? null));
+  const historyMethods = (manager || can(req, 'sales.history_all_payments')) ? [] : ['cash'];
   const joinPm = !!method || historyMethods.length > 0;
 
   let query = supabase

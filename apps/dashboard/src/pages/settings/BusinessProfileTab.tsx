@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '@zaptill/core/businessDay';   // 0.6.34
-import HistoryMethodsPicker from './HistoryMethodsPicker';   // 0.6.37 (A387)
 
 // Settings › Business › Profile (A134). The one vertical-neutral home for
 // company-level settings: editable identity (via PATCH /api/business) plus the
@@ -210,27 +209,18 @@ export default function BusinessProfileTab() {
             {CUTOFF_CHOICES.map(t => <option key={t} value={t}>{t === '00:00' ? '00:00 (midnight)' : t}</option>)}
           </select>
         </div>
-        {/* 0.6.37 (A387): which payment methods a cashier's History shows; cashiers never reprint. */}
-        <div className="mt-6">
-          <h3 className="text-white font-semibold">What cashiers see in History</h3>
-          <p className="text-gray-500 text-sm mt-0.5 mb-3">
-            A cashier's History — on the desktop POS and the web POS — shows only sales paid by the methods ticked here; a split
-            sale shows only its ticked part. Cashiers never reprint a receipt. Managers and the owner see every sale.
-          </p>
-          <HistoryMethodsPicker value={settings.cashier_history_methods}
-            onChange={(list) => saveSetting('cashier_history_methods', JSON.stringify(list))} />
-        </div>
-        {/* A627 (owner, 2026-11-26: "remove all sales toggle and add them as user rights for easy management"): the two
-            "cashiers see sales" switches (close-shift sales, History total) are now RIGHTS, set per person on Roles and
-            permissions — easier to manage and lockable per cashier. The count stays blind either way. */}
+        {/* A627 (owner, 2026-11-26: "remove all sales toggle and add them as user rights for easy management"): the
+            "cashiers see sales" switches (close-shift sales, History total) AND the History payment-methods picker (A387)
+            are now RIGHTS, set per person on Roles and permissions — easier to manage and lockable per cashier. */}
         <div data-testid="cashier-sales-rights-note" className="mt-6 rounded-lg border border-gray-800 bg-gray-800/50 px-4 py-3">
           <h3 className="text-white font-semibold">What cashiers see of sales</h3>
           <p className="text-gray-500 text-sm mt-0.5">
-            Seeing the shift's sales when closing, and a running total in History, are set per person on{' '}
-            <span className="text-gray-400">Roles and permissions</span> — grant{' '}
-            <span className="text-gray-400">“See own shift sales at close”</span> or{' '}
-            <span className="text-gray-400">“See a running total in History”</span>. The count stays blind either way: a
-            cashier without the right only keys in the cash they counted, never the expected cash or the difference.
+            Seeing the shift's sales when closing, a running total in History, and which payments show in History are set per
+            person on <span className="text-gray-400">Roles and permissions</span> — grant{' '}
+            <span className="text-gray-400">“See own shift sales at close”</span>,{' '}
+            <span className="text-gray-400">“See a running total in History”</span> or{' '}
+            <span className="text-gray-400">“See all payments in History”</span> (without the last, a cashier's History shows
+            only cash sales). The count stays blind either way: a cashier without the right only keys in the cash they counted.
           </p>
         </div>
       </section>

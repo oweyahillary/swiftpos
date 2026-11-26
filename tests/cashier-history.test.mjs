@@ -91,7 +91,8 @@ await ok('the cloud: the setting (settings.manage, validated), the branch overri
 
 await ok('GET /api/orders: a cashier\'s list filtered in the query (pages right), split sales trimmed; managers see all; only managers reprint', () => {
   const o = read('apps/server/src/routes/orders.ts');
-  assert.match(o, /const historyMethods = manager \? \[\] : await getHistoryMethods\(/);
+  // A627: the methods a cashier sees are the sales.history_all_payments RIGHT now (all) else cash — the picker is retired.
+  assert.match(o, /const historyMethods = \(manager \|\| can\(req, 'sales\.history_all_payments'\)\) \? \[\] : \['cash'\];/);
   // A418: the filters are written once (`filtered`) and applied to the page — and to the total of every page.
   assert.match(o, /if \(historyMethods\.length\)\s+q = q\.in\('pm\.method', historyMethods\);/);
   assert.match(o, /query = filtered\(query\);/);
@@ -105,7 +106,9 @@ await ok('the web: POS History shows the allowed part; Settings and the branch o
   assert.match(h, /\{!order\.history_partial && <>/);
   assert.match(h, /setCanReprint\(res\.can_reprint === true\)/);
   const p = read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx');
-  assert.match(p, /saveSetting\('cashier_history_methods', JSON\.stringify\(list\)\)/);
+  // A627: the business-level methods picker is retired → the sales.history_all_payments right; the note points to it.
+  assert.doesNotMatch(p, /HistoryMethodsPicker/);
+  assert.match(p, /See all payments in History/);
   const b = read('apps/dashboard/src/pages/settings/BranchReceiptOverrides.tsx');
   assert.match(b, /save\('cashier_history_methods', JSON\.stringify\(list\)\)/);
   assert.match(b, /save\('cashier_history_methods', null\)/);
@@ -130,7 +133,8 @@ await ok('the till: pulled and relayed, cached, filtered for a cashier, set from
   assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /o\.history_partial \? fmtMoney\(Number\(o\.history_shown_total \?\? 0\)\)/);
   // A490: reprint is its own key (sales.reprint); "manager" is shifts.confirm — they see every method, a cashier the chosen.
   assert.match(read('apps/desktop/src/main/shiftService.ts'), /const manager = !!st && personCan\(st, 'shifts\.confirm'\);/);
-  assert.match(read('apps/desktop/src/main/shiftService.ts'), /canReprint: !!st && personCan\(st, 'sales\.reprint'\),[\s\S]{0,160}methods: manager \? \[\] : getCashierHistoryMethods\(\),/);
+  // A627: the till reads the sales.history_all_payments right (all) else cash — the device-flag picker is retired.
+  assert.match(read('apps/desktop/src/main/shiftService.ts'), /methods: \(manager \|\| \(!!st && personCan\(st, 'sales\.history_all_payments'\)\)\) \? \[\] : \['cash'\],/);
 });
 
 await ok('schema 66 on both sides', () => {
