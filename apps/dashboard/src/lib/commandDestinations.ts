@@ -41,7 +41,7 @@ export const DESTINATIONS: Destination[] = [
   { to: '/dashboard/pos',           label: 'Open POS',        group: 'Dashboard', keywords: ['till', 'sell', 'point of sale', 'cashier'], keys: ['orders.create'] },
   { to: '/kds',                     label: 'Kitchen display (KDS)', group: 'Dashboard', keywords: ['kitchen', 'orders screen', 'kds'], keys: ['stations.manage'], verticals: FOOD },
   { to: '/dashboard/inventory',     label: 'Inventory',       group: 'Stock', keywords: ['stock on hand', 'packaged goods'], keys: ['inventory.view'] },
-  { to: '/dashboard/approvals',     label: 'Approvals',       group: 'Dashboard', keywords: ['till changes', 'approve', 'pending changes'], keys: ['changes.approve'] },
+  { to: '/dashboard/approvals',     label: 'Approvals',       group: 'Dashboard', keywords: ['pos changes', 'approve', 'pending changes'], keys: ['changes.approve'] },
   { to: '/dashboard/reservations',  label: 'Reservations',    group: 'Dashboard', keywords: ['bookings', 'waitlist', 'table booking'], keys: ['reservations.manage'], verticals: FOOD },
 
   // ── Menu / Catalogue ───────────────────────────────────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ export const DESTINATIONS: Destination[] = [
   { to: '/dashboard/shift-reports', label: 'Shift reports',   group: 'Finance', keywords: ['z report', 'drawer report', 'cashier shift', 'close shift'], keys: ['reports.shifts', 'shifts.confirm'] },
   { to: '/dashboard/turnover',      label: 'Table turnover',  group: 'Finance', keywords: ['tables', 'covers', 'seating'], keys: ['orders.view_all'], verticals: FOOD },
   { to: '/dashboard/open-drawers',  label: 'Open drawers',    group: 'Finance', keywords: ['drawer', 'cash drawer', 'force close'], keys: ['shifts.force_close', 'shifts.confirm'] },
-  { to: '/dashboard/tills-days',    label: 'POS & days',      group: 'Finance', keywords: ['close day', 'open day', 'till days'], keys: ['shifts.close_day', 'shifts.force_close'] },
+  { to: '/dashboard/tills-days',    label: 'POS & days',      group: 'Finance', keywords: ['close day', 'open day', 'pos days', 'close branch'], keys: ['shifts.close_day', 'shifts.force_close'] },
 
   // ── Customers ──────────────────────────────────────────────────────────────────────────────────────────────────
   { to: '/dashboard/customers',         label: 'Customers',        group: 'Customers', keywords: ['crm', 'loyalty', 'contacts'], keys: ['customers.view'] },
@@ -99,7 +99,7 @@ export const DESTINATIONS: Destination[] = [
   { to: '/dashboard/settings/business/scale-labels', label: 'Scale labels',         group: 'Settings · Business', keywords: ['weighing', 'scale', 'barcode scale'], keys: ['settings.business'] },
   { to: '/dashboard/settings/business/setup',     label: 'Vertical setup',          group: 'Settings · Business', keywords: ['restaurant setup', 'parking setup', 'petrol setup', 'minimart setup'], keys: ['settings.business'] },
   { to: '/dashboard/settings/business/integrations',         label: 'Integrations',  group: 'Settings · Business', keywords: ['mpesa', 'kra', 'etims', 'webhooks', 'qr ordering'], keys: ['settings.integrations'] },
-  { to: '/dashboard/settings/business/integrations/mpesa',   label: 'M-Pesa number', group: 'Settings · Business', keywords: ['mpesa', 'paybill', 'till number', 'buy goods'], keys: ['settings.mpesa', 'settings.integrations'] },
+  { to: '/dashboard/settings/business/integrations/mpesa',   label: 'M-Pesa number', group: 'Settings · Business', keywords: ['mpesa', 'paybill', 'buy goods', 'store number'], keys: ['settings.mpesa', 'settings.integrations'] },
   { to: '/dashboard/settings/business/integrations/kra',     label: 'KRA eTIMS',     group: 'Settings · Business', keywords: ['kra', 'etims', 'tax', 'vat', 'fiscal'], keys: ['etims.manage'] },
   { to: '/dashboard/settings/business/integrations/webhooks', label: 'Webhooks',     group: 'Settings · Business', keywords: ['webhook', 'send sales', 'api', 'scheduled report emails'], keys: ['settings.webhooks', 'settings.integrations'] },
 ];
