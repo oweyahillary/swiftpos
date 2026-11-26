@@ -70,6 +70,22 @@ export function reversalOf(body: unknown): { originalTransId: string | null; tra
   };
 }
 
+/**
+ * Validate a super-admin wallet adjustment (a credit, or a debit/refund paid out-of-band) against the current balance.
+ * A debit may not exceed the balance — the wallet never goes negative and the ledger stays honest (the recorded delta
+ * always equals the balance change). Returns the clean signed delta + reason, or an error with a code.
+ */
+export function creditAdjustment(deltaRaw: unknown, reasonRaw: unknown, balance: number): { delta: number; reason: string } | { error: string; code: string } {
+  const delta = Math.round(Number(deltaRaw) * 100) / 100;
+  if (!Number.isFinite(delta) || delta === 0) return { error: 'Enter an amount to add or remove.', code: 'BAD_AMOUNT' };
+  if (Math.abs(delta) > 10_000_000) return { error: 'That amount is too large.', code: 'BAD_AMOUNT' };
+  const reason = (typeof reasonRaw === 'string' ? reasonRaw.trim() : '').slice(0, 120);
+  if (!reason) return { error: 'A reason is required for a wallet adjustment.', code: 'NO_REASON' };
+  const held = Math.round(Number(balance) * 100) / 100;
+  if (delta < 0 && -delta > held + 1e-9) return { error: `Cannot remove more than the KES ${held.toLocaleString('en-KE')} balance.`, code: 'INSUFFICIENT' };
+  return { delta, reason };
+}
+
 /** A client's billing code / the account number a payer types — normalised for storage and (Phase 2) matching: trimmed,
  *  upper-cased, non-alphanumerics stripped, so "acme", "ACME ", "Acme", "ac-me" all become "ACME". null when empty. */
 export function normalizeBillRef(v: string | null | undefined): string | null {

@@ -73,6 +73,9 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
   const [reference, setReference] = useState("");
   const [paidAt, setPaidAt] = useState(today());
   const [note, setNote] = useState("");
+  const [adjOpen, setAdjOpen] = useState(false);
+  const [adjAmount, setAdjAmount] = useState("");
+  const [adjReason, setAdjReason] = useState("");
 
   const adopt = useCallback((v: View) => {
     setView(v);
@@ -156,6 +159,20 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
       load(); onChanged?.();
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
+  // A626 follow-on: a super admin adds (goodwill, correction) or removes (refund paid out-of-band) wallet credit. The
+  // response is { balance }, not a View, so this refreshes via load() rather than the `run` helper (which re-adopts a View).
+  const adjustCredit = async (sign: 1 | -1) => {
+    const amt = Math.round(Number(adjAmount) * 100) / 100;
+    if (!(amt > 0)) { setError("Enter an amount to add or remove."); return; }
+    if (!adjReason.trim()) { setError("Enter a reason for the adjustment."); return; }
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const v = await req("POST", `/cloud-billing/clients/${clientId}/credit/adjust`, { delta: sign * amt, reason: adjReason.trim() });
+      setNotice(`Wallet ${sign > 0 ? "credited" : "debited"} ${kes(amt)} — balance ${kes(v.balance)}.`);
+      setAdjAmount(""); setAdjReason(""); setAdjOpen(false);
+      load(); onChanged?.();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
 
   return (
     <div style={S.card} data-testid="branch-billing">
@@ -174,6 +191,19 @@ export default function BranchBillingCard({ clientId, req, isSuper, onChanged }:
           Account credit: <b style={{ fontFamily: "monospace", color: TONE.ok }}>{kes(view.credit_balance ?? 0)}</b>
           <span style={{ fontSize: 11 }}>held from a payment, applies to the next invoice automatically.</span>
           {isSuper && <button data-testid="branch-billing-allocate" disabled={busy} onClick={allocateWallet} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, opacity: busy ? 0.5 : 1 }}>Allocate now</button>}
+        </div>
+      )}
+      {isSuper && (
+        <div data-testid="branch-billing-adjust" style={{ marginTop: 6 }}>
+          {!adjOpen
+            ? <button data-testid="adjust-open" disabled={busy} onClick={() => { setAdjOpen(true); setError(null); setNotice(null); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11 }}>Adjust credit…</button>
+            : <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 10, marginTop: 4 }}>
+                {field("Amount (KES)", <input data-testid="adjust-amount" style={{ ...S.input, width: 110 }} inputMode="numeric" value={adjAmount} onChange={(e) => setAdjAmount(e.target.value)} />)}
+                {field("Reason", <input data-testid="adjust-reason" style={S.input} value={adjReason} onChange={(e) => setAdjReason(e.target.value)} placeholder="e.g. goodwill, correction, refund paid" />)}
+                <button data-testid="adjust-add" disabled={busy} onClick={() => adjustCredit(1)} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, opacity: busy ? 0.5 : 1 }}>Add credit</button>
+                <button data-testid="adjust-remove" disabled={busy} onClick={() => adjustCredit(-1)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, opacity: busy ? 0.5 : 1 }}>Remove / refund</button>
+                <button disabled={busy} onClick={() => { setAdjOpen(false); setError(null); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11 }}>Cancel</button>
+              </div>}
         </div>
       )}
       {themesDeal}

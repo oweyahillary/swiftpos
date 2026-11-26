@@ -453,6 +453,36 @@ try {
     assert.deepEqual(rev.body, { ResultCode: 0, ResultDesc: 'Accepted' });
     assert.equal(receipts().length, 0);
   });
+
+  // ── Wallet adjust / refund (super admin) ────────────────────────────────────────────────────────────────────────
+  const adjust = (token, body) => call('POST', `/api/admin/cloud-billing/clients/${BIZ}/credit/adjust`, token, body);
+  await ok('credit adjust: super admin adds goodwill credit (balance rises, ledger entry, audited; agent refused)', async () => {
+    reset();
+    assert.equal((await adjust(AGENT_T, { delta: 5000, reason: 'goodwill' })).status, 403);
+    const a = await adjust(ADMIN, { delta: 5000, reason: 'goodwill' });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.equal(a.body.balance, 5000); assert.equal(balance(BIZ), 5000);
+    assert.ok(mem.db.cloud_credit_entries.some((e) => e.business_id === BIZ && e.delta === 5000 && e.reason === 'goodwill'));
+    assert.ok(mem.db.admin_audit_log.some((l) => l.action === 'cloud_billing.credit_adjust'));
+  });
+
+  await ok('credit adjust: a debit/refund removes credit, but never more than the balance (INSUFFICIENT)', async () => {
+    reset();
+    mem.db.business_cloud_credit = [{ business_id: BIZ, balance: 8000, currency: 'KES' }];
+    const over = await adjust(ADMIN, { delta: -9000, reason: 'refund' });
+    assert.equal(over.status, 409); assert.equal(over.body.code, 'INSUFFICIENT');
+    assert.equal(balance(BIZ), 8000);   // unchanged
+    const r = await adjust(ADMIN, { delta: -3000, reason: 'refund paid via B2C' });
+    assert.equal(r.status, 200); assert.equal(r.body.balance, 5000); assert.equal(balance(BIZ), 5000);
+  });
+
+  await ok('credit adjust: a reason is required; a zero or non-numeric amount is refused', async () => {
+    reset();
+    assert.equal((await adjust(ADMIN, { delta: 1000, reason: '  ' })).body.code, 'NO_REASON');
+    assert.equal((await adjust(ADMIN, { delta: 0, reason: 'x' })).body.code, 'BAD_AMOUNT');
+    assert.equal((await adjust(ADMIN, { delta: 'abc', reason: 'x' })).body.code, 'BAD_AMOUNT');
+    assert.equal(mem.db.cloud_credit_entries.length, 0);   // nothing written
+  });
 } finally { server.close(); }
 
 console.log(`\n${fail ? 'FAIL' : 'PASS'} — ${pass} passed, ${fail} failed\n`);

@@ -11,8 +11,8 @@ import { requireAdmin, requireSuperAdmin } from '../middleware/adminAuth';
 import { supabase } from '../lib/supabase';
 import { newC2bToken, hashC2bToken } from '../lib/c2b';
 import { registerC2bUrls, simulateC2bPayment } from '../lib/c2bDaraja';
-import { zaptillDaraja, serverEnvironment, callbackBase, billingC2bUrls, normalizeBillRef } from '../lib/cloudBilling';
-import { readBillingC2bSettings, writeBillingC2bSettings, recentReceipts, ensureBillingCode, setBillingCode, matchBillingCode, assignReceipt, walletOf, creditEntries, receiptById } from '../lib/cloudBillingStore';
+import { zaptillDaraja, serverEnvironment, callbackBase, billingC2bUrls, normalizeBillRef, creditAdjustment } from '../lib/cloudBilling';
+import { readBillingC2bSettings, writeBillingC2bSettings, recentReceipts, ensureBillingCode, setBillingCode, matchBillingCode, assignReceipt, walletOf, creditEntries, receiptById, addCredit } from '../lib/cloudBillingStore';
 import { allocate, reverseReceipt } from '../lib/cloudBillingAllocate';
 
 const router = safeRouter();
@@ -141,6 +141,19 @@ router.get('/clients/:id/credit', requireAdmin, async (req, res) => {
   const id = String(req.params.id);
   if (!UUID.test(id)) { res.status(400).json({ error: 'bad client id' }); return; }
   res.json({ balance: await walletOf(id), currency: 'KES', entries: await creditEntries(id) });
+});
+
+// POST /clients/:id/credit/adjust — super admin adds or removes wallet credit (a correction, goodwill, or a refund paid
+// out-of-band). `delta` is signed; a debit may not exceed the balance. Audited.
+router.post('/clients/:id/credit/adjust', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) { res.status(400).json({ error: 'bad client id' }); return; }
+  const balance = await walletOf(id);
+  const v = creditAdjustment(req.body?.delta, req.body?.reason, balance);
+  if ('error' in v) { res.status(v.code === 'INSUFFICIENT' ? 409 : 400).json({ error: v.error, code: v.code }); return; }
+  const newBalance = await addCredit(id, v.delta, v.reason, null, req.adminEmail ?? 'admin');
+  await audit(req, 'cloud_billing.credit_adjust', { business_id: id, delta: v.delta, reason: v.reason, balance: newBalance });
+  res.json({ ok: true, delta: v.delta, balance: newBalance });
 });
 
 // POST /clients/:id/credit/allocate — apply the wallet to the client's open invoices now (a held underpayment). Super admin.

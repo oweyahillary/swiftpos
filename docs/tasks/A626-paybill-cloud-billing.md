@@ -90,9 +90,13 @@ Scope built: **who paid**, by the account code. No money moves yet (the wallet +
   income**. The admin action is the reliable path; the callback is best-effort (Safaricom's exact C2B reversal shape is not
   sandbox-testable). Tested (held clawed back in full; spent → shortfall flagged, invoice stays paid; overpayment surplus
   only; idempotent; unknown id 404; reversal callback undoes + not double-recorded; unknown original ignored).
-- **Not done (Phase 2b follow-ons):** a super-admin wallet adjust/refund; surface `allocated` vs `matched` and the wallet
-  in the global receipts feed; the invoice reminder email could net off held credit
-  ("you owe KES X after your KES Y credit") rather than show the full amount.
+- **Wallet adjust / refund ✅ (2026-11-26):** `POST /clients/:id/credit/adjust` (super admin, audited `cloud_billing.credit_adjust`)
+  adds credit (goodwill, a correction) or removes it (a refund paid out-of-band via B2C/cash). `creditAdjustment()`
+  (`lib/cloudBilling.ts`) validates a signed `delta` + a required reason; **a debit may not exceed the balance** (the wallet
+  never goes negative, the ledger stays honest). An "Adjust credit…" panel on `BranchBillingCard` (Add credit / Remove·refund).
+  Tested (add/goodwill, debit within balance, over-debit → INSUFFICIENT, reason required, bad amount).
+- **Not done (Phase 2b follow-ons):** surface `allocated` vs `matched` and the wallet in the global receipts feed; the
+  invoice reminder email could net off held credit ("you owe KES X after your KES Y credit") rather than show the full amount.
 
 ## 1. What it does
 
