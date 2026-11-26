@@ -130,19 +130,22 @@ try {
 
   await ok('catalogue: an alert is offered only to someone who holds its right', () => {
     const keysOf = (held) => NP.alertsForKeys(held).map((a) => a.key).sort();
-    assert.deepEqual(keysOf(['*']), ['daily_summary', 'low_stock', 'owner_alert'].sort());
-    assert.deepEqual(keysOf(['reports.overview']), ['daily_summary', 'owner_alert'].sort());   // no reports.inventory → no low_stock
+    assert.deepEqual(keysOf(['*']), ['daily_summary', 'low_stock', 'owner_alert', 'voids'].sort());
+    assert.deepEqual(keysOf(['reports.overview']), ['daily_summary', 'owner_alert'].sort());   // no reports.inventory/voids → no low_stock/voids
     assert.deepEqual(keysOf(['reports.inventory']), ['low_stock']);
+    assert.deepEqual(keysOf(['reports.voids']), ['voids']);   // A627 W3: voids is its own alert, on reports.voids
     assert.deepEqual(keysOf(['orders.create']), []);   // a cashier is offered no alert
     assert.equal(NP.alertAppliesTo('low_stock', ['reports.inventory']), true);
     assert.equal(NP.alertAppliesTo('low_stock', ['reports.overview']), false);
+    assert.equal(NP.alertAppliesTo('voids', ['reports.voids']), true);
+    assert.equal(NP.alertAppliesTo('voids', ['reports.overview']), false);
   });
 
-  await ok('GET /me: the owner sees all three alerts, on by default', async () => {
+  await ok('GET /me: the owner sees all four alerts, on by default', async () => {
     reset();
     const r = await call('GET', '/api/staff/me/notification-prefs', T.owner);
     assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.deepEqual(r.body.alerts.map((a) => a.key).sort(), ['daily_summary', 'low_stock', 'owner_alert'].sort());
+    assert.deepEqual(r.body.alerts.map((a) => a.key).sort(), ['daily_summary', 'low_stock', 'owner_alert', 'voids'].sort());
     assert.ok(r.body.alerts.every((a) => a.enabled === true));
   });
 
@@ -174,7 +177,7 @@ try {
   await ok('GET/PUT /:userId: staff.view reads a member\'s alerts, the owner sets one; a cashier is offered none', async () => {
     reset();
     const g = await call('GET', `/api/staff/${GM}/notification-prefs`, T.mgr);   // the manager has staff.view
-    assert.deepEqual(g.body.alerts.map((a) => a.key).sort(), ['daily_summary', 'low_stock', 'owner_alert'].sort());   // GM holds all three rights
+    assert.deepEqual(g.body.alerts.map((a) => a.key).sort(), ['daily_summary', 'low_stock', 'owner_alert', 'voids'].sort());   // GM holds all four rights
     const put = await call('PUT', `/api/staff/${GM}/notification-prefs`, T.owner, { alert_type: 'low_stock', enabled: false });
     assert.equal(put.status, 200, JSON.stringify(put.body));
     assert.equal(db.user_notification_prefs.find((p) => p.user_id === GM && p.alert_type === 'low_stock')?.email_enabled, false);

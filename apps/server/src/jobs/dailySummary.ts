@@ -12,10 +12,10 @@ import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';  
 import { getDayCutoff } from '../lib/dayCutoff';
 import { readAlerts } from './ownerAlertsDecision';     // A476: what the owner chose the email includes
 import { dailyExtrasHtml } from './ownerAlertsData';    // A476: open tills, cash differences, voids, tills, expenses
-import { esc } from './ownerEmails';
+import { esc, emailShell } from './ownerEmails';
 import { emailOptedOut } from '../lib/notificationPrefsStore';   // A627 W3: per-person email opt-outs
 import { creditCounts, creditEmailBlock, listCreditSales, type CreditListRow } from '../lib/creditConfirm';   // A545
-import { lossEmailHtml } from './lossAlerts';   // A576
+import { lossEmailHtml, loadPeople } from './lossAlerts';   // A576 · A627 W3: voids is its own email
 
 /**
  * A476: the owner also chooses what it includes (Settings › Report Scheduler › "What the daily email includes"): tills
@@ -109,7 +109,11 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
       // A627 W3: drop the people who opted out of the daily summary (per-person email preference overrides the auto-include).
       const dropped = await emailOptedOut(biz.id, biz.owner_id, 'daily_summary');
       const recipients = (await gatherRecipients(biz, schedule)).filter((e) => !dropped.has(e.toLowerCase()));
-      if (recipients.length === 0) {
+      // A627 W3: the voids/exceptions email is its OWN email — to reports.voids holders (minus the voids opt-outs),
+      // independent of the summary, so someone can get voids without the full summary (or opt out of just voids).
+      const voidsDropped = await emailOptedOut(biz.id, biz.owner_id, 'voids');
+      const voidsRecipients = (await gatherVoidsRecipients(biz)).filter((e) => !voidsDropped.has(e.toLowerCase()));
+      if (recipients.length === 0 && voidsRecipients.length === 0) {
         console.warn(`[dailySummary] ${biz.name} (${biz.id}): enabled but no recipients — skipping.`);
         continue;
       }
@@ -119,7 +123,9 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
       const cutoff = await getDayCutoff(biz.id);
       const range = cutoff ? businessRangeEAT(businessDateEAT(now, cutoff), businessDateEAT(now, cutoff), cutoff)
                            : { start: dateFrom, end: dateTo };
-      await sendSummaryForBusiness(biz, range.start, range.end, recipients, now);
+      if (recipients.length) await sendSummaryForBusiness(biz, range.start, range.end, recipients, now);
+      // An optional send: a voids-email failure is logged, never breaks the summary or the once-a-day stamp.
+      if (voidsRecipients.length) await sendVoidsEmail(biz, voidsRecipients, now).catch((e: any) => console.error(`[dailySummary] voids email failed for ${biz.name}:`, e?.message));
       // Stamp AFTER a successful send, so a failure retries on the next run
       // rather than being silently marked done.
       await writeLastSent(biz.id, nowEatDate);
@@ -260,6 +266,47 @@ export async function gatherRecipients(
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * A627 W3: the recipients of the standalone "Voids and exceptions" email — active staff with an e-mail who hold
+ * reports.voids (loadPeople's seesVoids), plus the owner. The caller drops the voids opt-outs. Separate from the daily
+ * summary's recipients (reports.overview) so voids can go to a different set of people.
+ */
+async function gatherVoidsRecipients(biz: { id: string; owner_id: string }): Promise<string[]> {
+  const set = new Set<string>();
+  if (biz.owner_id && UUID_RE.test(biz.owner_id)) {
+    const { data, error } = await supabase.auth.admin.getUserById(biz.owner_id);
+    if (!error) { const e = data?.user?.email?.trim().toLowerCase(); if (e) set.add(e); }
+  }
+  try {
+    const { users, people } = await loadPeople(biz.id);
+    const seesVoids = new Set(people.filter((p) => p.seesVoids).map((p) => p.id));
+    for (const u of users) {
+      if (u.status !== 'active' || !seesVoids.has(u.id)) continue;
+      const e = String(u.email ?? '').trim().toLowerCase();
+      if (e.includes('@')) set.add(e);
+    }
+  } catch (e: any) { console.warn(`[dailySummary] voids recipients not read for ${biz.id}:`, e?.message); }
+  return [...set];
+}
+
+/**
+ * A627 W3: the standalone voids / exceptions e-mail. Reuses lossEmailHtml (which respects the loss daily-email and premium
+ * switches and returns '' when there is nothing to report), wrapped in the shared email shell. Sent only when there is
+ * content AND a recipient; its failure is caught by the caller so it never breaks the daily summary.
+ */
+async function sendVoidsEmail(biz: { id: string; name: string; owner_id: string | null; currency: string }, recipients: string[], now: Date): Promise<void> {
+  const body = await lossEmailHtml(biz, recipients, now);
+  if (!body || !body.trim()) return;
+  const todayLabel = formatInTimeZone(now, 'Africa/Nairobi', 'EEEE, d MMMM');
+  const todayShort = formatInTimeZone(now, 'Africa/Nairobi', 'd MMM');
+  await sendEmail({
+    to: recipients.join(', '),
+    subject: `⚠️ Voids and exceptions — ${biz.name} · ${todayShort}`,
+    html: emailShell({ businessName: biz.name, kind: 'Voids and exceptions', banner: 'Voids and exceptions', bannerSub: todayLabel, body }),
+  });
+  console.log(`[dailySummary] Voids email sent for ${biz.name} → ${recipients.length} recipient(s)`);
+}
+
 async function sendSummaryForBusiness(
   biz: { id: string; name: string; owner_id: string; currency: string },
   dateFrom: string,
@@ -301,9 +348,8 @@ async function sendSummaryForBusiness(
   // blocks anything (the day closes regardless); '' when there are none — and before migration 157.
   const creditHtml = await creditSummaryHtml(biz.id, currency);
 
-  // A576: the day's loss-prevention alerts (worth a look, at most 10, none about a person this email goes to). '' when
-  // switched off, none, or before migration 166 — never blocks the email.
-  const lossHtml = await lossEmailHtml(biz, recipients, now);
+  // A627 W3: the day's loss-prevention alerts (voids, refunds, exceptions) are no longer bundled here — they are their own
+  // "Voids and exceptions" email (sendVoidsEmail), to reports.voids holders, with their own per-person opt-out.
 
   const totalOrders  = orders?.length ?? 0;
   const totalRevenue = (orders ?? []).reduce((s, o) => s + Number(o.total), 0);
@@ -463,7 +509,7 @@ async function sendSummaryForBusiness(
       dateLabel: todayLabel,
       showLowStock: settings.low_stock,
       showTopProducts: settings.top_products,
-      extrasHtml: `${extrasHtml ?? ''}${creditHtml}${lossHtml}`,   // A545 · A576
+      extrasHtml: `${extrasHtml ?? ''}${creditHtml}`,   // A545 (voids moved to their own email — A627 W3)
       priceDiffs,
     }),
     // TODO (Step 19/21): pass fromOverride from business_settings 'notify_from_email'

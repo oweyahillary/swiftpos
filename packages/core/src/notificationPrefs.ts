@@ -20,6 +20,7 @@ export interface NotificationAlert {
 
 export const NOTIFICATION_ALERTS: readonly NotificationAlert[] = [
   { key: 'daily_summary', label: 'Daily summary', description: 'The end-of-day sales summary e-mail.', permission: 'reports.overview' },
+  { key: 'voids', label: 'Voids and exceptions', description: 'A daily e-mail of voids, refunds, price differences and other loss-prevention exceptions.', permission: 'reports.voids' },
   { key: 'low_stock', label: 'Low-stock alerts', description: 'An e-mail when a product runs low or sells past its stock.', permission: 'reports.inventory' },
   { key: 'owner_alert', label: 'Operations alerts', description: 'A POS left open at close, a failed backup and other operations alerts.', permission: 'reports.overview' },
 ];
