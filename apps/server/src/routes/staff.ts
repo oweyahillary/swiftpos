@@ -14,7 +14,7 @@ import { isOwnerRoleName } from '../lib/ownerRole';
 import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf, permissionsForType, keysForType } from '@zaptill/core/permissions';
 import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf, withNewParentParts, overridePartsOf } from '../lib/roleKeys';
 import { alertsForKeys, alertAppliesTo, isNotificationAlert } from '@zaptill/core/notificationPrefs';   // A627 W3
-import { prefsFor, setPref } from '../lib/notificationPrefs';   // A627 W3
+import { prefsFor, setPref } from '../lib/notificationPrefsStore';   // A627 W3
 import { useEmailCodes } from '../lib/loginOtp';   // A391
 import { keysBeyond } from '@zaptill/core/permissions';   // A494
 import { webAccessGiverKind, webAccessTargetRefusal, isPartnerRoleName, PARTNER_OWNER_ONLY, makesPartnerRefusal } from '../lib/webAccessGivers';   // A608

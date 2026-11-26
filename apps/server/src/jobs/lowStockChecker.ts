@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase';
 import { sendEmail } from '../lib/mailer';
 import { ownerAndExtras } from './ownerAlertsData';   // A595 (owner decision D3)
 import { readReportSchedule } from './dailySummary';
-import { emailOptedOut } from '../lib/notificationPrefs';   // A627 W3: per-person email opt-outs
+import { emailOptedOut } from '../lib/notificationPrefsStore';   // A627 W3: per-person email opt-outs
 
 /**
  * A595 (owner, 2026-10-27, decision D3: "the emails must go out automatically once a recipient is set — daily report,

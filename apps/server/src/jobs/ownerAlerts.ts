@@ -34,7 +34,7 @@ import { getDayCutoff, primeDayCutoffs } from '../lib/dayCutoff';   // A593: pri
 import { pageAll } from '../lib/pgQuery';   // A593
 import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { readReportSchedule, gatherRecipients, readSettingsFor, parseReportSchedule, type SettingsRows } from './dailySummary';   // A593: the tick's reads
-import { emailOptedOut } from '../lib/notificationPrefs';   // A627 W3: per-person email opt-outs (operations alerts)
+import { emailOptedOut } from '../lib/notificationPrefsStore';   // A627 W3: per-person email opt-outs (operations alerts)
 import {
   readAlerts, decideBranchSlot, selectOpenTills, decideNotSyncing, tillTrading, bigReversals, bigVariances,
   readAlertState, pruneSent, decideWeeklySend, decideSecurityAlert, type AlertState,

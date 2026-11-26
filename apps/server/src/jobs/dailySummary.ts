@@ -13,7 +13,7 @@ import { getDayCutoff } from '../lib/dayCutoff';
 import { readAlerts } from './ownerAlertsDecision';     // A476: what the owner chose the email includes
 import { dailyExtrasHtml } from './ownerAlertsData';    // A476: open tills, cash differences, voids, tills, expenses
 import { esc } from './ownerEmails';
-import { emailOptedOut } from '../lib/notificationPrefs';   // A627 W3: per-person email opt-outs
+import { emailOptedOut } from '../lib/notificationPrefsStore';   // A627 W3: per-person email opt-outs
 import { creditCounts, creditEmailBlock, listCreditSales, type CreditListRow } from '../lib/creditConfirm';   // A545
 import { lossEmailHtml } from './lossAlerts';   // A576
 

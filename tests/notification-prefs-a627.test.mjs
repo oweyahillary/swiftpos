@@ -33,7 +33,7 @@ const jwt = require('jsonwebtoken');
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
 const NP = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/notificationPrefs.ts')).href);
-const PREFS = require(path.join(DIST, 'lib/notificationPrefs.js'));
+const PREFS = require(path.join(DIST, 'lib/notificationPrefsStore.js'));
 
 const id = () => crypto.randomUUID();
 const BZ = id(), BR = id(), OWNER = id(), MGR = id(), CASH = id(), GM = id();

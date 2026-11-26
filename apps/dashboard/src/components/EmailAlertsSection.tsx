@@ -24,7 +24,7 @@ export default function EmailAlertsSection({ path, canEdit = true }: { path: str
     const enabled = !a.enabled;
     setBusy(a.key); setError('');
     try {
-      await api.put(`${path}`, { alert_type: a.key, enabled });
+      await api.put(path, { alert_type: a.key, enabled });   // A627: a bare path var (not a template literal) so check-api-routes resolves it, like the GET above
       setAlerts((cur) => (cur ?? []).map((x) => (x.key === a.key ? { ...x, enabled } : x)));
     } catch (e: any) { setError(e?.message ?? 'Could not save that change.'); } finally { setBusy(null); }
   };
