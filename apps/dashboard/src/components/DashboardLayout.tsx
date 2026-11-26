@@ -17,6 +17,7 @@ import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '@zaptill/core/busi
 import { useBrandLook } from './ThemeLayer';   // A597: the shop's logo and colours (themes on)
 import { brandBand } from '../lib/themeVars';
 import { showAttendanceNav } from '../lib/attendanceView';   // A599
+import CommandPalette from './CommandPalette';   // A627: global search (Cmd/Ctrl-K, or the Search button)
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
 // One curated stroke path per nav concept, in place of the mixed emoji the web
@@ -659,6 +660,16 @@ export default function DashboardLayout() {
             </div>
           </div>
           <BranchSelector />
+          {/* A627: global search — opens the command palette (also Cmd/Ctrl-K anywhere). */}
+          <button type="button" data-testid="nav-search"
+            onClick={() => window.dispatchEvent(new Event('zaptill:open-search'))}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-400 bg-gray-800/60 hover:bg-gray-800 hover:text-white transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.35-4.35" />
+            </svg>
+            <span className="flex-1 text-left">Search…</span>
+            <kbd className="hidden md:inline text-[10px] text-gray-500">⌘K</kbd>
+          </button>
         </div>
 
         {/* Nav */}
@@ -722,6 +733,11 @@ export default function DashboardLayout() {
           </button>
           {look?.logo && <img src={look.logo} alt="" className={`h-7 max-w-[56px] object-contain rounded p-0.5 flex-shrink-0 ${logoChip}`} />}
           <p className="flex-1 min-w-0 truncate text-sm font-semibold text-white">{business?.name ?? 'ZapTill'}</p>
+          {/* A627: search on the phone (Cmd/Ctrl-K is desktop-only). */}
+          <button data-testid="nav-search-mobile" onClick={() => window.dispatchEvent(new Event('zaptill:open-search'))}
+            aria-label="Search" className="p-2 -mr-1 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.35-4.35" /></svg>
+          </button>
           {/* A609: opens the panel over the page (no longer through the menu drawer). */}
           {unreadCount > 0 && (
             <button onClick={() => setBellOpen(true)} aria-label="Notifications"
@@ -731,6 +747,9 @@ export default function DashboardLayout() {
         <CloudTrialNotice />
         <Outlet key={activeBranchId ?? 'all'} />
       </main>
+
+      {/* A627: the global search overlay (Cmd/Ctrl-K, or the Search button). */}
+      <CommandPalette />
     </div>
   );
 }
