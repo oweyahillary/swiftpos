@@ -34,6 +34,7 @@ import { getDayCutoff, primeDayCutoffs } from '../lib/dayCutoff';   // A593: pri
 import { pageAll } from '../lib/pgQuery';   // A593
 import { businessDateEAT, businessRangeEAT } from '@zaptill/core/businessDay';
 import { readReportSchedule, gatherRecipients, readSettingsFor, parseReportSchedule, type SettingsRows } from './dailySummary';   // A593: the tick's reads
+import { emailOptedOut } from '../lib/notificationPrefs';   // A627 W3: per-person email opt-outs (operations alerts)
 import {
   readAlerts, decideBranchSlot, selectOpenTills, decideNotSyncing, tillTrading, bigReversals, bigVariances,
   readAlertState, pruneSent, decideWeeklySend, decideSecurityAlert, type AlertState,
@@ -255,6 +256,7 @@ export async function branchOpenTillsForBusiness(biz: Biz, schedule: { send_time
 
   const branches = await branchesOf(biz.id);   // A593: the tick's read when it has one
   if (!branches.size) return 0;
+  const dropped = await emailOptedOut(biz.id, biz.owner_id, 'owner_alert');   // A627 W3: who opted out of operations alerts
   const keys = [...branches.keys()].map((id) => `${BRANCH_TILLS_KEY}${id}`);
   let last: Map<string, string | null>;
   if (keys.every((k) => tick?.settings && tick.keys.has(k) && !tick.dirty.has(`${biz.id}|${k}`)) && tick?.ids.includes(biz.id)) {
@@ -281,7 +283,7 @@ export async function branchOpenTillsForBusiness(biz: Biz, schedule: { send_time
       const rows = selectOpenTills(shifts.filter((s) => s.branch_id === branchId), reportDate, cutoff, due.slot);
       if (rows.length) {
         managers ??= await branchManagerEmails(biz.id);
-        const to = managersOf(managers, branchId);
+        const to = managersOf(managers, branchId).filter((e) => !dropped.has(e.toLowerCase()));
         if (to.length) {
           const lines = await openTillLines(biz.id, rows, branches);
           const mail = branchOpenTillsEmail({ businessName: biz.name, branchName, slot: due.slot, lines, currency: biz.currency ?? 'KES' });
@@ -311,8 +313,9 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
   const currency = biz.currency ?? 'KES';
   const since = new Date(now.getTime() - LOOKBACK_MS).toISOString();
   const nowIso = now.toISOString();
+  const dropped = await emailOptedOut(biz.id, biz.owner_id, 'owner_alert');   // A627 W3: who opted out of operations alerts
   let ownerTo: string[] | null = null;
-  const owner = async () => (ownerTo ??= await ownerAndExtras(biz, schedule));
+  const owner = async () => (ownerTo ??= (await ownerAndExtras(biz, schedule)).filter((e) => !dropped.has(e.toLowerCase())));
   const branches = await branchesOf(biz.id);   // A593
   let sent = 0;
   // A591: the big-void and variance checks read 48 h of voids, refunds and confirmed drawers every 15 minutes. While
@@ -386,7 +389,7 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
       if (!dec.send || !dec.kind) continue;
       try {
         managers ??= await branchManagerEmails(biz.id);
-        const to = [...new Set([...(await owner()), ...(d.branch_id ? managersOf(managers, d.branch_id) : [])])];
+        const to = [...new Set([...(await owner()), ...(d.branch_id ? managersOf(managers, d.branch_id).filter((e) => !dropped.has(e.toLowerCase())) : [])])];
         if (to.length) {
           const branchName = (d.branch_id && branches.get(d.branch_id)) || '';
           const mail = notSyncingAlertEmail({

@@ -1974,6 +1974,14 @@
     "away_last_at": "\"timestamp with time zone\"",
     "away_seen": "\"jsonb\""
   },
+  "user_notification_prefs": {
+    "business_id": "\"uuid\" NOT NULL",
+    "user_id": "\"uuid\" NOT NULL",
+    "alert_type": "\"text\" NOT NULL",
+    "email_enabled": "\"boolean\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_by": "\"uuid\""
+  },
   "user_permissions": {
     "id": "\"uuid\" NOT NULL",
     "user_id": "\"uuid\" NOT NULL",

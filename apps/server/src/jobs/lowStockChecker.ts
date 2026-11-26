@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { sendEmail } from '../lib/mailer';
 import { ownerAndExtras } from './ownerAlertsData';   // A595 (owner decision D3)
 import { readReportSchedule } from './dailySummary';
+import { emailOptedOut } from '../lib/notificationPrefs';   // A627 W3: per-person email opt-outs
 
 /**
  * A595 (owner, 2026-10-27, decision D3: "the emails must go out automatically once a recipient is set — daily report,
@@ -91,8 +92,10 @@ export async function checkLowStock(
       .from('branches').select('name').eq('id', branchId).maybeSingle();
     const branchName = branch?.name ?? 'branch';
 
-    // A595 (D3): the owner and the Report Scheduler's recipients.
-    const alertTo = await stockAlertRecipients(business as { id: string; owner_id: string | null } | null);
+    // A595 (D3): the owner and the Report Scheduler's recipients. A627 W3: minus whoever opted out of low-stock alerts.
+    const bizForDrop = business as { id: string; owner_id: string | null } | null;
+    const dropped = bizForDrop?.id ? await emailOptedOut(bizForDrop.id, bizForDrop.owner_id ?? null, 'low_stock') : new Set<string>();
+    const alertTo = (await stockAlertRecipients(bizForDrop)).filter((e) => !dropped.has(e.toLowerCase()));
     const ownerEmail: string | null = alertTo.length ? alertTo.join(', ') : null;
 
     // 5. For each affected item: dedupe + notify
@@ -254,8 +257,10 @@ export async function checkLowIngredients(
       .from('branches').select('name').eq('id', branchId).maybeSingle();
     const branchName = branch?.name ?? 'branch';
 
-    // A595 (D3): the owner and the Report Scheduler's recipients.
-    const alertTo = await stockAlertRecipients(business as { id: string; owner_id: string | null } | null);
+    // A595 (D3): the owner and the Report Scheduler's recipients. A627 W3: minus whoever opted out of low-stock alerts.
+    const bizForDrop = business as { id: string; owner_id: string | null } | null;
+    const dropped = bizForDrop?.id ? await emailOptedOut(bizForDrop.id, bizForDrop.owner_id ?? null, 'low_stock') : new Set<string>();
+    const alertTo = (await stockAlertRecipients(bizForDrop)).filter((e) => !dropped.has(e.toLowerCase()));
     const ownerEmail: string | null = alertTo.length ? alertTo.join(', ') : null;
 
     for (const item of lowItems as any[]) {

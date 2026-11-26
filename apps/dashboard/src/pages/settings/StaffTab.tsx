@@ -7,6 +7,7 @@ import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '@zaptill/core/paginate';
 import { expandKeys, isBackOffice, OPEN_BEFORE_A490 } from '@zaptill/core/permissions';   // A490
 import PermissionPicker, { usePermissionCatalogue, keyDifferences, type CatalogueKey, type CatalogueGroup } from '../../components/PermissionPicker';
+import EmailAlertsSection from '../../components/EmailAlertsSection';   // A627 W3
 import { approvalPinOn } from '@zaptill/core/posFeatures';   // A562
 import { staffSignIn, emailHint, pinLabel, isGeneralManagerRole } from '../../lib/staffSignIn';   // A608
 
@@ -879,6 +880,15 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, approvalPin
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* A627 W3: which alert e-mails this person receives — OFF overrides the automatic include, no rights touched. */}
+        {editing && !payOnly && (
+          <div data-testid="staff-email-alerts" className="border-t border-gray-800 pt-4">
+            <p className="text-white text-sm font-medium">Email alerts</p>
+            <p className="text-gray-500 text-xs mb-3">Which alert e-mails this person receives. Turn one off to stop it for them without changing their rights.</p>
+            <EmailAlertsSection path={`/api/staff/${editing.id}/notification-prefs`} canEdit={rights.edit} />
           </div>
         )}
 

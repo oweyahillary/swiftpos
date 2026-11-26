@@ -13,6 +13,7 @@ import { getDayCutoff } from '../lib/dayCutoff';
 import { readAlerts } from './ownerAlertsDecision';     // A476: what the owner chose the email includes
 import { dailyExtrasHtml } from './ownerAlertsData';    // A476: open tills, cash differences, voids, tills, expenses
 import { esc } from './ownerEmails';
+import { emailOptedOut } from '../lib/notificationPrefs';   // A627 W3: per-person email opt-outs
 import { creditCounts, creditEmailBlock, listCreditSales, type CreditListRow } from '../lib/creditConfirm';   // A545
 import { lossEmailHtml } from './lossAlerts';   // A576
 
@@ -105,7 +106,9 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
       const lastSent = pre2 === undefined ? await readLastSent(biz.id) : lastSentOf(pre2);
       if (!decideDailySend({ ...schedule, enabled: true }, nowEatDate, nowEatHHMM, lastSent)) continue;
 
-      const recipients = await gatherRecipients(biz, schedule);
+      // A627 W3: drop the people who opted out of the daily summary (per-person email preference overrides the auto-include).
+      const dropped = await emailOptedOut(biz.id, biz.owner_id, 'daily_summary');
+      const recipients = (await gatherRecipients(biz, schedule)).filter((e) => !dropped.has(e.toLowerCase()));
       if (recipients.length === 0) {
         console.warn(`[dailySummary] ${biz.name} (${biz.id}): enabled but no recipients — skipping.`);
         continue;

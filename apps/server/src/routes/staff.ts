@@ -13,6 +13,8 @@ import { callerHeld, canAssignRole, roleEditRefusal, overridesBeyondCaller } fro
 import { isOwnerRoleName } from '../lib/ownerRole';
 import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf, permissionsForType, keysForType } from '@zaptill/core/permissions';
 import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf, withNewParentParts, overridePartsOf } from '../lib/roleKeys';
+import { alertsForKeys, alertAppliesTo, isNotificationAlert } from '@zaptill/core/notificationPrefs';   // A627 W3
+import { prefsFor, setPref } from '../lib/notificationPrefs';   // A627 W3
 import { useEmailCodes } from '../lib/loginOtp';   // A391
 import { keysBeyond } from '@zaptill/core/permissions';   // A494
 import { webAccessGiverKind, webAccessTargetRefusal, isPartnerRoleName, PARTNER_OWNER_ONLY, makesPartnerRefusal } from '../lib/webAccessGivers';   // A608
@@ -1215,6 +1217,52 @@ router.get('/permissions', async (req, res) => {
 
 // GET /api/staff/permission-groups — the groups the catalogue is listed under, in order.
 router.get('/permission-groups', (_req, res) => { res.json(PERMISSION_GROUPS); });
+
+// ── A627 W3: per-person EMAIL alert preferences ──────────────────────────────────────────────────────────────────────
+// A person is only offered (and the jobs only send) an alert whose permission they hold; a toggle OFF stores an opt-out
+// that overrides the automatic include. The /me routes let a person (the owner too) silence their OWN alerts.
+const PREFS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const alertsWithState = (held: ReadonlySet<string> | readonly string[], prefs: Record<string, boolean>) =>
+  alertsForKeys(held).map((a) => ({ key: a.key, label: a.label, description: a.description, enabled: prefs[a.key] !== false }));
+
+router.get('/me/notification-prefs', async (req: any, res) => {
+  const prefs = req.userId ? await prefsFor(req.businessId, req.userId) : {};
+  res.json({ alerts: alertsWithState(callerHeld(req), prefs) });
+});
+
+router.put('/me/notification-prefs', async (req: any, res) => {
+  if (!req.userId) { res.status(400).json({ error: 'No signed-in user.' }); return; }
+  const alert = String(req.body?.alert_type ?? '');
+  if (!isNotificationAlert(alert)) { res.status(400).json({ error: 'Unknown alert.', code: 'BAD_ALERT' }); return; }
+  if (!alertAppliesTo(alert, callerHeld(req))) { res.status(403).json({ error: 'You do not receive that alert.', code: 'NOT_YOURS' }); return; }
+  await setPref(req.businessId, req.userId, alert, req.body?.enabled !== false, req.userId);
+  res.json({ ok: true });
+});
+
+router.get('/:userId/notification-prefs', requirePermission('staff.view'), async (req: any, res) => {
+  const userId = String(req.params.userId);
+  if (!PREFS_UUID.test(userId)) { res.status(400).json({ error: 'bad user id' }); return; }
+  let target: Awaited<ReturnType<typeof personKeys>>;
+  try { target = await personKeys(req.businessId, userId); } catch { res.status(503).json({ error: 'Could not read this staff member.' }); return; }
+  if (!target) { res.status(404).json({ error: 'No such staff member.' }); return; }
+  res.json({ alerts: alertsWithState(target.keys, await prefsFor(req.businessId, userId)) });
+});
+
+router.put('/:userId/notification-prefs', requirePermission('staff.edit'), async (req: any, res) => {
+  const userId = String(req.params.userId);
+  if (!PREFS_UUID.test(userId)) { res.status(400).json({ error: 'bad user id' }); return; }
+  let target: Awaited<ReturnType<typeof personKeys>>;
+  try { target = await personKeys(req.businessId, userId); } catch { res.status(503).json({ error: 'Could not read this staff member.' }); return; }
+  if (!target) { res.status(404).json({ error: 'No such staff member.' }); return; }
+  if (!req.isOwner && overridesBeyondCaller(callerHeld(req), target.keys).length) {
+    res.status(403).json({ error: 'You are not allowed to manage this staff member.', code: 'BEYOND_CALLER' }); return;
+  }
+  const alert = String(req.body?.alert_type ?? '');
+  if (!isNotificationAlert(alert)) { res.status(400).json({ error: 'Unknown alert.', code: 'BAD_ALERT' }); return; }
+  if (!alertAppliesTo(alert, target.keys)) { res.status(400).json({ error: 'That person does not receive that alert.', code: 'NOT_THEIRS' }); return; }
+  await setPref(req.businessId, userId, alert, req.body?.enabled !== false, req.userId ?? null);
+  res.json({ ok: true });
+});
 
 // PUT /api/staff/roles/:roleId/permissions — replace a role's keys. { keys: string[] } (or the old { permission_ids }).
 // Stores FINE keys only. Never the owner's role; never beyond the caller's own keys (lib/roleCeiling.ts).

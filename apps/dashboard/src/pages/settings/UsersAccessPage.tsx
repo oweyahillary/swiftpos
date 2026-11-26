@@ -6,6 +6,7 @@ import StaffTab from './StaffTab';
 import RolesTab from './RolesTab';
 import ChangePassword from '../../components/ChangePassword';   // A402
 import SignInSecurity from '../../components/SignInSecurity';
+import EmailAlertsSection from '../../components/EmailAlertsSection';   // A627 W3
 import { usePermissions } from '../../context/PermissionsContext';   // A550
 
 // Settings › Users and access (register A133).
@@ -61,6 +62,12 @@ export function SignInSecurityRoute() {
       <SignInSecurity />
       {/* A402: the owner's password */}
       <ChangePassword />
+      {/* A627 W3: the signed-in person's own email alerts — turn off the mails you don't want (affects only you). */}
+      <div data-testid="my-email-alerts">
+        <h3 className="text-white font-semibold">My email alerts</h3>
+        <p className="text-gray-500 text-sm mt-0.5 mb-3">The alert e-mails you receive. Turn off the ones you don't want — this changes only your own mail.</p>
+        <EmailAlertsSection path="/api/staff/me/notification-prefs" />
+      </div>
     </div>
   );
 }
