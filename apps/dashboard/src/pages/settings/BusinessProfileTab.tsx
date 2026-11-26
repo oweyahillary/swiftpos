@@ -223,7 +223,7 @@ export default function BusinessProfileTab() {
         {/* A627 (owner, 2026-11-26: "remove all sales toggle and add them as user rights for easy management"): the two
             "cashiers see sales" switches (close-shift sales, History total) are now RIGHTS, set per person on Roles and
             permissions — easier to manage and lockable per cashier. The count stays blind either way. */}
-        <div data-testid="cashier-sales-rights-note" className="mt-6 rounded-lg border border-gray-800 bg-gray-950/40 px-4 py-3">
+        <div data-testid="cashier-sales-rights-note" className="mt-6 rounded-lg border border-gray-800 bg-gray-800/50 px-4 py-3">
           <h3 className="text-white font-semibold">What cashiers see of sales</h3>
           <p className="text-gray-500 text-sm mt-0.5">
             Seeing the shift's sales when closing, and a running total in History, are set per person on{' '}
