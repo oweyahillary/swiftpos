@@ -142,7 +142,7 @@ const SKIPPED = [
   ['pages/ShiftPanel.tsx', 'one shift\'s expenses, denominations, cashiers', 'one shift'],
   ['pages/TechPage.tsx', 'SQL console result', 'a technician\'s query box: capped at 500, in its own scroll box'],
   ['components/HeldOrdersModal.tsx', 'held orders', 'the cashier\'s open tabs, not a management list'],
-  ['components/CashierHistoryPanel.tsx', 'payment methods', 'a settings list of methods'],
+  // A627: CashierHistoryPanel.tsx deleted — the cashier History methods picker is retired (sales.history_all_payments right).
   ['components/ExclusionsPanel.tsx', 'kitchen-note exclusions', 'a short settings list'],
   ['pages/POSPage.tsx', 'the POS grid', 'draws incrementally (A472) — a cashier scrolls, no pages'],
 ];
