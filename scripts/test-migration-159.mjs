@@ -62,7 +62,8 @@ const NAMES = ['General Manager', 'Operations Manager', 'Finance Manager', 'Audi
 // A595: and the 36 narrower rights 176 registers and carries over (test-migration-176.mjs).
 // A599: and the attendance rights 180 registers and gives (test-migration-180.mjs).
 const LATER_KEYS = ['shifts.cash_out', 'expenses.record', ...Object.values(P.SPLITS).flat(), 'customers.credit_limit', 'attendance.view', 'attendance.edit', 'attendance.devices',
-  'settings.pos_layout'];   // 8n: registered and given to the built-in Manager / GM by migration 190, not 159
+  'settings.pos_layout',       // 8n: registered and given to the built-in Manager / GM by migration 190, not 159
+  'shifts.see_shift_sales'];   // A627: registered and given to the built-in seniors by migration 198, not 159
 const ROLES = NAMES.map((n) => P.BUILT_IN_ROLES.find((r) => r.name === n))
   .map((r) => r && ({ ...r, keys: r.keys.filter((k) => !LATER_KEYS.includes(k)) }));
 

@@ -24,9 +24,11 @@
 --             IN ('manager', 'general manager', 'supervisor', 'operations manager', 'auditor'))
 --    ORDER BY 1, 2;
 
+-- NOTE: the VALUES tuple is kept on ONE line and the description carries no apostrophe, so test-migration-134's
+-- `registeredLater` regex (matches `('key', 'label', 'group', 'description')`) detects this key as registered by a later
+-- migration and excludes it from 134's frozen-catalogue comparison. Keep the description identical to the catalogue's.
 INSERT INTO public.permissions (key, label, module, description) VALUES
-  ('shifts.see_shift_sales', 'See own shift sales at close', 'drawer',
-   'When closing a shift, see the shift''s sales total and number of orders. The count stays blind — never the expected cash or the difference (a drawer confirmation shows those).')
+  ('shifts.see_shift_sales', 'See own shift sales at close', 'drawer', 'When closing a shift, see the sales total and number of orders for the shift. The count stays blind — never the expected cash or the difference (a drawer confirmation shows those).')
 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, module = EXCLUDED.module, description = EXCLUDED.description;
 
 DO $a627$

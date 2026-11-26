@@ -132,7 +132,7 @@ export const PERMISSIONS: PermissionDef[] = [
   // switch still works as the business-wide default for cashiers; this right gives the view to a specific person, so a
   // locked cashier (switch off, no right) only keys in the cash they counted. Senior roles hold it; a cashier does not.
   { key: 'shifts.see_shift_sales', group: 'drawer', surface: 'both', view: true, manager: true,
-    label: 'See own shift sales at close', description: 'When closing a shift, see the shift\'s sales total and number of orders. The count stays blind — never the expected cash or the difference (a drawer confirmation shows those).' },
+    label: 'See own shift sales at close', description: 'When closing a shift, see the sales total and number of orders for the shift. The count stays blind — never the expected cash or the difference (a drawer confirmation shows those).' },
 
   // ── Reports — one key per report ─────────────────────────────────────────────────────────────────────────────────
   { key: 'reports.overview',     group: 'reports', surface: 'both', view: true, manager: true,
