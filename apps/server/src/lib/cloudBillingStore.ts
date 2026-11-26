@@ -178,3 +178,9 @@ export async function addCredit(businessId: string, delta: number, reason: strin
   );
   return next;
 }
+
+/** Clients that currently hold credit (balance > 0) — the auto-drain pass touches only these. */
+export async function businessesWithCredit(): Promise<string[]> {
+  const { data } = await supabase.from('business_cloud_credit').select('business_id').gt('balance', 0);
+  return ((data ?? []) as Array<{ business_id: string }>).map((r) => r.business_id);
+}

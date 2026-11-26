@@ -63,6 +63,7 @@ const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const jwt = require('jsonwebtoken');
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const adminAuth = require(path.join(DIST, 'middleware/adminAuth.js'));
+const ALLOC = require(path.join(DIST, 'lib/cloudBillingAllocate.js'));
 console.warn = () => {}; console.error = () => {};
 const mem = installMemDb(supabase);
 
@@ -354,6 +355,24 @@ try {
     await pay(token);   // 10000 -> wallet
     const g = await call('GET', `/api/admin/cloud-billing/clients/${BIZ}/credit`, AGENT_T);
     assert.equal(g.body.balance, 10000); assert.ok((g.body.entries ?? []).length >= 1);
+  });
+
+  await ok('auto-drain: held credit settles an open invoice (drainCredits), remainder kept', async () => {
+    reset(); seedInvoice(7000);
+    mem.db.business_cloud_credit = [{ business_id: BIZ, balance: 10000, currency: 'KES' }];
+    const r = await ALLOC.drainCredits();
+    assert.deepEqual(r.drained, [BIZ]);
+    assert.equal(mem.db.invoices[0].status, 'paid');
+    assert.equal(balance(BIZ), 3000);
+  });
+
+  await ok('auto-drain is a no-op when the credit is less than the invoice (nothing half-paid)', async () => {
+    reset(); seedInvoice(12000);
+    mem.db.business_cloud_credit = [{ business_id: BIZ, balance: 5000, currency: 'KES' }];
+    const r = await ALLOC.drainCredits();
+    assert.deepEqual(r.drained, []);
+    assert.equal(mem.db.invoices[0].status, 'pending');
+    assert.equal(balance(BIZ), 5000);   // untouched
   });
 } finally { server.close(); }
 

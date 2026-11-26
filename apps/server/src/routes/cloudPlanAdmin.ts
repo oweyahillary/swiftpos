@@ -62,7 +62,7 @@ import {
 } from '../lib/cloudPlan';
 import { receiptEmailHtml, invoiceItems, type BranchBill } from '../lib/cloudPlanEmail';
 import { readBillingDetails, branchBill, periodMonths, premiumOf, isPremiumKey, PREMIUM_KEYS, ownPricesOf, mergeOwnPrices, newBranchPremium, themesFreeFor } from '../lib/branchBilling';   // A612, A617
-import { ownerEmailOf } from '../jobs/cloudPlanReminders';
+import { ownerEmailOf } from '../lib/ownerEmail';
 import { ensureBillingCode, walletOf } from '../lib/cloudBillingStore';   // A626: the client's Paybill account code + credit
 
 const router = safeRouter();

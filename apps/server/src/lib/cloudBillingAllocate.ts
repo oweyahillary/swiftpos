@@ -11,10 +11,10 @@
 import { supabase } from './supabase';
 import { openCloudInvoices } from './cloudPlan';
 import { convertTrialIfAny } from './cloudTrial';
-import { walletOf, addCredit } from './cloudBillingStore';
+import { walletOf, addCredit, businessesWithCredit } from './cloudBillingStore';
 import { receiptEmailHtml } from './cloudPlanEmail';
 import { sendEmailChecked } from './mailer';
-import { ownerEmailOf } from '../jobs/cloudPlanReminders';
+import { ownerEmailOf } from './ownerEmail';
 
 /** Turn the web_hosting switch on for a client, as a cloud payment does (routes/cloudPlanAdmin.ts webAccessOn). */
 async function webAccessOnFor(businessId: string): Promise<void> {
@@ -96,4 +96,20 @@ export async function emailBillingReceipt(businessId: string, amount: number, re
     const html = `<p>Hi ${name},</p><p>We have received your payment of KES ${amount.toLocaleString('en-KE')} (M-Pesa ${reference}). It is held as ZapTill account credit (KES ${result.wallet.toLocaleString('en-KE')}) and applies to your next invoice automatically.</p><p>— ZapTill</p>`;
     return (await sendEmailChecked({ to, subject: 'ZapTill — payment received (credit)', html })).ok;
   } catch (e) { console.warn('[cloud-billing] receipt email not sent:', (e as Error)?.message); return false; }
+}
+
+/**
+ * A626 Phase 2b: after the billing job raises invoices, apply every client's held credit to its open invoices — a
+ * prepayment (or a topped-up underpayment) settles the new invoice by itself. A no-op when the credit cannot cover one;
+ * only clients with a credit balance are touched.
+ */
+export async function drainCredits(now = Date.now()): Promise<{ drained: string[] }> {
+  const drained: string[] = [];
+  for (const businessId of await businessesWithCredit()) {
+    try {
+      const r = await allocate(businessId, { amount: 0, reference: 'wallet', paidAt: new Date(now).toISOString(), receiptId: null, by: 'auto (billing)' }, now);
+      if (r.settled.length) drained.push(businessId);
+    } catch (e) { console.error(`[cloud-billing] auto-drain failed for ${businessId}:`, (e as Error)?.message); }
+  }
+  return { drained };
 }

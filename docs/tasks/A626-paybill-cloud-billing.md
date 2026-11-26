@@ -73,9 +73,15 @@ Scope built: **who paid**, by the account code. No money moves yet (the wallet +
 - **Tests:** `tests/cloud-billing-a626.test.mjs` 23/23 — exact (settles + extends branch + opens access, wallet 0),
   overpayment (surplus → wallet), underpayment (held, invoice open, status matched), no-invoice (→ wallet), **auto-apply**
   (held + a later payment settle it), admin Allocate (super-only). Schema gates green.
-- **Not done (Phase 2b follow-ons):** hook the billing job (`runCloudBilling`) to auto-drain the wallet the moment a new
-  invoice is raised (today it drains on the next receipt or the admin's Allocate); a super-admin wallet adjust/refund;
-  surface `allocated` vs `matched` and the wallet in the global receipts feed; reversal-callback handling.
+- **Auto-drain ✅ (2026-11-26):** `runCloudBilling` (the hourly billing job) now calls `drainCredits()` after it raises
+  invoices — every client with held credit has its wallet applied to its open invoices, so a prepayment (or a topped-up
+  underpayment) settles the new invoice by itself. **A credit less than the invoice is a no-op** (the invoice stays open,
+  the credit stays held, nothing half-paid; the client follows the normal unpaid ladder until topped up). To avoid a lib↔job
+  import cycle, `ownerEmailOf` moved to `lib/ownerEmail.ts` (used by the reminders job, cloudPlanAdmin and cloudBillingAllocate).
+  Tested in `cloud-billing-a626.test.mjs` (drain settles; credit < invoice is a no-op).
+- **Not done (Phase 2b follow-ons):** a super-admin wallet adjust/refund; surface `allocated` vs `matched` and the wallet
+  in the global receipts feed; reversal-callback handling; the invoice reminder email could net off held credit
+  ("you owe KES X after your KES Y credit") rather than show the full amount.
 
 ## 1. What it does
 

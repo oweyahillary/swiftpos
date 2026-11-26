@@ -49,6 +49,8 @@ import {
 } from '../lib/cloudPlan';
 import { invoiceEmailHtml, adminNoticeText, branchInvoiceEmailHtml, invoiceItems, type BranchBill } from '../lib/cloudPlanEmail';
 import { readBillingDetails, branchBill, periodMonths } from '../lib/branchBilling';   // A612
+import { ownerEmailOf } from '../lib/ownerEmail';
+import { drainCredits } from '../lib/cloudBillingAllocate';   // A626 Phase 2b: apply held credit after invoices are raised
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -58,18 +60,6 @@ export function startCloudPlanRemindersJob(): void {
     try { await runCloudBilling(new Date()); } catch (err: any) { console.error('[cloudPlan] billing pass failed:', err?.message); }
   }), { timezone: 'UTC' });
   console.log(`[cloudPlan] Scheduled: ${schedule} (cloud billing: the bridge, invoices on the due day, ZapTill's notices)`);
-}
-
-export async function ownerEmailOf(ownerId: string | null | undefined, fallback: string | null | undefined): Promise<string | null> {
-  if (ownerId && UUID_RE.test(ownerId)) {
-    try {
-      const { data, error } = await supabase.auth.admin.getUserById(ownerId);
-      const e = !error ? data?.user?.email?.trim() : null;
-      if (e) return e;
-    } catch { /* the business email below */ }
-  }
-  const f = String(fallback ?? '').trim();
-  return f.includes('@') ? f : null;
 }
 
 export interface BillingRun {
@@ -148,6 +138,9 @@ export async function runCloudBilling(now: Date = new Date(), opts: { force?: bo
       console.error(`[cloudPlan] billing failed for ${businessId}:`, e?.message ?? e);
     }
   }
+  // A626 Phase 2b: now the invoices for this run are raised, apply each client's held credit to its open invoices — a
+  // prepayment (or a topped-up underpayment) settles the new invoice by itself, no admin touch. Touches only clients with credit.
+  await drainCredits(t).catch((e: any) => console.error('[cloudPlan] auto-drain pass failed:', e?.message ?? e));
   return out;
 }
 
