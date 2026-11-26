@@ -65,25 +65,28 @@ ok('the cloud\'s copy agrees on every case', () => {
 });
 
 console.log('\nWho sees it\n');
-ok('the cloud: asked for, and a manager — or a cashier while BOTH switches are on', () => {
+ok('A627: the cloud gate — asked for (with_totals), a manager, or anyone with the sales.history_total RIGHT (switch retired)', () => {
   const o = read('apps/server/src/routes/orders.ts');
-  assert.match(o, /if \(req\.query\.with_totals === '1'\s*&& \(manager \|\| await cashierHistoryTotals\(/);
-  assert.match(srv, /return \(await cashierSeesShiftSales\(businessId, branchId\)\) && \(await branchSwitch\(businessId, branchId, CASHIER_HISTORY_TOTALS_KEY\)\);/);
+  assert.match(o, /if \(req\.query\.with_totals === '1' && \(manager \|\| can\(req, 'sales\.history_total'\)\)\)/);
 });
 ok('the cloud totals every page the filters show (the same filters, paged), not the page on screen', () => {
   const o = read('apps/server/src/routes/orders.ts');
   assert.match(o, /const \{ data: page, error: tErr \} = await filtered\(supabase\.from\('orders'\)/);
   assert.match(o, /\.order\('id', \{ ascending: true \}\)\.range\(at, at \+ 499\)/);
 });
-ok('only while A416 is on: the till told already combined, and checks again', () => {
+ok('A627: the till shows the total on the sales.history_total right; the switch plumbing stays dead (parity kept)', () => {
+  // dead plumbing kept so there is no desktop schema change and client-parity holds
   assert.match(read('apps/server/src/routes/pos.ts'), /cashierHistoryTotals: historyTotalsOn\(receiptText\.cashier_sees_shift_sales, receiptText\.cashier_history_totals\),/);
   assert.match(read('apps/desktop/src/main/deviceConfig.ts'), /return c\?\.cashier_history_totals === 1 && c\?\.cashier_sees_shift_sales === 1;/);
-  assert.match(read('apps/desktop/src/main/shiftService.ts'), /showTotal: manager \|\| getCashierHistoryTotals\(\),/);
+  // but showTotal now reads the right, not the device flag
+  assert.match(read('apps/desktop/src/main/shiftService.ts'), /showTotal: manager \|\| \(!!st && personCan\(st, 'sales\.history_total'\)\),/);
 });
-ok('both History screens show it; the owner\'s switch is greyed out until A416 is on', () => {
+ok('both History screens show it; the sales toggles are retired (a rights note instead)', () => {
   assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /\{historyShowTotal && recentOrders\.length > 0 && \(\(\) => \{\s*const t = historyTotal\(historyView\(recentOrders,/);
   assert.match(read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx'), /params\.set\('with_totals', '1'\);/);
-  assert.match(read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx'), /<button data-testid="cashier-history-totals-toggle" disabled=\{!seesSales\}/);
+  const prof = read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx');
+  assert.ok(!/cashier-history-totals-toggle/.test(prof), 'the A418 toggle is removed');
+  assert.match(prof, /data-testid="cashier-sales-rights-note"/);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

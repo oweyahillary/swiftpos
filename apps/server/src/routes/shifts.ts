@@ -29,7 +29,7 @@ import { payoutApprover } from '../lib/payoutApproval';   // 0.6.37 (A388)
 import { buildBranchReport, type BranchOrder, type BranchShift, type TillName } from '../lib/branchReport';
 import { orderTax } from '../lib/orderTax';
 import { buildShiftZReport, shiftByCashier } from '../lib/shiftZReport';
-import { cashierSeesShiftSales } from '../lib/cashierShiftSales';   // A416
+// A627: cashierSeesShiftSales (the 'cashier_sees_shift_sales' switch) retired — the blind close now reads the shifts.see_shift_sales right.
 import { businessDateEAT } from '@zaptill/core/businessDay';
 import { getDayCutoff } from '../lib/dayCutoff';
 import { notifyOwner, kes } from '../lib/ownerNotice';   // A522
@@ -1750,8 +1750,9 @@ router.get('/:id', async (req, res) => {
   if (blind) {
     // A416: the owner's switch (off by default) — the cashier sees their shift's sales (kept after refunds) and orders.
     // Never expected cash, the per-method figures or the difference: the count stays blind.
-    // A627: the person's own RIGHT (shifts.see_shift_sales) grants the sales view, OR the business-wide switch as before.
-    const seesSales = (await cashierSeesShiftSales(req.businessId!, shift.branch_id)) || can(req, 'shifts.see_shift_sales');
+    // A627: the person's own RIGHT (shifts.see_shift_sales) is the sole control — the 'cashier_sees_shift_sales' switch is
+    // retired (migration 199 granted the right wherever the switch was on). The count stays blind either way.
+    const seesSales = can(req, 'shifts.see_shift_sales');
     const kept = (orders ?? []).reduce((s: number, o: any) => s + Number(o.total) - Math.min(Math.max(Number(o.refunded_amount ?? 0), 0), Number(o.total)), 0);
     res.json({
       id: shift.id, status: shift.status, opened_at: shift.opened_at, cashier_id: shift.cashier_id, opened_by: shift.opened_by,

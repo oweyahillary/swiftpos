@@ -93,10 +93,8 @@ export default function BusinessProfileTab() {
   if (!record) return <div className="p-4 sm:p-6 text-gray-500 text-sm">Could not load your business profile.</div>;
 
   const continuous = settings.continuous_operation === 'true';
-  // A416: a cashier closing a shift sees their sales — off unless turned on here (or for one branch).
-  const seesSales = settings.cashier_sees_shift_sales === 'true';
-  // A418: the History total — only while the switch above is on ("one should be on for the other").
-  const historyTotals = seesSales && settings.cashier_history_totals === 'true';
+  // A627: the two "cashiers see sales" switches (A416 close-shift sales, A418 History total) are retired — they are RIGHTS
+  // now, set per person on Roles and permissions. The note below replaces the toggles.
   // 0.6.34: every half hour from midnight to 06:00 (lib/businessDay.ts).
   const CUTOFF_CHOICES = Array.from({ length: MAX_CUTOFF_MINUTES / 30 + 1 }, (_, i) => cutoffLabel(i * 30));
 
@@ -222,41 +220,18 @@ export default function BusinessProfileTab() {
           <HistoryMethodsPicker value={settings.cashier_history_methods}
             onChange={(list) => saveSetting('cashier_history_methods', JSON.stringify(list))} />
         </div>
-        {/* A416 (owner, 2026-10-09): "waiter seeing total sales on the shift while closing … toggled on and off at will,
-            by default off". The count stays blind — never expected cash or the difference. */}
-        <div className="flex items-center justify-between mt-6 gap-4">
-          <div>
-            <h3 className="text-white font-semibold">Cashiers see their sales when closing a shift</h3>
-            <p className="text-gray-500 text-sm mt-0.5">
-              When on, a cashier closing a shift sees the shift's sales and number of orders — on the desktop POS and the web POS.
-              They still never see the expected cash or any difference; a manager confirms the count. Off by default. To give the
-              view to one person instead, grant them <span className="text-gray-400">“See own shift sales at close”</span> on Roles
-              and permissions — a locked cashier (this switch off, without the right) only keys in the cash they counted.
-            </p>
-          </div>
-          <button data-testid="cashier-sees-sales-toggle"
-            onClick={() => saveSetting('cashier_sees_shift_sales', seesSales ? 'false' : 'true')}
-            className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${seesSales ? 'bg-swift-strong' : 'bg-gray-700'}`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${seesSales ? 'left-5' : 'left-0.5'}`} />
-          </button>
-        </div>
-        {/* A418 (owner, 2026-10-09): "allow cashiers to filter their sales and it gives them a subtotal using the current
-            filter" — and "one should be on for the other to be active": greyed out until the switch above is on. */}
-        <div className={`flex items-center justify-between mt-6 gap-4 ${seesSales ? '' : 'opacity-50'}`}>
-          <div>
-            <h3 className="text-white font-semibold">Cashiers see a total in History</h3>
-            <p className="text-gray-500 text-sm mt-0.5">
-              When on, a cashier's History shows the number of orders and the sales of whatever the filters show (payment
-              method, type, search) — on the desktop POS and the web POS. {seesSales ? 'Off by default.' : 'Turn on "Cashiers see their sales when closing a shift" first.'}
-            </p>
-          </div>
-          <button data-testid="cashier-history-totals-toggle" disabled={!seesSales}
-            onClick={() => saveSetting('cashier_history_totals', historyTotals ? 'false' : 'true')}
-            className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 disabled:cursor-not-allowed ${historyTotals ? 'bg-swift-strong' : 'bg-gray-700'}`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${historyTotals ? 'left-5' : 'left-0.5'}`} />
-          </button>
+        {/* A627 (owner, 2026-11-26: "remove all sales toggle and add them as user rights for easy management"): the two
+            "cashiers see sales" switches (close-shift sales, History total) are now RIGHTS, set per person on Roles and
+            permissions — easier to manage and lockable per cashier. The count stays blind either way. */}
+        <div data-testid="cashier-sales-rights-note" className="mt-6 rounded-lg border border-gray-800 bg-gray-950/40 px-4 py-3">
+          <h3 className="text-white font-semibold">What cashiers see of sales</h3>
+          <p className="text-gray-500 text-sm mt-0.5">
+            Seeing the shift's sales when closing, and a running total in History, are set per person on{' '}
+            <span className="text-gray-400">Roles and permissions</span> — grant{' '}
+            <span className="text-gray-400">“See own shift sales at close”</span> or{' '}
+            <span className="text-gray-400">“See a running total in History”</span>. The count stays blind either way: a
+            cashier without the right only keys in the cash they counted, never the expected cash or the difference.
+          </p>
         </div>
       </section>
 

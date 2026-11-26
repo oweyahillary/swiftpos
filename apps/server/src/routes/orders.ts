@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { cashierHistoryView } from '@zaptill/core/cashierHistory';   // 0.6.37 (A387)
 import { getHistoryMethods } from '../lib/historyMethods';
-import { cashierHistoryTotals, historyTotal } from '../lib/cashierShiftSales';   // A418
+import { historyTotal } from '../lib/cashierShiftSales';   // A418 (A627: cashierHistoryTotals switch retired → sales.history_total right)
 import { classifyOrderCreateError } from '../lib/orderErrors';
 import { pickCashier, claimNeedsValidation } from '../lib/cashier';
 import { sendError } from '../lib/sendError';
@@ -1557,11 +1557,10 @@ router.get('/', async (req, res) => {
   let orders = (data ?? []).map(({ pm, ...o }: any) => o);
   // 0.6.37 (A387): a split sale shows a cashier only its allowed part (shared/cashierHistory.ts).
   if (historyMethods.length) orders = cashierHistoryView(orders, historyMethods);
-  // A418: the total of EVERY page the filters show (not the page on screen) — asked for (with_totals=1, the web POS's
-  // History), for a manager, or a cashier while the owner's two switches are on ("one should be on for the other").
+  // A418/A627: the total of EVERY page the filters show (not the page on screen) — asked for (with_totals=1, the web POS's
+  // History), for a manager, or anyone holding the sales.history_total RIGHT (the 'cashier_history_totals' switch is retired).
   let totals: { orders: number; sales: number } | undefined;
-  if (req.query.with_totals === '1'
-      && (manager || await cashierHistoryTotals(req.businessId!, scopedBranch ?? (bf.kind === 'set' ? null : (req as any).branchId ?? null)))) {
+  if (req.query.with_totals === '1' && (manager || can(req, 'sales.history_total'))) {
     const rows: any[] = [];
     for (let at = 0; ; at += 500) {
       const { data: page, error: tErr } = await filtered(supabase.from('orders')

@@ -37,17 +37,22 @@ ok("the branch's own value wins, else the business default", () => {
   assert.match(rule, /if \(branchId\) \{[\s\S]*from\('branch_settings'\)[\s\S]*if \(own\) return cleanSeesSales\(/);
   assert.match(rule, /from\('business_settings'\)[\s\S]*return cleanSeesSales\(/);
 });
-ok('the owner sets it, and a branch may override it', () => {
+ok('A627: the switches are retired for rights — the business toggles are gone, the plumbing stays', () => {
+  // the setting allowlists + the branch override stay as dead plumbing (no desktop schema change, client-parity kept)
   assert.match(read('apps/server/src/routes/business.ts'), /'cashier_sees_shift_sales',/);
   assert.match(read('apps/server/src/routes/branches.ts'), /'cashier_sees_shift_sales',/);
-  assert.match(read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx'), /saveSetting\('cashier_sees_shift_sales', seesSales \? 'false' : 'true'\)/);
   assert.match(read('apps/dashboard/src/pages/settings/BranchReceiptOverrides.tsx'), /save\('cashier_sees_shift_sales', null\)/);
+  // but the two business toggles are removed, replaced by a pointer to the rights
+  const prof = read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx');
+  assert.ok(!/saveSetting\('cashier_sees_shift_sales'/.test(prof), 'the A416 toggle is removed');
+  assert.ok(!/saveSetting\('cashier_history_totals'/.test(prof), 'the A418 toggle is removed');
+  assert.match(prof, /data-testid="cashier-sales-rights-note"/);
 });
 
 console.log('\nThe cloud\n');
 const shifts = read('apps/server/src/routes/shifts.ts');
-ok("a cashier's blind shift carries their sales when the switch is on OR they hold the A627 right", () => {
-  assert.match(shifts, /const seesSales = \(await cashierSeesShiftSales\(req\.businessId!, shift\.branch_id\)\) \|\| can\(req, 'shifts\.see_shift_sales'\);/);
+ok("a cashier's blind shift carries their sales only when they hold the A627 right (switch retired)", () => {
+  assert.match(shifts, /const seesSales = can\(req, 'shifts\.see_shift_sales'\);/);
   // A442 adds each person's part (sales only) inside the same switch.
   assert.match(shifts, /\.\.\.\(seesSales \? \{ cashier_sales: \{ total: Math\.round\(kept \* 100\) \/ 100, orders: \(orders \?\? \[\]\)\.length,\s*\/\/[^\n]*\n\s*by_cashier: byCashier\.map\(\(c\) => \(\{ name: c\.name, orders: c\.orders, sales: c\.sales \}\)\) \} \} : \{\}\)/);
 });
@@ -60,8 +65,8 @@ ok('the till is told with its settings (the branch\'s own wins)', () => {
 console.log('\nThe till\n');
 const svc = read('apps/desktop/src/main/shiftService.ts');
 const blind = svc.slice(svc.indexOf('export function blindReport'), svc.indexOf('/** A manager for shift purposes'));
-ok('the blind report adds the sales kept and the orders when the switch is on OR the A627 right is held', () => {
-  assert.match(blind, /seesSales: boolean = signedInCan\('shifts\.see_shift_sales'\) \|\| getCashierSeesShiftSales\(\)/);
+ok('the blind report adds the sales kept and the orders only when the A627 right is held (switch retired)', () => {
+  assert.match(blind, /seesSales: boolean = signedInCan\('shifts\.see_shift_sales'\)\)/);
   // A442 adds each person's part (sales only) inside the same switch, and strips the per-person figures when it is off.
   assert.match(blind, /\.\.\.\(seesSales \? \{ cashierSales: \{ total: money2\(z\.totals\.netSales \?\? z\.totals\.grossSales\), orders: z\.totals\.orderCount,\s*byCashier: \(z\.byCashier \?\? \[\]\)\.map\(\(c\) => \(\{ name: c\.name, orders: c\.orders, sales: c\.sales \}\)\) \} \} : \{\}\)/);
   assert.match(blind, /byCashier: seesSales \? \(z\.byCashier \?\? \[\]\)\.map\(\(c\) => \(\{ \.\.\.c, byMethod: \[\] \}\)\) : \[\],/);
