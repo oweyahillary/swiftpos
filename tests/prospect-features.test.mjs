@@ -178,7 +178,7 @@ await ok('a blind close: the cloud hands a cashier no figures and asks no varian
   const sh = read('apps/server/src/routes/shifts.ts');
   // A494: blind as before for the drawer's own cashier with the switch on — and for anyone without the drawer-figure keys
   // looking at someone else's drawer.
-  assert.match(sh, /const blind = !seesDrawerFigures\(req\) && !callerMayConfirm\(req\)\s*&& \(!ownDrawer\(req, shift\) \|\| \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\);\s*if \(blind\) \{[\s\S]{0,900}?res\.json\(\{\s*id: shift\.id,[^}]*blind: true, declare_methods: declareMethods,/);   // A627: the seesSales line now also OR-s the shift-sales right
+  assert.match(sh, /const blind = !seesDrawerFigures\(req\) && !callerMayConfirm\(req\)\s*&& \(!ownDrawer\(req, shift\) \|\| \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\);\s*if \(blind\) \{[\s\S]{0,1400}?res\.json\(\{\s*id: shift\.id,[^}]*blind: true, declare_methods: declareMethods,/);   // A627: the seesSales line now also OR-s the shift-sales right; 2026-11-27 own-only adds the `mine`/`ownKept` lines inside the block
   assert.match(sh, /if \(!isManager && !req\.isTill && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{\s*res\.json\(\{ \.\.\.closed, expected_cash: null, cash_variance: null, blind: true,/);
   assert.match(sh, /&& !\(!callerMayConfirm\(req\) && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\)\) \{/);
 });

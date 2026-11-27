@@ -104,8 +104,10 @@ ok('each column adds up to the shift\'s: orders 5, sales 4,500, cash 3,100, M-Pe
 
 console.log('\nA blind close (A416)\n');
 const on = S.blindReport(z, true), off = S.blindReport(z, false);
-ok('switch on: the shift\'s sales and each person\'s part — labelled as the shift\'s, not "yours"',
-  near(on.cashierSales.total, 4500) && JSON.stringify(on.cashierSales.byCashier) === JSON.stringify([{ name: 'Brian', orders: 3, sales: 3000 }, { name: 'Amy', orders: 2, sales: 1500 }]),
+// Owner, 2026-11-27: "See own shift sales at close" shows the SIGNED-IN cashier's OWN part, not the whole drawer. Brian is
+// signed in (the last signIn above), so he sees his own 3,000 / 3 orders — not the shift's 4,500 — and no per-person list.
+ok('switch on: the signed-in cashier\'s OWN sales (Brian: 3 orders, 3,000), not the whole shift, and no per-person list',
+  near(on.cashierSales.total, 3000) && on.cashierSales.orders === 3 && on.cashierSales.byCashier === undefined,
   JSON.stringify(on.cashierSales));
 ok('a blind close shows no method figure per person', on.byCashier.every((c) => c.byMethod.length === 0));
 ok('switch off: nothing per person at all', off.byCashier.length === 0 && off.cashierSales === undefined);
@@ -127,13 +129,13 @@ console.log('\nThe screens and the paper\n');
 const panel = read('src/renderer/pages/ShiftPanel.tsx');
 ok('the shift panel: "Opened by" with more than one seller, then SALES BY CASHIER with each person\'s methods',
   panel.includes("<Line l={people.length > 1 ? 'Opened by' : 'Cashier'} v={shift.cashier_name} />") && panel.includes('data-testid="zreport-by-cashier"'));
-ok('a blind close says "Sales this shift" (the shift\'s, not "yours") and lists each person',
-  panel.includes('Sales this shift: <span') && !panel.includes('Your sales this shift') && panel.includes('data-testid="cashier-sales-by-person"'));
+ok('a blind close says "Your sales this shift" — the cashier\'s own, not the whole shift',
+  panel.includes('Your sales this shift: <span'));
 ok('the Z-report sheet (closed shift, manager, remote) has SALES BY CASHIER', read('src/renderer/components/ZReportView.tsx').includes('SALES BY CASHIER'));
 ok('the printed Z-report carries it to the printer', read('src/renderer/lib/printShiftReport.ts').includes('byCashier: (report.byCashier ?? []).map(c => ({')
   && fs.readFileSync(path.join(here, '..', '..', '..', 'shared', 'printing', 'src', 'shiftReport.ts'), 'utf8').includes("d.line('SALES BY CASHIER', { bold: true });"));
 const web = fs.readFileSync(path.join(here, '..', '..', 'dashboard', 'src', 'pages', 'pos', 'ShiftModal.tsx'), 'utf8');
-ok('the web POS close lists each person too', web.includes('data-testid="sales-by-cashier"') && !web.includes('Your sales this shift'));
+ok('the web POS blind close says "Your sales this shift" — the cashier\'s own', web.includes('Your sales this shift: <strong>'));
 
 try { fs.rmSync(userData, { recursive: true, force: true }); } catch { /* the database is still open on Windows */ }
 console.log(`\n${pass} passed, ${fail} failed`);
