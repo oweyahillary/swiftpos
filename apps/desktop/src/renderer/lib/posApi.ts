@@ -268,7 +268,8 @@ export interface ZReport {
                byReason: Array<{ reason: string; label: string; quantity: number; value: number }> };
     lines: KitchenVoidLine[];
   };
-  /** A416 / A442: on a blind close, the SHIFT's sales and each person's part — only with the owner's switch on. */
+  /** A416 / A442 → A627: on a blind close, the SHIFT's sales and each person's part — sent only to the holder of the
+   *  shifts.see_shift_sales right (the business-wide 'cashier_sees_shift_sales' switch is retired). */
   cashierSales?: { total: number; orders: number; byCashier?: Array<{ name: string; orders: number; sales: number }> };
   /** A442: who sold what on this shift — each person's orders, sales (kept) and money by method. */
   byCashier?: Array<{ cashier_id: string | null; name: string; orders: number; sales: number; byMethod: { method: string; amount: number }[] }>;
