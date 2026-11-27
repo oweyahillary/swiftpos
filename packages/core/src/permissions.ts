@@ -763,12 +763,16 @@ export const POS_ACTION_KEYS: readonly string[] = ['customers.credit', 'sales.vo
  */
 export const POS_HISTORY_KEYS: readonly string[] = ['sales.history_total', 'sales.history_all_payments', 'shifts.see_shift_sales'];
 /**
- * The till's drawer actions beyond "Record cash in" (shifts.cash_movements, already a floor key via OPEN_BEFORE_A490): a
- * cashier the owner trusts to record cash OUT / pay-outs or a drawer expense does it from the POS (CashierScreen shows the
- * buttons on exactly these keys). Like POS_ACTION_KEYS they are manager-level in the catalogue, so NOT a cashier default —
- * but holding one must keep the seller on the till, not bounce them to the dashboard.
+ * The till's drawer actions and approvals beyond "Record cash in" (shifts.cash_movements, already a floor key via
+ * OPEN_BEFORE_A490): a cashier the owner trusts records cash OUT / pay-outs or a drawer expense from the POS (CashierScreen
+ * shows the buttons on exactly these keys), and a FLOOR LEAD who sells may also approve a drawer close (shifts.confirm) or
+ * a pay-out (shifts.approve_payout) at the till with their PIN — none of which is a back-office page. Like POS_ACTION_KEYS
+ * these are manager-level in the catalogue, so NOT cashier defaults, but holding one must keep the seller on the till, not
+ * bounce them to the dashboard. (shifts.confirm being a floor key only changes routing/sign-in-code/device — callerMayConfirm
+ * still decides who may confirm a drawer; and FLOOR expands shifts.confirm to its parts, so approve_payout and approving a
+ * kitchen removal ride along too.)
  */
-export const POS_DRAWER_KEYS: readonly string[] = ['shifts.cash_out', 'expenses.record'];
+export const POS_DRAWER_KEYS: readonly string[] = ['shifts.cash_out', 'expenses.record', 'shifts.confirm', 'shifts.approve_payout'];
 /** What makes nobody back office: the floor, what every person held before A490 (migration 134 keeps it on every role —
  *  the staff list, every cashier's sales — so it says nothing about who is a manager), the POS actions, the A627
  *  History/close refinements and the till's own drawer actions. */
