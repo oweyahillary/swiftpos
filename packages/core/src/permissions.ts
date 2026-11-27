@@ -749,10 +749,10 @@ export const FLOOR_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.cashier
  * A499: what is used AT THE TILL by whoever sells — never a reason to send a person to the manager screens. Owner,
  * 2026-10-15 (1.0.15, a cashier landing on Settings › Staff): every cashier role held the old customers.manage (migration
  * 99), which stood for customers.edit AND customers.credit — credit is not a cashier default, so every cashier counted as
- * "back office" and the till opened the manager screens on them. Voids, refunds and reprints are the same: a cashier
- * trusted with them still sells.
+ * "back office" and the till opened the manager screens on them. Voids, refunds, reprints and approving a kitchen
+ * removal are the same: a cashier trusted with them still sells.
  */
-export const POS_ACTION_KEYS: readonly string[] = ['customers.credit', 'sales.void', 'sales.refund', 'sales.reprint'];
+export const POS_ACTION_KEYS: readonly string[] = ['customers.credit', 'sales.void', 'sales.refund', 'sales.reprint', 'sales.approve_kitchen_void'];
 /**
  * A627 (owner, 2026-11-26): the till-side History / shift-close REFINEMENTS. Exactly like POS_ACTION_KEYS above — a
  * cashier the owner trusts with one still sells, so holding one must never send them to the manager screens. They are
@@ -762,10 +762,17 @@ export const POS_ACTION_KEYS: readonly string[] = ['customers.credit', 'sales.vo
  * bounced them to the dashboard — the feature could not be used on a cashier at all.
  */
 export const POS_HISTORY_KEYS: readonly string[] = ['sales.history_total', 'sales.history_all_payments', 'shifts.see_shift_sales'];
+/**
+ * The till's drawer actions beyond "Record cash in" (shifts.cash_movements, already a floor key via OPEN_BEFORE_A490): a
+ * cashier the owner trusts to record cash OUT / pay-outs or a drawer expense does it from the POS (CashierScreen shows the
+ * buttons on exactly these keys). Like POS_ACTION_KEYS they are manager-level in the catalogue, so NOT a cashier default —
+ * but holding one must keep the seller on the till, not bounce them to the dashboard.
+ */
+export const POS_DRAWER_KEYS: readonly string[] = ['shifts.cash_out', 'expenses.record'];
 /** What makes nobody back office: the floor, what every person held before A490 (migration 134 keeps it on every role —
- *  the staff list, every cashier's sales — so it says nothing about who is a manager), the POS actions and the A627
- *  History/close refinements. */
-const FLOOR = withParts([...FLOOR_KEYS, ...OPEN_BEFORE_A490, ...POS_ACTION_KEYS, ...POS_HISTORY_KEYS]);   // A595: and their parts (176 gives them to every cashier)
+ *  the staff list, every cashier's sales — so it says nothing about who is a manager), the POS actions, the A627
+ *  History/close refinements and the till's own drawer actions. */
+const FLOOR = withParts([...FLOOR_KEYS, ...OPEN_BEFORE_A490, ...POS_ACTION_KEYS, ...POS_HISTORY_KEYS, ...POS_DRAWER_KEYS]);   // A595: and their parts (176 gives them to every cashier)
 
 /** Holds anything beyond the shop floor (or is the owner). */
 export function isBackOffice(held: ReadonlySet<string> | readonly string[]): boolean {
