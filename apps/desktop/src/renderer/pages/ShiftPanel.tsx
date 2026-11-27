@@ -318,8 +318,9 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
         {/* Tabs — only when a shift is open and not finalised */}
         {report && !finalReport && (
           <div className="flex border-b border-gray-800 flex-shrink-0">
-            {/* A594: Expenses for everyone on the drawer — every expense needs a manager (signed in, or their PIN). */}
-            {(['shift', 'expenses'] as const).map(t => (
+            {/* Expenses — owner, 2026-11-27: Record expenses is a RIGHT, OFF by default, so the tab is HIDDEN unless the
+                person holds expenses.record (matching the web POS). Every expense still needs a manager (A388). */}
+            {(expenseOwnRight ? (['shift', 'expenses'] as const) : (['shift'] as const)).map(t => (
               <button key={t} onClick={() => setActiveTab(t)}
                 className={`flex-1 py-2.5 text-sm font-medium transition-colors capitalize ${
                   activeTab === t
@@ -422,8 +423,11 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 </div>
               )}
 
-              {/* Cash movement — A594: for everyone on the drawer; a person who may not record one on their own types a
-                  manager's PIN for each (a cash in too). A cash in is confirmed, and again when it looks like a count. */}
+              {/* Cash movement — owner, 2026-11-27: "if it's off they should not see that option on the screen". Record
+                  cash in / out is a RIGHT, OFF by default, so (matching the web POS) the whole section is HIDDEN unless the
+                  person holds shifts.cash_movements or shifts.cash_out. A cash out still needs a manager's PIN (A388); a
+                  cash in is confirmed, and again when it looks like a count. */}
+              {(mayCashIn || can(me, 'shifts.cash_out')) && (
               <div className="border border-gray-800 rounded-xl p-4 space-y-3" data-testid="cash-movement">
                 <p className="text-sm text-gray-300 font-medium">Cash movement</p>
                 <div className="flex gap-2">
@@ -475,6 +479,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   </div>
                 )}
               </div>
+              )}
 
               {/* A366: another cashier cannot count out this drawer — its owner or a manager does. */}
               {!closeRights.allowed && (

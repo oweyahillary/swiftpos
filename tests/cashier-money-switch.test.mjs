@@ -161,17 +161,21 @@ try {
     // by shifts.cash_movements alone; the owner always.
     assert.match(read('apps/desktop/src/main/personAccess.ts'), /export function mayMoveMoney\(p: PersonLike \| null \| undefined, cashierNoMoneyOut: boolean\): boolean \{\s*if \(!p\) return false;\s*const held = personKeys\(p\.roleName, p\.permissions\);\s*if \(held\.has\('\*'\)\) return true;\s*if \(hasMarker\(p\.permissions\)\) return hasPermission\(held, 'shifts\.cash_movements'\);\s*return !cashierNoMoneyOut \|\| hasPermission\(held, 'shifts\.confirm'\);/);
   });
-  await ok('the till\'s shift screen shows the cash movement and Expenses to everyone, with "ask a manager" where needed', () => {
+  // Owner, 2026-11-27: "if it's off they should not see that option on the screen". Cash in / out and expenses are rights,
+  // OFF by default, so BOTH POS hide the option unless the person holds the right (a manager role carries all three).
+  await ok('the till (desktop) HIDES cash movement and Expenses unless the person holds the right', () => {
     const p = read('apps/desktop/src/renderer/pages/ShiftPanel.tsx');
     assert.match(p, /const mayCashIn = mayMoveMoney\(me, managerOnlyMoney\);/);
-    assert.match(p, /\{\(\['shift', 'expenses'\] as const\)\.map\(t =>/);
-    assert.match(p, /data-testid="cash-ask-manager"/);
+    assert.match(p, /\{\(mayCashIn \|\| can\(me, 'shifts\.cash_out'\)\) && \(/);                              // cash movement section
+    assert.match(p, /\{\(expenseOwnRight \? \(\['shift', 'expenses'\] as const\) : \(\['shift'\] as const\)\)\.map\(t =>/);  // Expenses tab
+    assert.match(p, /data-testid="cash-ask-manager"/);     // still there: with cash_out, a cash in / out needs a manager PIN
     assert.doesNotMatch(p, /data-testid="money-manager-only"/);
   });
-  await ok('the web POS shows Float and Expense to everyone on the drawer (a manager approves without the right)', () => {
+  await ok('the web POS HIDES Float and Expense unless the person holds the right', () => {
     const w = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
     assert.match(w, /const mayCashIn = hasPermission\('shifts\.cash_movements'\)\s*&& mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\);/);
-    assert.match(w, /mayCashIn=\{mayCashIn\}/);
+    assert.match(w, /\(hasPermission\('shifts\.cash_movements'\) \|\| hasPermission\('shifts\.cash_out'\)\) && \(/);  // Float button
+    assert.match(w, /hasPermission\('expenses\.record'\) && \(/);                                                   // Expense button
   });
 } finally { server.close(); }
 
