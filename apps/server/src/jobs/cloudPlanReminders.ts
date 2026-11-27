@@ -328,7 +328,12 @@ async function sendBranchGroup(businessId: string, f: CloudFactsRow, pause: Bran
       invoiceNumber = inv.data.invoice_number ?? number;
     }
     if ((have.data as { status?: string } | null)?.status !== 'paid') {
-      if (ownerEmail) {
+      // A627 P0-2: NEVER send a client an invoice carrying ZapTill's placeholder/incomplete company details (the sample
+      // Paybill 000000, the sample KRA PIN, a missing name). Hold the email and flag it — the invoice is still raised, and
+      // once ZapTill's Billing details are real the next period's invoice goes out. The check is shared (lib/branchBilling.ts).
+      if (details.problems.length) {
+        errors.push(`client invoice held — ZapTill's billing details are not ready to print on a client invoice: ${details.problems.map((p) => p.message).join('; ')}. Set them in the admin portal › Billing details.`);
+      } else if (ownerEmail) {
         const mail = branchInvoiceEmailHtml({
           invoiceNumber: invoiceNumber ?? '', issuedAt: now.toISOString(), currency,
           business: { name: f.name ?? 'your business', ownerName: null, phone: null, email: ownerEmail },

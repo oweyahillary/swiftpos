@@ -14,7 +14,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAdmin, requireSuperAdmin } from '../middleware/adminAuth';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
-import { BILLING_DETAILS_KEY, cleanBillingDetails, readBillingDetails, forgetBillingDetails } from '../lib/branchBilling';
+import { BILLING_DETAILS_KEY, cleanBillingDetails, readBillingDetails, forgetBillingDetails, KRA_PIN_RE, isPlaceholderPayNumber } from '../lib/branchBilling';
 
 const router = safeRouter();
 
@@ -28,6 +28,18 @@ router.put('/', requireAdmin, requireSuperAdmin, async (req: any, res) => {
   const clean = cleanBillingDetails(b);
   if (!String(b.seller.legalName ?? '').trim() || !String(b.seller.address ?? '').trim()) {
     res.status(400).json({ error: 'Type ZapTill\'s legal name and address.', code: 'BAD_SELLER' }); return;
+  }
+  // A627 P0-2: block INVALID values at save (placeholders are blocked at issue time; an EMPTY field is allowed — partial
+  // setup, before the KRA PIN is known). The checks live once in lib/branchBilling.ts so save, issue and the UI agree.
+  const kraPinRaw = String(b.seller.kraPin ?? '').trim();
+  if (kraPinRaw && !KRA_PIN_RE.test(kraPinRaw)) {
+    res.status(400).json({ error: 'The KRA PIN must be a letter, nine digits and a letter, e.g. P051234567Z — or leave it blank for now.', code: 'BAD_KRA_PIN' }); return;
+  }
+  if (isPlaceholderPayNumber(b.seller.mpesaPaybill)) {
+    res.status(400).json({ error: 'That M-Pesa Paybill is all zeros — type the real Paybill clients pay to, or leave it blank.', code: 'BAD_PAYBILL' }); return;
+  }
+  if (isPlaceholderPayNumber(b.seller.mpesaTill)) {
+    res.status(400).json({ error: 'That Buy Goods Till number is all zeros — type the real M-Pesa Till number, or leave it blank.', code: 'BAD_PAYBILL' }); return;
   }
   if (!clean.seller.mpesaPaybill && !clean.seller.mpesaTill) {
     res.status(400).json({ error: 'Type the M-Pesa Paybill (or the Buy Goods Till number) clients pay to.', code: 'BAD_PAYBILL' }); return;

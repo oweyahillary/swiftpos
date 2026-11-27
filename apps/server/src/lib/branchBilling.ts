@@ -44,8 +44,50 @@ export type OwnPrices = Partial<Record<OwnPriceKey, number>>;
 const isOwnPriceKey = (v: unknown): v is OwnPriceKey => typeof v === 'string' && (OWN_PRICE_KEYS as readonly string[]).includes(v);
 const OWN_PRICE_MAX = 10_000_000;
 
-export interface BillingDetails { seller: InvoiceSeller; prices: BillingPrices; saved: boolean }
+export interface BillingDetails { seller: InvoiceSeller; prices: BillingPrices; saved: boolean; problems: BillingDetailProblem[] }
 export const BILLING_DETAILS_KEY = 'billing_details';
+
+// ── A627 P0-2: ZapTill's company details must be real before they print on a client invoice ──────────────────────────
+// Placeholder values (the sample Paybill 000000, the sample KRA PIN P000000000X) and malformed ones used to save as
+// "real" (sample:false) and then print on the client invoice once the "Sample details" marker dropped. These checks are
+// defined ONCE here and used by the save route, the billing job's issue guard, and the admin portal's banner — so they
+// cannot drift apart.
+
+/** ZapTill's KRA PIN format: a letter (A or P), nine digits, a trailing letter — e.g. P051234567Z. Case-insensitive. */
+export const KRA_PIN_RE = /^[AP]\d{9}[A-Z]$/i;
+
+/** A Paybill / Till that is a placeholder: all zeros (the sample's 000000). Empty is "not given", not a placeholder. Pure. */
+export function isPlaceholderPayNumber(v: string | null | undefined): boolean {
+  const d = String(v ?? '').replace(/\D/g, '');
+  return d.length > 0 && /^0+$/.test(d);
+}
+
+/** A KRA PIN that is a placeholder: the sample P000000000X — format-valid, but its nine digits are all zero. Pure. */
+export function isPlaceholderKraPin(v: string | null | undefined): boolean {
+  const s = String(v ?? '').trim().toUpperCase();
+  return KRA_PIN_RE.test(s) && /^0+$/.test(s.slice(1, 10));
+}
+
+/** One thing wrong with ZapTill's billing details that would make a client invoice unfit to issue. */
+export interface BillingDetailProblem { code: string; message: string }
+
+/**
+ * A627 P0-2: everything wrong with the seller's details for ISSUING a client invoice — a missing or placeholder field.
+ * EMPTY is allowed to SAVE (partial setup, before the KRA PIN is known) but never to print on a client invoice, so this
+ * flags empties too. The SINGLE source of truth for the save route, the billing job's issue guard and the admin banner. Pure.
+ */
+export function billingDetailProblems(seller: Pick<InvoiceSeller, 'legalName' | 'address' | 'kraPin' | 'mpesaPaybill' | 'mpesaTill'>): BillingDetailProblem[] {
+  const out: BillingDetailProblem[] = [];
+  if (!String(seller.legalName ?? '').trim()) out.push({ code: 'NO_LEGAL_NAME', message: 'the company legal name is missing' });
+  if (!String(seller.address ?? '').trim()) out.push({ code: 'NO_ADDRESS', message: 'the company address is missing' });
+  const pin = String(seller.kraPin ?? '').trim();
+  if (!pin) out.push({ code: 'NO_KRA_PIN', message: 'the KRA PIN is missing' });
+  else if (!KRA_PIN_RE.test(pin) || isPlaceholderKraPin(pin)) out.push({ code: 'PLACEHOLDER_KRA_PIN', message: `the KRA PIN "${pin}" is a placeholder or invalid` });
+  const hasPaybill = seller.mpesaPaybill && !isPlaceholderPayNumber(seller.mpesaPaybill);
+  const hasTill = seller.mpesaTill && !isPlaceholderPayNumber(seller.mpesaTill);
+  if (!hasPaybill && !hasTill) out.push({ code: 'NO_PAY_NUMBER', message: 'there is no real M-Pesa Paybill or Till number (a placeholder like 000000 does not count)' });
+  return out;
+}
 
 const str = (v: unknown, max: number): string | null => {
   const s = typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, max) : '';
@@ -61,7 +103,8 @@ export function cleanBillingDetails(raw: unknown): BillingDetails {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, any>;
   const s = (r.seller && typeof r.seller === 'object' ? r.seller : null) as Record<string, unknown> | null;
   const p = (r.prices && typeof r.prices === 'object' ? r.prices : {}) as Record<string, unknown>;
-  const digits = (v: unknown) => { const d = str(v, 12)?.replace(/\D/g, '') ?? ''; return d.length >= 5 ? d : null; };
+  // A627 P0-2: an all-zero (placeholder) Paybill/Till is dropped — it must never read back as a "real" number.
+  const digits = (v: unknown) => { const d = str(v, 12)?.replace(/\D/g, '') ?? ''; return d.length >= 5 && !/^0+$/.test(d) ? d : null; };
   const seller: InvoiceSeller = s ? {
     legalName: str(s.legalName, 120) ?? SAMPLE_SELLER.legalName,
     address: str(s.address, 200) ?? SAMPLE_SELLER.address,
@@ -78,7 +121,7 @@ export function cleanBillingDetails(raw: unknown): BillingDetails {
     attendance: price(p.attendance, DEFAULT_PRICES.attendance), themes: price(p.themes, DEFAULT_PRICES.themes),
     package: price(p.package, DEFAULT_PRICES.package),
   };
-  return { seller, prices, saved: !!s };
+  return { seller, prices, saved: !!s, problems: billingDetailProblems(seller) };
 }
 
 /** A branch's premium features: the package is every one. Pure. */

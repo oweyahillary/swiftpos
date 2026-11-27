@@ -15,14 +15,17 @@ interface Prices { cloud: number; analytics: number; attendance: number; themes:
 
 const PRICE_FIELDS: Array<[keyof Prices, string]> = [["cloud", "Cloud"], ["analytics", "Analytics"], ["attendance", "Attendance"], ["themes", "Themes"], ["package", "Premium package"]];
 
+interface Problem { code: string; message: string }
+
 export default function BillingDetailsCard({ req, isSuper }: { req: Req; isSuper: boolean }) {
   const [seller, setSeller] = useState<Seller | null>(null);
   const [prices, setPrices] = useState<Record<keyof Prices, string> | null>(null);
   const [saved, setSaved] = useState(false);
+  const [problems, setProblems] = useState<Problem[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const adopt = (v: { seller: Seller; prices: Prices; saved: boolean }) => {
-    setSeller(v.seller); setSaved(v.saved);
+  const adopt = (v: { seller: Seller; prices: Prices; saved: boolean; problems?: Problem[] }) => {
+    setSeller(v.seller); setSaved(v.saved); setProblems(v.problems ?? []);
     setPrices(Object.fromEntries(PRICE_FIELDS.map(([k]) => [k, String(v.prices[k])])) as Record<keyof Prices, string>);
   };
   useEffect(() => { req("GET", "/billing-details").then(adopt).catch((e) => setMsg({ ok: false, text: e.message })); }, [req]);
@@ -45,6 +48,14 @@ export default function BillingDetailsCard({ req, isSuper }: { req: Req; isSuper
         <div style={{ fontSize: 13, fontWeight: 600 }}>Billing details (on every client invoice)</div>
         {!saved && <div style={{ fontSize: 11, color: "#f59e0b" }}>Not saved yet — invoices print sample details</div>}
       </div>
+      {saved && problems.length > 0 && (
+        <div data-testid="billing-details-placeholder-warning" role="alert"
+          style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(255,92,108,0.12)", border: `1px solid rgba(255,92,108,0.3)`, color: C.danger, fontSize: 12 }}>
+          <div style={{ fontWeight: 600 }}>These details are not ready for client invoices.</div>
+          <div style={{ color: C.muted, marginTop: 2 }}>Client invoices are held until these are fixed:</div>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{problems.map((p) => <li key={p.code}>{p.message}</li>)}</ul>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
         {text("legalName", "Company name", "ZapTill Limited")}
         {text("address", "Address", "P.O. Box …, Nairobi")}
