@@ -381,6 +381,19 @@ export function permissionAppliesToType(def: Pick<PermissionDef, 'types'> | unde
 export function permissionsForType(businessType: string | null | undefined): PermissionDef[] {
   return PERMISSIONS.filter((p) => permissionAppliesToType(p, businessType));
 }
+/** The permission GROUPS as a business of this type reads them. Only the 'front' group's blurb is establishment-specific —
+ *  the catalogue lists its keys for every vertical ("Reservations, parking and fuel"), but a restaurant should read just
+ *  "Reservations", a car park "Parking tickets", a petrol station "Fuel". Ids and order are unchanged, so an empty group
+ *  still returns (the Roles screen hides it); this only fixes the wording. */
+export function permissionGroupsForType(businessType: string | null | undefined): typeof PERMISSION_GROUPS {
+  const t = typeKey(businessType);
+  const front =
+    FOOD_BUSINESS_TYPES.map(typeKey).includes(t)    ? 'Reservations and the waitlist' :
+    PARKING_BUSINESS_TYPES.map(typeKey).includes(t) ? 'Parking tickets and the barrier' :
+    FUEL_BUSINESS_TYPES.map(typeKey).includes(t)    ? 'Fuel pumps, tanks and deliveries' :
+    'Reservations, parking and fuel';
+  return PERMISSION_GROUPS.map((g) => (g.id === 'front' ? { ...g, description: front } : g));
+}
 /** The key→types map, for a client (the cloud sends it so the Roles screen can gate without the catalogue's `types`). */
 export const PERMISSION_TYPES: Readonly<Record<string, readonly string[]>> =
   Object.fromEntries(PERMISSIONS.filter((p) => p.types).map((p) => [p.key, p.types!]));

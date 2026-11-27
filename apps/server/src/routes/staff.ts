@@ -11,7 +11,7 @@ import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
 import { callerHeld, canAssignRole, roleEditRefusal, overridesBeyondCaller } from '../lib/roleCeiling';
 import { isOwnerRoleName } from '../lib/ownerRole';
-import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf, permissionsForType, keysForType } from '@zaptill/core/permissions';
+import { PERMISSIONS, expandKeys, isPermissionKey, parentOf, permissionKind, partsOf, permissionsForType, permissionGroupsForType, keysForType } from '@zaptill/core/permissions';
 import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf, withNewParentParts, overridePartsOf } from '../lib/roleKeys';
 import { alertsForKeys, alertAppliesTo, isNotificationAlert } from '@zaptill/core/notificationPrefs';   // A627 W3
 import { prefsFor, setPref } from '../lib/notificationPrefsStore';   // A627 W3
@@ -1216,7 +1216,7 @@ router.get('/permissions', async (req, res) => {
 });
 
 // GET /api/staff/permission-groups — the groups the catalogue is listed under, in order.
-router.get('/permission-groups', (_req, res) => { res.json(PERMISSION_GROUPS); });
+router.get('/permission-groups', async (req, res) => { res.json(permissionGroupsForType(await businessTypeOf((req as any).businessId))); });
 
 // ── A627 W3: per-person EMAIL alert preferences ──────────────────────────────────────────────────────────────────────
 // A person is only offered (and the jobs only send) an alert whose permission they hold; a toggle OFF stores an opt-out
@@ -1235,7 +1235,8 @@ router.put('/me/notification-prefs', async (req: any, res) => {
   const alert = String(req.body?.alert_type ?? '');
   if (!isNotificationAlert(alert)) { res.status(400).json({ error: 'Unknown alert.', code: 'BAD_ALERT' }); return; }
   if (!alertAppliesTo(alert, callerHeld(req))) { res.status(403).json({ error: 'You do not receive that alert.', code: 'NOT_YOURS' }); return; }
-  await setPref(req.businessId, req.userId, alert, req.body?.enabled !== false, req.userId);
+  try { await setPref(req.businessId, req.userId, alert, req.body?.enabled !== false, req.userId); }
+  catch { res.status(503).json({ error: 'Could not save that change — please try again.' }); return; }
   res.json({ ok: true });
 });
 
@@ -1260,7 +1261,8 @@ router.put('/:userId/notification-prefs', requirePermission('staff.edit'), async
   const alert = String(req.body?.alert_type ?? '');
   if (!isNotificationAlert(alert)) { res.status(400).json({ error: 'Unknown alert.', code: 'BAD_ALERT' }); return; }
   if (!alertAppliesTo(alert, target.keys)) { res.status(400).json({ error: 'That person does not receive that alert.', code: 'NOT_THEIRS' }); return; }
-  await setPref(req.businessId, userId, alert, req.body?.enabled !== false, req.userId ?? null);
+  try { await setPref(req.businessId, userId, alert, req.body?.enabled !== false, req.userId ?? null); }
+  catch { res.status(503).json({ error: 'Could not save that change — please try again.' }); return; }
   res.json({ ok: true });
 });
 

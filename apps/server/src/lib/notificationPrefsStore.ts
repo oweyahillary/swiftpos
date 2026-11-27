@@ -52,8 +52,11 @@ export async function emailOptedOut(businessId: string, ownerId: string | null, 
 export async function prefsFor(businessId: string, userId: string): Promise<Record<string, boolean>> {
   const out: Record<string, boolean> = {};
   for (const k of NOTIFICATION_ALERT_KEYS) out[k] = true;
-  const { data } = await supabase.from('user_notification_prefs')
+  const { data, error } = await supabase.from('user_notification_prefs')
     .select('alert_type, email_enabled').eq('business_id', businessId).eq('user_id', userId);
+  // A627: a read failure (e.g. the table is missing on this environment) must stay fail-safe — show every alert ON rather
+  // than hide one — but never silently: log it, or a broken DB layer looks exactly like "nobody opted out".
+  if (error) { console.error('[notificationPrefs] prefsFor read failed — showing all alerts on', { businessId, userId }, error.message); return out; }
   for (const r of (data ?? []) as Array<{ alert_type: string; email_enabled: boolean }>) {
     if (r.alert_type in out) out[r.alert_type] = r.email_enabled !== false;
   }
@@ -63,8 +66,12 @@ export async function prefsFor(businessId: string, userId: string): Promise<Reco
 /** Upsert one person's pref for one alert. Only known alert keys are written. */
 export async function setPref(businessId: string, userId: string, alertType: string, enabled: boolean, by: string | null): Promise<void> {
   if (!NOTIFICATION_ALERT_KEYS.includes(alertType)) return;
-  await supabase.from('user_notification_prefs').upsert(
+  const { error } = await supabase.from('user_notification_prefs').upsert(
     { business_id: businessId, user_id: userId, alert_type: alertType, email_enabled: enabled, updated_at: new Date().toISOString(), updated_by: by },
     { onConflict: 'user_id,alert_type' },
   );
+  // A627: NEVER swallow a write failure. A silent fail here answered the browser {ok:true} while nothing was stored — so a
+  // toggle sprang back ON on reload, and worse, if it HAD stored, mail could stop while the screen still read ON. Throw so
+  // the PUT route returns an error and the toggle shows it, instead of lying that the change was saved.
+  if (error) throw new Error(`could not save notification pref (${alertType}): ${error.message}`);
 }
