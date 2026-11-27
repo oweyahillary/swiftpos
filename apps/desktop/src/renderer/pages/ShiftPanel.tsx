@@ -401,7 +401,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   {/* A416: the owner's switch (off by default) — the cashier's own sales; never expected cash or a method's figure. */}
                   {report.cashierSales && (
                     <p className="mt-2 text-white" data-testid="cashier-sales">
-                      Sales this shift: <span className="font-bold tabular-nums">{money(report.cashierSales.total)}</span>
+                      Your sales this shift: <span className="font-bold tabular-nums">{money(report.cashierSales.total)}</span>
                       <span className="text-gray-400"> · {report.cashierSales.orders} order{report.cashierSales.orders === 1 ? '' : 's'}</span>
                     </p>
                   )}

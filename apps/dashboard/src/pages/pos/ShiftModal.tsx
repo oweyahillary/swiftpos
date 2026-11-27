@@ -520,7 +520,7 @@ export default function ShiftModal({
             <p style={s.subtitle}>{blind ? 'Count the drawer and enter each method\'s total. A manager checks them.' : 'Count the cash in the drawer. We\'ll calculate the variance for you.'}</p>
             {blind && cashierSales && (
               <p style={s.subtitle} data-testid="cashier-sales">
-                Sales this shift: <strong>{fmt(cashierSales.total, currency)}</strong> · {cashierSales.orders} order{cashierSales.orders === 1 ? '' : 's'}
+                Your sales this shift: <strong>{fmt(cashierSales.total, currency)}</strong> · {cashierSales.orders} order{cashierSales.orders === 1 ? '' : 's'}
               </p>
             )}
             {sellers.length > 1 && (

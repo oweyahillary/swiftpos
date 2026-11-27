@@ -1753,13 +1753,14 @@ router.get('/:id', async (req, res) => {
     // A627: the person's own RIGHT (shifts.see_shift_sales) is the sole control — the 'cashier_sees_shift_sales' switch is
     // retired (migration 199 granted the right wherever the switch was on). The count stays blind either way.
     const seesSales = can(req, 'shifts.see_shift_sales');
-    const kept = (orders ?? []).reduce((s: number, o: any) => s + Number(o.total) - Math.min(Math.max(Number(o.refunded_amount ?? 0), 0), Number(o.total)), 0);
+    // "See own shift sales" (owner, 2026-11-27): the SIGNED-IN cashier's OWN sales on this drawer, not the whole shift's —
+    // on a shared drawer each person sees only what they rang. Kept after refunds; the count stays blind.
+    const mine = (orders ?? []).filter((o: any) => o.cashier_id === req.userId);
+    const ownKept = mine.reduce((s: number, o: any) => s + Number(o.total) - Math.min(Math.max(Number(o.refunded_amount ?? 0), 0), Number(o.total)), 0);
     res.json({
       id: shift.id, status: shift.status, opened_at: shift.opened_at, cashier_id: shift.cashier_id, opened_by: shift.opened_by,
       cashier_name: cashier?.name ?? 'Unknown', blind: true, declare_methods: declareMethods,
-      ...(seesSales ? { cashier_sales: { total: Math.round(kept * 100) / 100, orders: (orders ?? []).length,
-        // A442: each person's part — sales only, never a method's figure (the count stays blind).
-        by_cashier: byCashier.map((c) => ({ name: c.name, orders: c.orders, sales: c.sales })) } } : {}),
+      ...(seesSales ? { cashier_sales: { total: Math.round(ownKept * 100) / 100, orders: mine.length } } : {}),
     });
     return;
   }

@@ -22,19 +22,21 @@ const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e)
 
 console.log('\nThe cloud\n');
 const shifts = read('apps/server/src/routes/shifts.ts');
-ok("a cashier's blind shift carries their sales only when they hold the shifts.see_shift_sales right", () => {
+ok("a cashier's blind shift carries their OWN sales only when they hold the shifts.see_shift_sales right", () => {
   assert.match(shifts, /const seesSales = can\(req, 'shifts\.see_shift_sales'\);/);
-  // A442 adds each person's part (sales only) inside the same switch.
-  assert.match(shifts, /\.\.\.\(seesSales \? \{ cashier_sales: \{ total: Math\.round\(kept \* 100\) \/ 100, orders: \(orders \?\? \[\]\)\.length,\s*\/\/[^\n]*\n\s*by_cashier: byCashier\.map\(\(c\) => \(\{ name: c\.name, orders: c\.orders, sales: c\.sales \}\)\) \} \} : \{\}\)/);
+  // own-only (owner, 2026-11-27): the signed-in cashier's own orders on this drawer, kept after refunds — not the whole shift.
+  assert.match(shifts, /const mine = \(orders \?\? \[\]\)\.filter\(\(o: any\) => o\.cashier_id === req\.userId\);/);
+  assert.match(shifts, /\.\.\.\(seesSales \? \{ cashier_sales: \{ total: Math\.round\(ownKept \* 100\) \/ 100, orders: mine\.length \} \} : \{\}\)/);
 });
 
 console.log('\nThe till\n');
 const svc = read('apps/desktop/src/main/shiftService.ts');
 const blind = svc.slice(svc.indexOf('export function blindReport'), svc.indexOf('/** A manager for shift purposes'));
-ok('the blind report adds the sales kept and the orders only when the shifts.see_shift_sales right is held', () => {
+ok("the blind report adds the cashier's OWN sales kept and orders only when the shifts.see_shift_sales right is held", () => {
   assert.match(blind, /seesSales: boolean = signedInCan\('shifts\.see_shift_sales'\)\)/);
-  // A442 adds each person's part (sales only) inside the same switch, and strips the per-person figures when it is off.
-  assert.match(blind, /\.\.\.\(seesSales \? \{ cashierSales: \{ total: money2\(z\.totals\.netSales \?\? z\.totals\.grossSales\), orders: z\.totals\.orderCount,\s*byCashier: \(z\.byCashier \?\? \[\]\)\.map\(\(c\) => \(\{ name: c\.name, orders: c\.orders, sales: c\.sales \}\)\) \} \} : \{\}\)/);
+  // own-only (owner, 2026-11-27): the signed-in cashier's own byCashier row (mine); the per-method figures are still stripped.
+  assert.match(blind, /const mine = seesSales \? \(z\.byCashier \?\? \[\]\)\.find\(\(c\) => c\.cashier_id === sessionPerson\(\)\?\.staffId\) : undefined;/);
+  assert.match(blind, /\.\.\.\(seesSales \? \{ cashierSales: \{ total: money2\(mine\?\.sales \?\? 0\), orders: mine\?\.orders \?\? 0 \} \} : \{\}\)/);
   assert.match(blind, /byCashier: seesSales \? \(z\.byCashier \?\? \[\]\)\.map\(\(c\) => \(\{ \.\.\.c, byMethod: \[\] \}\)\) : \[\],/);
 });
 ok('the count stays blind: expected cash 0, no variance, no method figures', () => {

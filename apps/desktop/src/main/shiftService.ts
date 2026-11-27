@@ -698,6 +698,8 @@ export function blindReport(z: ZReport, seesSales: boolean = signedInCan('shifts
     .filter((m) => String(m.method).toLowerCase() !== 'cash' && Math.round(Number(m.amount) * 100) !== 0)
     .map((m) => String(m.method).toLowerCase()))].sort((a, b) => a.localeCompare(b));
   const zero = (n: unknown) => (n == null ? n : 0);
+  // "See own shift sales" (owner, 2026-11-27): the SIGNED-IN cashier's OWN part of this drawer, not the whole shift's.
+  const mine = seesSales ? (z.byCashier ?? []).find((c) => c.cashier_id === sessionPerson()?.staffId) : undefined;
   return {
     ...z,
     blind: true,
@@ -716,11 +718,10 @@ export function blindReport(z: ZReport, seesSales: boolean = signedInCan('shifts
     },
     confirmation: z.confirmation ? { ...z.confirmation, lines: z.confirmation.lines.map((l) => ({ ...l, expected: null, variance: null })) } : z.confirmation,
     // A416 (owner: "waiter seeing total sales on the shift while closing … toggled on and off, by default off"): the
-    // cashier's sales kept after refunds, and the orders — never expected cash, a method's figure or the difference.
-    // A442: who sold what — each person's sales only (no method figures), and only with the A416 switch.
+    // cashier's OWN sales kept after refunds, and their orders — never expected cash, a method's figure or the difference.
+    // A442: who sold what (top-level byCashier) stays; 2026-11-27 the headline is the SIGNED-IN cashier's own part (mine).
     byCashier: seesSales ? (z.byCashier ?? []).map((c) => ({ ...c, byMethod: [] })) : [],
-    ...(seesSales ? { cashierSales: { total: money2(z.totals.netSales ?? z.totals.grossSales), orders: z.totals.orderCount,
-      byCashier: (z.byCashier ?? []).map((c) => ({ name: c.name, orders: c.orders, sales: c.sales })) } } : {}),
+    ...(seesSales ? { cashierSales: { total: money2(mine?.sales ?? 0), orders: mine?.orders ?? 0 } } : {}),
   };
 }
 
