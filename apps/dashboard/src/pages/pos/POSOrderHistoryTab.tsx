@@ -170,7 +170,10 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
     }
   }, [posApi, session, search, typeFilter, methodFilter]);
 
-  useEffect(() => { load(1); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Owner, 2026-11-27 ("History opens empty until Search"): load on mount AND once the branch is known — the first mount can
+  // fire before the session/branch has settled and come back empty. branchId is stable after sign-in, so this is one extra
+  // fetch at most, and a cashier no longer sees a false "No orders found" until they press Search.
+  useEffect(() => { void load(1); }, [posApi, session?.branchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
