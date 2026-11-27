@@ -9,6 +9,7 @@
     "install:all": "cd apps/server && npm install && cd ../dashboard && npm install",
     "package": "git archive --format=zip HEAD -o pos.zip",
     "package:check": "node scripts/check-package.mjs",
+    "ci-local": "node scripts/ci-local.mjs",
     "test:migrations": "node scripts/run-migration-tests.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "db:migrate:plan": "node scripts/migrate.mjs --plan",
