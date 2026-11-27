@@ -2202,10 +2202,11 @@ function TeamPage({ req, admin }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Add Team Member</div>
           <form onSubmit={addMember} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {[["Name","name","text"],["Email","email","email"],["Password","password","password"]].map(([l, k, t]) => (
+            {/* A627 P0-1: distinct name/id + autoComplete so Chrome never offers the signed-in admin's own saved credentials. */}
+            {[["Name","name","text","off","tm-new-name"],["Email","email","email","off","tm-new-email"],["Password","password","password","new-password","tm-new-password"]].map(([l, k, t, ac, nm]) => (
               <div key={k}>
                 <label style={S.label}>{l}</label>
-                <input style={S.input} type={t} value={form[k]} required
+                <input style={S.input} type={t} name={nm} id={nm} autoComplete={ac} value={form[k]} required
                   onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
               </div>
             ))}
@@ -2259,10 +2260,11 @@ function AccountPage({ req, apiUrl, setApiUrl }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Change password</div>
           <form onSubmit={changePw} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {([["Current password", current, setCurrent], ["New password (8+ characters)", newPw, setNewPw], ["Confirm new password", confirm, setConfirm]] as [string, string, (v: string) => void][]).map(([l, v, s]) => (
+            {/* A627 P0-1: current vs new autocomplete + distinct name/id, so the browser does not offer saved credentials for the new fields. */}
+            {([["Current password", current, setCurrent, "current-password", "cp-current"], ["New password (8+ characters)", newPw, setNewPw, "new-password", "cp-new"], ["Confirm new password", confirm, setConfirm, "new-password", "cp-confirm"]] as [string, string, (v: string) => void, string, string][]).map(([l, v, s, ac, nm]) => (
               <div key={l}>
                 <label style={S.label}>{l}</label>
-                <input style={S.input} type="password" value={v} required onChange={e => s(e.target.value)} />
+                <input style={S.input} type="password" name={nm} id={nm} autoComplete={ac} value={v} required onChange={e => s(e.target.value)} />
               </div>
             ))}
             {pwError && <div style={{ fontSize: 12, color: C.danger }}>{pwError}</div>}
@@ -2763,12 +2765,15 @@ function NewClientPage({ req, onCreated }) {
               </div>
               <div>
                 <label style={S.label}>Email *</label>
-                <input style={S.input} type="email" required value={form.ownerEmail}
+                {/* A627 P0-1: distinct name/id + autoComplete off — never offer the signed-in admin's own email for a new client. */}
+                <input style={S.input} type="email" name="newClientOwnerEmail" id="newClientOwnerEmail" autoComplete="off" required value={form.ownerEmail}
                   onChange={e => set("ownerEmail", e.target.value)} placeholder="owner@business.com" />
               </div>
               <div style={{ gridColumn: "1 / -1" }}>
                 <label style={S.label}>Temporary Password * (min 8 chars)</label>
+                {/* A627 P0-1: a brand-new credential — autoComplete new-password + a distinct name/id, not the admin's own. */}
                 <input
+                  name="newClientOwnerTempPassword" id="newClientOwnerTempPassword" autoComplete="new-password"
                   style={{ ...S.input, ...(form.ownerPassword && form.ownerPassword.length < 8 ? { borderColor: "#ef4444" } : {}) }}
                   value={form.ownerPassword}
                   onChange={e => set("ownerPassword", e.target.value)}
