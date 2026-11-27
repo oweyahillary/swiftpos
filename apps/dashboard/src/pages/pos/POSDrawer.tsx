@@ -7,7 +7,7 @@
  * come from the catalogue (PERMISSIONS label / description), not a private list.
  *
  *   Reports    → POSReportsTab       (the reports it shows: POS_REPORT_KEYS — each report by its own key)
- *   Orders     → POSOrderHistoryTab  (orders.view_all)
+ *   History    → POSOrderHistoryTab  (anyone who sells — own sales only; orders.view_all widens it to the branch)
  *   Stock      → POSInventoryTab     (inventory.view)
  *   Customers  → POSCustomersTab     (customers.view)
  */
@@ -51,7 +51,9 @@ const SCREENS: Record<string, React.ComponentType<ScreenProps>> = {
 /** Rail order, icon and the short rail word; the heading and its line come from the catalogue. */
 const SCREEN_ORDER: Array<{ id: keyof typeof SCREENS & string; icon: string; rail: string; keys: readonly string[] }> = [
   { id: 'reports',         icon: '📊', rail: 'Reports',   keys: POS_REPORT_KEYS },
-  { id: 'orders.view_all', icon: '🧾', rail: 'Orders',    keys: ['orders.view_all'] },
+  // One POS design: History is for everyone (desktop A358). A seller reaches their OWN sales here — the cloud scopes it
+  // (own_only / cash-only in routes/orders.ts); orders.view_all widens it to the whole branch and every method.
+  { id: 'orders.view_all', icon: '🧾', rail: 'History',   keys: ['orders.create', 'orders.view_all'] },
   { id: 'inventory.view',  icon: '📦', rail: 'Stock',     keys: ['inventory.view'] },
   { id: 'customers.view',  icon: '👥', rail: 'Customers', keys: ['customers.view'] },
 ];
@@ -62,6 +64,9 @@ const reportsGroup = PERMISSION_GROUPS.find((g) => g.id === 'reports');
 /** The heading and line shown above a screen — the catalogue's own words. */
 function screenWords(id: string): { title: string; line: string } {
   if (id === 'reports') return { title: reportsGroup?.label ?? 'Reports', line: reportsGroup?.description ?? '' };
+  // Not the catalogue's manager wording ("every order of the branch…"): a seller sees their OWN sales here. The in-tab
+  // "Your sales only" badge marks the scope; the heading stays true for both a cashier and a manager.
+  if (id === 'orders.view_all') return { title: 'Order history', line: "Today's orders." };
   const p = catalogueLabel(id);
   return { title: p?.label ?? id, line: p?.description ?? '' };
 }

@@ -2,7 +2,9 @@
  * POSOrderHistoryTab
  * Paginated, searchable order list scoped to the cashier's branch.
  * Tap an order to expand its line items (A444: they were never shown) and payment detail.
- * Permission required: orders.view_all
+ * Shown to anyone who can sell (desktop A358: History is for everyone). The cloud scopes a cashier to their OWN sales
+ * (own_only) and to cash only without sales.history_all_payments; orders.view_all / sales.history_all widen it to the
+ * whole branch and every method (A627).
  */
 
 import MethodDot from '@zaptill/ui/MethodDot';
