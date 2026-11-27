@@ -30,6 +30,22 @@ ok('a cashier the owner lets void, refund, reprint and give credit is still not 
 ok('every POS action key is a real catalogue key', () => {
   for (const k of P.POS_ACTION_KEYS) assert.ok(P.PERMISSIONS.some((p) => p.key === k), k);
 });
+// A627: the owner grants a cashier a History / shift-close refinement (see shift sales at close, a History total, all
+// payment methods). These are cashier-facing — they change what the till shows — so a holder still sells and stays on
+// the POS. Before the fix they were back office (no `cashier: true`), so granting one bounced the cashier to the dashboard.
+ok('a cashier granted the A627 History / shift-close refinements is still not back office', () => {
+  for (const k of P.POS_HISTORY_KEYS) assert.equal(P.isBackOffice([...P.defaultKeysFor('cashier'), k]), false, k);
+  assert.equal(P.isBackOffice([...P.defaultKeysFor('cashier'), ...P.POS_HISTORY_KEYS]), false);
+});
+ok('every A627 History/close key is a real catalogue key, and none is a cashier default', () => {
+  for (const k of P.POS_HISTORY_KEYS) {
+    assert.ok(P.PERMISSIONS.some((p) => p.key === k), k);
+    assert.ok(!P.defaultKeysFor('cashier').includes(k), `${k} must not be a cashier default`);
+  }
+});
+ok('orders.view_all is a real back-office grant — a cashier given it IS back office (it is the manager Orders pages)', () => {
+  assert.equal(P.isBackOffice([...P.defaultKeysFor('cashier'), 'orders.view_all']), true);
+});
 ok('a manager is back office, and so is the owner (*)', () => {
   assert.equal(P.isBackOffice(P.defaultKeysFor('manager')), true);
   assert.equal(P.isBackOffice(['*']), true);

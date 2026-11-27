@@ -753,9 +753,19 @@ export const FLOOR_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.cashier
  * trusted with them still sells.
  */
 export const POS_ACTION_KEYS: readonly string[] = ['customers.credit', 'sales.void', 'sales.refund', 'sales.reprint'];
+/**
+ * A627 (owner, 2026-11-26): the till-side History / shift-close REFINEMENTS. Exactly like POS_ACTION_KEYS above — a
+ * cashier the owner trusts with one still sells, so holding one must never send them to the manager screens. They are
+ * NOT cashier defaults (no `cashier: true`, so FLOOR_KEYS leaves them out — e.g. a cashier does not get a History total
+ * by default); the owner grants them per role or per person on the Roles screen. Without this, the moment a cashier was
+ * given "See all payments in History" (or shift sales at close) resolveRoute read them as back office and the POS
+ * bounced them to the dashboard — the feature could not be used on a cashier at all.
+ */
+export const POS_HISTORY_KEYS: readonly string[] = ['sales.history_total', 'sales.history_all_payments', 'shifts.see_shift_sales'];
 /** What makes nobody back office: the floor, what every person held before A490 (migration 134 keeps it on every role —
- *  the staff list, every cashier's sales — so it says nothing about who is a manager), and the POS actions. */
-const FLOOR = withParts([...FLOOR_KEYS, ...OPEN_BEFORE_A490, ...POS_ACTION_KEYS]);   // A595: and their parts (176 gives them to every cashier)
+ *  the staff list, every cashier's sales — so it says nothing about who is a manager), the POS actions and the A627
+ *  History/close refinements. */
+const FLOOR = withParts([...FLOOR_KEYS, ...OPEN_BEFORE_A490, ...POS_ACTION_KEYS, ...POS_HISTORY_KEYS]);   // A595: and their parts (176 gives them to every cashier)
 
 /** Holds anything beyond the shop floor (or is the owner). */
 export function isBackOffice(held: ReadonlySet<string> | readonly string[]): boolean {

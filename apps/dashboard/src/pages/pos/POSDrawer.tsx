@@ -51,8 +51,9 @@ const SCREENS: Record<string, React.ComponentType<ScreenProps>> = {
 /** Rail order, icon and the short rail word; the heading and its line come from the catalogue. */
 const SCREEN_ORDER: Array<{ id: keyof typeof SCREENS & string; icon: string; rail: string; keys: readonly string[] }> = [
   { id: 'reports',         icon: '📊', rail: 'Reports',   keys: POS_REPORT_KEYS },
-  // One POS design: History is for everyone (desktop A358). A seller reaches their OWN sales here — the cloud scopes it
-  // (own_only / cash-only in routes/orders.ts); orders.view_all widens it to the whole branch and every method.
+  // One POS design: History is for everyone (desktop A358). The tab is shown to anyone who can sell; the cloud scopes
+  // what it returns — a cashier's OWN sales, cash only, until the owner grants sales.history_all / history_all_payments
+  // (routes/orders.ts). orders.view_all is listed so a view-all manager opened from the dashboard also reaches it.
   { id: 'orders.view_all', icon: '🧾', rail: 'History',   keys: ['orders.create', 'orders.view_all'] },
   { id: 'inventory.view',  icon: '📦', rail: 'Stock',     keys: ['inventory.view'] },
   { id: 'customers.view',  icon: '👥', rail: 'Customers', keys: ['customers.view'] },

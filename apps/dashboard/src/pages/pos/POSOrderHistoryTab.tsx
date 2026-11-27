@@ -131,6 +131,9 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
   const [sortBy, setSortBy]             = useState<HistorySort>('time');
   const [ownOnly, setOwnOnly]           = useState(false);
   const [canReprint, setCanReprint]     = useState(true);
+  // A627: the payment methods this person actually sees — the cloud's history_methods ([] = every method). A cash-only
+  // cashier (no sales.history_all_payments) is not offered mpesa/card filters that would always come back empty.
+  const [methodChoices, setMethodChoices] = useState<string[]>(METHOD_CHOICES);
 
   const load = useCallback(async (p = 1, q = search, t = typeFilter, m = methodFilter) => {
     setLoading(true);
@@ -158,6 +161,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
       setTotal(res.total ?? 0);
       setOwnOnly(res.own_only === true);
       setCanReprint(res.can_reprint === true);   // 0.6.37: a cashier never reprints
+      { const hm = res.history_methods ?? []; setMethodChoices(hm.length ? hm : METHOD_CHOICES); }   // A627
       setPage(p);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load orders');
@@ -195,11 +199,13 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
           <option value="">All types</option>
           {TYPE_CHOICES.map(t => <option key={t} value={t}>{orderTypeLabel(t)}</option>)}
         </select>
-        <select style={s.searchInput} value={methodFilter} data-testid="history-method"
-          onChange={e => { setMethodFilter(e.target.value); void load(1, search, typeFilter, e.target.value); }}>
-          <option value="">All payments</option>
-          {METHOD_CHOICES.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
+        {methodChoices.length > 1 && (
+          <select style={s.searchInput} value={methodFilter} data-testid="history-method"
+            onChange={e => { setMethodFilter(e.target.value); void load(1, search, typeFilter, e.target.value); }}>
+            <option value="">All payments</option>
+            {methodChoices.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        )}
         <select style={s.searchInput} value={sortBy} data-testid="history-sort" onChange={e => setSortBy(e.target.value as HistorySort)}>
           <option value="time">Order by time</option>
           <option value="method">Order by payment</option>
