@@ -20,7 +20,7 @@
 # Not db-migrate-prod.yml's DATABASE_URL: that one is the owner role, behind the "production" environment's reviewer —
 # a nightly job waiting for a click would never run.
 
-name: Nightly backup
+name: Weekly backup
 
 on:
   schedule:

@@ -66,7 +66,12 @@ const reset = () => {
       last_seen_at: iso(T0 - 60_000), last_sync_at: iso(T0 - 60_000), app_version: '1.0.22', schema_version: REQUIRED_DESKTOP_SCHEMA })),   // the current local schema (A607 78, A619 79): an up-to-date POS opens no alert
     // a day left open a week ago: one problem that stays open across the runs
     business_days: [{ id: 'bd1', business_id: B, branch_id: BR, device_id: 'd1', terminal_code: 'T1', business_date: '2026-10-20', status: 'open' }],
-    ops_events: [{ id: 'o1', kind: 'backup', status: 'ok', created_at: iso(T0 - 3_600_000) }],
+    // A627 P0-3: a healthy cloud reports all three GitHub ops checks recently — so the quiet run stays quiet.
+    ops_events: [
+      { id: 'o1', kind: 'backup', status: 'ok', created_at: iso(T0 - 3_600_000) },
+      { id: 'o2', kind: 'deploy_check', status: 'ok', created_at: iso(T0 - 3_600_000) },
+      { id: 'o3', kind: 'vuln_scan', status: 'ok', created_at: iso(T0 - 3_600_000) },
+    ],
     watchdog_alerts: [], admin_settings: [], admin_notifications: [], payments: [], payment_exceptions: [], etims_invoices: [],
     shifts: [], orders: [], business_settings: [], branch_settings: [], cloud_plans: [], feature_flags: [],
   };

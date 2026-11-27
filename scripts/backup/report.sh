@@ -2,7 +2,7 @@
 # =============================================================================
 # report.sh — A589: after the nightly backup (.github/workflows/nightly-backup.yml, `if: always()`), say how it went.
 #
-#   • the admin portal's System page: POST <PROD_URL>/api/ops/events, kind 'backup' (OPS_INGEST_TOKEN) — "Last nightly
+#   • the admin portal's System page: POST <PROD_URL>/api/ops/events, kind 'backup' (OPS_INGEST_TOKEN) — "Last weekly
 #     backup: 00:03, 48.2 MB, OK". A FAILED backup there is the server's instant alert (email + Telegram + the bell).
 #   • when the server did not take the event (it is down, or the token is not set) and the backup FAILED: the admin is
 #     told from here (scripts/ops/notify-admin.sh) — a failed backup is never silent.
@@ -92,7 +92,7 @@ if [ "$STATUS" = "fail" ]; then
     [ -n "$RUN_URL" ] && BTNS+=(--button "Open run|$RUN_URL")
     BTNS+=(--button "Guide|$GUIDE" --button "Open in admin|$ADMIN/?open=system")
     bash "$(dirname "$0")/../ops/notify-admin.sh" --tone critical --subject "🔴 Backup failed · $(eat_day)" "${FACTS[@]}" \
-      --action "The earlier backups are untouched. Fix the cause, then run it again: GitHub › Actions › Nightly backup › Run workflow." \
+      --action "The earlier backups are untouched. Fix the cause, then run it again: GitHub › Actions › Weekly backup › Run workflow." \
       "${BTNS[@]}" \
       "Backup failed — $(eat_stamp)" \
       "Told from GitHub: the server did not take the result (it is down, or OPS_INGEST_TOKEN is not set)." || true

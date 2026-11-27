@@ -89,6 +89,28 @@ await ok('eTIMS failures are a warning per client', () => {
   assert.strictEqual(a.length, 1);
   assert.match(a[0].title, /2 eTIMS invoices failed/);
 });
+// A627 P0-3: the backup is never silent — never recorded raises too (not just stale); the weekly window (A591) is kept.
+await ok('the backup: a never-recorded backup now RAISES critical (was silent); stale raises; within the weekly window is quiet', () => {
+  const back = (days) => new Date(NOW.getTime() - days * 24 * 60 * 60_000).toISOString();
+  const never = R.backupMissed(null, NOW);
+  assert.strictEqual(never.length, 1); assert.strictEqual(never[0].severity, 'critical');
+  assert.strictEqual(never[0].key, 'backup_missed'); assert.match(never[0].title, /no backup has succeeded yet/);
+  const stale = R.backupMissed(back(9), NOW);
+  assert.strictEqual(stale.length, 1); assert.match(stale[0].title, /no good backup for/);
+  assert.strictEqual(R.backupMissed(back(6), NOW).length, 0, 'within the week (A591): quiet');
+});
+// A627 P0-3: the deploy check and dependency scan are no longer silent when their workflow stops reporting — a WARNING.
+await ok('ops-check staleness: a deploy check / dependency scan that never or has not recently reported is a warning', () => {
+  const ago = (h) => new Date(NOW.getTime() - h * 60 * 60_000).toISOString();
+  const d = R.opsCheckStale('deploy_check', null, NOW, R.WATCHDOG.DEPLOY_CHECK_MAX_AGE_H);
+  assert.strictEqual(d.length, 1); assert.strictEqual(d[0].severity, 'warning'); assert.strictEqual(d[0].key, 'deploy_check');
+  assert.match(d[0].title, /deploy check has never reported/);
+  assert.strictEqual(R.opsCheckStale('deploy_check', ago(1), NOW, R.WATCHDOG.DEPLOY_CHECK_MAX_AGE_H).length, 0, 'a recent report is quiet');
+  const v = R.opsCheckStale('vuln_scan', ago(72), NOW, R.WATCHDOG.VULN_SCAN_MAX_AGE_H);
+  assert.strictEqual(v.length, 1); assert.strictEqual(v[0].severity, 'warning'); assert.strictEqual(v[0].key, 'vuln_scan');
+  assert.match(v[0].problem, /dependency scan has not reported/);
+  assert.strictEqual(R.opsCheckStale('vuln_scan', ago(10), NOW, R.WATCHDOG.VULN_SCAN_MAX_AGE_H).length, 0);
+});
 
 const crit = { key: 'k1', severity: 'critical', businessId: 'b1', title: 'T', detail: 'D' };
 const warnA = { key: 'w1', severity: 'warning', businessId: 'b1', title: 'W', detail: '' };

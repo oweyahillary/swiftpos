@@ -7,7 +7,7 @@
  * server is down or overloaded".
  *
  *   SYSTEM (emailed at once, one email each, + Telegram; reminded every 3 h while it lasts — as before):
- *     server error burst (5xx), server overloaded, database unreachable, a sign-in attack, a nightly backup failed or
+ *     server error burst (5xx), server overloaded, database unreachable, a sign-in attack, a weekly backup failed or
  *     missed, a failed deploy check or dependency scan.
  *   CLIENT (a day not closed, a POS not syncing / signed out / refused, M-Pesa, eTIMS, a POS to update):
  *     the admin portal only — the bell (admin_notifications) and the Alerts page; NO email per client. Telegram: ONE
@@ -41,7 +41,7 @@ export const ALERT_CATEGORIES: readonly CategoryInfo[] = [
   { id: 'overload', label: 'Server overloaded (slow answers, a busy server, a slow database)', group: 'system', instantDefault: true },
   { id: 'database', label: 'Database unreachable', group: 'system', instantDefault: true },
   { id: 'signin_attack', label: 'Many failed sign-ins (someone guessing passwords)', group: 'system', instantDefault: true },
-  { id: 'backup', label: 'Nightly backup failed or missed', group: 'system', instantDefault: true },
+  { id: 'backup', label: 'Weekly backup failed or missed', group: 'system', instantDefault: true },
   { id: 'deploy', label: 'Deploy check or dependency scan failed', group: 'system', instantDefault: true },
   { id: 'other_system', label: 'Other cloud alerts', group: 'system', instantDefault: true },
   { id: 'day_not_closed', label: 'Day not closed', group: 'client', instantDefault: false },

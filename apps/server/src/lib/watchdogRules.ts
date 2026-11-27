@@ -62,8 +62,8 @@ export interface Alert {
  */
 export type RuleId =
   | 'till_signed_out' | 'till_not_syncing' | 'till_quiet' | 'till_parked' | 'mpesa_unanswered' | 'payment_exception'
-  | 'server_errors' | 'server_overload' | 'database_unreachable' | 'backup_missed' | 'day_not_closed' | 'old_tills'
-  | 'etims_failed' | 'signin_failures' | 'signin_failures_ip' | 'sync_refused' | 'sync_rows_refused';
+  | 'server_errors' | 'server_overload' | 'database_unreachable' | 'backup_missed' | 'deploy_check' | 'vuln_scan'
+  | 'day_not_closed' | 'old_tills' | 'etims_failed' | 'signin_failures' | 'signin_failures_ip' | 'sync_refused' | 'sync_rows_refused';
 export const RULE_WORDS: Record<RuleId, { label: string; todo: string }> = {
   till_signed_out: { label: "POS can't sign in", todo: 'Rejoin the POS from its Tech page (enrolment code)' },
   till_not_syncing: { label: 'POS not syncing', todo: 'Check its internet, then Sync now on its Tech page' },
@@ -75,6 +75,8 @@ export const RULE_WORDS: Record<RuleId, { label: string; todo: string }> = {
   server_overload: { label: 'Server overloaded', todo: 'Check Render CPU and memory; restart if stuck' },
   database_unreachable: { label: 'Database unreachable', todo: 'Check the Supabase project and its status page' },
   backup_missed: { label: 'Backup missed', todo: 'Open the last backup run on GitHub; run it again' },
+  deploy_check: { label: 'Deploy check silent', todo: 'Check the deploy-verify workflow on GitHub is running' },
+  vuln_scan: { label: 'Security scan silent', todo: 'Check the security-scan workflow on GitHub is running' },
   day_not_closed: { label: 'Day not closed', todo: 'Close it at the POS or by Remote Day Close' },
   old_tills: { label: 'POS needs updating', todo: 'Update the POS to the latest version' },
   etims_failed: { label: 'eTIMS failed', todo: 'Check the eTIMS settings (retried every 15 min)' },
@@ -107,8 +109,14 @@ export const WATCHDOG = {
   OVERLOAD_P95_MS: 5000,
   OVERLOAD_LOOP_LAG_MS: 1000,
   OVERLOAD_DB_PING_MS: 4000,
-  // A589: the nightly backup (00:00 Nairobi) — missed when the last good one is older than this.
+  // A589: the backup — missed when the last GOOD one is older than this. A591: backups are WEEKLY (Sunday 00:00 Nairobi,
+  // nightly-backup.yml), so the window is a week plus a day and 2 h of grace — NOT a daily figure.
   BACKUP_MAX_AGE_H: 8 * 24 + 2,   // A591: weekly backups - a week and a day, plus 2 h
+  // A627 P0-3: the deploy check (verify-prod-deploy.yml, on every push to main) and the dependency scan (security-scan.yml,
+  // daily) must keep REPORTING — a workflow that stopped (a disabled schedule, a broken job) is silent otherwise. These are
+  // the "no report in this long" windows; a FAILURE still comes through routes/ops.ts at once (this only catches silence).
+  DEPLOY_CHECK_MAX_AGE_H: 8 * 24,   // push-triggered: a week of no deploy report (or never) is worth a gentle nudge
+  VULN_SCAN_MAX_AGE_H: 50,          // daily: a stopped daily scan surfaces within ~2 days
 } as const;
 
 const MIN = 60_000;
@@ -450,22 +458,47 @@ export function databaseUnreachable(ping: { ok: boolean; error?: string | null; 
 }
 
 /**
- * CRITICAL (A589, A591 weekly): the backup (Sunday 00:00 Nairobi, .github/workflows/nightly-backup.yml) has not succeeded
- * for over 8 days — it failed, or did not run (GitHub turns a schedule off after 60 days without activity in the repository).
- * Only once a backup has ever been recorded (ops_events kind 'backup'): a cloud without backups set up stays quiet.
+ * CRITICAL (A589, A591 weekly; A627 P0-3): the backup (Sunday 00:00 Nairobi, .github/workflows/nightly-backup.yml) has not
+ * SUCCEEDED within the window — it failed, did not run (GitHub turns a schedule off after 60 days without activity in the
+ * repository), or none has EVER run (null `lastOkAt`). A627 P0-3 fixed the silent case: a cloud with no backup recorded
+ * used to raise nothing; a never-recorded backup now raises "no backup has succeeded yet" — backups must never be silent.
  */
-export function backupMissed(lastOkAt: string | null, anyRecorded: boolean, now: Date): Alert[] {
-  if (!anyRecorded) return [];
-  const age = lastOkAt ? ago(now, lastOkAt) / 60 : Infinity;
+export function backupMissed(lastOkAt: string | null, now: Date): Alert[] {
+  const age = lastOkAt ? ago(now, lastOkAt) / 60 : Infinity;   // never recorded ⇒ Infinity ⇒ missed
   if (age <= WATCHDOG.BACKUP_MAX_AGE_H) return [];
   return [{
     key: 'backup_missed', severity: 'critical', businessId: null,
     ...ruleWords('backup_missed'),
     title: lastOkAt ? `Backup: no good backup for ${durationLabel(age * 60)}` : 'Backup: no backup has succeeded yet',
-    client: 'ZapTill cloud', where: '—', problem: 'Weekly backup missed or failing',
-    detail: 'GitHub › Actions › Nightly backup: look at the last run (a failure says why; no run at all — the schedule may be '
+    client: 'ZapTill cloud', where: '—', problem: lastOkAt ? 'Weekly backup missed or failing' : 'No backup has ever succeeded',
+    detail: 'GitHub › Actions › Weekly backup: look at the last run (a failure says why; no run at all — the schedule may be '
       + 'off: enable the workflow, then "Run workflow"). docs/BACKUPS.md.',
     action: 'Open the last backup run on GitHub (a failure says why). No run at all: the schedule is off — enable the workflow, then Run workflow.',
+  }];
+}
+
+/**
+ * WARNING (A627 P0-3): a GitHub ops check that stopped REPORTING. routes/ops.ts alerts at once on a FAILURE posted by a
+ * workflow; this catches the gap those had no rule for — SILENCE: a check that never reported, or whose workflow stopped
+ * running (its schedule was turned off, or the job broke before it could post). `lastReportAt` is its newest event of ANY
+ * status (a posted failure counts as "reported" — it is handled separately). `kind` is the ops_events kind and the alert
+ * key (categoryOf maps both to 'deploy'). Not emailed at once — it is not an outage; it sits in the morning digest. Pure.
+ */
+export function opsCheckStale(kind: 'deploy_check' | 'vuln_scan', lastReportAt: string | null, now: Date, maxAgeH: number): Alert[] {
+  const age = lastReportAt ? ago(now, lastReportAt) / 60 : Infinity;   // never reported ⇒ Infinity ⇒ stale
+  if (age <= maxAgeH) return [];
+  const what = kind === 'deploy_check' ? 'deploy check' : 'dependency scan';
+  const workflow = kind === 'deploy_check' ? 'Verify production deploy' : 'Security scan';
+  return [{
+    key: kind,
+    ...ruleWords(kind),
+    severity: 'warning', businessId: null,
+    title: lastReportAt ? `Cloud: the ${what} has not reported for ${durationLabel(age * 60)}` : `Cloud: the ${what} has never reported`,
+    client: 'ZapTill cloud', where: '—',
+    problem: lastReportAt ? `The ${what} has not reported for ${durationLabel(age * 60)}` : `The ${what} has never reported`,
+    detail: `GitHub › Actions › ${workflow} posts a result each run; none has arrived${lastReportAt ? ` for ${durationLabel(age * 60)}` : ' yet'}. `
+      + 'Check the workflow is enabled (a schedule turns off after 60 days of repository inactivity) and OPS_INGEST_TOKEN is set.',
+    action: `Open GitHub › Actions › ${workflow} — enable it if its schedule was turned off, and check the OPS_INGEST_TOKEN secret.`,
   }];
 }
 

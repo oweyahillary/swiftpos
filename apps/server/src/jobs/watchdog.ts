@@ -17,7 +17,7 @@ import {
 import {
   Alert, OpenAlertRow, WATCHDOG, planRun, DeviceRow, TradeEvidence,
   tillsNotSyncing, quietCandidates, tillsWithParkedRecords, mpesaUnanswered, paymentExceptions, errorBurst, daysNotClosed, oldTills, etimsFailures,
-  repeatedSignInFailures, tillSyncRefused, tillsSignedOut, serverOverload, databaseUnreachable, backupMissed,
+  repeatedSignInFailures, tillSyncRefused, tillsSignedOut, serverOverload, databaseUnreachable, backupMissed, opsCheckStale,
 } from '../lib/watchdogRules';
 
 /**
@@ -60,7 +60,8 @@ const CHECK_KEYS: Record<string, string[]> = {
   'sync refused': ['sync_refused', 'sync_rows_refused'],
   database: ['database_unreachable'],
   load: ['server_overload'],
-  backup: ['backup_missed'],
+  // A627 P0-3: one read owns the three GitHub ops checks (a failed read must not resolve any of them).
+  'ops checks': ['backup_missed', 'deploy_check', 'vuln_scan'],
   pos: ['till_not_syncing', 'till_parked', 'old_tills'],
   'tills signed out': ['till_signed_out'],   // till-wording: ok — a developer's log label
   mpesa: ['mpesa_unanswered'],
@@ -177,10 +178,11 @@ async function dbPing(): Promise<{ ok: boolean; ms: number; error?: string }> {
   }
 }
 
-/** A593: the last good backup the watchdog read, and under which ops-event generation. */
-let backupSeen: { gen: number; at: number; lastOk: string | null; any: boolean } | null = null;
+/** A593/A627: the GitHub ops checks the watchdog last read (the last good backup, and the newest deploy/vuln report of any
+ *  status), and under which ops-event generation. */
+let opsSeen: { gen: number; at: number; backupOk: string | null; deploy: string | null; vuln: string | null } | null = null;
 /** Test seam. */
-export function _forgetBackupSeen(): void { backupSeen = null; }
+export function _forgetBackupSeen(): void { opsSeen = null; }
 
 export interface Collected {
   alerts: Alert[];
@@ -205,27 +207,29 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
   if (opts.load !== false) {
     await step('load', async () => serverOverload({ ...requestLoad(10, now.getTime()), loopLagMs: takeLoopLag(), dbPingMs: ping.ok ? ping.ms : null }));
   } else for (const k of CHECK_KEYS.load) failed.add(k);   // the digest's read: the overload alert stays as it is
-  await step('backup', async () => {
+  await step('ops checks', async () => {
     if (!ping.ok) throw new Error('database unreachable');
-    // A593: the last good backup, kept while no ops event was stored (routes/ops.ts) — at most 30 minutes; the rule is
-    // the clock's (backupMissed decides from it at this run's time). It was 1–2 reads every 10 minutes for a weekly job.
-    const kept = backupSeen;
-    if (memoEnabled() && kept && kept.gen === opsEventsGen() && now.getTime() >= kept.at && now.getTime() - kept.at < 30 * 60_000) {
-      return backupMissed(kept.lastOk, kept.any, now);
+    // A593/A627: the GitHub ops checks (backup, deploy verify, dependency scan), kept while no ops event was stored
+    // (routes/ops.ts) — at most 30 minutes; the rules decide from the clock at this run's time. A627 P0-3: a backup never
+    // recorded now raises (was silent), and the deploy/dependency checks raise a warning when they stop reporting.
+    const kept = opsSeen;
+    let s = (memoEnabled() && kept && kept.gen === opsEventsGen() && now.getTime() >= kept.at && now.getTime() - kept.at < 30 * 60_000) ? kept : null;
+    if (!s) {
+      const gen = opsEventsGen();
+      const latest = async (kind: string, okOnly: boolean): Promise<string | null> => {
+        const base = supabase.from('ops_events').select('created_at').eq('kind', kind);
+        const r = await (okOnly ? base.eq('status', 'ok') : base).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (r.error) throw r.error;
+        return (r.data as { created_at?: string } | null)?.created_at ?? null;
+      };
+      s = { gen, at: now.getTime(), backupOk: await latest('backup', true), deploy: await latest('deploy_check', false), vuln: await latest('vuln_scan', false) };
+      opsSeen = s;
     }
-    const gen = opsEventsGen();
-    const last = await supabase.from('ops_events').select('created_at').eq('kind', 'backup').eq('status', 'ok')
-      .order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (last.error) throw last.error;
-    let any = Boolean(last.data);
-    if (!any) {
-      const r = await supabase.from('ops_events').select('id').eq('kind', 'backup').limit(1).maybeSingle();
-      if (r.error) throw r.error;
-      any = Boolean(r.data);
-    }
-    const lastOk = (last.data as { created_at?: string } | null)?.created_at ?? null;
-    backupSeen = { gen, at: now.getTime(), lastOk, any };
-    return backupMissed(lastOk, any, now);
+    return [
+      ...backupMissed(s.backupOk, now),
+      ...opsCheckStale('deploy_check', s.deploy, now, WATCHDOG.DEPLOY_CHECK_MAX_AGE_H),
+      ...opsCheckStale('vuln_scan', s.vuln, now, WATCHDOG.VULN_SCAN_MAX_AGE_H),
+    ];
   });
 
   const { ok, active, names: nm, approved } = ping.ok ? await names(now.getTime()) : { ok: false, active: [], names: {}, approved: {} };

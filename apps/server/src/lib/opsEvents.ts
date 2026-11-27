@@ -100,7 +100,7 @@ export const IngestSchema = z.object({
 });
 export type IngestEvent = z.infer<typeof IngestSchema>;
 
-const KIND_WORDS: Record<string, string> = { deploy_check: 'deploy check', vuln_scan: 'dependency scan', backup: 'nightly backup', uptime: 'uptime check' };
+const KIND_WORDS: Record<string, string> = { deploy_check: 'deploy check', vuln_scan: 'dependency scan', backup: 'weekly backup', uptime: 'uptime check' };
 
 /**
  * A592: a backup step and its exit code in plain words. The steps are scripts/backup/nightly-backup.sh's STEP; the
@@ -154,7 +154,7 @@ export function failAlertMessage(ev: IngestEvent, now: Date = new Date(), links:
         ['Step', step ? backupStepWords(step, code) : String(d.error ?? ev.title)],
         ...(last ? [['Last good backup', last] as [string, string]] : []),
       ],
-      action: 'The earlier backups are untouched. Fix the cause, then run it again: GitHub › Actions › Nightly backup › Run workflow.',
+      action: 'The earlier backups are untouched. Fix the cause, then run it again: GitHub › Actions › Weekly backup › Run workflow.',
       buttons,
     };
   }

@@ -61,7 +61,7 @@ interface Pkg {
 }
 interface AppScan { error?: string; counts?: Record<string, number>; total?: number; packages?: Pkg[]; truncated?: boolean }
 
-const KIND_LABEL: Record<Kind, string> = { boot: "Server start", deploy_check: "Deploy check", vuln_scan: "Dependency scan", backup: "Nightly backup", uptime: "Outage" };
+const KIND_LABEL: Record<Kind, string> = { boot: "Server start", deploy_check: "Deploy check", vuln_scan: "Dependency scan", backup: "Weekly backup", uptime: "Outage" };
 const mb = (b: unknown) => (typeof b === "number" && Number.isFinite(b) ? `${(b / 1048576).toFixed(1)} MB` : "—");
 const STATUS_COLOUR: Record<Status, string> = { ok: C.green, warn: "#f59e0b", fail: C.danger };
 const SEV_COLOUR: Record<string, string> = { critical: C.danger, high: "#ff8a5c", moderate: "#f59e0b", low: C.muted, info: C.muted };
@@ -253,7 +253,7 @@ function SupabaseCard({ m }: { m?: SupabaseMeter }) {
   );
 }
 
-/** A589: what the nightly backup recorded — size, how long, where it is, the check it passed. */
+/** A589: what the weekly backup recorded — size, how long, where it is, the check it passed. */
 function BackupDetails({ ev }: { ev: OpsEvent }) {
   const d = ev.details ?? {};
   return (
@@ -384,8 +384,8 @@ export default function SystemPage({ req }: { req: Req }) {
         </div>
 
         <div style={{ ...S.card, marginBottom: 0 }} data-testid="card-backup">
-          {cardTitle("Last nightly backup", summary?.backup?.status)}
-          {!summary?.backup ? <div style={{ fontSize: 12, color: C.muted }}>None recorded yet — GitHub backs the database up every night at 00:00 Nairobi (docs/BACKUPS.md: the secrets, then OPS_INGEST_TOKEN to record it here).</div> : (
+          {cardTitle("Last weekly backup", summary?.backup?.status)}
+          {!summary?.backup ? <div style={{ fontSize: 12, color: C.muted }}>None recorded yet — GitHub backs the database up every week, on Sunday at 00:00 Nairobi (docs/BACKUPS.md: the secrets, then OPS_INGEST_TOKEN to record it here).</div> : (
             <>
               <div style={{ fontSize: 12, marginBottom: 4 }}>{summary.backup.title}</div>
               <Line k="When" v={`${when(summary.backup.created_at)} · ${ago(summary.backup.created_at)}`} />

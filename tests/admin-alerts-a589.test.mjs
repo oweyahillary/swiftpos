@@ -98,7 +98,14 @@ const reset = () => {
     ],
     businesses: CLIENTS.map((name, i) => ({ id: bid(i), name, status: 'active', type: 'retail', currency: 'KES', created_at: '2026-01-01T00:00:00Z' })),
     branches: CLIENTS.map((name, i) => ({ id: brid(i), business_id: bid(i), name: `${name.split(' ')[0]} Main`, is_main: true, status: 'active' })),
-    business_days: [], user_devices: [], payments: [], payment_exceptions: [], etims_invoices: [], ops_events: [],
+    business_days: [], user_devices: [], payments: [], payment_exceptions: [], etims_invoices: [],
+    // A627 P0-3: a healthy system by default — a recent good backup, deploy check and dependency scan — so the ops-check
+    // rules stay quiet; the backup/deploy/vuln tests clear or age these to probe the missed/stale cases.
+    ops_events: [
+      { id: 'seed-backup', kind: 'backup', status: 'ok', title: 'Backup OK', created_at: iso(Date.now() - 2 * DAY) },
+      { id: 'seed-deploy', kind: 'deploy_check', status: 'ok', title: 'Deploy OK', created_at: iso(Date.now() - 2 * 3600_000) },
+      { id: 'seed-vuln', kind: 'vuln_scan', status: 'ok', title: 'Scan OK', created_at: iso(Date.now() - 2 * 3600_000) },
+    ],
     watchdog_alerts: [], admin_notifications: [], admin_settings: [], admin_audit_log: [],
     business_settings: [], branch_settings: [], feature_flags: [], cloud_plans: [], cloud_plan_reminders: [], invoices: [], cloud_payments: [],
     shifts: [], orders: [],
@@ -296,14 +303,22 @@ try {
     await settle();
     assert.equal(mails.length, 0, 'a good backup is not emailed');
   });
-  await ok('the backup missed (no good one for 8 days, weekly - A591): an email at once; none recorded ever: quiet', async () => {
+  await ok('the backup: never recorded now RAISES (A627 P0-3, was silent); older than the weekly window raises; within the week is quiet', async () => {
+    // never recorded → a critical "no backup has succeeded yet" (deploy/vuln seeds stay healthy, so only the backup fires)
     reset();
+    mem.db.ops_events = mem.db.ops_events.filter((e) => e.kind !== 'backup');
     await W.runWatchdog(new Date());
-    assert.equal(mails.length, 0, 'no backup ever recorded: nothing to say');
+    assert.equal(adminMails().length, 1, 'a never-recorded backup is no longer silent');
+    assert.match(adminMails()[0].subject, /no backup has succeeded yet/i);
+    // a good backup older than the weekly window (A591, 8 days + grace): missed
+    reset();
+    mem.db.ops_events = mem.db.ops_events.filter((e) => e.kind !== 'backup');
     mem.db.ops_events.push({ id: 'b1', kind: 'backup', status: 'ok', title: 'Backup OK', created_at: iso(Date.now() - 9 * 24 * 3600_000) });
     await W.runWatchdog(new Date());
     assert.equal(adminMails().length, 1); assert.match(adminMails()[0].subject, /Backup: no good backup for/);
+    // within the week: quiet
     reset();
+    mem.db.ops_events = mem.db.ops_events.filter((e) => e.kind !== 'backup');
     mem.db.ops_events.push({ id: 'b2', kind: 'backup', status: 'ok', title: 'Backup OK', created_at: iso(Date.now() - 6 * 24 * 3600_000) });
     await W.runWatchdog(new Date());
     assert.equal(mails.length, 0);

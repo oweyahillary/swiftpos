@@ -57,7 +57,7 @@ router.get('/summary', async (_req, res) => {
   };
   try {
     const [boot, deploy_check, vuln_scan] = await Promise.all([latest('boot'), latest('deploy_check'), latest('vuln_scan')]);
-    // A589: the last nightly backup and the last outage the external check saw (a cloud before migration 174: none).
+    // A589: the last weekly backup and the last outage the external check saw (a cloud before migration 174: none).
     const [backup, uptime] = await Promise.all([latest('backup').catch(() => null), latest('uptime').catch(() => null)]);
     // A528: what this server has answered since it started, and what the polled answers cost the database.
     res.json({ live: buildInfo(), boot, deploy_check, vuln_scan, backup, uptime, traffic: trafficSnapshot() });
