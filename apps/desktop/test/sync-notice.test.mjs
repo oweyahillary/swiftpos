@@ -45,7 +45,9 @@ ok('who sees sync: the owner and anyone beyond the shop floor — never a cashie
   assert.equal(A.backOffice({ role: 'Manager', permissions: { 'orders.create': true, 'reports.view': true } }), true);
   assert.equal(A.backOffice({ role: 'Manager', permissions: { 'orders.create': true } }), false, 'a name alone is not a manager');
   assert.equal(A.backOffice({ role: 'Branch Supervisor', permissions: {} }), false);
-  assert.equal(A.backOffice({ role: 'Cashier', permissions: { 'orders.void': true } }), true, 'a role granted reversals is a manager in practice');
+  // 2026-11-27: reversals and drawer approvals are floor keys now (A499 + the floor-lead change) — a cashier trusted with
+  // them still sells, stays on the POS and is not shown the sync notice (orders.void is the legacy bundle of exactly those).
+  assert.equal(A.backOffice({ role: 'Cashier', permissions: { 'orders.void': true } }), false, 'reversals / approvals are floor — a trusted cashier, not a manager');
   assert.equal(A.backOffice({ role: 'Cashier', permissions: { 'orders.create': true } }), false);
   assert.equal(A.backOffice({ role: 'Cashier', permissions: { 'orders.create': true, 'staff.view': true, 'sales.history_all': true, 'catalogue.v2': true } }), false,
     'what every role keeps after migration 134 is not back office');

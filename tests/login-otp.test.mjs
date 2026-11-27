@@ -143,10 +143,13 @@ try {
     assert.equal(O.readSetup(s.setup_token, 'user', ADMIN), null);
   });
   // A490: by permission, not role name — the owner and anyone "back office" (isBackOffice: a key beyond the shop floor).
-  await ok('owners and the manager tier need a code; cashiers do not', () => {
+  // 2026-11-27: a sell-and-confirm FLOOR LEAD (shifts.confirm / approve_payout, no back-office page) is POS-only now — no
+  // dashboard to guard, so no code, like a cashier. A back-office key (reports, settings…) still needs one.
+  await ok('owners and the manager tier need a code; cashiers and floor leads do not', () => {
     assert.ok(O.needsOtp([], true));
-    for (const k of [['*'], ['reports.sales'], ['shifts.confirm'], ['orders.create', 'settings.business']]) assert.ok(O.needsOtp(k), k.join());
-    for (const k of [[], ['orders.create', 'products.view', 'customers.view'], ['orders.create', 'sales.discount']]) assert.ok(!O.needsOtp(k), k.join());
+    for (const k of [['*'], ['reports.sales'], ['orders.create', 'settings.business']]) assert.ok(O.needsOtp(k), k.join());
+    for (const k of [[], ['orders.create', 'products.view', 'customers.view'], ['orders.create', 'sales.discount'],
+                     ['orders.create', 'shifts.confirm', 'shifts.approve_payout']]) assert.ok(!O.needsOtp(k), k.join());
   });
 
   console.log('\nThe admin portal sign-in (compiled router, over HTTP)\n');
