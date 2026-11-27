@@ -785,6 +785,18 @@ export function isBackOffice(held: ReadonlySet<string> | readonly string[]): boo
 }
 
 /**
+ * The two decisions "beyond the shop floor" drives that one might one day want to DIVERGE — named as separate SEAMS so a
+ * change to one is not silently a change to the other. They both delegate to isBackOffice (one FLOOR) today: moving a key
+ * in or out of FLOOR still moves both, which is correct for a floor lead (on the POS AND no sign-in code — they have no
+ * dashboard to guard). The point of the seam is the day that stops being true: to make a key route to the POS yet still
+ * need a sign-in code, give needsSignInCode its own floor and change only its test — routesToManager stays put. The full
+ * matrix (these two + the desktop's consolidated access.backOffice, which also decides the sync notice and "← Manager") is
+ * pinned in tests/pos-floor-guard.test.mjs.
+ */
+export const routesToManager = (held: ReadonlySet<string> | readonly string[]): boolean => isBackOffice(held);   // POS vs the manager portal — apps/dashboard/src/lib/posRouting.ts resolveRoute
+export const needsSignInCode = (held: ReadonlySet<string> | readonly string[]): boolean => isBackOffice(held);   // a web sign-in needs an OTP code — apps/server/src/lib/loginOtp.ts needsOtp
+
+/**
  * The ceiling (A340, now by permission rather than role name): a person who is not the owner may give a role or a
  * person only keys they hold themselves. Returns the keys beyond them — empty means allowed.
  */

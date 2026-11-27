@@ -1,5 +1,5 @@
 // Central routing logic — one source of truth used everywhere (PIN sign-in, the manager portal's guard, the web POS).
-import { expandMap, isBackOffice, OPEN_BEFORE_A490 } from '@zaptill/core/permissions';   // A490
+import { expandMap, routesToManager, OPEN_BEFORE_A490 } from '@zaptill/core/permissions';   // A490; routesToManager is the routing seam of isBackOffice
 
 export type POSRoute = '/pos/cashier' | '/manager' | '/';
 
@@ -28,7 +28,7 @@ export function resolveRoute(
   _role?: string | null,
 ): POSRoute {
   if (permissions?.['*'] === true) return '/';
-  if (isBackOffice(backOfficeKeys(permissions))) return '/manager';
+  if (routesToManager(backOfficeKeys(permissions))) return '/manager';
   return '/pos/cashier';
 }
 

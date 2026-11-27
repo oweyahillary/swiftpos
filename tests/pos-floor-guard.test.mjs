@@ -6,11 +6,12 @@
 //
 //   node --no-warnings tests/pos-floor-guard.test.mjs
 //
-// THE isBackOffice MATRIX — one flag, four behaviours. Moving a key in or out of FLOOR changes ALL of these at once:
-//   1. routing        apps/dashboard/src/lib/posRouting.ts    resolveRoute  → the POS vs the manager portal
-//   2. sign-in codes  apps/server/src/lib/loginOtp.ts         needsOtp      → a web OTP code, or not
-//   3. sync notice    apps/desktop/src/renderer/lib/access.ts backOffice    → the desktop sync notice is shown, or not
-//   4. device / PIN   (same backOffice)                       a back-office browser needs device approval; a cashier PINs in
+// THE isBackOffice MATRIX — the decisions "beyond the shop floor" drives. They share FLOOR today, but routing and sign-in
+// codes are NAMED SEAMS now (packages/core routesToManager / needsSignInCode) so one can diverge from the other:
+//   1. routing        apps/dashboard/src/lib/posRouting.ts    resolveRoute → routesToManager() → the POS vs the manager portal
+//   2. sign-in codes  apps/server/src/lib/loginOtp.ts         needsOtp     → needsSignInCode() → a web OTP code, or not
+//   3. sync notice +  apps/desktop/src/renderer/lib/access.ts backOffice   → isBackOffice: the desktop CONSOLIDATES the sync
+//      "← Manager" +  (same backOffice)                       notice, the "← Manager" button and PIN-screen routing + device.
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -82,11 +83,11 @@ ok('the till-side floor exceptions are real catalogue keys and on the floor', ()
   }
 });
 
-// The matrix is real: all three surfaces still decide off the ONE shared isBackOffice. If a refactor splits one out, this
-// reminds the author to reason about the matrix (routing vs sign-in codes vs sync notice) rather than change one silently.
-ok('isBackOffice still drives routing, sign-in codes and the sync notice (one flag, one place to reason)', () => {
-  assert.match(read('apps/dashboard/src/lib/posRouting.ts'), /isBackOffice/);
-  assert.match(read('apps/server/src/lib/loginOtp.ts'), /isBackOffice/);
+// The matrix is real and each surface reads its named seam (or the desktop's consolidated check). If a refactor repoints
+// one, this reminds the author to reason about the matrix (routing vs sign-in codes vs sync) rather than change one silently.
+ok('each decision reads its named seam — routing (routesToManager), sign-in codes (needsSignInCode), desktop (isBackOffice)', () => {
+  assert.match(read('apps/dashboard/src/lib/posRouting.ts'), /routesToManager/);
+  assert.match(read('apps/server/src/lib/loginOtp.ts'), /needsSignInCode/);
   assert.match(read('apps/desktop/src/renderer/lib/access.ts'), /isBackOffice/);
 });
 
