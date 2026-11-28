@@ -19,6 +19,6 @@
     "node": ">=24"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.10"
+    "@electric-sql/pglite": "^0.6.0"
   }
 }
